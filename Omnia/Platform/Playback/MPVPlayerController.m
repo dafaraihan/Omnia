@@ -101,6 +101,34 @@ static void *OMOpenGLProcedureAddress(void *context, const char *name) {
 
 @end
 
+@interface OMMpvPlaybackSnapshot ()
+@property (nonatomic, readwrite, copy) NSArray<OMMpvTrack *> *audioTracks;
+@property (nonatomic, readwrite, copy) NSArray<OMMpvTrack *> *subtitleTracks;
+@property (nonatomic, readwrite) BOOL tracksLoading;
+@property (nonatomic, readwrite, copy, nullable) NSString *errorMessage;
+- (instancetype)initWithAudioTracks:(NSArray<OMMpvTrack *> *)audioTracks
+                      subtitleTracks:(NSArray<OMMpvTrack *> *)subtitleTracks
+                       tracksLoading:(BOOL)tracksLoading
+                         errorMessage:(nullable NSString *)errorMessage;
+@end
+
+@implementation OMMpvPlaybackSnapshot
+
+- (instancetype)initWithAudioTracks:(NSArray<OMMpvTrack *> *)audioTracks
+                      subtitleTracks:(NSArray<OMMpvTrack *> *)subtitleTracks
+                       tracksLoading:(BOOL)tracksLoading
+                         errorMessage:(NSString *)errorMessage {
+    self = [super init];
+    if (!self) return nil;
+    _audioTracks = [audioTracks copy];
+    _subtitleTracks = [subtitleTracks copy];
+    _tracksLoading = tracksLoading;
+    _errorMessage = [errorMessage copy];
+    return self;
+}
+
+@end
+
 static void OMMpvRequestRedraw(void *context) {
     OMMpvOpenGLView *view = (__bridge OMMpvOpenGLView *)context;
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -123,10 +151,20 @@ static void OMMpvRequestRedraw(void *context) {
     NSArray<NSString *> *_preferredSubtitleLanguages;
     BOOL _subtitlesDisabled;
     NSDictionary<NSString *, id> *_subtitleStyle;
+    BOOL _tracksLoading;
 }
 @property (nonatomic, readwrite) OMMpvOpenGLView *videoView;
 @property (nonatomic, readwrite, nullable) NSString *errorMessage;
+- (void)drainEvents;
+- (void)emitSnapshot;
 @end
+
+static void OMMpvWakeup(void *context) {
+    OMMpvPlayerController *controller = (__bridge OMMpvPlayerController *)context;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [controller drainEvents];
+    });
+}
 
 @implementation OMMpvPlayerController
 
@@ -139,6 +177,7 @@ static void OMMpvRequestRedraw(void *context) {
     _requestHeaders = [requestHeaders copy];
     _volume = 100;
     _playbackRate = 1;
+    _tracksLoading = YES;
     _videoView = [[OMMpvOpenGLView alloc] initWithFrame:NSZeroRect];
     return self;
 }
@@ -206,6 +245,11 @@ static void OMMpvRequestRedraw(void *context) {
         return;
     }
 
+    mpv_set_wakeup_callback(_mpv, OMMpvWakeup, (__bridge void *)self);
+    mpv_observe_property(_mpv, 1, "track-list", MPV_FORMAT_NONE);
+    mpv_observe_property(_mpv, 2, "aid", MPV_FORMAT_NONE);
+    mpv_observe_property(_mpv, 3, "sid", MPV_FORMAT_NONE);
+
     [_videoView.openGLContext makeCurrentContext];
     mpv_opengl_init_params openGLParameters = {
         .get_proc_address = OMOpenGLProcedureAddress,
@@ -244,6 +288,7 @@ static void OMMpvRequestRedraw(void *context) {
         [self failWithMessage:@"libmpv could not open the selected stream."];
         return;
     }
+    [self emitSnapshot];
     if (_pendingPosition > 0) [self seekTo:_pendingPosition];
     [self play];
 }
@@ -340,6 +385,8 @@ static void OMMpvRequestRedraw(void *context) {
 
 - (void)failWithMessage:(NSString *)message {
     self.errorMessage = message;
+    _tracksLoading = NO;
+    [self emitSnapshot];
     [self destroyPlayer];
 }
 
@@ -383,6 +430,68 @@ static void OMMpvRequestRedraw(void *context) {
     mpv_set_option_string(_mpv, "sub-ass-override", "style");
 }
 
+- (void)drainEvents {
+    if (!_mpv || _stopped) return;
+
+    BOOL shouldEmitSnapshot = NO;
+    while (_mpv) {
+        mpv_event *event = mpv_wait_event(_mpv, 0);
+        if (!event || event->event_id == MPV_EVENT_NONE) break;
+
+        switch (event->event_id) {
+        case MPV_EVENT_START_FILE:
+            _tracksLoading = YES;
+            self.errorMessage = nil;
+            shouldEmitSnapshot = YES;
+            break;
+        case MPV_EVENT_FILE_LOADED:
+            _tracksLoading = NO;
+            self.errorMessage = nil;
+            shouldEmitSnapshot = YES;
+            break;
+        case MPV_EVENT_PROPERTY_CHANGE:
+            shouldEmitSnapshot = YES;
+            break;
+        case MPV_EVENT_END_FILE: {
+            _tracksLoading = NO;
+            mpv_event_end_file *endFile = event->data;
+            if (endFile && endFile->reason == MPV_END_FILE_REASON_ERROR) {
+                const char *description = mpv_error_string(endFile->error);
+                NSString *detail = description
+                    ? [NSString stringWithUTF8String:description]
+                    : @"unknown playback error";
+                self.errorMessage = [NSString stringWithFormat:
+                    @"libmpv could not play the selected source (%@).",
+                    detail
+                ];
+            }
+            shouldEmitSnapshot = YES;
+            break;
+        }
+        case MPV_EVENT_QUEUE_OVERFLOW:
+            shouldEmitSnapshot = YES;
+            break;
+        default:
+            break;
+        }
+    }
+
+    if (shouldEmitSnapshot) [self emitSnapshot];
+}
+
+- (void)emitSnapshot {
+    void (^handler)(OMMpvPlaybackSnapshot *) = self.stateChangeHandler;
+    if (!handler) return;
+
+    OMMpvPlaybackSnapshot *snapshot = [[OMMpvPlaybackSnapshot alloc]
+        initWithAudioTracks:self.audioTracks
+        subtitleTracks:self.subtitleTracks
+        tracksLoading:_tracksLoading
+        errorMessage:self.errorMessage
+    ];
+    handler(snapshot);
+}
+
 - (void)destroyPlayer {
     if (_renderContext) {
         mpv_render_context_set_update_callback(_renderContext, NULL, NULL);
@@ -393,9 +502,11 @@ static void OMMpvRequestRedraw(void *context) {
         _videoView.needsDisplay = YES;
     }
     if (_mpv) {
+        mpv_set_wakeup_callback(_mpv, NULL, NULL);
         mpv_terminate_destroy(_mpv);
         _mpv = NULL;
     }
+    self.stateChangeHandler = nil;
 }
 
 - (NSArray<OMMpvTrack *> *)tracksOfType:(NSString *)requestedType {

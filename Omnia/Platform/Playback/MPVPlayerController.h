@@ -29,6 +29,18 @@ NS_ASSUME_NONNULL_BEGIN
 
 @end
 
+/// Immutable state published after relevant libmpv lifecycle and track events.
+@interface OMMpvPlaybackSnapshot : NSObject
+
+@property (nonatomic, readonly) NSArray<OMMpvTrack *> *audioTracks;
+@property (nonatomic, readonly) NSArray<OMMpvTrack *> *subtitleTracks;
+@property (nonatomic, readonly) BOOL tracksLoading;
+@property (nonatomic, readonly, nullable) NSString *errorMessage;
+
+- (instancetype)init NS_UNAVAILABLE;
+
+@end
+
 /// Thin Cocoa ownership wrapper around one libmpv core. Swift owns the
 /// presentation and controls; libmpv owns demuxing, codecs, subtitles, and
 /// the video output attached to `videoView`.
@@ -44,6 +56,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, readonly) BOOL hasRenderedVideoFrame;
 @property (nonatomic, readonly) NSArray<OMMpvTrack *> *audioTracks;
 @property (nonatomic, readonly) NSArray<OMMpvTrack *> *subtitleTracks;
+@property (nonatomic, copy, nullable) void (^stateChangeHandler)(OMMpvPlaybackSnapshot *snapshot);
 
 - (instancetype)initWithURL:(NSURL *)URL
               requestHeaders:(NSDictionary<NSString *, NSString *> *)requestHeaders NS_DESIGNATED_INITIALIZER;

@@ -22,29 +22,49 @@ final class MPVPlaybackIntegrationTests: XCTestCase {
             window.close()
         }
 
+        var snapshots: [OMMpvPlaybackSnapshot] = []
+        player.stateChangeHandler = { snapshot in
+            snapshots.append(snapshot)
+        }
         player.startIfNeeded()
         waitUntil {
             player.errorMessage != nil
-                || (player.hasRenderedVideoFrame && player.audioTracks.count == 2 && player.subtitleTracks.count == 1)
+                || (
+                    player.hasRenderedVideoFrame
+                        && snapshots.contains {
+                            !$0.tracksLoading && $0.audioTracks.count == 2 && $0.subtitleTracks.count == 1
+                        }
+                )
         }
 
         XCTAssertNil(player.errorMessage)
         XCTAssertTrue(player.hasRenderedVideoFrame)
         XCTAssertEqual(player.audioTracks.count, 2)
         XCTAssertEqual(player.subtitleTracks.count, 1)
+        XCTAssertTrue(snapshots.contains { $0.audioTracks.count == 2 })
 
         let secondAudio = try XCTUnwrap(player.audioTracks.last)
         player.selectAudioTrack(id: secondAudio.trackID)
-        waitUntil { player.audioTracks.contains { $0.trackID == secondAudio.trackID && $0.isSelected } }
+        waitUntil {
+            snapshots.contains {
+                $0.audioTracks.contains { $0.trackID == secondAudio.trackID && $0.isSelected }
+            }
+        }
         XCTAssertTrue(player.audioTracks.contains { $0.trackID == secondAudio.trackID && $0.isSelected })
 
         let subtitle = try XCTUnwrap(player.subtitleTracks.first)
         player.selectSubtitleTrack(id: NSNumber(value: subtitle.trackID))
-        waitUntil { player.subtitleTracks.contains { $0.trackID == subtitle.trackID && $0.isSelected } }
+        waitUntil {
+            snapshots.contains {
+                $0.subtitleTracks.contains { $0.trackID == subtitle.trackID && $0.isSelected }
+            }
+        }
         XCTAssertTrue(player.subtitleTracks.contains { $0.trackID == subtitle.trackID && $0.isSelected })
 
         player.selectSubtitleTrack(id: nil)
-        waitUntil { !player.subtitleTracks.contains(where: \.isSelected) }
+        waitUntil {
+            snapshots.last.map { !$0.subtitleTracks.contains(where: \.isSelected) } == true
+        }
         XCTAssertFalse(player.subtitleTracks.contains(where: \.isSelected))
     }
 
