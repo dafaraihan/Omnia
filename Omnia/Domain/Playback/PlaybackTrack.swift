@@ -5,6 +5,22 @@
 
 import Foundation
 
+enum PlaybackTrackAvailability: Equatable, Sendable {
+    case loading
+    case empty
+    case available
+
+    init(isLoading: Bool, tracks: [PlaybackTrack]) {
+        if isLoading {
+            self = .loading
+        } else if tracks.isEmpty {
+            self = .empty
+        } else {
+            self = .available
+        }
+    }
+}
+
 struct PlaybackTrack: Identifiable, Equatable, Sendable {
     let id: Int
     let title: String?

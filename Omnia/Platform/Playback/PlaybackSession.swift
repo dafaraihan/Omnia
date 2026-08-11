@@ -35,6 +35,7 @@ final class PlaybackSession {
     private(set) var playbackError: String?
     private(set) var audioTracks: [PlaybackTrack] = []
     private(set) var subtitleTracks: [PlaybackTrack] = []
+    private(set) var areTracksLoading = false
     var isPresentingPlayer = false
 
     @ObservationIgnored private var progressHandler: (@MainActor (Double, Double?) -> Void)?
@@ -65,10 +66,15 @@ final class PlaybackSession {
         lastPersistedPosition = 0
         audioTracks = []
         subtitleTracks = []
+        areTracksLoading = false
 
         #if os(macOS)
         let mpv = OMMpvPlayerController(url: source.url, requestHeaders: source.requestHeaders)
+        mpv.stateChangeHandler = { [weak self] snapshot in
+            self?.apply(snapshot)
+        }
         player = mpv
+        areTracksLoading = true
         let mediaPolicy = PlaybackMediaSelectionPolicy.resolve(
             preferences: preferences,
             isAnime: item.hasAnimeIdentity
@@ -194,6 +200,7 @@ final class PlaybackSession {
         mediaSelectionTask = nil
         #endif
         #if os(macOS)
+        player?.stateChangeHandler = nil
         player?.stop()
         #else
         player?.pause()
@@ -208,6 +215,7 @@ final class PlaybackSession {
         isPaused = false
         audioTracks = []
         subtitleTracks = []
+        areTracksLoading = false
         isPresentingPlayer = false
     }
 
@@ -330,8 +338,6 @@ final class PlaybackSession {
         isPaused = player.isPaused
         volume = min(max(player.volume / 100, 0), 1)
         playbackRate = player.playbackRate.isFinite && player.playbackRate > 0 ? player.playbackRate : 1
-        audioTracks = player.audioTracks.map(PlaybackTrack.init)
-        subtitleTracks = player.subtitleTracks.map(PlaybackTrack.init)
         #else
         guard let player else { return }
         positionSeconds = max(player.currentTime().seconds, 0)
@@ -341,6 +347,15 @@ final class PlaybackSession {
         #endif
         persistProgress(force: false)
     }
+
+    #if os(macOS)
+    private func apply(_ snapshot: OMMpvPlaybackSnapshot) {
+        playbackError = snapshot.errorMessage
+        audioTracks = snapshot.audioTracks.map(PlaybackTrack.init)
+        subtitleTracks = snapshot.subtitleTracks.map(PlaybackTrack.init)
+        areTracksLoading = snapshot.tracksLoading
+    }
+    #endif
 
     private func persistProgress(force: Bool) {
         guard positionSeconds > 0 else { return }

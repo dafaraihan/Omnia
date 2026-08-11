@@ -687,12 +687,22 @@ private struct PlaybackControlSurface: View {
                     } label: {
                         Label("Off", systemImage: playback.subtitleTracks.contains(where: \.isSelected) ? "circle" : "checkmark")
                     }
-                    if !playback.subtitleTracks.isEmpty { Divider() }
-                    ForEach(playback.subtitleTracks) { track in
-                        Button {
-                            playback.selectSubtitleTrack(track.id)
-                        } label: {
-                            Label(track.displayName, systemImage: track.isSelected ? "checkmark" : "circle")
+                    switch PlaybackTrackAvailability(
+                        isLoading: playback.areTracksLoading,
+                        tracks: playback.subtitleTracks
+                    ) {
+                    case .loading:
+                        ProgressView("Tracks still loading")
+                    case .empty:
+                        Text("No embedded subtitles")
+                    case .available:
+                        Divider()
+                        ForEach(playback.subtitleTracks) { track in
+                            Button {
+                                playback.selectSubtitleTrack(track.id)
+                            } label: {
+                                Label(track.displayName, systemImage: track.isSelected ? "checkmark" : "circle")
+                            }
                         }
                     }
                 } label: {
@@ -705,9 +715,15 @@ private struct PlaybackControlSurface: View {
                 .accessibilityLabel("Subtitles")
 
                 Menu {
-                    if playback.audioTracks.isEmpty {
-                        Text("No audio tracks available")
-                    } else {
+                    switch PlaybackTrackAvailability(
+                        isLoading: playback.areTracksLoading,
+                        tracks: playback.audioTracks
+                    ) {
+                    case .loading:
+                        ProgressView("Tracks still loading")
+                    case .empty:
+                        Text("No audio tracks")
+                    case .available:
                         ForEach(playback.audioTracks) { track in
                             Button {
                                 playback.selectAudioTrack(track.id)

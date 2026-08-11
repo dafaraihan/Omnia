@@ -2,6 +2,17 @@ import XCTest
 @testable import Omnia
 
 final class PlaybackTrackTests: XCTestCase {
+    func testTrackAvailabilityDistinguishesLoadingEmptyAndAvailable() {
+        XCTAssertEqual(PlaybackTrackAvailability(isLoading: true, tracks: []), .loading)
+        XCTAssertEqual(PlaybackTrackAvailability(isLoading: false, tracks: []), .empty)
+        XCTAssertEqual(
+            PlaybackTrackAvailability(isLoading: false, tracks: [
+                PlaybackTrack(id: 1, title: nil, language: nil, codec: "aac", isSelected: true)
+            ]),
+            .available
+        )
+    }
+
     func testTrackDisplayNamePrefersTitleAndKeepsLanguageVisible() {
         let track = PlaybackTrack(
             id: 3,
