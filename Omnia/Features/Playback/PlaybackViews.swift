@@ -40,9 +40,9 @@ struct PlaybackSourceSheet: View {
                         sourceFilters
                         Divider()
                         List {
-                            if !playableCandidates.isEmpty {
+                            if !sourceSections.direct.isEmpty {
                                 Section {
-                                    ForEach(playableCandidates) { candidate in
+                                    ForEach(sourceSections.direct) { candidate in
                                         playbackButton(candidate)
                                     }
                                 } header: {
@@ -52,9 +52,9 @@ struct PlaybackSourceSheet: View {
                                 }
                             }
 
-                            if !resolverCandidates.isEmpty {
+                            if !sourceSections.resolverRequired.isEmpty {
                                 Section {
-                                    ForEach(resolverCandidates) { candidate in
+                                    ForEach(sourceSections.resolverRequired) { candidate in
                                         resolverRequiredRow(candidate)
                                     }
                                 } header: {
@@ -64,9 +64,21 @@ struct PlaybackSourceSheet: View {
                                 }
                             }
 
-                            if !unsupportedCandidates.isEmpty {
+                            if !sourceSections.external.isEmpty {
                                 Section {
-                                    ForEach(unsupportedCandidates) { candidate in
+                                    ForEach(sourceSections.external) { candidate in
+                                        unavailableRow(candidate)
+                                    }
+                                } header: {
+                                    Text("External Pages")
+                                } footer: {
+                                    Text("These add-on results are webpages, not media streams. Omnia shows them for completeness but does not open or resolve them locally.")
+                                }
+                            }
+
+                            if !sourceSections.unavailable.isEmpty {
+                                Section {
+                                    ForEach(sourceSections.unavailable) { candidate in
                                         unavailableRow(candidate)
                                     }
                                 } header: {
@@ -101,7 +113,7 @@ struct PlaybackSourceSheet: View {
                     addons: store.installedAddons
                 )
                 resolution = result
-                candidates = result.candidates.filter(isVisibleCandidate)
+                candidates = result.candidates
                 isResolving = false
                 startAutomaticallyIfAllowed()
             }
@@ -125,26 +137,8 @@ struct PlaybackSourceSheet: View {
         return "Enable a trusted add-on that supplies a stream for this title."
     }
 
-    private var playableCandidates: [AddonStreamCandidate] {
-        filteredCandidates.filter { $0.nativePlaybackSource != nil }
-    }
-
-    private var incompatibleFormatCandidates: [AddonStreamCandidate] {
-        []
-    }
-
-    private var resolverCandidates: [AddonStreamCandidate] {
-        filteredCandidates.filter {
-            if case .resolverRequired = $0.delivery { return true }
-            return false
-        }
-    }
-
-    private var unsupportedCandidates: [AddonStreamCandidate] {
-        filteredCandidates.filter {
-            if case .unsupported = $0.delivery { return true }
-            return false
-        }
+    private var sourceSections: PlaybackSourceSections {
+        PlaybackSourceSections(candidates: filteredCandidates)
     }
 
     private var enabledStreamAddons: [InstalledAddon] {
@@ -245,7 +239,20 @@ struct PlaybackSourceSheet: View {
     }
 
     private func unavailableRow(_ candidate: AddonStreamCandidate) -> some View {
-        candidateRow(candidate, symbol: "exclamationmark.triangle", tint: .secondary)
+        let reason: String
+        switch PlaybackSourceRowState(candidate: candidate).action {
+        case let .unavailable(message):
+            reason = message
+        case .playDirect, .resolve:
+            reason = "Unavailable"
+        }
+
+        return candidateRow(
+            candidate,
+            symbol: "exclamationmark.triangle",
+            tint: .secondary,
+            status: reason
+        )
             .accessibilityElement(children: .combine)
     }
 
@@ -389,16 +396,6 @@ struct PlaybackSourceSheet: View {
             return MediaPlaybackKey(rawValue: "\(item.id):\(episode.seasonNumber):\(episode.episodeNumber)")
         }
         return MediaPlaybackKey(rawValue: item.id)
-    }
-
-    private func isVisibleCandidate(_ candidate: AddonStreamCandidate) -> Bool {
-        guard candidate.isOmniaPlaybackEligible else { return false }
-        if case .resolverRequired = candidate.delivery { return true }
-        return PlaybackPolicy.isEligible(
-            candidate,
-            adapter: adapter,
-            compatibleOnly: settings.preferences.compatibleFormatsOnly
-        )
     }
 
     private func startAutomaticallyIfAllowed() {

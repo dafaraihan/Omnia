@@ -41,3 +41,26 @@ struct PlaybackSourceSections: Equatable, Sendable {
         ordered
     }
 }
+
+struct PlaybackSourceRowState: Equatable, Sendable {
+    enum Action: Equatable, Sendable {
+        case playDirect
+        case resolve
+        case unavailable(String)
+    }
+
+    let action: Action
+
+    init(candidate: AddonStreamCandidate) {
+        switch candidate.delivery {
+        case .nativeHTTPS:
+            action = .playDirect
+        case .resolverRequired:
+            action = .resolve
+        case .externalHandoff:
+            action = .unavailable("External page—not locally resolved")
+        case .unsupported:
+            action = .unavailable("Malformed or unsupported source")
+        }
+    }
+}
