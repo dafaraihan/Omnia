@@ -34,6 +34,13 @@ struct MediaItem: Identifiable, Hashable, Sendable {
     var progress: Double?
     var positionSeconds: Double?
     var durationSeconds: Double?
+    /// Series playback is resumed at an episode, not merely at a title. These
+    /// fields let Continue Watching use that episode's landscape still while
+    /// remaining backward compatible with existing saved movie entries.
+    var resumeEpisodeID: String?
+    var resumeSeasonNumber: Int?
+    var resumeEpisodeNumber: Int?
+    var resumeEpisodeStillURL: URL?
 
     init(
         id: String,
@@ -54,7 +61,11 @@ struct MediaItem: Identifiable, Hashable, Sendable {
         details: MediaTitleDetails? = nil,
         progress: Double?,
         positionSeconds: Double? = nil,
-        durationSeconds: Double? = nil
+        durationSeconds: Double? = nil,
+        resumeEpisodeID: String? = nil,
+        resumeSeasonNumber: Int? = nil,
+        resumeEpisodeNumber: Int? = nil,
+        resumeEpisodeStillURL: URL? = nil
     ) {
         self.id = id
         self.title = title
@@ -75,6 +86,10 @@ struct MediaItem: Identifiable, Hashable, Sendable {
         self.progress = progress
         self.positionSeconds = positionSeconds
         self.durationSeconds = durationSeconds
+        self.resumeEpisodeID = resumeEpisodeID
+        self.resumeSeasonNumber = resumeSeasonNumber
+        self.resumeEpisodeNumber = resumeEpisodeNumber
+        self.resumeEpisodeStillURL = resumeEpisodeStillURL
     }
 
     var progressText: String? {
@@ -165,71 +180,6 @@ struct MediaTitleDetails: Hashable, Sendable {
     let seasons: [MediaSeason]
     let trailers: [MediaVideo]
     let bonusContent: [MediaVideo]
-}
-
-/// The durable, local representation of a library title. Artwork colors are
-/// derived from media kind on restore so no SwiftUI types are written to disk.
-struct SavedMediaItem: Codable {
-    let id: String
-    let title: String
-    let year: String
-    let kind: MediaItem.Kind
-    let overview: String
-    let genres: [String]
-    let symbol: String
-    let artworkURL: URL?
-    let backdropURL: URL?
-    let logoURL: URL?
-    let metadataProvider: MetadataProviderIdentifier?
-    let metadataProviderID: String?
-    let metadataRecordID: UUID?
-    let externalIDs: [String: String]?
-    let progress: Double?
-    let positionSeconds: Double?
-    let durationSeconds: Double?
-
-    init(_ item: MediaItem) {
-        id = item.id
-        title = item.title
-        year = item.year
-        kind = item.kind
-        overview = item.overview
-        genres = item.genres
-        symbol = item.symbol
-        artworkURL = item.artworkURL
-        backdropURL = item.backdropURL
-        logoURL = item.logoURL
-        metadataProvider = item.metadataProvider
-        metadataProviderID = item.metadataProviderID
-        metadataRecordID = item.metadataRecordID
-        externalIDs = item.externalIDs
-        progress = item.progress
-        positionSeconds = item.positionSeconds
-        durationSeconds = item.durationSeconds
-    }
-
-    var mediaItem: MediaItem {
-        MediaItem(
-            id: id,
-            title: title,
-            year: year,
-            kind: kind,
-            overview: overview,
-            genres: genres,
-            symbol: symbol,
-            artworkColors: kind == .series ? [.cyan, .indigo] : [.indigo, .black],
-            artworkURL: artworkURL,
-            backdropURL: backdropURL,
-            logoURL: logoURL,
-            metadataProvider: metadataProvider,
-            metadataProviderID: metadataProviderID,
-            metadataRecordID: metadataRecordID,
-            externalIDs: externalIDs ?? [:],
-            progress: progress,
-            positionSeconds: positionSeconds,
-            durationSeconds: durationSeconds
-        )
-    }
 }
 
 extension MediaItem {
