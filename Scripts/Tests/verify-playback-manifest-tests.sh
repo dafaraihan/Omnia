@@ -9,7 +9,11 @@ manifest="$repo_root/NativeDependencies/playback-dependencies.json"
 jq -e '
   .components
   | map(.name)
-  | contains(["mpv", "ffmpeg", "libtorrent", "boost", "libbluray"])
+  | contains([
+      "mpv", "ffmpeg", "libtorrent", "boost", "libbluray",
+      "libplacebo", "libass", "freetype", "fribidi", "harfbuzz",
+      "openssl", "libudfread"
+    ])
 ' "$manifest" >/dev/null
 
 if "$verifier" "$manifest" >/dev/null 2>&1; then

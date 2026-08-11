@@ -81,6 +81,109 @@
         "signature_url": "https://download.videolan.org/pub/videolan/libbluray/1.5.0/libbluray-1.5.0.tar.xz.asc",
         "publisher_evidence": "The locally reproduced SHA-256 matches VideoLAN's published checksum; the detached signature and second-person review remain pending."
       }
+    },
+    {
+      "name": "libplacebo",
+      "version": "7.360.1",
+      "top_level": false,
+      "source_url": "https://github.com/haasn/libplacebo/archive/refs/tags/v7.360.1.tar.gz",
+      "sha256": "d05fdf90bea2f629eaa2d115e909fd356388ac639e54f77b87a018a6d76224bd",
+      "license": "LGPL-2.1-or-later",
+      "license_url": "https://github.com/haasn/libplacebo/blob/v7.360.1/LICENSE",
+      "build_system": "meson",
+      "verification": {
+        "status": "pending-independent-review",
+        "publisher_evidence": "The archive is generated from the official v7.360.1 mirror tag; its digest was reproduced locally, but no separately published signature or checksum was found."
+      }
+    },
+    {
+      "name": "libass",
+      "version": "0.17.5",
+      "top_level": false,
+      "source_url": "https://github.com/libass/libass/releases/download/0.17.5/libass-0.17.5.tar.xz",
+      "sha256": "2dca25c0e0c837ddf00b52011b3f82cac1e4ddd3ad018227806b0c2288864acc",
+      "license": "ISC",
+      "license_url": "https://github.com/libass/libass/blob/0.17.5/COPYING",
+      "build_system": "meson",
+      "verification": {
+        "status": "publisher-digest-recorded-signature-pending",
+        "signature_url": "https://github.com/libass/libass/releases/download/0.17.5/libass-0.17.5.tar.xz.asc",
+        "publisher_evidence": "The SHA-256 is published with the official GitHub release asset metadata; detached-signature validation, a local rebuild, and second-person review remain pending."
+      }
+    },
+    {
+      "name": "freetype",
+      "version": "2.14.1",
+      "top_level": false,
+      "source_url": "https://download.savannah.gnu.org/releases/freetype/freetype-2.14.1.tar.xz",
+      "sha256": "32427e8c471ac095853212a37aef816c60b42052d4d9e48230bab3bdf2936ccc",
+      "license": "FTL",
+      "license_url": "https://gitlab.freedesktop.org/freetype/freetype/-/blob/VER-2-14-1/docs/FTL.TXT",
+      "build_system": "meson",
+      "verification": {
+        "status": "pending-independent-review",
+        "publisher_evidence": "The archive was downloaded from the FreeType project's Savannah release directory and its digest was reproduced locally; independent publisher-signature review remains pending."
+      }
+    },
+    {
+      "name": "fribidi",
+      "version": "1.0.16",
+      "top_level": false,
+      "source_url": "https://github.com/fribidi/fribidi/releases/download/v1.0.16/fribidi-1.0.16.tar.xz",
+      "sha256": "1b1cde5b235d40479e91be2f0e88a309e3214c8ab470ec8a2744d82a5a9ea05c",
+      "license": "LGPL-2.1-or-later",
+      "license_url": "https://github.com/fribidi/fribidi/blob/v1.0.16/COPYING",
+      "build_system": "meson",
+      "verification": {
+        "status": "pending-independent-review",
+        "publisher_evidence": "The v1.0.16 tag is marked verified with key A7B3409C0CA4ED14 and the release-asset digest was reproduced locally; independent review remains pending."
+      }
+    },
+    {
+      "name": "harfbuzz",
+      "version": "14.3.0",
+      "top_level": false,
+      "source_url": "https://github.com/harfbuzz/harfbuzz/releases/download/14.3.0/harfbuzz-14.3.0.tar.xz",
+      "sha256": "16070d77cfc4ba1f1e7327e83bf9b3f55898081cabdb94e56a33e04fc8874eae",
+      "license": "MIT",
+      "license_url": "https://github.com/harfbuzz/harfbuzz/blob/14.3.0/COPYING",
+      "build_system": "meson",
+      "verification": {
+        "status": "publisher-digest-recorded",
+        "publisher_evidence": "The SHA-256 is published with the official GitHub release asset metadata; local reproduction and second-person review remain pending."
+      }
+    },
+    {
+      "name": "openssl",
+      "version": "3.5.7",
+      "top_level": false,
+      "source_url": "https://github.com/openssl/openssl/releases/download/openssl-3.5.7/openssl-3.5.7.tar.gz",
+      "sha256": "a8c0d28a529ca480f9f36cf5792e2cd21984552a3c8e4aa11a24aa31aeac98e8",
+      "license": "Apache-2.0",
+      "license_url": "https://github.com/openssl/openssl/blob/openssl-3.5.7/LICENSE.txt",
+      "build_system": "configure",
+      "verification": {
+        "status": "publisher-digest-recorded-signature-pending",
+        "checksum_url": "https://github.com/openssl/openssl/releases/download/openssl-3.5.7/openssl-3.5.7.tar.gz.sha256",
+        "signature_url": "https://github.com/openssl/openssl/releases/download/openssl-3.5.7/openssl-3.5.7.tar.gz.asc",
+        "publisher_evidence": "OpenSSL 3.5.7 is the supported 3.5 LTS security release; its official release metadata publishes this SHA-256, while detached-signature and second-person review remain pending."
+      }
+    },
+    {
+      "name": "libudfread",
+      "version": "1.2.0",
+      "top_level": false,
+      "source_url": "https://download.videolan.org/pub/videolan/libbluray/1.5.0/libbluray-1.5.0.tar.xz",
+      "sha256": "f676408e91a5d321abf8b8d4dfdae36205c297dab5c54c3ec519639025f474a2",
+      "license": "LGPL-2.1-or-later",
+      "license_url": "https://code.videolan.org/videolan/libbluray/-/blob/1.5.0/contrib/libudfread/COPYING",
+      "build_system": "meson-subproject",
+      "verification": {
+        "status": "publisher-checksum-matched-signature-pending",
+        "checksum_url": "https://download.videolan.org/pub/videolan/libbluray/1.5.0/libbluray-1.5.0.tar.xz.sha256",
+        "signature_url": "https://download.videolan.org/pub/videolan/libbluray/1.5.0/libbluray-1.5.0.tar.xz.asc",
+        "publisher_evidence": "libudfread is embedded in the checksummed libbluray 1.5.0 source archive and built into libbluray rather than shipped as a separate dylib; signature and independent review remain pending."
+      }
     }
   ]
 }
