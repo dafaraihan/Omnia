@@ -107,26 +107,63 @@ nonisolated struct MDBListRatingProviderDescriptor: Identifiable, Hashable, Send
     let displayName: String
     let order: Int?
     let valueFormat: MDBListRatingValueFormat
-    let approvedAssetName: String?
+    let defaultAssetName: String?
+    let negativeAssetName: String?
+    let negativeBelow: Double?
+
+    var approvedAssetName: String? { defaultAssetName }
 }
 
 nonisolated enum MDBListRatingProviderRegistry {
     static let knownDescriptors: [MDBListRatingProviderDescriptor] = [
-        descriptor(.imdb, "IMDb", order: 0),
-        descriptor(.tmdb, "TMDB", order: 1),
-        descriptor(.rottenTomatoes, "Rotten Tomatoes", order: 2, format: .percentage),
-        descriptor(.metacritic, "Metacritic", order: 3),
-        descriptor(.trakt, "Trakt", order: 4),
-        descriptor(.letterboxd, "Letterboxd", order: 5),
+        descriptor(.imdb, "IMDb", order: 0, assetName: "RatingIMDbMark"),
+        descriptor(.tmdb, "TMDB", order: 1, assetName: "RatingTMDBMark"),
+        descriptor(
+            .rottenTomatoes,
+            "Rotten Tomatoes",
+            order: 2,
+            format: .percentage,
+            assetName: "RatingRottenTomatoesFreshMark",
+            negativeAssetName: "RatingRottenTomatoesRottenMark",
+            negativeBelow: 60
+        ),
+        descriptor(
+            .metacritic,
+            "Metacritic",
+            order: 3,
+            assetName: "RatingMetacriticMark"
+        ),
+        descriptor(.trakt, "Trakt", order: 4, assetName: "RatingTraktMark"),
+        descriptor(
+            .letterboxd,
+            "Letterboxd",
+            order: 5,
+            assetName: "RatingLetterboxdMark"
+        ),
         descriptor(
             .rottenTomatoesAudience,
             "Rotten Tomatoes Audience",
             order: 6,
-            format: .percentage
+            format: .percentage,
+            assetName: "RatingRottenTomatoesAudienceHotMark",
+            negativeAssetName: "RatingRottenTomatoesAudienceStaleMark",
+            negativeBelow: 60
         ),
-        descriptor(.myAnimeList, "MyAnimeList", order: 7),
-        descriptor(.rogerEbert, "Roger Ebert", order: 8)
+        descriptor(
+            .myAnimeList,
+            "MyAnimeList",
+            order: 7,
+            assetName: "RatingMyAnimeListMark"
+        ),
+        descriptor(
+            .rogerEbert,
+            "Roger Ebert",
+            order: 8,
+            assetName: "RatingRogerEbertMark"
+        ),
     ]
+
+    static let aggregateAssetName = "RatingMDBListMark"
 
     static func descriptor(for id: MDBListRatingProviderID) -> MDBListRatingProviderDescriptor {
         knownByID[id] ?? MDBListRatingProviderDescriptor(
@@ -134,7 +171,9 @@ nonisolated enum MDBListRatingProviderRegistry {
             displayName: fallbackDisplayName(for: id),
             order: nil,
             valueFormat: .number,
-            approvedAssetName: nil
+            defaultAssetName: nil,
+            negativeAssetName: nil,
+            negativeBelow: nil
         )
     }
 
@@ -185,6 +224,20 @@ nonisolated enum MDBListRatingProviderRegistry {
         formattedNumber(value)
     }
 
+    static func assetName(
+        for id: MDBListRatingProviderID,
+        value: Double
+    ) -> String? {
+        guard validatedValue(value) != nil else { return nil }
+        let descriptor = descriptor(for: id)
+        if let threshold = descriptor.negativeBelow,
+           value < threshold,
+           let negativeAssetName = descriptor.negativeAssetName {
+            return negativeAssetName
+        }
+        return descriptor.defaultAssetName
+    }
+
     static func validatedValue(_ value: Double) -> Double? {
         guard value.isFinite, (0...100).contains(value) else { return nil }
         return value
@@ -198,14 +251,19 @@ nonisolated enum MDBListRatingProviderRegistry {
         _ id: MDBListRatingProviderID,
         _ displayName: String,
         order: Int,
-        format: MDBListRatingValueFormat = .number
+        format: MDBListRatingValueFormat = .number,
+        assetName: String? = nil,
+        negativeAssetName: String? = nil,
+        negativeBelow: Double? = nil
     ) -> MDBListRatingProviderDescriptor {
         MDBListRatingProviderDescriptor(
             id: id,
             displayName: displayName,
             order: order,
             valueFormat: format,
-            approvedAssetName: nil
+            defaultAssetName: assetName,
+            negativeAssetName: negativeAssetName,
+            negativeBelow: negativeBelow
         )
     }
 
@@ -226,5 +284,78 @@ nonisolated enum MDBListRatingProviderRegistry {
             return String(Int(rounded))
         }
         return String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), rounded)
+    }
+}
+
+nonisolated struct MDBListRatingProviderProvenanceRecord: Hashable, Sendable {
+    let canonicalSourceID: String
+    let displayName: String
+    let officialURL: URL
+    let aboutResourceID: String
+    let approvedAssetName: String?
+}
+
+nonisolated enum MDBListRatingProviderProvenance {
+    static let records: [MDBListRatingProviderProvenanceRecord] = [
+        record("imdb", "IMDb", "https://developer.imdb.com", "rating-imdb"),
+        record(
+            "tmdb",
+            "TMDB",
+            "https://developer.themoviedb.org/docs/faq",
+            "tmdb",
+            assetName: "RatingTMDBMark"
+        ),
+        record(
+            "tomatoes",
+            "Rotten Tomatoes",
+            "https://www.rottentomatoes.com/help_desk/licensing",
+            "rating-rotten-tomatoes"
+        ),
+        record(
+            "metacritic",
+            "Metacritic",
+            "https://business.tivo.com/misc/metacriticusageguidelines.pdf",
+            "rating-metacritic"
+        ),
+        record("trakt", "Trakt", "https://media-og.trakt.tv/branding", "rating-trakt"),
+        record(
+            "letterboxd",
+            "Letterboxd",
+            "https://letterboxd.com/about/brand/",
+            "rating-letterboxd"
+        ),
+        record(
+            "popcorn",
+            "Rotten Tomatoes Audience",
+            "https://www.rottentomatoes.com/help_desk/licensing",
+            "rating-rotten-tomatoes"
+        ),
+        record("myanimelist", "MyAnimeList", "https://myanimelist.net", "rating-myanimelist"),
+        record(
+            "rogerebert",
+            "Roger Ebert",
+            "https://www.rogerebert.com/terms-of-use",
+            "rating-roger-ebert"
+        ),
+        record("mdblist", "MDBList", "https://docs.mdblist.com/docs/api", "mdblist")
+    ]
+
+    private static func record(
+        _ canonicalSourceID: String,
+        _ displayName: String,
+        _ officialURL: String,
+        _ aboutResourceID: String,
+        assetName: String? = nil
+    ) -> MDBListRatingProviderProvenanceRecord {
+        guard let url = URL(string: officialURL), url.scheme == "https" else {
+            preconditionFailure("Invalid provider provenance URL")
+        }
+        return MDBListRatingProviderProvenanceRecord(
+            canonicalSourceID: canonicalSourceID,
+            displayName: displayName,
+            officialURL: url,
+            aboutResourceID: aboutResourceID,
+            approvedAssetName: assetName
+        )
     }
 }

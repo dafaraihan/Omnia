@@ -76,6 +76,47 @@ final class MDBListRatingProviderTests: XCTestCase {
         XCTAssertNil(MDBListRatingProviderRegistry.formattedAggregate(.nan))
     }
 
+    func testEveryKnownProviderHasDefaultArtworkAndUnknownProviderDoesNot() throws {
+        XCTAssertTrue(
+            MDBListRatingProviderRegistry.knownDescriptors.allSatisfy {
+                $0.defaultAssetName != nil
+            }
+        )
+        let unknown = try XCTUnwrap(MDBListRatingProviderID("future_source"))
+        XCTAssertNil(MDBListRatingProviderRegistry.descriptor(for: unknown).defaultAssetName)
+        XCTAssertEqual(MDBListRatingProviderRegistry.aggregateAssetName, "RatingMDBListMark")
+    }
+
+    func testRottenTomatoesArtworkChangesAtSixtyPercentBoundary() {
+        XCTAssertEqual(
+            MDBListRatingProviderRegistry.assetName(for: .rottenTomatoes, value: 59.9),
+            "RatingRottenTomatoesRottenMark"
+        )
+        XCTAssertEqual(
+            MDBListRatingProviderRegistry.assetName(for: .rottenTomatoes, value: 60),
+            "RatingRottenTomatoesFreshMark"
+        )
+        XCTAssertEqual(
+            MDBListRatingProviderRegistry.assetName(
+                for: .rottenTomatoesAudience,
+                value: 59.9
+            ),
+            "RatingRottenTomatoesAudienceStaleMark"
+        )
+        XCTAssertEqual(
+            MDBListRatingProviderRegistry.assetName(
+                for: .rottenTomatoesAudience,
+                value: 60
+            ),
+            "RatingRottenTomatoesAudienceHotMark"
+        )
+    }
+
+    func testInvalidValuesCannotSelectArtwork() {
+        XCTAssertNil(MDBListRatingProviderRegistry.assetName(for: .imdb, value: -1))
+        XCTAssertNil(MDBListRatingProviderRegistry.assetName(for: .imdb, value: .infinity))
+    }
+
     func testCodableProviderIDUsesCanonicalSingleStringRepresentation() throws {
         let encoded = try JSONEncoder().encode(MDBListRatingProviderID("IMDb"))
         XCTAssertEqual(String(decoding: encoded, as: UTF8.self), "\"imdb\"")
