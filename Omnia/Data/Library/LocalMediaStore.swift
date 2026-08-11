@@ -6,6 +6,7 @@ enum LocalMediaStoreError: Error, Equatable {
     case invalidCompletionThreshold
     case corruptStoredMedia
     case verificationFailed
+    case confirmationRequired
 }
 
 protocol LocalMediaStoring: Sendable {
@@ -124,6 +125,56 @@ actor LocalMediaStore: LocalMediaStoring {
         try saveOrRollback()
     }
 
+    func exportDocument(at date: Date = .now) throws -> LocalMediaBackupDocument {
+        try LocalMediaBackupDocument(snapshots: snapshot(), exportedAt: date)
+    }
+
+    func reviewImport(_ data: Data) throws -> LocalMediaImportReview {
+        let document = try LocalMediaBackupDocument.decode(data)
+        let existing = Set(try records().map(\.mediaID))
+        return LocalMediaImportReview(
+            document: document,
+            conflictingMediaIDs: document.records.map(\.media.id).filter(existing.contains).sorted(),
+            confirmation: LocalMediaConfirmation(rawValue: UUID())
+        )
+    }
+
+    func applyImport(_ review: LocalMediaImportReview, mode: LocalMediaImportMode) throws {
+        switch mode {
+        case .merge:
+            break
+        case let .replace(confirmation):
+            guard confirmation == review.confirmation else {
+                throw LocalMediaStoreError.confirmationRequired
+            }
+            try records().forEach(modelContext.delete)
+        }
+
+        for backup in review.document.records {
+            try apply(backup)
+        }
+        try saveOrRollback()
+    }
+
+    func confirmation(for action: LocalMediaDestructiveAction) -> LocalMediaDestructiveConfirmation {
+        LocalMediaDestructiveConfirmation(action: action, rawValue: UUID())
+    }
+
+    func perform(
+        _ action: LocalMediaDestructiveAction,
+        confirmation: LocalMediaDestructiveConfirmation
+    ) throws {
+        guard confirmation.action == action else {
+            throw LocalMediaStoreError.confirmationRequired
+        }
+        switch action {
+        case .clearProgress:
+            try clearProgress()
+        case .clearWatchlist:
+            try clearWatchlist()
+        }
+    }
+
     func importLegacy(_ items: [SavedMediaItem], startingAt date: Date = .distantPast) throws {
         let identifiers = items.map(\.id)
         guard Set(identifiers).count == identifiers.count else {
@@ -151,6 +202,33 @@ actor LocalMediaStore: LocalMediaStoring {
 
     private func records() throws -> [LocalMediaRecord] {
         try modelContext.fetch(FetchDescriptor<LocalMediaRecord>())
+    }
+
+    private func apply(_ backup: LocalMediaBackupRecord) throws {
+        let snapshot = backup.snapshot
+        let existing = try record(id: snapshot.mediaID)
+        let record = try existing ?? makeRecord(for: snapshot.item)
+        record.mediaData = try encodedBaseItem(snapshot.item)
+        record.isInWatchlist = snapshot.isInWatchlist
+        record.savedAt = snapshot.savedAt
+        record.lastPlayedAt = snapshot.lastPlayedAt
+        record.progress = snapshot.item.progress
+        record.positionSeconds = snapshot.item.positionSeconds
+        record.durationSeconds = snapshot.item.durationSeconds
+        record.resumeEpisodeID = snapshot.item.resumeEpisodeID
+        record.resumeSeasonNumber = snapshot.item.resumeSeasonNumber
+        record.resumeEpisodeNumber = snapshot.item.resumeEpisodeNumber
+        record.resumeEpisodeStillURL = snapshot.item.resumeEpisodeStillURL
+        if existing == nil { modelContext.insert(record) }
+    }
+
+    private func clearWatchlist() throws {
+        for record in try records() {
+            record.isInWatchlist = false
+            record.savedAt = nil
+            if record.progress == nil { modelContext.delete(record) }
+        }
+        try saveOrRollback()
     }
 
     private func record(id: String) throws -> LocalMediaRecord? {
