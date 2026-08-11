@@ -25,7 +25,7 @@ This approved design replaces the earlier phase ordering for this request. The e
 - In-app playback through AVPlayer on iPhone/iPad and libmpv on Mac.
 - Skip Intro presentation and optional automatic skipping.
 - Next-episode autoplay and configurable Up Next presentation timing.
-- Remembered source selection with bounded retention, optional autoplay of a safe compatible source, direct Continue Watching behavior, compatible-format filtering, and preview preferences.
+- Remembered source selection with bounded retention, optional autoplay of a safe compatible source, direct Continue Watching behavior, and compatible-format filtering.
 - Preferred and fallback audio/subtitle languages, SDH preference, and anime sub/dub preference.
 - Subtitle appearance preview, system-default behavior, presets, validated custom styling, and reset.
 
@@ -38,6 +38,7 @@ This approved design replaces the earlier phase ordering for this request. The e
 - Per-media-type external player selection.
 - Subtitle translation.
 - User-selectable cache implementation modes.
+- Home preview autoplay and preview sound, because Omnia has no authenticated direct-preview media contract and must not treat ordinary content streams as trailers.
 - Remote progress or Watchlist synchronization, including Omnia-account sync.
 - Hosted mutations, Supabase deployment, migrations, or secret changes.
 
@@ -49,7 +50,7 @@ Manual cache selection is excluded because it exposes an implementation detail t
 
 Own small local preferences: toggles, limits, language identifiers, subtitle style, request timeouts, remembered-source duration, and playback behavior. Values use typed enums and bounded numeric ranges rather than raw strings throughout the UI. `UserDefaults` remains appropriate for these small preferences.
 
-Preference dependency rules are centralized. Examples include auto-skip requiring Skip Intro, preview sound requiring autoplay previews, and custom subtitle controls requiring an Omnia custom style rather than Follow System.
+Preference dependency rules are centralized. Examples include auto-skip requiring Skip Intro and custom subtitle controls requiring an Omnia custom style rather than Follow System.
 
 ### Defaults and bounds
 
@@ -72,8 +73,6 @@ Defaults preserve current behavior where Omnia already has one and avoid enablin
 | Autoplay first compatible source | Off | On or Off |
 | Direct Continue Watching playback | Off | On or Off |
 | Compatible formats only | On | On or Off |
-| Autoplay Home previews | Off | On or Off; forced off while Reduce Motion is active |
-| Preview sound | Off | On or Off; available only while preview autoplay is on |
 | Preferred audio | Follow System | A supported `Locale.Language` identifier or Follow System |
 | Audio fallback | None | A different supported language or None |
 | Preferred subtitles | Follow System | A supported `Locale.Language` identifier or Follow System |
@@ -108,7 +107,7 @@ Import/export uses a versioned Omnia document containing normalized manifest ref
 
 ### `PlaybackPolicy`
 
-Translate preferences into one platform-neutral playback policy used by both player adapters. The policy covers resume, source compatibility, remembered-source eligibility, autoplay, Up Next timing, intro behavior, preview behavior, language selection, and subtitle appearance capability.
+Translate preferences into one platform-neutral playback policy used by both player adapters. The policy covers resume, source compatibility, remembered-source eligibility, autoplay, Up Next timing, intro behavior, language selection, and subtitle appearance capability.
 
 Player adapters report their supported capabilities. Settings and playback omit behavior the active adapter cannot honor instead of pretending all formats and engines behave identically.
 
@@ -188,13 +187,12 @@ When no items qualify, the setting remains available and Home omits or explains 
 - Optionally autoplay the first safe compatible source.
 - Optionally start Continue Watching directly instead of opening Detail.
 - Filter source results to compatible formats.
-- Autoplay Home previews and optionally play preview sound.
 - Choose preferred and fallback audio languages.
 - Choose preferred and fallback subtitle languages.
 - Prefer SDH where available.
 - Choose anime sub/dub preference.
 
-External-player destination, per-media-type players, subtitle translation, and manual cache mode are absent.
+External-player destination, per-media-type players, subtitle translation, Home preview autoplay, preview sound, and manual cache mode are absent.
 
 ### Subtitle Appearance
 
@@ -289,7 +287,7 @@ Decode into bounded temporary values, validate schema and every entry, classify 
 - Dynamic Type and larger Mac text settings do not clip critical state or make controls unreachable.
 - Full Keyboard Access and visible focus cover every setting, reordering alternative, confirmation, and file flow.
 - Pointer and context-menu actions have visible or keyboard-accessible alternatives.
-- Reduce Motion removes nonessential preview or transition motion; Reduce Transparency and Increase Contrast preserve hierarchy.
+- Reduce Motion removes nonessential transition motion; Reduce Transparency and Increase Contrast preserve hierarchy.
 - Light/dark appearance and color-independent status are verified.
 - Subtitle presets are evaluated on light and dark representative frames, and Follow System remains the default.
 - Async updates never steal focus; destructive confirmations return focus predictably.
@@ -309,7 +307,7 @@ Implementation follows test-driven development. Automated coverage includes:
 - bounded SRT/WebVTT parsing and subtitle-style normalization;
 - Upcoming filtering, ordering, limits, empty state, cached partial failure, and retry;
 - destructive-action presentation state and feature dependency behavior;
-- absence of excluded providers, external-player controls, translation, and manual cache controls.
+- absence of excluded providers, external-player controls, translation, Home preview controls, and manual cache controls.
 
 Tests use deterministic fixtures and injected transports only. They do not call live add-ons, IntroDB, metadata providers, Supabase, or hosted services.
 
@@ -337,7 +335,7 @@ The overhaul is complete only when:
 3. The local data migration is verified and recoverable.
 4. Add-on and local-data import/export are versioned, bounded, reviewed, and credential-free.
 5. IntroDB lookup is read-only, bounded, cancellable, cached, privacy-minimal, and playback-safe on failure.
-6. Playback, language selection, skip, Up Next, previews, Upcoming, and subtitle appearance satisfy their automated and platform-specific checks.
+6. Playback, language selection, skip, Up Next, Upcoming, and subtitle appearance satisfy their automated and platform-specific checks.
 7. Every applicable UI state and accessibility requirement passes or is reported with exact remaining device evidence.
 8. Supported builds/tests pass, `git diff --check` passes, and the final diff contains no unrelated cleanup or hosted mutation.
 
@@ -357,6 +355,8 @@ The overhaul is complete only when:
 - Apple, [SwiftUI file import and export](https://developer.apple.com/documentation/swiftui/view-file-presentation)
 - IntroDB, [API documentation](https://introdb.app/docs/api)
 - IntroDB, [Terms and policy](https://introdb.app/docs/terms)
+- Stremio, [add-on protocol](https://github.com/Stremio/stremio-addon-sdk/blob/master/docs/protocol.md)
+- Stremio, [stream response contract](https://github.com/Stremio/stremio-addon-sdk/blob/master/docs/api/responses/stream.md)
 - Omnia, [`DESIGN.md`](../../../DESIGN.md)
 - Omnia, [`SECURITY.md`](../../../SECURITY.md)
 - Omnia, [`PERFORMANCE.md`](../../../PERFORMANCE.md)
