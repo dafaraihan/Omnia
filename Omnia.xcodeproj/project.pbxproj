@@ -30,6 +30,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				"Platform/Playback/embed-libmpv.sh",
+				"Platform/Playback/stage-native-playback.sh",
 			);
 			target = 9D577E403018EA5D0066A3C3 /* Omnia */;
 		};
