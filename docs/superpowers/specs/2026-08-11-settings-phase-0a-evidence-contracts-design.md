@@ -87,7 +87,7 @@ Redirect targets are validated before following them. Authorization and add-on-s
 
 ### Local-Network Add-ons
 
-Loopback, link-local, and private-network destinations are denied by default. A user may grant one installed add-on access to exact, normalized private HTTPS hosts. Approval requires a native disclosure and Apple Local Network permission where applicable. Wildcards and subnet grants are not supported. DNS results and every redirect are revalidated to prevent public-to-private rebinding. Revocation is visible and immediate.
+Loopback, link-local, and private-network destinations are denied by default. A user may grant one installed add-on access to exact, normalized private HTTPS hosts. Approval requires a native disclosure and Apple Local Network permission where applicable. Wildcards and subnet grants are not supported. DNS results are checked immediately before each request and every redirect; a public hostname resolving to any private address is rejected unless that exact host is granted. This reduces DNS-rebinding exposure, but Foundation does not publicly guarantee that `URLSession` connects to the same answer inspected during preflight. The residual time-of-check/time-of-use race remains a documented security limitation unless a separately reviewed address-pinning transport replaces `URLSession`. Revocation is visible and immediate.
 
 ## Credential Contract
 
