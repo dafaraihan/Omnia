@@ -5,7 +5,7 @@
     "status": "pending",
     "second_reviewer": null,
     "reviewed_at": null,
-    "notes": "Top-level sources are pinned for local development. The transitive runtime closure, detached signatures, license obligations, and reproducible universal artifacts still require independent review before distribution."
+      "notes": "The selected source closure is pinned for local development. FFmpeg and OpenSSL signatures were validated against fingerprints published on their official sites. VideoLAN's checksum matches, but its libbluray signature uses an expired DSA/SHA-1 release key and is not sufficient release evidence. Remaining signatures, license obligations, reproducible universal artifacts, and the complete closure still require independent review before distribution."
   },
   "components": [
     {
@@ -32,9 +32,9 @@
       "license_url": "https://ffmpeg.org/legal.html",
       "build_system": "autotools",
       "verification": {
-        "status": "pending-signature-review",
+        "status": "signature-verified-pending-independent-review",
         "signature_url": "https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz.asc",
-        "publisher_evidence": "The archive and detached signature are published on ffmpeg.org; the archive digest was reproduced locally, but the signature has not been validated on this machine."
+        "publisher_evidence": "The archive digest was reproduced locally. Its detached signature validates with FFmpeg's officially published fingerprint FCF986EA15E6E293A5644F10B4322F04D67658D8; independent reproduction remains pending."
       }
     },
     {
@@ -76,10 +76,10 @@
       "license_url": "https://code.videolan.org/videolan/libbluray/-/blob/1.5.0/COPYING",
       "build_system": "meson",
       "verification": {
-        "status": "publisher-checksum-matched-signature-pending",
+        "status": "publisher-checksum-matched-legacy-signature-release-blocked",
         "checksum_url": "https://download.videolan.org/pub/videolan/libbluray/1.5.0/libbluray-1.5.0.tar.xz.sha256",
         "signature_url": "https://download.videolan.org/pub/videolan/libbluray/1.5.0/libbluray-1.5.0.tar.xz.asc",
-        "publisher_evidence": "The locally reproduced SHA-256 matches VideoLAN's published checksum; the detached signature and second-person review remain pending."
+        "publisher_evidence": "The locally reproduced SHA-256 matches VideoLAN's published checksum. The detached signature is cryptographically valid but uses VideoLAN's expired DSA key 65F7C6B4206BD057A7EB73787180713BE58D1ADC with SHA-1, so alternate provenance and independent review are required before release."
       }
     },
     {
@@ -106,9 +106,9 @@
       "license_url": "https://github.com/libass/libass/blob/0.17.5/COPYING",
       "build_system": "meson",
       "verification": {
-        "status": "publisher-digest-recorded-signature-pending",
+        "status": "publisher-digest-matched-signing-key-unverified",
         "signature_url": "https://github.com/libass/libass/releases/download/0.17.5/libass-0.17.5.tar.xz.asc",
-        "publisher_evidence": "The SHA-256 is published with the official GitHub release asset metadata; detached-signature validation, a local rebuild, and second-person review remain pending."
+        "publisher_evidence": "The locally reproduced SHA-256 matches the official GitHub release asset metadata. The signature names fingerprint DDAFC19E46B2AD2D6B26F84397A08E0CFFD70951, but an independent official trust anchor and second-person review remain pending."
       }
     },
     {
@@ -163,10 +163,10 @@
       "license_url": "https://github.com/openssl/openssl/blob/openssl-3.5.7/LICENSE.txt",
       "build_system": "configure",
       "verification": {
-        "status": "publisher-digest-recorded-signature-pending",
+        "status": "signature-verified-pending-independent-review",
         "checksum_url": "https://github.com/openssl/openssl/releases/download/openssl-3.5.7/openssl-3.5.7.tar.gz.sha256",
         "signature_url": "https://github.com/openssl/openssl/releases/download/openssl-3.5.7/openssl-3.5.7.tar.gz.asc",
-        "publisher_evidence": "OpenSSL 3.5.7 is the supported 3.5 LTS security release; its official release metadata publishes this SHA-256, while detached-signature and second-person review remain pending."
+        "publisher_evidence": "OpenSSL 3.5.7 is the supported 3.5 LTS security release. The locally reproduced digest matches official metadata and its signature validates with historic official fingerprint BA5473A2B0587B07FB27CF2D216094DFD0CB81EF; independent reproduction remains pending."
       }
     },
     {
@@ -179,10 +179,10 @@
       "license_url": "https://code.videolan.org/videolan/libbluray/-/blob/1.5.0/contrib/libudfread/COPYING",
       "build_system": "meson-subproject",
       "verification": {
-        "status": "publisher-checksum-matched-signature-pending",
+        "status": "publisher-checksum-matched-legacy-signature-release-blocked",
         "checksum_url": "https://download.videolan.org/pub/videolan/libbluray/1.5.0/libbluray-1.5.0.tar.xz.sha256",
         "signature_url": "https://download.videolan.org/pub/videolan/libbluray/1.5.0/libbluray-1.5.0.tar.xz.asc",
-        "publisher_evidence": "libudfread is embedded in the checksummed libbluray 1.5.0 source archive and built into libbluray rather than shipped as a separate dylib; signature and independent review remain pending."
+        "publisher_evidence": "libudfread is embedded in the checksummed libbluray 1.5.0 source archive. That archive's signature is valid only under VideoLAN's expired DSA/SHA-1 key, so alternate provenance and independent review are required before release."
       }
     }
   ]
