@@ -6,7 +6,8 @@
 import SwiftUI
 
 /// The content-led canvas shared by Home and title details. The artwork is the
-/// visual anchor; an SF Symbol is only a small, intentional fallback.
+/// visual anchor. Until real backdrop artwork is available, the owning page's
+/// surface remains visible instead of inventing a generic image treatment.
 struct FeaturedBackdrop: View {
     let item: MediaItem
     var artworkAlignment: Alignment = .center
@@ -26,11 +27,8 @@ struct FeaturedBackdrop: View {
                                 .resizable()
                                 .scaledToFill()
                                 .transition(.opacity)
-                        } else if phase.error != nil {
-                            fallbackArtwork
                         } else {
-                            fallbackArtwork
-                                .redacted(reason: .placeholder)
+                            emptyArtwork
                         }
                     }
                     .frame(
@@ -40,7 +38,7 @@ struct FeaturedBackdrop: View {
                     )
                     .clipped()
                 } else {
-                    fallbackArtwork
+                    emptyArtwork
                 }
 
             }
@@ -50,16 +48,7 @@ struct FeaturedBackdrop: View {
         .allowsHitTesting(false)
     }
 
-    private var fallbackArtwork: some View {
-        ZStack {
-            LinearGradient(
-                colors: item.artworkColors + [.black],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            Image(systemName: item.symbol)
-                .font(.system(size: 80, weight: .ultraLight))
-                .foregroundStyle(.white.opacity(0.28))
-        }
+    private var emptyArtwork: some View {
+        Color.clear
     }
 }

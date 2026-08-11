@@ -9,10 +9,12 @@ struct SearchView: View {
     @Environment(OmniaStore.self) private var store
     @Environment(LiveMetadataStore.self) private var metadata
     @State private var query = ""
+    @State private var addonResults: [MediaItem] = []
+    @State private var isSearchingAddons = false
 
     private var results: [MediaItem] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.count >= 2 ? metadata.searchResults : topSearchCards
+        return trimmed.count >= 2 ? unique(metadata.searchResults + addonResults) : topSearchCards
     }
 
     /// Search opens into provider discovery—not a user's private library—so
@@ -28,7 +30,7 @@ struct SearchView: View {
 
     var body: some View {
         Group {
-            if metadata.isSearching {
+            if metadata.isSearching || isSearchingAddons {
                 ContentUnavailableView("Searching Omnia", systemImage: "magnifyingglass")
             } else if results.isEmpty, query.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2 {
                 ContentUnavailableView.search(text: query)
@@ -60,11 +62,24 @@ struct SearchView: View {
             let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
             guard text.count >= 2 else {
                 metadata.searchResults = []
+                addonResults = []
+                isSearchingAddons = false
                 return
             }
             try? await Task.sleep(for: .milliseconds(250))
             guard !Task.isCancelled else { return }
-            await metadata.search(query)
+            isSearchingAddons = true
+            async let metadataSearch: Void = metadata.search(query)
+            let addonMatches = await StremioAddonClient.searchCatalogs(
+                addons: store.installedAddons,
+                query: text
+            )
+            await metadataSearch
+            guard !Task.isCancelled,
+                  text == query.trimmingCharacters(in: .whitespacesAndNewlines)
+            else { return }
+            addonResults = unique(addonMatches.map(\.item))
+            isSearchingAddons = false
         }
         .searchSuggestions {
             ForEach(store.library.prefix(3)) { item in
@@ -88,6 +103,14 @@ struct SearchView: View {
         #else
         32
         #endif
+    }
+
+    private func unique(_ items: [MediaItem]) -> [MediaItem] {
+        var seen = Set<String>()
+        return items.filter { item in
+            let identity = item.externalIDs["imdb"] ?? item.metadataProviderID ?? item.id
+            return seen.insert(identity).inserted
+        }
     }
 }
 

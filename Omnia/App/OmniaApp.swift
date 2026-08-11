@@ -13,6 +13,7 @@ struct OmniaApp: App {
     @State private var account = OmniaAccount()
     @State private var metadata = LiveMetadataStore()
     @State private var playback = PlaybackSession()
+    @State private var settings = SettingsPreferencesStore()
 
     var body: some Scene {
         #if os(macOS)
@@ -25,6 +26,9 @@ struct OmniaApp: App {
         // controls available above the content.
         .windowStyle(.hiddenTitleBar)
         .windowToolbarStyle(.unified(showsTitle: false))
+        .commands {
+            OmniaCommands(playback: playback)
+        }
         #else
         WindowGroup {
             rootContent
@@ -38,10 +42,60 @@ struct OmniaApp: App {
             .environment(account)
             .environment(metadata)
             .environment(playback)
+            .environment(settings)
             .task {
+                await store.prepareLocalMedia()
                 await account.restoreSession()
+                metadata.configure(metadataRouting: store.metadataRouting)
                 await metadata.loadDefaultCatalogs()
             }
-            .onOpenURL { account.handle(callback: $0) }
+            .onChange(of: store.metadataRouting) { _, routing in
+                metadata.configure(metadataRouting: routing)
+                Task { await metadata.loadDefaultCatalogs() }
+            }
+            .onOpenURL { url in
+                if let manifestURL = AddonInstallCallback.manifestURL(from: url) {
+                    Task { try? await store.installAddon(manifestURL: manifestURL) }
+                } else {
+                    account.handle(callback: url)
+                }
+            }
+    }
+}
+
+#if os(macOS)
+@MainActor
+private struct OmniaCommands: Commands {
+    @FocusedBinding(\.appDestination) private var appDestination
+    let playback: PlaybackSession
+
+    var body: some Commands {
+        CommandGroup(replacing: .appSettings) {
+            Button("Settings…") {
+                appDestination = .settings
+            }
+            .keyboardShortcut(",", modifiers: .command)
+            .disabled(appDestination == nil)
+        }
+
+        CommandGroup(after: .windowArrangement) {
+            Button("Toggle Player Full Screen") {
+                playback.toggleFullScreen()
+            }
+            .keyboardShortcut("f", modifiers: [])
+            .disabled(!playback.isPresentingPlayer)
+        }
+    }
+}
+#endif
+
+private enum AddonInstallCallback {
+    static func manifestURL(from url: URL) -> URL? {
+        guard url.scheme?.lowercased() == "omnia", url.host == "addon-install",
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let value = components.queryItems?.first(where: { $0.name == "manifest" })?.value,
+              let manifestURL = URL(string: value), manifestURL.scheme?.lowercased() == "https", manifestURL.host != nil
+        else { return nil }
+        return manifestURL
     }
 }

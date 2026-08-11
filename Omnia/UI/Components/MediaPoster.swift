@@ -62,11 +62,7 @@ struct MediaPoster: View {
             #endif
         }
 
-        #if os(iOS)
-        return 132
-        #else
-        return 154
-        #endif
+        return MediaBrowseMetrics.posterWidth
     }
 }
 
@@ -92,11 +88,7 @@ struct RankedMediaPoster: View {
     }
 
     private var cardWidth: CGFloat {
-        #if os(iOS)
-        132
-        #else
-        154
-        #endif
+        return MediaBrowseMetrics.posterWidth
     }
 }
 

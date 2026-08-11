@@ -45,6 +45,8 @@ final class SettingsPreferencesTests: XCTestCase {
         XCTAssertEqual(value.sdhPreference, .followSystem)
         XCTAssertEqual(value.animeAudioPreference, .followPreferred)
         XCTAssertEqual(value.subtitleAppearance, .followSystem)
+        XCTAssertEqual(value.customSubtitleAppearance, .default)
+        XCTAssertEqual(value.mdblistRatings, .default)
     }
 
     func testNormalizationDisablesDependentPreferences() {
@@ -85,5 +87,79 @@ final class SettingsPreferencesTests: XCTestCase {
 
         XCTAssertEqual(store.preferences, .default)
         XCTAssertNil(defaults.data(forKey: SettingsPreferencesStore.defaultStorageKey))
+    }
+
+    func testDecodingPreviousPayloadDefaultsCustomSubtitleStyle() throws {
+        let current = try JSONEncoder().encode(SettingsPreferences.default)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: current) as? [String: Any])
+        object.removeValue(forKey: "customSubtitleAppearance")
+
+        let decoded = try JSONDecoder().decode(
+            SettingsPreferences.self,
+            from: JSONSerialization.data(withJSONObject: object)
+        )
+
+        XCTAssertEqual(decoded.customSubtitleAppearance, .default)
+    }
+
+    func testDecodingPreviousPayloadDefaultsMDBListRatingPreferences() throws {
+        let current = try JSONEncoder().encode(SettingsPreferences.default)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: current) as? [String: Any])
+        object.removeValue(forKey: "mdblistRatings")
+
+        let decoded = try JSONDecoder().decode(
+            SettingsPreferences.self,
+            from: JSONSerialization.data(withJSONObject: object)
+        )
+
+        XCTAssertEqual(decoded.mdblistRatings, .default)
+    }
+
+    func testMDBListRatingNormalizationCanonicalizesAliasesAndRemovesInvalidIDs() {
+        var value = SettingsPreferences.default
+        value.mdblistRatings = MDBListRatingPreferences(
+            discoveredProviderIDs: ["IMDb", "future_source", "contains/slash", ""],
+            disabledProviderIDs: ["tomatoesaudience", "future_source", "café"]
+        )
+
+        let normalized = value.normalized.mdblistRatings
+
+        XCTAssertEqual(normalized.discoveredProviderIDs, ["imdb", "future_source"])
+        XCTAssertEqual(normalized.disabledProviderIDs, ["popcorn", "future_source"])
+    }
+
+    func testNewAndKnownMDBListProvidersAreEnabledUnlessExplicitlyDisabled() {
+        let value = MDBListRatingPreferences(
+            discoveredProviderIDs: ["future_source"],
+            disabledProviderIDs: ["imdb"]
+        )
+
+        XCTAssertFalse(value.isEnabled(.imdb))
+        XCTAssertTrue(value.isEnabled(.tmdb))
+        XCTAssertTrue(value.isEnabled(try XCTUnwrap(MDBListRatingProviderID("future_source"))))
+    }
+
+    func testRediscoveryDoesNotReenableDisabledMDBListProvider() {
+        let store = SettingsPreferencesStore(defaults: defaults)
+        store.setMDBListRatingProvider(.imdb, enabled: false)
+
+        store.recordMDBListRatingProviders([.imdb, .tmdb])
+
+        XCTAssertEqual(store.preferences.mdblistRatings.discoveredProviderIDs, ["imdb", "tmdb"])
+        XCTAssertEqual(store.preferences.mdblistRatings.disabledProviderIDs, ["imdb"])
+    }
+
+    func testDisabledUnknownMDBListProviderPersistsAcrossStoreRoundTrip() throws {
+        let unknown = try XCTUnwrap(MDBListRatingProviderID("future_source"))
+        var store: SettingsPreferencesStore? = SettingsPreferencesStore(defaults: defaults)
+        store?.recordMDBListRatingProviders([unknown])
+        store?.setMDBListRatingProvider(unknown, enabled: false)
+
+        store = nil
+        let restored = SettingsPreferencesStore(defaults: defaults)
+
+        XCTAssertEqual(restored.preferences.mdblistRatings.discoveredProviderIDs, ["future_source"])
+        XCTAssertEqual(restored.preferences.mdblistRatings.disabledProviderIDs, ["future_source"])
+        XCTAssertFalse(restored.preferences.mdblistRatings.isEnabled(unknown))
     }
 }

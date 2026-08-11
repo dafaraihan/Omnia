@@ -2,7 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>com.apple.security.network.client</key>
-    <true/>
+	<!-- libmpv's bundled Lua runtime uses executable JIT pages for its
+	     internal statistics and playback helpers.  Library validation remains
+	     enabled: all dynamic libraries are embedded and signed with Omnia. -->
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<key>com.apple.security.network.client</key>
+	<true/>
 </dict>
 </plist>

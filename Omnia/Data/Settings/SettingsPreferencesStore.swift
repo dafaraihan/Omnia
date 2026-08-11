@@ -4,7 +4,7 @@ import Observation
 @MainActor
 @Observable
 final class SettingsPreferencesStore {
-    static let defaultStorageKey = "settings-preferences-v1"
+    nonisolated static let defaultStorageKey = "settings-preferences-v1"
 
     private struct Envelope: Codable {
         let version: Int
@@ -43,8 +43,30 @@ final class SettingsPreferencesStore {
     func update(_ transform: (inout SettingsPreferences) -> Void) {
         var updated = preferences
         transform(&updated)
-        preferences = updated.normalized
+        updated = updated.normalized
+        guard updated != preferences else { return }
+        preferences = updated
         persist()
+    }
+
+    func recordMDBListRatingProviders(_ ids: Set<MDBListRatingProviderID>) {
+        let rawIDs = Set(ids.map(\.rawValue))
+        guard !rawIDs.isSubset(of: preferences.mdblistRatings.discoveredProviderIDs) else { return }
+        update {
+            $0.mdblistRatings.discoveredProviderIDs.formUnion(rawIDs)
+        }
+    }
+
+    func setMDBListRatingProvider(_ id: MDBListRatingProviderID, enabled: Bool) {
+        let isEnabled = preferences.mdblistRatings.isEnabled(id)
+        guard isEnabled != enabled else { return }
+        update {
+            if enabled {
+                $0.mdblistRatings.disabledProviderIDs.remove(id.rawValue)
+            } else {
+                $0.mdblistRatings.disabledProviderIDs.insert(id.rawValue)
+            }
+        }
     }
 
     func reset() {

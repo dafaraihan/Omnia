@@ -175,10 +175,16 @@ actor SupabaseMetadataClient {
     func search(
         query: String,
         type: MediaType,
+        routing: MetadataRoute? = nil,
         accessToken: String? = nil,
         language: String = "en-US"
     ) async throws -> MetadataSearchResponse {
-        let request = MetadataRequest.search(query: query, type: type, language: language)
+        let request = MetadataRequest.search(
+            query: query,
+            type: type,
+            providers: providerIdentifiers(for: routing),
+            language: language
+        )
         return try await invoke(request, accessToken: accessToken)
     }
 
@@ -187,11 +193,31 @@ actor SupabaseMetadataClient {
         category: MetadataCatalogCategory = .trending,
         genreID: Int? = nil,
         page: Int = 1,
+        routing: MetadataRoute? = nil,
         accessToken: String? = nil,
         language: String = "en-US"
     ) async throws -> MetadataSearchResponse {
-        let request = MetadataRequest.catalog(type: type, category: category, genreID: genreID, page: page, language: language)
+        let request = MetadataRequest.catalog(
+            type: type,
+            category: category,
+            genreID: genreID,
+            page: page,
+            providers: providerIdentifiers(for: routing),
+            language: language
+        )
         return try await invoke(request, accessToken: accessToken)
+    }
+
+    /// AniList is handled directly by `AniListMetadataClient`; the protected
+    /// metadata function only receives providers it can actually serve. Do
+    /// not add a companion provider here: an omitted fallback must remain
+    /// omitted all the way to the request boundary.
+    private func providerIdentifiers(for routing: MetadataRoute?) -> [String]? {
+        guard let routing else { return nil }
+        let identifiers = routing.requestedProviders
+            .filter { $0 != .anilist }
+            .map(\.rawValue)
+        return identifiers.isEmpty ? nil : identifiers
     }
 
     func genres(
@@ -243,11 +269,6 @@ actor SupabaseMetadataClient {
     }
 }
 
-nonisolated enum MetadataProviderIdentifier: String, Codable, Sendable {
-    case tmdb
-    case tvdb
-}
-
 nonisolated enum MediaType: String, Codable, Sendable {
     case movie
     case series
@@ -263,13 +284,13 @@ nonisolated enum MetadataCatalogCategory: String, Codable, CaseIterable, Sendabl
 }
 
 nonisolated private enum MetadataRequest: Encodable, Sendable {
-    case search(query: String, type: MediaType, language: String)
-    case catalog(type: MediaType, category: MetadataCatalogCategory, genreID: Int?, page: Int, language: String)
+    case search(query: String, type: MediaType, providers: [String]?, language: String)
+    case catalog(type: MediaType, category: MetadataCatalogCategory, genreID: Int?, page: Int, providers: [String]?, language: String)
     case genres(type: MediaType, language: String)
     case details(provider: MetadataProviderIdentifier, id: String, type: MediaType, language: String)
 
     private enum CodingKeys: String, CodingKey {
-        case action, query, type, language, provider, id, category, genreID = "genre_id", page
+        case action, query, type, language, provider, providers, id, category, genreID = "genre_id", page
     }
 
     private enum Action: String, Encodable {
@@ -279,17 +300,19 @@ nonisolated private enum MetadataRequest: Encodable, Sendable {
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
-        case let .search(query, type, language):
+        case let .search(query, type, providers, language):
             try container.encode(Action.search, forKey: .action)
             try container.encode(query, forKey: .query)
             try container.encode(type, forKey: .type)
+            try container.encodeIfPresent(providers, forKey: .providers)
             try container.encode(language, forKey: .language)
-        case let .catalog(type, category, genreID, page, language):
+        case let .catalog(type, category, genreID, page, providers, language):
             try container.encode(Action.catalog, forKey: .action)
             try container.encode(type, forKey: .type)
             try container.encode(category, forKey: .category)
             try container.encodeIfPresent(genreID, forKey: .genreID)
             try container.encode(page, forKey: .page)
+            try container.encodeIfPresent(providers, forKey: .providers)
             try container.encode(language, forKey: .language)
         case let .genres(type, language):
             try container.encode(Action.genres, forKey: .action)

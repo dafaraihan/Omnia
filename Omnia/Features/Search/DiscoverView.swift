@@ -76,7 +76,7 @@ struct DiscoverView: View {
                     addonCatalogs
                 }
             }
-            .padding(.horizontal, horizontalInset)
+            .padding(.horizontal, MediaBrowseMetrics.pageInset)
             .padding(.vertical, 24)
         }
         .navigationTitle("Discover")
@@ -124,31 +124,64 @@ struct DiscoverView: View {
     @ViewBuilder
     private var addonCatalogs: some View {
         if !enabledAddonCatalogs.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
-                SectionHeader(title: "Add-on Catalogs")
-                ForEach(enabledAddonCatalogs.indices, id: \.self) { index in
-                    let source = enabledAddonCatalogs[index]
-                    Label(source.catalog.name ?? source.catalog.id, systemImage: "puzzlepiece.extension")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+            ForEach(enabledAddonCatalogs.indices, id: \.self) { index in
+                let source = enabledAddonCatalogs[index]
+                if source.catalog.canLoadWithoutExtra {
+                    AddonCatalogShelf(addon: source.addon, catalog: source.catalog)
                 }
             }
         }
     }
 
-    private var horizontalInset: CGFloat {
-        #if os(iOS)
-        20
-        #else
-        32
-        #endif
+    private var posterItemSpan: CGFloat {
+        MediaBrowseMetrics.shelfItemSpan
+    }
+}
+
+/// A Stremio catalog is remote data, not merely a manifest label. Each shelf
+/// independently loads its declared feed so a single unavailable add-on never
+/// blocks Omnia's built-in discovery or other add-ons.
+private struct AddonCatalogShelf: View {
+    let addon: InstalledAddon
+    let catalog: AddonCatalog
+
+    @State private var items: [MediaItem] = []
+    @State private var didFinishLoading = false
+
+    private var title: String { catalog.name?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty ?? catalog.id }
+
+    var body: some View {
+        Group {
+            if !items.isEmpty {
+                VStack(alignment: .leading, spacing: 12) {
+                    SectionHeaderLink(title: title) {
+                        AddonCatalogBrowseView(addon: addon, catalog: catalog)
+                    }
+                    ShelfScrollView(items: items, itemSpan: posterItemSpan, accessibilityLabel: title) { item in
+                        MediaPoster(item: item)
+                    }
+                }
+            } else if !didFinishLoading {
+                VStack(alignment: .leading, spacing: 10) {
+                    SectionHeader(title: title)
+                    ProgressView()
+                        .controlSize(.small)
+                }
+            }
+        }
+        .task(id: "\(addon.id):\(catalog.id):\(addon.manifestURL.absoluteString)") {
+            let metas = (try? await StremioAddonClient.fetchCatalog(from: addon, catalog: catalog)) ?? []
+            guard !Task.isCancelled else { return }
+            items = metas.compactMap { $0.mediaItem(addon: addon) }
+            didFinishLoading = true
+        }
     }
 
     private var posterItemSpan: CGFloat {
-        #if os(iOS)
-        148
-        #else
-        170
-        #endif
+        MediaBrowseMetrics.shelfItemSpan
     }
+}
+
+private extension String {
+    var nonEmpty: String? { isEmpty ? nil : self }
 }

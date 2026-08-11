@@ -1,0 +1,196 @@
+<div id="omnia-native-settings">
+  <style>
+    #omnia-native-settings {
+      color: var(--foreground);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    }
+    #omnia-native-settings .screens {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+      margin-top: 18px;
+    }
+    #omnia-native-settings .screen-wrap h3 { text-align: center; margin: 0 0 9px; }
+    #omnia-native-settings .device {
+      width: min(100%, 270px);
+      min-height: 520px;
+      margin: 0 auto;
+      padding: 12px 10px 18px;
+      border: 1px solid color-mix(in srgb, var(--foreground) 18%, transparent);
+      border-radius: 30px;
+      background: light-dark(#f2f2f7, #000000);
+      color: light-dark(#111111, #f5f5f7);
+      box-shadow: 0 14px 34px color-mix(in srgb, var(--foreground) 10%, transparent);
+    }
+    #omnia-native-settings .status { text-align: center; font-size: 11px; font-weight: 500; margin-bottom: 14px; }
+    #omnia-native-settings .nav {
+      display: grid;
+      grid-template-columns: minmax(56px, 1fr) auto minmax(56px, 1fr);
+      align-items: center;
+      min-height: 28px;
+      margin: 0 4px 10px;
+    }
+    #omnia-native-settings .back { color: light-dark(#007aff, #0a84ff); font-size: 12px; }
+    #omnia-native-settings .nav-title { font-size: 14px; font-weight: 500; text-align: center; }
+    #omnia-native-settings .large-title { font-size: 24px; font-weight: 500; letter-spacing: -0.5px; margin: 0 7px 11px; }
+    #omnia-native-settings .search {
+      margin: 0 2px 11px;
+      padding: 7px 10px;
+      border-radius: 9px;
+      background: light-dark(#e3e3e8, #1c1c1e);
+      color: light-dark(#6d6d72, #98989d);
+      font-size: 11px;
+    }
+    #omnia-native-settings .section-label {
+      margin: 12px 12px 5px;
+      color: light-dark(#6d6d72, #98989d);
+      font-size: 9px;
+      text-transform: uppercase;
+    }
+    #omnia-native-settings .group {
+      overflow: hidden;
+      border-radius: 11px;
+      background: light-dark(#ffffff, #1c1c1e);
+    }
+    #omnia-native-settings .row {
+      display: flex;
+      align-items: center;
+      min-height: 35px;
+      margin-left: 10px;
+      padding: 4px 9px 4px 0;
+      border-bottom: 1px solid light-dark(#e5e5ea, #38383a);
+      font-size: 11px;
+    }
+    #omnia-native-settings .row:last-child { border-bottom: 0; }
+    #omnia-native-settings .glyph {
+      width: 20px;
+      height: 20px;
+      flex: 0 0 20px;
+      margin-right: 8px;
+      border-radius: 5px;
+      display: grid;
+      place-items: center;
+      background: var(--blue);
+      color: var(--primary-foreground);
+      font-size: 9px;
+      font-weight: 500;
+    }
+    #omnia-native-settings .glyph.account { background: var(--purple); }
+    #omnia-native-settings .glyph.playback { background: var(--orange); }
+    #omnia-native-settings .glyph.app { background: var(--green); }
+    #omnia-native-settings .glyph.about { background: var(--muted-foreground); }
+    #omnia-native-settings .copy { min-width: 0; flex: 1; }
+    #omnia-native-settings .copy small { display: block; margin-top: 1px; color: light-dark(#6d6d72, #98989d); font-size: 9px; }
+    #omnia-native-settings .value { color: light-dark(#6d6d72, #98989d); margin-left: 5px; font-size: 9px; }
+    #omnia-native-settings .action { color: light-dark(#007aff, #0a84ff); margin-left: 5px; font-size: 9px; }
+    #omnia-native-settings .chevron { color: light-dark(#aeaeb2, #636366); margin-left: 5px; font-size: 14px; }
+    #omnia-native-settings .provider-mark {
+      width: 22px;
+      height: 22px;
+      flex: 0 0 22px;
+      margin-right: 9px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: light-dark(#f2f2f7, #2c2c2e);
+      color: light-dark(#111111, #f5f5f7);
+      font-size: 10px;
+      font-weight: 500;
+    }
+    #omnia-native-settings .footnote { margin: 6px 12px 0; color: light-dark(#6d6d72, #98989d); font-size: 9px; }
+    #omnia-native-settings .approval { margin-top: 20px; }
+    #omnia-native-settings .approval .option { max-width: 420px; margin: 0 auto; }
+    @media (max-width: 860px) {
+      #omnia-native-settings .screens { grid-template-columns: 1fr; }
+      #omnia-native-settings .screen-wrap { display: grid; grid-template-columns: minmax(220px, 270px) 1fr; align-items: start; gap: 14px; }
+      #omnia-native-settings .screen-wrap h3 { text-align: left; padding-top: 18px; }
+    }
+    @media (max-width: 560px) {
+      #omnia-native-settings .screen-wrap { display: block; }
+      #omnia-native-settings .screen-wrap h3 { text-align: center; padding-top: 0; }
+    }
+  </style>
+
+  <h2>Native hierarchy, revised</h2>
+  <p class="subtitle">One system list language across the root and every pushed menu; no custom cards or hand-built Back buttons.</p>
+
+  <div class="screens">
+    <div class="screen-wrap">
+      <h3>Settings root</h3>
+      <div class="device" aria-label="Settings root mockup">
+        <div class="status">9:41</div>
+        <div class="large-title">Settings</div>
+        <div class="search">⌕ Search Settings</div>
+        <div class="section-label">Account</div>
+        <div class="group"><div class="row"><div class="glyph account">●</div><div class="copy">Account<small>Apple, Google, Facebook</small></div><span class="chevron">›</span></div></div>
+        <div class="section-label">Media</div>
+        <div class="group">
+          <div class="row"><div class="glyph">◇</div><div class="copy">Add-ons<small>2 enabled</small></div><span class="chevron">›</span></div>
+          <div class="row"><div class="glyph">▣</div><div class="copy">Catalogs</div><span class="chevron">›</span></div>
+          <div class="row"><div class="glyph">▤</div><div class="copy">Metadata</div><span class="chevron">›</span></div>
+          <div class="row"><div class="glyph">↻</div><div class="copy">Progress<small>Stored on this device</small></div><span class="chevron">›</span></div>
+          <div class="row"><div class="glyph">◫</div><div class="copy">Upcoming</div><span class="chevron">›</span></div>
+        </div>
+        <div class="section-label">Playback</div>
+        <div class="group">
+          <div class="row"><div class="glyph playback">▶</div><div class="copy">Video Player</div><span class="chevron">›</span></div>
+          <div class="row"><div class="glyph playback">CC</div><div class="copy">Subtitle</div><span class="chevron">›</span></div>
+        </div>
+        <div class="section-label">App</div>
+        <div class="group"><div class="row"><div class="glyph app">◐</div><div class="copy">Appearance</div><span class="value">System</span><span class="chevron">›</span></div></div>
+        <div class="section-label">About</div>
+        <div class="group"><div class="row"><div class="glyph about">i</div><div class="copy">About Omnia</div><span class="chevron">›</span></div></div>
+      </div>
+    </div>
+
+    <div class="screen-wrap">
+      <h3>Account menu</h3>
+      <div class="device" aria-label="Account pushed screen mockup">
+        <div class="status">9:41</div>
+        <div class="nav"><span class="back">‹ Settings</span><span class="nav-title">Account</span><span></span></div>
+        <div class="section-label">Sign in with</div>
+        <div class="group">
+          <div class="row"><div class="provider-mark"></div><div class="copy">Apple<small>Private, system-integrated sign in</small></div><span class="action">Sign In</span></div>
+          <div class="row"><div class="provider-mark">G</div><div class="copy">Google<small>Continue with your Google account</small></div><span class="action">Sign In</span></div>
+          <div class="row"><div class="provider-mark">f</div><div class="copy">Facebook<small>Continue with your Facebook account</small></div><span class="action">Sign In</span></div>
+        </div>
+        <p class="footnote">Discovery and local playback settings remain available without an account.</p>
+      </div>
+    </div>
+
+    <div class="screen-wrap">
+      <h3>About menu</h3>
+      <div class="device" aria-label="About pushed screen mockup">
+        <div class="status">9:41</div>
+        <div class="nav"><span class="back">‹ Settings</span><span class="nav-title">About Omnia</span><span></span></div>
+        <div class="section-label">Omnia</div>
+        <div class="group">
+          <div class="row"><div class="copy">Version</div><span class="value">1.0</span></div>
+          <div class="row"><div class="copy">Platforms</div><span class="value">iPhone, iPad, Mac</span></div>
+        </div>
+        <div class="section-label">Resources and technologies</div>
+        <div class="group">
+          <div class="row"><div class="copy">Metadata providers</div><span class="chevron">›</span></div>
+          <div class="row"><div class="copy">Playback engines</div><span class="chevron">›</span></div>
+          <div class="row"><div class="copy">Add-on technology</div><span class="chevron">›</span></div>
+          <div class="row"><div class="copy">Cloud and authentication</div><span class="chevron">›</span></div>
+          <div class="row"><div class="copy">Apple frameworks</div><span class="chevron">›</span></div>
+          <div class="row"><div class="copy">Open-source software</div><span class="chevron">›</span></div>
+        </div>
+        <div class="section-label">Legal</div>
+        <div class="group">
+          <div class="row"><div class="copy">Attributions</div><span class="chevron">›</span></div>
+          <div class="row"><div class="copy">Licenses</div><span class="chevron">›</span></div>
+          <div class="row"><div class="copy">Privacy</div><span class="chevron">›</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="approval options">
+    <div class="option" data-choice="approve-native-screen-system" onclick="toggleSelect(this)">
+      <div class="letter">✓</div>
+      <div class="content"><h3>Approve this screen system</h3><p>Continue with native forms, system navigation, and these category boundaries.</p></div>
+    </div>
+  </div>
+</div>

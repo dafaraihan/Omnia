@@ -10,14 +10,43 @@
 		E170B0013018EA5D0066A3C3 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = E170B0023018EA5D0066A3C3 /* Supabase */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		F700000A3018EA5D0066A3C3 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9D577E393018EA5D0066A3C3 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 9D577E403018EA5D0066A3C3;
+			remoteInfo = Omnia;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		9D577E413018EA5D0066A3C3 /* Omnia.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Omnia.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F70000023018EA5D0066A3C3 /* OmniaTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OmniaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		F6B4A9313018EA5D0066A3C3 /* Exceptions for "Omnia" folder in "Omnia" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"Platform/Playback/embed-libmpv.sh",
+			);
+			target = 9D577E403018EA5D0066A3C3 /* Omnia */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		9D577E433018EA5D0066A3C3 /* Omnia */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				F6B4A9313018EA5D0066A3C3 /* Exceptions for "Omnia" folder in "Omnia" target */,
+			);
 			path = Omnia;
+			sourceTree = "<group>";
+		};
+		F70000033018EA5D0066A3C3 /* OmniaTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = OmniaTests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -31,6 +60,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F70000053018EA5D0066A3C3 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -38,6 +74,7 @@
 			isa = PBXGroup;
 			children = (
 				9D577E433018EA5D0066A3C3 /* Omnia */,
+				F70000033018EA5D0066A3C3 /* OmniaTests */,
 				9D577E423018EA5D0066A3C3 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -46,6 +83,7 @@
 			isa = PBXGroup;
 			children = (
 				9D577E413018EA5D0066A3C3 /* Omnia.app */,
+				F70000023018EA5D0066A3C3 /* OmniaTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -60,6 +98,7 @@
 				9D577E3D3018EA5D0066A3C3 /* Sources */,
 				9D577E3E3018EA5D0066A3C3 /* Frameworks */,
 				9D577E3F3018EA5D0066A3C3 /* Resources */,
+				F6B4A9303018EA5D0066A3C3 /* Embed libmpv */,
 			);
 			buildRules = (
 			);
@@ -76,6 +115,29 @@
 			productReference = 9D577E413018EA5D0066A3C3 /* Omnia.app */;
 			productType = "com.apple.product-type.application";
 		};
+		F70000013018EA5D0066A3C3 /* OmniaTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F70000093018EA5D0066A3C3 /* Build configuration list for PBXNativeTarget "OmniaTests" */;
+			buildPhases = (
+				F70000043018EA5D0066A3C3 /* Sources */,
+				F70000053018EA5D0066A3C3 /* Frameworks */,
+				F70000063018EA5D0066A3C3 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				F700000B3018EA5D0066A3C3 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				F70000033018EA5D0066A3C3 /* OmniaTests */,
+			);
+			name = OmniaTests;
+			packageProductDependencies = (
+			);
+			productName = OmniaTests;
+			productReference = F70000023018EA5D0066A3C3 /* OmniaTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -88,6 +150,10 @@
 				TargetAttributes = {
 					9D577E403018EA5D0066A3C3 = {
 						CreatedOnToolsVersion = 26.6;
+					};
+					F70000013018EA5D0066A3C3 = {
+						CreatedOnToolsVersion = 26.6;
+						TestTargetID = 9D577E403018EA5D0066A3C3;
 					};
 				};
 			};
@@ -109,6 +175,7 @@
 			projectRoot = "";
 			targets = (
 				9D577E403018EA5D0066A3C3 /* Omnia */,
+				F70000013018EA5D0066A3C3 /* OmniaTests */,
 			);
 		};
 /* End PBXProject section */
@@ -121,7 +188,37 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F70000063018EA5D0066A3C3 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		F6B4A9303018EA5D0066A3C3 /* Embed libmpv */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/Omnia/Platform/Playback/embed-libmpv.sh",
+			);
+			name = "Embed libmpv";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "/bin/bash \"${SRCROOT}/Omnia/Platform/Playback/embed-libmpv.sh\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		9D577E3D3018EA5D0066A3C3 /* Sources */ = {
@@ -131,7 +228,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F70000043018EA5D0066A3C3 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		F700000B3018EA5D0066A3C3 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 9D577E403018EA5D0066A3C3 /* Omnia */;
+			targetProxy = F700000A3018EA5D0066A3C3 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		9D577E4A3018EA5D0066A3C3 /* Debug */ = {
@@ -257,13 +369,22 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Omnia.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				"DEVELOPMENT_TEAM[sdk=macosx*]" = 88P2ULUJDG;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = NO;
+				"HEADER_SEARCH_PATHS[sdk=macosx*]" = (
+					"$(inherited)",
+					/opt/homebrew/include,
+					/usr/local/include,
+				);
 				INFOPLIST_FILE = AppInfo.plist;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
@@ -278,8 +399,19 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
+				"LIBRARY_SEARCH_PATHS[sdk=macosx*]" = (
+					"$(inherited)",
+					/opt/homebrew/lib,
+					/usr/local/lib,
+				);
 				MACOSX_DEPLOYMENT_TARGET = 26.5;
 				MARKETING_VERSION = 1.0;
+				"OTHER_LDFLAGS[sdk=macosx*]" = (
+					"$(inherited)",
+					"-lmpv",
+					"-framework",
+					OpenGL,
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = PrimeDeca.Omnia;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -291,6 +423,7 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "Omnia/Omnia-Bridging-Header.h";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -304,13 +437,22 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Omnia.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				"DEVELOPMENT_TEAM[sdk=macosx*]" = 88P2ULUJDG;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = NO;
+				"HEADER_SEARCH_PATHS[sdk=macosx*]" = (
+					"$(inherited)",
+					/opt/homebrew/include,
+					/usr/local/include,
+				);
 				INFOPLIST_FILE = AppInfo.plist;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
@@ -325,8 +467,19 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
+				"LIBRARY_SEARCH_PATHS[sdk=macosx*]" = (
+					"$(inherited)",
+					/opt/homebrew/lib,
+					/usr/local/lib,
+				);
 				MACOSX_DEPLOYMENT_TARGET = 26.5;
 				MARKETING_VERSION = 1.0;
+				"OTHER_LDFLAGS[sdk=macosx*]" = (
+					"$(inherited)",
+					"-lmpv",
+					"-framework",
+					OpenGL,
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = PrimeDeca.Omnia;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -338,9 +491,46 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "Omnia/Omnia-Bridging-Header.h";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		F70000073018EA5D0066A3C3 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = PrimeDeca.OmniaTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Omnia.app/Contents/MacOS/Omnia";
+			};
+			name = Debug;
+		};
+		F70000083018EA5D0066A3C3 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = PrimeDeca.OmniaTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Omnia.app/Contents/MacOS/Omnia";
 			};
 			name = Release;
 		};
@@ -361,6 +551,15 @@
 			buildConfigurations = (
 				9D577E4D3018EA5D0066A3C3 /* Debug */,
 				9D577E4E3018EA5D0066A3C3 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F70000093018EA5D0066A3C3 /* Build configuration list for PBXNativeTarget "OmniaTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F70000073018EA5D0066A3C3 /* Debug */,
+				F70000083018EA5D0066A3C3 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

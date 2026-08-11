@@ -9,6 +9,7 @@ struct MediaDetailView: View {
     let item: MediaItem
     @Environment(OmniaStore.self) private var store
     @Environment(LiveMetadataStore.self) private var metadata
+    @Environment(SettingsPreferencesStore.self) private var settings
     @Environment(\.dismiss) private var dismiss
     @State private var resolvedItem: MediaItem?
     @State private var showsSourceSelector = false
@@ -16,6 +17,8 @@ struct MediaDetailView: View {
     @State private var creditSection: CreditSection = .cast
     @State private var selectedSeasonNumber = 1
     @State private var selectedEpisode: MediaEpisode?
+    @State private var ratingsLoader = MDBListRatingsLoader()
+    @State private var showsMDBListSettings = false
 
     private var displayItem: MediaItem { resolvedItem ?? item }
 
@@ -37,15 +40,39 @@ struct MediaDetailView: View {
         .toolbar(.hidden, for: .navigationBar)
         #endif
         .task(id: item.id) {
-            let resolved = await metadata.details(for: item)
+            ratingsLoader.cancel()
+            async let providerMetadata = metadata.details(for: item)
+            async let addonMetadata = StremioAddonClient.fetchMetadata(
+                for: item,
+                addons: store.installedAddons
+            )
+            let providerResolved = await providerMetadata
+            let fromAddons = await addonMetadata
+            let resolved = fromAddons.reduce(providerResolved) { partial, addonItem in
+                partial.mergingAddonMetadata(addonItem)
+            }
             resolvedItem = resolved
             selectedSeasonNumber = resolved.details?.seasons.first?.seasonNumber ?? 1
+
+            await ratingsLoader.load(
+                for: resolved,
+                preferences: settings.preferences.mdblistRatings
+            )
+            if case let .loaded(presentation) = ratingsLoader.state {
+                settings.recordMDBListRatingProviders(presentation.discoveredProviderIDs)
+            }
         }
         .sheet(isPresented: $showsSourceSelector) {
             PlaybackSourceSheet(item: displayItem, episode: selectedEpisode)
         }
         .sheet(isPresented: $showsSynopsis) {
             SynopsisSheet(title: displayItem.title, synopsis: displayItem.overview)
+        }
+        .sheet(isPresented: $showsMDBListSettings) {
+            MDBListSettingsSheet()
+        }
+        .onDisappear {
+            ratingsLoader.cancel()
         }
     }
 
@@ -111,6 +138,13 @@ struct MediaDetailView: View {
             }
 
             HeroMetadataLine(item: displayItem)
+
+            MDBListRatingsView(
+                state: currentRatingsState,
+                retry: retryRatings,
+                openSettings: { showsMDBListSettings = true }
+            )
+            .frame(width: CinematicHeroLayout.logoWidth, alignment: .leading)
 
             Button {
                 showsSynopsis = true
@@ -208,6 +242,30 @@ struct MediaDetailView: View {
                 HeroPrimaryActionLabel(title: playbackActionTitle)
             }
             .buttonStyle(.plain)
+        }
+    }
+
+    private var currentRatingsState: MDBListRatingsLoadState {
+        guard case let .loaded(presentation) = ratingsLoader.state else {
+            return ratingsLoader.state
+        }
+        let current = MDBListRatingsPresentation(
+            response: presentation.response,
+            preferences: settings.preferences.mdblistRatings
+        )
+        return current.items.isEmpty ? .empty : .loaded(current)
+    }
+
+    private func retryRatings() {
+        let title = displayItem
+        Task {
+            await ratingsLoader.retry(
+                for: title,
+                preferences: settings.preferences.mdblistRatings
+            )
+            if case let .loaded(presentation) = ratingsLoader.state {
+                settings.recordMDBListRatingProviders(presentation.discoveredProviderIDs)
+            }
         }
     }
 
@@ -322,6 +380,124 @@ struct MediaDetailView: View {
         #else
         38
         #endif
+    }
+}
+
+private struct MDBListRatingsView: View {
+    let state: MDBListRatingsLoadState
+    let retry: () -> Void
+    let openSettings: () -> Void
+
+    @ViewBuilder
+    var body: some View {
+        switch state {
+        case .idle, .empty:
+            EmptyView()
+        case .loading:
+            HStack(spacing: 7) {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(.white)
+                Text("Loading ratings")
+                    .font(.caption)
+            }
+            .foregroundStyle(.white.opacity(0.82))
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Loading ratings")
+        case let .loaded(presentation):
+            FlowLayout(spacing: 8) {
+                ForEach(presentation.items) { item in
+                    MDBListRatingValueView(item: item)
+                }
+            }
+        case let .failed(error, recovery):
+            HStack(spacing: 8) {
+                Text(failureText(for: error))
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.82))
+                if recovery == .retry {
+                    Button("Retry", action: retry)
+                        .font(.caption.weight(.semibold))
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.white)
+                        .accessibilityHint("Requests MDBList ratings again")
+                } else if recovery == .openSettings {
+                    Button("Open MDBList Settings", action: openSettings)
+                        .font(.caption.weight(.semibold))
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.white)
+                }
+            }
+        }
+    }
+
+    private func failureText(for error: MDBListMetadataError) -> String {
+        switch error {
+        case .authenticationRequired:
+            "Ratings need your MDBList key"
+        case .rateLimited:
+            "MDBList request limit reached"
+        case .noSupportedIdentifier, .notFound:
+            ""
+        case .temporarilyUnavailable, .malformedResponse, .responseTooLarge:
+            "Ratings unavailable"
+        }
+    }
+}
+
+private struct MDBListRatingValueView: View {
+    let item: MDBListRatingPresentationItem
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if let assetName = item.assetName {
+                Image(assetName)
+                    .resizable()
+                    .renderingMode(.original)
+                    .scaledToFit()
+                    .frame(height: 14)
+                    .accessibilityHidden(true)
+            } else {
+                Text(item.displayName)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.8))
+            }
+            Text(item.formattedValue)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.white)
+        }
+        .fixedSize(horizontal: true, vertical: false)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    private var accessibilityLabel: String {
+        let value = item.formattedValue.replacingOccurrences(of: "%", with: " percent")
+        let kind = item.isAggregate ? "score" : "rating"
+        return "\(item.displayName) \(kind) \(value)"
+    }
+}
+
+private struct MDBListSettingsSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            if let provider = MetadataProvider.supported.first(where: { $0.id == "mdblist" }) {
+                MetadataProviderDetailView(provider: provider)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { dismiss() }
+                        }
+                    }
+            } else {
+                ContentUnavailableView(
+                    "MDBList Unavailable",
+                    systemImage: "star.slash",
+                    description: Text("MDBList settings are unavailable in this build.")
+                )
+            }
+        }
     }
 }
 
@@ -732,53 +908,5 @@ private struct SynopsisSheet: View {
             }
         }
         .presentationDetents([.medium, .large])
-    }
-}
-
-/// A compact wrapping layout for the small, immutable genre labels in a title
-/// detail page. It avoids a horizontally scrolling metadata row on iPhone.
-private struct FlowLayout: Layout {
-    var spacing: CGFloat
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let width = proposal.width ?? .greatestFiniteMagnitude
-        var x: CGFloat = 0
-        var y: CGFloat = 0
-        var rowHeight: CGFloat = 0
-
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            let proposedX = x == 0 ? size.width : x + spacing + size.width
-            if x > 0, proposedX > width {
-                x = 0
-                y += rowHeight + spacing
-                rowHeight = 0
-            }
-            if x > 0 { x += spacing }
-            x += size.width
-            rowHeight = max(rowHeight, size.height)
-        }
-
-        return .init(width: proposal.width ?? x, height: y + rowHeight)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var x = bounds.minX
-        var y = bounds.minY
-        var rowHeight: CGFloat = 0
-
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            let proposedX = x == bounds.minX ? x + size.width : x + spacing + size.width
-            if x > bounds.minX, proposedX > bounds.maxX {
-                x = bounds.minX
-                y += rowHeight + spacing
-                rowHeight = 0
-            }
-            if x > bounds.minX { x += spacing }
-            subview.place(at: .init(x: x, y: y), proposal: .unspecified)
-            x += size.width
-            rowHeight = max(rowHeight, size.height)
-        }
     }
 }

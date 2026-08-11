@@ -1,0 +1,225 @@
+import Foundation
+import Observation
+
+nonisolated struct MDBListRatingPresentationItem: Identifiable, Equatable, Sendable {
+    let id: String
+    let providerID: MDBListRatingProviderID?
+    let displayName: String
+    let formattedValue: String
+    let assetName: String?
+    let accessibilityLabel: String
+    let isAggregate: Bool
+}
+
+nonisolated struct MDBListRatingsPresentation: Equatable, Sendable {
+    let items: [MDBListRatingPresentationItem]
+    let discoveredProviderIDs: Set<MDBListRatingProviderID>
+    let response: MDBListTitleRatings
+
+    init(
+        response: MDBListTitleRatings,
+        preferences: MDBListRatingPreferences
+    ) {
+        self.response = response
+        var firstRatingByProvider: [MDBListRatingProviderID: MDBListRating] = [:]
+        for rating in response.ratings where firstRatingByProvider[rating.providerID] == nil {
+            firstRatingByProvider[rating.providerID] = rating
+        }
+
+        discoveredProviderIDs = Set(firstRatingByProvider.keys)
+        var resolvedItems = MDBListRatingProviderRegistry
+            .sortedDescriptors(for: discoveredProviderIDs)
+            .filter { preferences.isEnabled($0.id) }
+            .compactMap { descriptor -> MDBListRatingPresentationItem? in
+                guard let rating = firstRatingByProvider[descriptor.id],
+                      let formattedValue = MDBListRatingProviderRegistry.formattedValue(
+                        rating.value,
+                        for: descriptor.id
+                      ) else {
+                    return nil
+                }
+                return MDBListRatingPresentationItem(
+                    id: descriptor.id.rawValue,
+                    providerID: descriptor.id,
+                    displayName: descriptor.displayName,
+                    formattedValue: formattedValue,
+                    assetName: MDBListRatingProviderRegistry.assetName(
+                        for: descriptor.id,
+                        value: rating.value
+                    ),
+                    accessibilityLabel: "\(descriptor.displayName), \(formattedValue)",
+                    isAggregate: false
+                )
+            }
+
+        if let score = response.score,
+           let formattedScore = MDBListRatingProviderRegistry.formattedAggregate(score) {
+            resolvedItems.append(MDBListRatingPresentationItem(
+                id: "mdblist",
+                providerID: nil,
+                displayName: "MDBList",
+                formattedValue: formattedScore,
+                assetName: MDBListRatingProviderRegistry.aggregateAssetName,
+                accessibilityLabel: "MDBList, \(formattedScore)",
+                isAggregate: true
+            ))
+        }
+        items = resolvedItems
+    }
+}
+
+nonisolated struct MDBListRatingSettingsRow: Identifiable, Equatable, Sendable {
+    let id: String
+    let providerID: MDBListRatingProviderID?
+    let displayName: String
+    let assetName: String?
+    let isEnabled: Bool?
+    let detail: String?
+}
+
+nonisolated enum MDBListRatingSettingsModel {
+    static func rows(
+        preferences: MDBListRatingPreferences
+    ) -> [MDBListRatingSettingsRow] {
+        var rows = MDBListRatingProviderRegistry.settingsDescriptors(
+            discovered: preferences.discoveredProviderIDs
+        ).map { descriptor in
+            MDBListRatingSettingsRow(
+                id: descriptor.id.rawValue,
+                providerID: descriptor.id,
+                displayName: descriptor.displayName,
+                assetName: descriptor.defaultAssetName,
+                isEnabled: preferences.isEnabled(descriptor.id),
+                detail: nil
+            )
+        }
+        rows.append(MDBListRatingSettingsRow(
+            id: "mdblist",
+            providerID: nil,
+            displayName: "MDBList Score",
+            assetName: MDBListRatingProviderRegistry.aggregateAssetName,
+            isEnabled: nil,
+            detail: "Always shown"
+        ))
+        return rows
+    }
+}
+
+nonisolated enum MDBListRatingsRecoveryAction: Equatable, Sendable {
+    case retry
+    case openSettings
+}
+
+nonisolated enum MDBListRatingsLoadState: Equatable, Sendable {
+    case idle
+    case loading
+    case empty
+    case loaded(MDBListRatingsPresentation)
+    case failed(MDBListMetadataError, recovery: MDBListRatingsRecoveryAction?)
+}
+
+@MainActor
+@Observable
+final class MDBListRatingsLoader {
+    private(set) var state: MDBListRatingsLoadState = .idle
+
+    private let service: any MDBListRatingServing
+    private var requestTask: Task<Void, Never>?
+    private var requestToken = UUID()
+
+    init(service: any MDBListRatingServing) {
+        self.service = service
+    }
+
+    convenience init() {
+        self.init(service: MDBListMetadataClient())
+    }
+
+    func load(
+        for item: MediaItem,
+        preferences: MDBListRatingPreferences
+    ) async {
+        await startRequest(
+            for: item,
+            preferences: preferences,
+            bypassCache: false
+        )
+    }
+
+    func retry(
+        for item: MediaItem,
+        preferences: MDBListRatingPreferences
+    ) async {
+        guard state != .loading else { return }
+        await startRequest(
+            for: item,
+            preferences: preferences,
+            bypassCache: true
+        )
+    }
+
+    func cancel() {
+        requestToken = UUID()
+        requestTask?.cancel()
+        requestTask = nil
+        if state == .loading {
+            state = .idle
+        }
+    }
+
+    private func startRequest(
+        for item: MediaItem,
+        preferences: MDBListRatingPreferences,
+        bypassCache: Bool
+    ) async {
+        requestTask?.cancel()
+        let token = UUID()
+        requestToken = token
+        state = .loading
+
+        let task = Task { [weak self, service] in
+            do {
+                let response = try await service.titleRatings(
+                    for: item,
+                    bypassCache: bypassCache
+                )
+                guard let self, self.requestToken == token else { return }
+                guard let response else {
+                    self.state = .empty
+                    return
+                }
+                let presentation = MDBListRatingsPresentation(
+                    response: response,
+                    preferences: preferences
+                )
+                self.state = presentation.items.isEmpty ? .empty : .loaded(presentation)
+            } catch is CancellationError {
+                // A navigation change or newer title owns the visible state.
+            } catch let error as MDBListMetadataError {
+                guard let self, self.requestToken == token else { return }
+                self.apply(error)
+            } catch {
+                guard let self, self.requestToken == token else { return }
+                self.state = .failed(.temporarilyUnavailable, recovery: .retry)
+            }
+        }
+        requestTask = task
+        await task.value
+        if requestToken == token {
+            requestTask = nil
+        }
+    }
+
+    private func apply(_ error: MDBListMetadataError) {
+        switch error {
+        case .noSupportedIdentifier, .notFound:
+            state = .empty
+        case .authenticationRequired:
+            state = .failed(error, recovery: .openSettings)
+        case .rateLimited:
+            state = .failed(error, recovery: nil)
+        case .temporarilyUnavailable, .malformedResponse, .responseTooLarge:
+            state = .failed(error, recovery: .retry)
+        }
+    }
+}

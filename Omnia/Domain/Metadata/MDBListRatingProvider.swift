@@ -111,7 +111,6 @@ nonisolated struct MDBListRatingProviderDescriptor: Identifiable, Hashable, Send
     let negativeAssetName: String?
     let negativeBelow: Double?
 
-    var approvedAssetName: String? { defaultAssetName }
 }
 
 nonisolated enum MDBListRatingProviderRegistry {
@@ -292,52 +291,87 @@ nonisolated struct MDBListRatingProviderProvenanceRecord: Hashable, Sendable {
     let displayName: String
     let officialURL: URL
     let aboutResourceID: String
-    let approvedAssetName: String?
+    let assetNames: Set<String>
 }
 
 nonisolated enum MDBListRatingProviderProvenance {
     static let records: [MDBListRatingProviderProvenanceRecord] = [
-        record("imdb", "IMDb", "https://developer.imdb.com", "rating-imdb"),
+        record(
+            "imdb",
+            "IMDb",
+            "https://developer.imdb.com",
+            "rating-imdb",
+            assetNames: ["RatingIMDbMark"]
+        ),
         record(
             "tmdb",
             "TMDB",
             "https://developer.themoviedb.org/docs/faq",
             "tmdb",
-            assetName: "RatingTMDBMark"
+            assetNames: ["RatingTMDBMark"]
         ),
         record(
             "tomatoes",
             "Rotten Tomatoes",
             "https://www.rottentomatoes.com/help_desk/licensing",
-            "rating-rotten-tomatoes"
+            "rating-rotten-tomatoes",
+            assetNames: [
+                "RatingRottenTomatoesFreshMark",
+                "RatingRottenTomatoesRottenMark"
+            ]
         ),
         record(
             "metacritic",
             "Metacritic",
             "https://business.tivo.com/misc/metacriticusageguidelines.pdf",
-            "rating-metacritic"
+            "rating-metacritic",
+            assetNames: ["RatingMetacriticMark"]
         ),
-        record("trakt", "Trakt", "https://media-og.trakt.tv/branding", "rating-trakt"),
+        record(
+            "trakt",
+            "Trakt",
+            "https://media-og.trakt.tv/branding",
+            "rating-trakt",
+            assetNames: ["RatingTraktMark"]
+        ),
         record(
             "letterboxd",
             "Letterboxd",
             "https://letterboxd.com/about/brand/",
-            "rating-letterboxd"
+            "rating-letterboxd",
+            assetNames: ["RatingLetterboxdMark"]
         ),
         record(
             "popcorn",
             "Rotten Tomatoes Audience",
             "https://www.rottentomatoes.com/help_desk/licensing",
-            "rating-rotten-tomatoes"
+            "rating-rotten-tomatoes",
+            assetNames: [
+                "RatingRottenTomatoesAudienceHotMark",
+                "RatingRottenTomatoesAudienceStaleMark"
+            ]
         ),
-        record("myanimelist", "MyAnimeList", "https://myanimelist.net", "rating-myanimelist"),
+        record(
+            "myanimelist",
+            "MyAnimeList",
+            "https://myanimelist.net",
+            "rating-myanimelist",
+            assetNames: ["RatingMyAnimeListMark"]
+        ),
         record(
             "rogerebert",
             "Roger Ebert",
             "https://www.rogerebert.com/terms-of-use",
-            "rating-roger-ebert"
+            "rating-roger-ebert",
+            assetNames: ["RatingRogerEbertMark"]
         ),
-        record("mdblist", "MDBList", "https://docs.mdblist.com/docs/api", "mdblist")
+        record(
+            "mdblist",
+            "MDBList",
+            "https://docs.mdblist.com/docs/api",
+            "mdblist",
+            assetNames: ["RatingMDBListMark"]
+        )
     ]
 
     private static func record(
@@ -345,7 +379,7 @@ nonisolated enum MDBListRatingProviderProvenance {
         _ displayName: String,
         _ officialURL: String,
         _ aboutResourceID: String,
-        assetName: String? = nil
+        assetNames: Set<String>
     ) -> MDBListRatingProviderProvenanceRecord {
         guard let url = URL(string: officialURL), url.scheme == "https" else {
             preconditionFailure("Invalid provider provenance URL")
@@ -355,7 +389,7 @@ nonisolated enum MDBListRatingProviderProvenance {
             displayName: displayName,
             officialURL: url,
             aboutResourceID: aboutResourceID,
-            approvedAssetName: assetName
+            assetNames: assetNames
         )
     }
 }

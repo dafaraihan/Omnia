@@ -9,7 +9,7 @@ import SwiftUI
 /// the row, not a replacement for native trackpad or touch scrolling.
 struct ShelfScrollView<Item: Identifiable, Content: View>: View {
     let items: [Item]
-    var spacing: CGFloat = 16
+    var spacing: CGFloat = MediaBrowseMetrics.shelfSpacing
     let itemSpan: CGFloat
     let accessibilityLabel: String
     @ViewBuilder let content: (Item) -> Content

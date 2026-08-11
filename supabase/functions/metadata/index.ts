@@ -1,14 +1,15 @@
 import "@supabase/functions-js/edge-runtime.d.ts"
 import { withSupabase } from "@supabase/server"
 import { createClient } from "@supabase/supabase-js"
+import { tvdbExternalIDs } from "./tvdb-identifiers.ts"
 
 type MediaType = "movie" | "series"
 type Provider = "tmdb" | "tvdb"
 type CatalogCategory = "trending" | "popular" | "now_playing" | "upcoming" | "top_rated" | "airing_today"
 
 type MetadataRequest =
-  | { action: "search"; query: string; type: MediaType; language?: string }
-  | { action: "catalog"; type: MediaType; category?: CatalogCategory; genre_id?: number; page?: number; language?: string }
+  | { action: "search"; query: string; type: MediaType; providers?: Provider[]; language?: string }
+  | { action: "catalog"; type: MediaType; category?: CatalogCategory; genre_id?: number; page?: number; providers?: Provider[]; language?: string }
   | { action: "seed_catalog"; type: MediaType; page: number; seed_token: string; language?: string }
   | { action: "seed_status"; seed_token: string }
   | { action: "reindex_catalog"; type: MediaType; seed_token: string }
@@ -130,6 +131,14 @@ function isProvider(value: unknown): value is Provider {
   return value === "tmdb" || value === "tvdb"
 }
 
+function isProviderList(value: unknown): value is Provider[] {
+  return Array.isArray(value)
+    && value.length > 0
+    && value.length <= 2
+    && value.every(isProvider)
+    && new Set(value).size === value.length
+}
+
 function isCatalogCategory(value: unknown): value is CatalogCategory {
   return value === "trending" || value === "popular" || value === "now_playing" || value === "upcoming" || value === "top_rated" || value === "airing_today"
 }
@@ -139,12 +148,14 @@ function isRequest(value: unknown): value is MetadataRequest {
   const request = value as Record<string, unknown>
   if (request.action === "search") {
     return typeof request.query === "string" && isMediaType(request.type)
+      && (request.providers === undefined || isProviderList(request.providers))
   }
   if (request.action === "catalog") {
     return isMediaType(request.type)
       && (request.category === undefined || isCatalogCategory(request.category))
       && (request.genre_id === undefined || (typeof request.genre_id === "number" && Number.isInteger(request.genre_id) && request.genre_id > 0))
       && (request.page === undefined || (typeof request.page === "number" && Number.isInteger(request.page) && request.page >= 1 && request.page <= 500))
+      && (request.providers === undefined || isProviderList(request.providers))
   }
   if (request.action === "seed_catalog") {
     return isMediaType(request.type)
@@ -155,6 +166,10 @@ function isRequest(value: unknown): value is MetadataRequest {
   if (request.action === "reindex_catalog") return isMediaType(request.type) && typeof request.seed_token === "string" && request.seed_token.length >= 24
   if (request.action === "genres") return isMediaType(request.type)
   return request.action === "details" && typeof request.id === "string" && isProvider(request.provider) && isMediaType(request.type)
+}
+
+function requestedProviders(request: { providers?: Provider[] }): Provider[] {
+  return request.providers ?? ["tmdb", "tvdb"]
 }
 
 function canonicalKey(provider: Provider, type: MediaType, id: string) {
@@ -354,7 +369,7 @@ function normalizeTVDB(value: Record<string, unknown>, type: MediaType): Normali
     posterPath: optionalText(value.image_url ?? value.image),
     backdropPath: optionalText(value.thumbnail),
     genres: namedValues(value.genres),
-    externalIDs: { tvdb: providerID },
+    externalIDs: tvdbExternalIDs(providerID, value.remoteIds),
     sourceURL: `https://thetvdb.com/${type === "movie" ? "movies" : "series"}/${providerID}`,
   }
 }
@@ -870,15 +885,17 @@ export default {
         const query = request.query.trim()
         if (query.length < 2 || query.length > 120) return errorResponse("Search text must be 2–120 characters.", 400)
         const language = request.language ?? "en-US"
-        const providerResults = await Promise.allSettled([
-          tmdbSearch(query, request.type, language),
-          tvdbSearch(query, request.type),
-        ])
+        const providers = requestedProviders(request)
+        const providerResults = await Promise.allSettled(providers.map((provider) =>
+          provider === "tmdb"
+            ? tmdbSearch(query, request.type, language)
+            : tvdbSearch(query, request.type)
+        ))
         const fulfilled = providerResults.flatMap((result) => result.status === "fulfilled" ? [result.value] : [])
         if (fulfilled.length === 0) throw new Error("All metadata providers failed.")
         return response({
           results: fulfilled.flat(),
-          providers: providerResults.flatMap((result, index) => result.status === "fulfilled" ? [index === 0 ? "tmdb" : "tvdb"] : []),
+          providers: providerResults.flatMap((result, index) => result.status === "fulfilled" ? [providers[index]] : []),
         })
       }
 
@@ -886,11 +903,12 @@ export default {
         const language = request.language ?? "en-US"
         const category = request.category ?? "trending"
         const page = request.page ?? 1
+        const providers = requestedProviders(request)
 
         // The initial 1,000-title pool is served from Supabase. Once a user
         // scrolls beyond that pool, the same paged endpoint fetches and stores
         // the next provider page on demand.
-        if (category === "popular" && !request.genre_id) {
+        if (category === "popular" && !request.genre_id && providers[0] === "tmdb") {
           const indexed = await cachedCatalogPage(request.type, page)
           if (indexed.length > 0) {
             return response({ results: indexed, providers: ["tmdb"] })
@@ -899,15 +917,16 @@ export default {
           return response({ results: fetched, providers: ["tmdb"] })
         }
 
-        const providerResults = await Promise.allSettled([
-          tmdbCatalog(request.type, category, language, request.genre_id, page),
-          ...(page === 1 && category === "trending" && !request.genre_id ? [tvdbCatalog(request.type)] : []),
-        ])
+        const providerResults = await Promise.allSettled(providers.map((provider) =>
+          provider === "tmdb"
+            ? tmdbCatalog(request.type, category, language, request.genre_id, page)
+            : tvdbCatalog(request.type)
+        ))
         const fulfilled = providerResults.flatMap((result) => result.status === "fulfilled" ? [result.value] : [])
         if (fulfilled.length === 0) throw new Error("All metadata providers failed.")
         return response({
           results: fulfilled.flat(),
-          providers: providerResults.flatMap((result, index) => result.status === "fulfilled" ? [index === 0 ? "tmdb" : "tvdb"] : []),
+          providers: providerResults.flatMap((result, index) => result.status === "fulfilled" ? [providers[index]] : []),
         })
       }
 

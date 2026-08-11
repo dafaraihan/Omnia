@@ -12,29 +12,47 @@ final class OmniaStore {
     private static let addonsStorageKey = "installed-addons"
     private static let disabledCatalogsStorageKey = "disabled-addon-catalogs"
     private static let appearanceStorageKey = "app-appearance"
-    private static let libraryStorageKey = "saved-library"
     private static let playbackCompletionThresholdKey = "playback-completion-threshold"
+    private static let metadataRoutingStorageKey = "metadata-routing-preferences"
 
-    var library: [MediaItem] {
-        didSet { saveLibrary() }
-    }
+    private(set) var library: [MediaItem]
+    private(set) var localMediaSnapshots: [LocalMediaSnapshot]
+    private(set) var localMediaPersistenceFailed = false
+    private let localMediaStore: LocalMediaStore?
     var installedAddons: [InstalledAddon]
     private(set) var disabledAddonCatalogIDs: Set<String>
     var appearance: AppAppearance {
         didSet { saveAppearance() }
     }
     var accentColor: Color = .blue
+    var metadataRouting: MetadataRoutingPreferences {
+        didSet { saveMetadataRouting() }
+    }
 
     init(
         library: [MediaItem]? = nil,
         installedAddons: [InstalledAddon]? = nil,
         disabledAddonCatalogIDs: Set<String>? = nil,
-        appearance: AppAppearance? = nil
+        appearance: AppAppearance? = nil,
+        metadataRouting: MetadataRoutingPreferences? = nil
     ) {
-        self.library = library ?? Self.loadLibrary()
+        let restoresPersistedAddons = installedAddons == nil
+        self.library = library ?? []
+        self.localMediaSnapshots = (library ?? []).map {
+            LocalMediaSnapshot(item: $0, isInWatchlist: true, savedAt: nil, lastPlayedAt: nil)
+        }
+        self.localMediaStore = library == nil ? try? LocalMediaStore.live() : nil
         self.installedAddons = installedAddons ?? Self.loadAddons()
         self.disabledAddonCatalogIDs = disabledAddonCatalogIDs ?? Self.loadDisabledCatalogIDs()
         self.appearance = appearance ?? Self.loadAppearance()
+        self.metadataRouting = metadataRouting ?? Self.loadMetadataRouting()
+
+        // Successful legacy decoding migrates confidential manifest endpoints
+        // into Keychain through InstalledAddon, then this rewrite removes the
+        // old URL field from UserDefaults immediately.
+        if restoresPersistedAddons, !self.installedAddons.isEmpty {
+            saveAddons()
+        }
     }
 
     static let preview = OmniaStore(
@@ -45,6 +63,36 @@ final class OmniaStore {
     func add(_ addon: InstalledAddon) {
         installedAddons.removeAll { $0.id == addon.id }
         installedAddons.append(addon)
+        saveAddons()
+    }
+
+    func installAddon(manifestURL: URL) async throws {
+        let manifest = try await StremioAddonClient.fetchManifest(from: manifestURL)
+        add(.init(manifest: manifest, manifestURL: manifestURL, isEnabled: true, addedAt: .now))
+    }
+
+    func removeAddon(id: String) {
+        installedAddons.first(where: { $0.id == id })?.removeSecureManifestURL()
+        installedAddons.removeAll { $0.id == id }
+        disabledAddonCatalogIDs = disabledAddonCatalogIDs.filter { !$0.hasPrefix("\(id)::") }
+        saveAddons()
+        saveDisabledCatalogIDs()
+    }
+
+    func replaceAddon(id: String, manifest: StremioAddonManifest, manifestURL: URL) {
+        guard let index = installedAddons.firstIndex(where: { $0.id == id }) else { return }
+        let existing = installedAddons[index]
+        installedAddons[index] = .init(
+            manifest: manifest,
+            manifestURL: manifestURL,
+            isEnabled: existing.isEnabled,
+            addedAt: existing.addedAt
+        )
+        saveAddons()
+    }
+
+    func moveAddons(from source: IndexSet, to destination: Int) {
+        installedAddons.move(fromOffsets: source, toOffset: destination)
         saveAddons()
     }
 
@@ -79,34 +127,155 @@ final class OmniaStore {
     }
 
     func isSaved(_ item: MediaItem) -> Bool {
-        library.contains { $0.id == item.id }
+        localMediaSnapshots.first(where: { $0.mediaID == item.id })?.isInWatchlist
+            ?? library.contains { $0.id == item.id }
     }
 
     func toggleSaved(_ item: MediaItem) {
-        if let index = library.firstIndex(where: { $0.id == item.id }) {
-            library.remove(at: index)
-        } else {
-            library.insert(item, at: 0)
+        guard let localMediaStore else {
+            if let index = library.firstIndex(where: { $0.id == item.id }) {
+                library.remove(at: index)
+            } else {
+                library.insert(item, at: 0)
+            }
+            return
+        }
+
+        let includesItem = !isSaved(item)
+        Task {
+            do {
+                try await localMediaStore.setWatchlist(item, isIncluded: includesItem, at: .now)
+                await refreshLocalMedia()
+            } catch {
+                localMediaPersistenceFailed = true
+            }
         }
     }
 
     /// Stores a durable local resume point. The title is added to the library
     /// when necessary so Continue Watching never depends on a remote catalog.
-    func recordPlayback(for item: MediaItem, positionSeconds: Double, durationSeconds: Double?) {
+    func recordPlayback(
+        for item: MediaItem,
+        episode: MediaEpisode? = nil,
+        positionSeconds: Double,
+        durationSeconds: Double?
+    ) {
+        guard let localMediaStore else {
+            recordPlaybackInMemory(
+                for: item,
+                episode: episode,
+                positionSeconds: positionSeconds,
+                durationSeconds: durationSeconds
+            )
+            return
+        }
+
+        Task {
+            do {
+                try await localMediaStore.recordPlayback(
+                    for: item,
+                    episode: episode,
+                    positionSeconds: positionSeconds,
+                    durationSeconds: durationSeconds,
+                    completionThreshold: Self.playbackCompletionThreshold,
+                    at: .now
+                )
+                await refreshLocalMedia()
+            } catch {
+                localMediaPersistenceFailed = true
+            }
+        }
+    }
+
+    func prepareLocalMedia() async {
+        guard let localMediaStore else { return }
+        do {
+            try await LegacyLibraryMigration(defaults: .standard, store: localMediaStore).runIfNeeded()
+            await refreshLocalMedia()
+        } catch {
+            localMediaPersistenceFailed = true
+        }
+    }
+
+    func exportLocalMedia() async throws -> Data {
+        guard let localMediaStore else {
+            return try LocalMediaBackupDocument(
+                snapshots: localMediaSnapshots,
+                exportedAt: .now
+            ).encoded()
+        }
+        return try await localMediaStore.exportDocument().encoded()
+    }
+
+    func importLocalMedia(_ data: Data, replacingExisting: Bool) async throws {
+        guard let localMediaStore else { throw LocalMediaStoreError.verificationFailed }
+        let review = try await localMediaStore.reviewImport(data)
+        let mode: LocalMediaImportMode = replacingExisting
+            ? .replace(review.confirmation)
+            : .merge
+        try await localMediaStore.applyImport(review, mode: mode)
+        await refreshLocalMedia()
+    }
+
+    func clearLocalMedia(_ action: LocalMediaDestructiveAction) async throws {
+        guard let localMediaStore else { throw LocalMediaStoreError.verificationFailed }
+        let confirmation = await localMediaStore.confirmation(for: action)
+        try await localMediaStore.perform(action, confirmation: confirmation)
+        await refreshLocalMedia()
+    }
+
+    private func recordPlaybackInMemory(
+        for item: MediaItem,
+        episode: MediaEpisode?,
+        positionSeconds: Double,
+        durationSeconds: Double?
+    ) {
         let position = max(positionSeconds, 0)
         let duration = durationSeconds.flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
         let normalized = duration.map { min(max(position / $0, 0), 1) }
         let completed = normalized.map { $0 >= Self.playbackCompletionThreshold } ?? false
 
         var updated = item
+        if let episode {
+            updated.resumeEpisodeID = episode.id
+            updated.resumeSeasonNumber = episode.seasonNumber
+            updated.resumeEpisodeNumber = episode.episodeNumber
+            updated.resumeEpisodeStillURL = episode.stillURL
+        } else if let existing = library.first(where: { $0.id == item.id }) {
+            // A subsequent time tick receives the title again, not a fresh
+            // episode object. Retain the known episode context until playback
+            // of another episode replaces it.
+            updated.resumeEpisodeID = existing.resumeEpisodeID
+            updated.resumeSeasonNumber = existing.resumeSeasonNumber
+            updated.resumeEpisodeNumber = existing.resumeEpisodeNumber
+            updated.resumeEpisodeStillURL = existing.resumeEpisodeStillURL
+        }
         updated.positionSeconds = position
         updated.durationSeconds = duration
         updated.progress = completed ? nil : normalized
+        if completed {
+            updated.resumeEpisodeID = nil
+            updated.resumeSeasonNumber = nil
+            updated.resumeEpisodeNumber = nil
+            updated.resumeEpisodeStillURL = nil
+        }
 
         if let index = library.firstIndex(where: { $0.id == item.id }) {
             library[index] = updated
         } else if !completed {
             library.insert(updated, at: 0)
+        }
+    }
+
+    private func refreshLocalMedia() async {
+        guard let localMediaStore else { return }
+        do {
+            let snapshots = try await localMediaStore.snapshot()
+            localMediaSnapshots = snapshots
+            library = snapshots.map(\.item)
+            localMediaPersistenceFailed = false
+        } catch {
+            localMediaPersistenceFailed = true
         }
     }
 
@@ -125,9 +294,9 @@ final class OmniaStore {
         return AppAppearance(rawValue: value) ?? .system
     }
 
-    private static func loadLibrary() -> [MediaItem] {
-        guard let data = UserDefaults.standard.data(forKey: libraryStorageKey) else { return [] }
-        return (try? JSONDecoder().decode([SavedMediaItem].self, from: data))?.map(\.mediaItem) ?? []
+    private static func loadMetadataRouting() -> MetadataRoutingPreferences {
+        guard let data = UserDefaults.standard.data(forKey: metadataRoutingStorageKey) else { return .init() }
+        return (try? JSONDecoder().decode(MetadataRoutingPreferences.self, from: data)) ?? .init()
     }
 
     /// The point at which a title stops appearing in Continue Watching. The
@@ -156,8 +325,8 @@ final class OmniaStore {
         UserDefaults.standard.set(appearance.rawValue, forKey: Self.appearanceStorageKey)
     }
 
-    private func saveLibrary() {
-        guard let data = try? JSONEncoder().encode(library.map(SavedMediaItem.init)) else { return }
-        UserDefaults.standard.set(data, forKey: Self.libraryStorageKey)
+    private func saveMetadataRouting() {
+        guard let data = try? JSONEncoder().encode(metadataRouting) else { return }
+        UserDefaults.standard.set(data, forKey: Self.metadataRoutingStorageKey)
     }
 }

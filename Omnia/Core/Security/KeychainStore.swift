@@ -15,7 +15,16 @@ enum KeychainStore {
             kSecAttrAccount: account
         ]
         SecItemDelete(query as CFDictionary)
-        let addQuery = query.merging([kSecValueData: data]) { _, latest in latest }
+        // Provider credentials are personal secrets. Keep them out of
+        // UserDefaults, the app bundle, and cloud sync. iOS and iPadOS use a
+        // device-only protection class, so an encrypted device backup cannot
+        // migrate the secret. On macOS the item stays in the user's local
+        // login Keychain; we never opt it into Keychain synchronisation.
+        var attributes: [CFString: Any] = [kSecValueData: data]
+        #if !os(macOS)
+        attributes[kSecAttrAccessible] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        #endif
+        let addQuery = query.merging(attributes) { _, latest in latest }
         let status = SecItemAdd(addQuery as CFDictionary, nil)
         guard status == errSecSuccess else { throw KeychainError.unhandled(status) }
     }
@@ -35,6 +44,18 @@ enum KeychainStore {
             throw KeychainError.unhandled(status)
         }
         return value
+    }
+
+    static func delete(account: String, service: String = "PrimeDeca.Omnia") throws {
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: service,
+            kSecAttrAccount: account
+        ]
+        let status = SecItemDelete(query as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw KeychainError.unhandled(status)
+        }
     }
 
     enum KeychainError: Error {

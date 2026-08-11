@@ -15,36 +15,21 @@ struct MetadataCatalogView: View {
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: minimumCardWidth), spacing: 18)],
+                columns: [GridItem(.adaptive(minimum: MediaBrowseMetrics.posterWidth), spacing: MediaBrowseMetrics.gridSpacing)],
                 alignment: .leading,
-                spacing: 26
+                spacing: MediaBrowseMetrics.gridRowSpacing
             ) {
                 ForEach(items) { item in
                     MediaPoster(item: item, fillsAvailableWidth: true)
                 }
             }
-            .padding(.horizontal, horizontalInset)
+            .padding(.horizontal, MediaBrowseMetrics.pageInset)
             .padding(.vertical, 24)
         }
         .navigationTitle(title)
         .navigationDestination(for: MediaItem.self) { MediaDetailView(item: $0) }
     }
 
-    private var minimumCardWidth: CGFloat {
-        #if os(iOS)
-        132
-        #else
-        154
-        #endif
-    }
-
-    private var horizontalInset: CGFloat {
-        #if os(iOS)
-        20
-        #else
-        32
-        #endif
-    }
 }
 
 /// A provider-backed catalog that requests the next page only after its last
@@ -67,15 +52,18 @@ struct PagedMetadataCatalogView: View {
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: minimumCardWidth), spacing: 18)],
+                columns: [GridItem(.adaptive(minimum: MediaBrowseMetrics.posterWidth), spacing: MediaBrowseMetrics.gridSpacing)],
                 alignment: .leading,
-                spacing: 26
+                spacing: MediaBrowseMetrics.gridRowSpacing
             ) {
                 ForEach(items) { item in
                     MediaPoster(item: item, fillsAvailableWidth: true)
                 }
 
-                if isLoading {
+                // The centered overlay is the only initial-load indicator.
+                // A second spinner inside the empty grid was visible at the
+                // upper-left while the same request was still in flight.
+                if isLoading && !items.isEmpty {
                     ProgressView()
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 20)
@@ -85,12 +73,12 @@ struct PagedMetadataCatalogView: View {
                         .task { await loadNextPage() }
                 }
             }
-            .padding(.horizontal, horizontalInset)
+            .padding(.horizontal, MediaBrowseMetrics.pageInset)
             .padding(.vertical, 24)
         }
         .overlay {
             if items.isEmpty && isLoading {
-                ProgressView("Finding (title)…")
+                ProgressView("Finding titles…")
             } else if items.isEmpty && hasReachedEnd {
                 ContentUnavailableView(
                     "No Titles Available",
@@ -127,21 +115,6 @@ struct PagedMetadataCatalogView: View {
         isLoading = false
     }
 
-    private var minimumCardWidth: CGFloat {
-        #if os(iOS)
-        132
-        #else
-        154
-        #endif
-    }
-
-    private var horizontalInset: CGFloat {
-        #if os(iOS)
-        20
-        #else
-        32
-        #endif
-    }
 }
 
 struct GenreCatalogView: View {
