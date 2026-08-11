@@ -17,7 +17,15 @@ final class PlaybackPolicyTests: XCTestCase {
         XCTAssertFalse(PlaybackPolicy.isEligible(handoff, adapter: .libmpv, compatibleOnly: false))
         XCTAssertFalse(PlaybackPolicy.isEligible(opaque, adapter: .avPlayer, compatibleOnly: false))
         XCTAssertTrue(PlaybackPolicy.isEligible(opaque, adapter: .libmpv, compatibleOnly: false))
-        XCTAssertFalse(PlaybackPolicy.isEligible(opaque, adapter: .libmpv, compatibleOnly: true))
+    }
+
+    func testOpaqueHTTPSRemainsEligibleForLibmpvWhenCompatibilityFilterIsEnabled() {
+        let opaque = candidate(
+            id: "opaque",
+            delivery: .nativeHTTPS(URL(string: "https://media.example/play")!)
+        )
+
+        XCTAssertTrue(PlaybackPolicy.isEligible(opaque, adapter: .libmpv, compatibleOnly: true))
     }
 
     func testRememberedSourceWinsThenAutoplayUsesFirstSafeCandidate() {

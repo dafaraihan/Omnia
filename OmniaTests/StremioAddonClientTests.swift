@@ -41,23 +41,7 @@ final class StremioAddonClientTests: XCTestCase {
             "{\"streams\":[{\"url\":\"https://media.example/video.m3u8\",\"name\":\"HD\"}]}".utf8
         )
         let transport = RecordingTransport(data: streamData)
-        let addon = InstalledAddon(
-            manifest: StremioAddonManifest(
-                id: "org.example.streams",
-                version: "1.0.0",
-                name: "Streams",
-                description: "Fixture",
-                resources: [.name("stream")],
-                types: ["movie"],
-                catalogs: [],
-                addonCatalogs: nil,
-                idPrefixes: nil,
-                behaviorHints: nil
-            ),
-            manifestURL: URL(string: "https://addon.example/manifest.json")!,
-            isEnabled: true,
-            addedAt: Date(timeIntervalSince1970: 1)
-        )
+        let addon = streamAddon()
         defer { addon.removeSecureManifestURL() }
 
         let candidates = try await StremioAddonClient.fetchStreamCandidates(
@@ -75,6 +59,30 @@ final class StremioAddonClientTests: XCTestCase {
         XCTAssertEqual(policy?.maximumResponseBytes, 2_097_152)
     }
 
+    func testNotWebReadyDirectHTTPSRemainsAPlayerCandidate() async throws {
+        let data = Data(
+            """
+            {"streams":[{"url":"https://media.example/opaque","name":"Remux","behaviorHints":{"notWebReady":true}}]}
+            """.utf8
+        )
+        let transport = RecordingTransport(data: data)
+        let addon = streamAddon()
+        defer { addon.removeSecureManifestURL() }
+
+        let candidates = try await StremioAddonClient.fetchStreamCandidates(
+            from: addon,
+            mediaTypes: ["movie"],
+            identifiers: ["tt1234567"],
+            timeout: .seconds10,
+            transport: transport
+        )
+
+        guard case let .nativeHTTPS(url) = try XCTUnwrap(candidates.first).delivery else {
+            return XCTFail("Expected direct HTTPS delivery")
+        }
+        XCTAssertEqual(url.absoluteString, "https://media.example/opaque")
+    }
+
     private func validManifestData(name: String = "Example") -> Data {
         let object: [String: Any] = [
             "id": "org.example.addon",
@@ -86,6 +94,26 @@ final class StremioAddonClientTests: XCTestCase {
             "catalogs": []
         ]
         return try! JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+    }
+
+    private func streamAddon() -> InstalledAddon {
+        InstalledAddon(
+            manifest: StremioAddonManifest(
+                id: "org.example.streams",
+                version: "1.0.0",
+                name: "Streams",
+                description: "Fixture",
+                resources: [.name("stream")],
+                types: ["movie"],
+                catalogs: [],
+                addonCatalogs: nil,
+                idPrefixes: nil,
+                behaviorHints: nil
+            ),
+            manifestURL: URL(string: "https://addon.example/manifest.json")!,
+            isEnabled: true,
+            addedAt: Date(timeIntervalSince1970: 1)
+        )
     }
 }
 

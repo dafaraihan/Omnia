@@ -65,11 +65,9 @@ struct AddonStreamCandidate: Identifiable, Hashable, Sendable {
         hasPeerDiscoveryHints = !(stream.sources ?? []).isEmpty
         requestHeaders = stream.behaviorHints?.nativeRequestHeaders ?? [:]
 
-        // libmpv can inspect a direct HTTPS stream itself, including containers
-        // such as Matroska that AVFoundation cannot play. A source stays
-        // ineligible only when the add-on explicitly marks it not web-ready.
-        if let directURL,
-           stream.behaviorHints?.notWebReady != true {
+        // libmpv can inspect a direct HTTPS response itself. Add-on web-player
+        // hints and filename extensions do not determine native playability.
+        if let directURL {
             delivery = .nativeHTTPS(directURL)
         } else if let needsResolver {
             delivery = .resolverRequired(infoHash: needsResolver, fileIndex: stream.fileIdx)

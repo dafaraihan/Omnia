@@ -56,7 +56,7 @@ enum PlaybackPolicy {
         case .supported:
             true
         case .unknown:
-            !compatibleOnly && adapter == .libmpv
+            adapter == .libmpv
         case .unsupported:
             false
         }
