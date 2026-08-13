@@ -232,6 +232,17 @@ while IFS=$'\t' read -r name version source_url expected_digest; do
         exit 65
     fi
 
+    if [[ -n "$source_cache" && ! -e "$source_cache/$expected_digest" ]]; then
+        cache_candidate="$source_cache/.omnia-$expected_digest.$$"
+        cp "$archive" "$cache_candidate"
+        chmod 0444 "$cache_candidate"
+        if ! mv -n "$cache_candidate" "$source_cache/$expected_digest"; then
+            rm -f "$cache_candidate"
+            echo "error: verified source cache write failed for $name" >&2
+            exit 73
+        fi
+    fi
+
     tar -xf "$archive" -C "$source_directory"
 
     if [[ -z "$(find "$source_directory" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then

@@ -212,6 +212,9 @@
 				"$(SRCROOT)/Omnia/Platform/Playback/embed-libmpv.sh",
 				"$(SRCROOT)/Scripts/verify-playback-manifest.sh",
 				"$(SRCROOT)/Scripts/verify-playback-artifacts.sh",
+				"$(SRCROOT)/Scripts/verify-release-entitlements.sh",
+				"$(SRCROOT)/Scripts/generate-playback-sbom.sh",
+				"$(SRCROOT)/Omnia.entitlements",
 			);
 			name = "Embed libmpv";
 			outputFileListPaths = (

@@ -378,10 +378,14 @@ Afterward, repeat the smoke checks and preserve the failed deployment logs.
    silently updating them.
 2. Verify version/build numbers, bundle identifiers, signing team, entitlements,
    capabilities, Supabase environment, and OAuth callback allow-list.
-3. Install mpv on the controlled macOS builder. Record `brew info mpv`, the
-   formula version, architecture, and the checksums of every embedded dylib.
-   The current script discovers live Homebrew paths, so equal source commits do
-   not yet guarantee equal artifacts.
+3. Build the pinned source closure from
+   `NativeDependencies/playback-dependencies.json` using
+   `Scripts/build-playback-dependencies.sh` in a controlled macOS job. Preserve
+   the source/build metadata, SPDX SBOM, exact license files, and SHA-256 of
+   every universal dylib. Build the same commit and manifest on a second clean
+   controlled builder and compare the complete pre-signing artifact inventory.
+   Homebrew discovery is permitted only for Debug builds and is not release
+   evidence.
 4. Build/test macOS and build the iOS Simulator target using the commands above;
    then archive each shipping destination with the intended distribution
    identity.
@@ -395,8 +399,10 @@ Afterward, repeat the smoke checks and preserve the failed deployment logs.
    codesign -d --entitlements :- /path/to/Omnia.app
    ```
 
-   All Homebrew references must have been rewritten to bundled `@rpath`
-   libraries; system libraries may remain absolute. Confirm the hardened
+   All non-system references must resolve to bundled `@rpath` libraries; system
+   libraries may remain absolute. Confirm the embedded
+   `Resources/NativePlayback/native-playback.spdx.json`, package license texts,
+   and build metadata match the verified artifact root. Confirm the hardened
    runtime, the reviewed JIT entitlement, nested signatures, launch, video,
    audio/subtitle selection, seeking, and clean failure for a bad stream.
 6. Distribute to internal TestFlight/App Store Connect testers first. Smoke-test

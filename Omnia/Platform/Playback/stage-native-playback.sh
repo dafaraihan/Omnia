@@ -20,6 +20,7 @@ native_root="${OMNIA_NATIVE_PLAYBACK_ROOT:-}"
 [[ -f "$native_root/playback-dependencies.json" ]] || fail "dependency manifest is missing"
 [[ -n "${TARGET_BUILD_DIR:-}" && -n "${WRAPPER_NAME:-}" ]] || fail "Xcode output settings are missing"
 
+"$repo_root/Scripts/verify-release-entitlements.sh" "$repo_root/Omnia.entitlements"
 /bin/bash "$repo_root/Scripts/verify-playback-manifest.sh" \
     "$native_root/playback-dependencies.json"
 /bin/bash "$repo_root/Scripts/verify-playback-artifacts.sh" "$native_root"

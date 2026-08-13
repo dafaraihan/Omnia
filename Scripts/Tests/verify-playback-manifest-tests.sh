@@ -12,7 +12,7 @@ jq -e '
   | contains([
       "mpv", "ffmpeg", "libtorrent", "boost", "libbluray",
       "libplacebo", "libass", "freetype", "fribidi", "harfbuzz",
-      "openssl", "libudfread"
+      "openssl", "libudfread", "jinja", "markupsafe", "vulkan-headers"
     ])
 ' "$manifest" >/dev/null
 

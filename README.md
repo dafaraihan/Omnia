@@ -6,10 +6,10 @@ Apple TV is a design reference for cinematic hierarchy, focus, and playback insp
 
 ## Scope
 
-Omnia helps people discover titles, inspect metadata, save media to a local library, choose sources from enabled add-ons, and play approved HTTPS media URLs. It does not:
+Omnia helps people discover titles, inspect metadata, save media to a local library, choose sources from enabled add-ons, and play media using the platform-specific playback boundary. The macOS native playback expansion is under development and remains distribution-blocked pending the review gates in [NativeDependencies](NativeDependencies/README.md). Released behavior does not yet:
 
 - host media;
-- embed torrent or peer-to-peer transport; or
+- provide an approved local torrent or peer-to-peer transport; or
 - trust add-on manifests, responses, resolvers, or stream URLs by default.
 
 Torrent identifiers are data, not playable media. A resolver is optional and must be explicitly configured by the user; only an approved HTTPS result may reach the player.
@@ -17,7 +17,8 @@ Torrent identifiers are data, not playable media. A resolver is optional and mus
 ## Requirements
 
 - Xcode for Apple-platform development and SwiftUI previews.
-- Homebrew and libmpv for macOS builds: `brew install mpv`. The macOS target links libmpv and bundles the locally installed runtime during its build.
+- Homebrew libmpv for ordinary macOS Debug builds: `brew install mpv`.
+- CMake, Meson/Ninja, and the platform toolchain for the pinned macOS native playback artifact workflow documented in [NativeDependencies](NativeDependencies/README.md). Release builds reject live Homebrew inputs and require a separately reviewed universal artifact root.
 - The Supabase CLI and Docker for the local Supabase stack.
 - Deno for checking and testing the metadata Edge Function.
 

@@ -59,7 +59,21 @@ run_fetch() {
 }
 
 safe_output="$fixture_root/safe-output"
-run_fetch "$fixture_root/safe-manifest.json" "$safe_output"
+mkdir -p "$fixture_root/populated-cache"
+OMNIA_NATIVE_BUILD_MODE=fetch-only \
+OMNIA_NATIVE_SOURCE_CACHE="$fixture_root/populated-cache" \
+OMNIA_TEST_ARCHIVE="$fixture_root/safe.tar.gz" \
+PATH="$repo_root/Scripts/Tests/Fixtures:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin" \
+    /bin/bash "$builder" "$fixture_root/safe-manifest.json" "$safe_output"
+if [[ ! -f "$fixture_root/populated-cache/$safe_digest" || \
+      -L "$fixture_root/populated-cache/$safe_digest" ]]; then
+    echo "expected fetch mode to populate a regular digest-addressed cache entry" >&2
+    exit 1
+fi
+if [[ "$(shasum -a 256 "$fixture_root/populated-cache/$safe_digest" | awk '{print $1}')" != "$safe_digest" ]]; then
+    echo "expected populated cache entry to retain the verified digest" >&2
+    exit 1
+fi
 jq -e \
   --argjson expected "$(jq '.components | length' "$real_manifest")" \
   --arg digest "$safe_digest" '
