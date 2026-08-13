@@ -7,6 +7,28 @@ real_manifest="$repo_root/NativeDependencies/playback-dependencies.json"
 fixture_root="$(mktemp -d)"
 trap 'rm -rf "$fixture_root"' EXIT
 
+plan_output="$fixture_root/plan-output"
+OMNIA_NATIVE_BUILD_MODE=plan-only \
+    /bin/bash "$builder" "$real_manifest" "$plan_output"
+jq -e '
+  .schema_version == 1 and
+  .architectures == ["arm64", "x86_64"] and
+  .build_order == [
+    "boost", "openssl", "freetype", "fribidi", "harfbuzz", "libass",
+    "libplacebo", "ffmpeg", "libbluray", "libtorrent", "mpv"
+  ] and
+  (.build_only_components == ["jinja", "markupsafe", "vulkan-headers"]) and
+  (.build_flags.mpv | index("-Dgpl=false") != null) and
+  (.build_flags.mpv | index("-Dlua=disabled") != null) and
+  (.build_flags.mpv | index("-Djavascript=disabled") != null) and
+  (.build_flags.mpv | index("-Ddvdnav=disabled") != null) and
+  (.build_flags.ffmpeg | index("--disable-gpl") != null) and
+  (.build_flags.ffmpeg | index("--disable-nonfree") != null) and
+  (.build_flags.libplacebo | index("-Dopengl=disabled") != null) and
+  (.build_flags.libtorrent | index("TORRENT_DISABLE_LOGGING=ON") != null) and
+  (.embedded_components == ["libudfread"])
+' "$plan_output/build-plan.json" >/dev/null
+
 mkdir -p "$fixture_root/safe/package"
 printf '%s\n' 'bounded native source fixture' > "$fixture_root/safe/package/README"
 tar -czf "$fixture_root/safe.tar.gz" -C "$fixture_root/safe" package

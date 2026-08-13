@@ -12,7 +12,7 @@ output_directory="$2"
 build_mode="${OMNIA_NATIVE_BUILD_MODE:-build}"
 
 case "$build_mode" in
-    build|fetch-only) ;;
+    build|fetch-only|plan-only) ;;
     *)
         echo "error: unsupported native playback build mode" >&2
         exit 64
@@ -66,6 +66,84 @@ if [[ -n "$source_cache" ]]; then
             exit 73
             ;;
     esac
+fi
+
+write_build_plan() {
+    jq -n '
+      {
+        schema_version: 1,
+        architectures: ["arm64", "x86_64"],
+        build_order: [
+          "boost", "openssl", "freetype", "fribidi", "harfbuzz", "libass",
+          "libplacebo", "ffmpeg", "libbluray", "libtorrent", "mpv"
+        ],
+        embedded_components: ["libudfread"],
+        build_only_components: ["jinja", "markupsafe", "vulkan-headers"],
+        build_flags: {
+          openssl: ["no-tests", "no-apps", "no-docs", "shared"],
+          freetype: [
+            "-Dharfbuzz=disabled", "-Dbrotli=disabled", "-Dbzip2=disabled",
+            "-Dpng=disabled", "-Dzlib=system", "-Dtests=disabled"
+          ],
+          fribidi: ["-Ddeprecated=false", "-Ddocs=false", "-Dbin=false", "-Dtests=false"],
+          harfbuzz: [
+            "-Dglib=disabled", "-Dgobject=disabled", "-Dcairo=disabled",
+            "-Dchafa=disabled", "-Dpng=disabled", "-Dzlib=disabled",
+            "-Dicu=disabled", "-Dgraphite=disabled", "-Dgraphite2=disabled",
+            "-Dfreetype=enabled", "-Dcoretext=disabled", "-Dtests=disabled",
+            "-Dintrospection=disabled", "-Ddocs=disabled", "-Dutilities=disabled"
+          ],
+          libass: [
+            "-Dfontconfig=disabled", "-Ddirectwrite=disabled", "-Dcoretext=enabled",
+            "-Dtest=disabled", "-Dcompare=disabled", "-Dprofile=disabled",
+            "-Dfuzz=disabled", "-Dcheckasm=disabled"
+          ],
+          libplacebo: [
+            "-Dvulkan=disabled", "-Dopengl=disabled", "-Dgl-proc-addr=disabled",
+            "-Dd3d11=disabled", "-Dglslang=disabled", "-Dshaderc=disabled",
+            "-Dlcms=disabled", "-Ddovi=disabled", "-Dlibdovi=disabled",
+            "-Ddemos=false", "-Dtests=false", "-Dbench=false", "-Dfuzz=false",
+            "-Dunwind=disabled", "-Dxxhash=disabled"
+          ],
+          ffmpeg: [
+            "--disable-gpl", "--disable-nonfree", "--disable-programs",
+            "--disable-doc", "--disable-debug", "--disable-autodetect",
+            "--disable-static", "--enable-shared", "--enable-network",
+            "--enable-securetransport", "--enable-videotoolbox",
+            "--enable-audiotoolbox", "--enable-zlib"
+          ],
+          libbluray: [
+            "--force-fallback-for=libudfread",
+            "-Denable_docs=false", "-Denable_tools=false", "-Denable_devtools=false",
+            "-Denable_examples=false", "-Dbdj_jar=disabled", "-Dfreetype=disabled",
+            "-Dfontconfig=disabled", "-Dlibxml2=disabled", "-Dembed_udfread=true"
+          ],
+          libtorrent: [
+            "BUILD_SHARED_LIBS=ON", "build_tests=OFF", "build_examples=OFF",
+            "build_tools=OFF", "python-bindings=OFF", "deprecated-functions=OFF",
+            "logging=OFF", "i2p=OFF", "dht=ON", "encryption=ON",
+            "TORRENT_DISABLE_LOGGING=ON"
+          ],
+          mpv: [
+            "-Dgpl=false", "-Dlibmpv=true", "-Dcplayer=false", "-Dbuild-date=false",
+            "-Dlua=disabled", "-Djavascript=disabled", "-Ddvdnav=disabled",
+            "-Dcdda=disabled", "-Ddvbin=disabled", "-Dcplugins=disabled",
+            "-Dlibbluray=enabled", "-Dlibarchive=disabled", "-Dlibavdevice=disabled",
+            "-Duchardet=disabled", "-Dcocoa=disabled", "-Dmacos-cocoa-cb=disabled",
+            "-Dmacos-media-player=disabled", "-Dmacos-touchbar=disabled",
+            "-Dswift-build=disabled", "-Dgl=enabled", "-Dgl-cocoa=disabled",
+            "-Dtests=false", "-Dfuzzers=false"
+          ]
+        }
+      }
+    ' > "$output_directory/build-plan.json"
+}
+
+write_build_plan
+
+if [[ "$build_mode" == "plan-only" ]]; then
+    echo "native playback build plan generated"
+    exit 0
 fi
 
 work_directory="$(mktemp -d /tmp/omnia-native-build.XXXXXX)"

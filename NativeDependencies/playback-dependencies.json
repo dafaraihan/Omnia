@@ -5,7 +5,7 @@
     "status": "pending",
     "second_reviewer": null,
     "reviewed_at": null,
-      "notes": "The selected source closure is pinned for local development. FFmpeg and OpenSSL signatures were validated against fingerprints published on their official sites. VideoLAN's checksum matches, but its libbluray signature uses an expired DSA/SHA-1 release key and is not sufficient release evidence. Remaining signatures, license obligations, reproducible universal artifacts, and the complete closure still require independent review before distribution."
+      "notes": "The selected source closure is pinned for local development, including libplacebo's Jinja and MarkupSafe build-only submodules. FFmpeg and OpenSSL signatures were validated against fingerprints published on their official sites. VideoLAN's checksum matches, but its libbluray signature uses an expired DSA/SHA-1 release key and is not sufficient release evidence. Remaining signatures, license obligations, reproducible universal artifacts, and the complete closure still require independent review before distribution."
   },
   "components": [
     {
@@ -94,6 +94,48 @@
       "verification": {
         "status": "pending-independent-review",
         "publisher_evidence": "The archive is generated from the official v7.360.1 mirror tag; its digest was reproduced locally, but no separately published signature or checksum was found."
+      }
+    },
+    {
+      "name": "jinja",
+      "version": "3.1.6",
+      "top_level": false,
+      "source_url": "https://github.com/pallets/jinja/archive/15206881c006c79667fe5154fe80c01c65410679.tar.gz",
+      "sha256": "b88a20dcc2e34072fcf4159325bc6c34cd4b29a81a8b83d15d2f28ba561da296",
+      "license": "BSD-3-Clause",
+      "license_url": "https://github.com/pallets/jinja/blob/15206881c006c79667fe5154fe80c01c65410679/LICENSE.txt",
+      "build_system": "libplacebo-build-only-python",
+      "verification": {
+        "status": "pending-independent-review",
+        "publisher_evidence": "libplacebo v7.360.1 pins Jinja commit 15206881c006c79667fe5154fe80c01c65410679 as a build-only submodule. Its official GitHub commit archive digest was reproduced locally; independent review remains pending."
+      }
+    },
+    {
+      "name": "markupsafe",
+      "version": "3.0.3",
+      "top_level": false,
+      "source_url": "https://github.com/pallets/markupsafe/archive/297fc8e356e6836a62087949245d09a28e9f1b13.tar.gz",
+      "sha256": "da7c010c9c81a66ac73036558c1fcb6212b50482f43211cd1254035b94f82414",
+      "license": "BSD-3-Clause",
+      "license_url": "https://github.com/pallets/markupsafe/blob/297fc8e356e6836a62087949245d09a28e9f1b13/LICENSE.txt",
+      "build_system": "libplacebo-build-only-python",
+      "verification": {
+        "status": "pending-independent-review",
+        "publisher_evidence": "libplacebo v7.360.1 pins MarkupSafe commit 297fc8e356e6836a62087949245d09a28e9f1b13 as a build-only submodule. Its official GitHub commit archive digest was reproduced locally; independent review remains pending."
+      }
+    },
+    {
+      "name": "vulkan-headers",
+      "version": "1.4.337",
+      "top_level": false,
+      "source_url": "https://github.com/KhronosGroup/Vulkan-Headers/archive/450bd2232225d6c7728a4108055ac2e37cef6475.tar.gz",
+      "sha256": "26df9841c30806a994e2fdf42f7c87bcb1ced9db9a06033469123939fb3fa075",
+      "license": "Apache-2.0",
+      "license_url": "https://github.com/KhronosGroup/Vulkan-Headers/blob/450bd2232225d6c7728a4108055ac2e37cef6475/LICENSE.md",
+      "build_system": "libplacebo-build-only-headers",
+      "verification": {
+        "status": "pending-independent-review",
+        "publisher_evidence": "libplacebo v7.360.1 pins Vulkan-Headers commit 450bd2232225d6c7728a4108055ac2e37cef6475 for its public stub headers. Its official GitHub commit archive digest was reproduced locally; independent review remains pending."
       }
     },
     {
