@@ -243,7 +243,12 @@ final class DiscMaterializerTests: XCTestCase {
         }
         let requestedSecondFile = await source.hasRequestedSecondFile
         XCTAssertTrue(requestedSecondFile)
-        await materializer.cancel()
+        await materializer.cancelAndWait()
+
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: reservation.path),
+            "cancelAndWait must not return before incomplete cache cleanup finishes"
+        )
 
         do {
             _ = try await collection.value

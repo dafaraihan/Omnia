@@ -155,7 +155,7 @@ struct PlaybackSourceSheet: View {
                 discPreparationTask?.cancel()
                 discPreparationTask = nil
                 discMaterializer = nil
-                Task { await materializer?.cancel() }
+                Task { await materializer?.cancelAndWait() }
                 #endif
             }
         }
@@ -640,6 +640,7 @@ struct PlaybackSourceSheet: View {
                     candidate: candidate
                 )
             } catch is CancellationError {
+                await discMaterializer?.cancelAndWait()
                 if let lease {
                     await LocalPlaybackJobCoordinator.shared.release(lease)
                 }
@@ -647,6 +648,7 @@ struct PlaybackSourceSheet: View {
                 discMaterializer = nil
                 discPreparationTask = nil
             } catch let error as HTTPSDiscByteSourceError where error == .cancelled {
+                await discMaterializer?.cancelAndWait()
                 if let lease {
                     await LocalPlaybackJobCoordinator.shared.release(lease)
                 }
@@ -654,6 +656,7 @@ struct PlaybackSourceSheet: View {
                 discMaterializer = nil
                 discPreparationTask = nil
             } catch {
+                await discMaterializer?.cancelAndWait()
                 if let lease {
                     await LocalPlaybackJobCoordinator.shared.release(lease)
                 }
@@ -741,10 +744,12 @@ struct PlaybackSourceSheet: View {
         #if os(macOS)
         let torrentTask = localTorrentTask
         let preparationTask = discPreparationTask
+        let materializer = discMaterializer
         localTorrentEngine?.cancel()
         torrentTask?.cancel()
         preparationTask?.cancel()
         Task { @MainActor in
+            await materializer?.cancelAndWait()
             await torrentTask?.value
             await preparationTask?.value
             guard !Task.isCancelled else { return }

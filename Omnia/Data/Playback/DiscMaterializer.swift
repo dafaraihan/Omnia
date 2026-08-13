@@ -110,6 +110,12 @@ actor DiscMaterializer {
         activeOperation?.task.cancel()
     }
 
+    func cancelAndWait() async {
+        guard let operation = activeOperation else { return }
+        operation.task.cancel()
+        await operation.task.value
+    }
+
     private func run(
         _ descriptor: DiscMediaDescriptor,
         source: any DiscByteSource,

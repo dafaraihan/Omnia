@@ -106,7 +106,8 @@ dependency source.
   cancellation before continuing. Newly reserved directories remain
   provisional until a downloader or materializer owns them, and active
   playback cache keys remain protected from eviction until the player stops or
-  replaces the source.
+  replaces the source. Cancellation waits for the disc writer to finish its
+  partial-file cleanup before releasing the shared cache lease.
   Only unencrypted Blu-ray playback is in scope. No decryption keys, DVD
   libraries, script execution, or remote resolver is introduced.
 - The plist contains no App Transport Security exception. The built products
