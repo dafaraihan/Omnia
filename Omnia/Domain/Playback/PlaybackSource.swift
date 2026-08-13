@@ -104,6 +104,15 @@ struct AddonStreamCandidate: Identifiable, Hashable, Sendable {
         return .unknown
     }
 
+    var hasDiscImageHint: Bool {
+        guard case let .nativeHTTPS(url) = delivery else { return false }
+        return url.pathExtension.caseInsensitiveCompare("iso") == .orderedSame
+            || filename.map {
+                URL(fileURLWithPath: $0).pathExtension
+                    .caseInsensitiveCompare("iso") == .orderedSame
+            } == true
+    }
+
     private var urlPathExtension: String {
         guard case let .nativeHTTPS(url) = delivery else { return "" }
         return url.pathExtension.lowercased()

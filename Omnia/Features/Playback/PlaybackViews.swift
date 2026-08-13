@@ -26,6 +26,10 @@ struct PlaybackSourceSheet: View {
     @State private var localTorrentProgress: [String: Double] = [:]
     #if os(macOS)
     @State private var localTorrentEngine: OMLocalTorrentEngine?
+    @State private var discMaterializer: DiscMaterializer?
+    @State private var discPreparationTask: Task<Void, Never>?
+    @State private var preparingDiscCandidateID: String?
+    @State private var discPreparationStates: [String: DiscPreparationState] = [:]
     #endif
 
     var body: some View {
@@ -54,7 +58,7 @@ struct PlaybackSourceSheet: View {
                                 } header: {
                                     Text("Direct HTTPS Sources")
                                 } footer: {
-                                    Text("Omnia opens these with libmpv on macOS. HLS, MP4, and Matroska streams are handed directly to the player; a stream can still fail when its server refuses the request or the media is malformed.")
+                                    Text("Omnia opens streams with libmpv on macOS. Blu-ray ISO sources are downloaded into the bounded resolver cache only after you choose Prepare Disc; extensionless HTTPS sources also offer that explicit action.")
                                 }
                             }
 
@@ -144,6 +148,11 @@ struct PlaybackSourceSheet: View {
                 #if os(macOS)
                 localTorrentEngine?.cancel()
                 localTorrentEngine = nil
+                let materializer = discMaterializer
+                discPreparationTask?.cancel()
+                discPreparationTask = nil
+                discMaterializer = nil
+                Task { await materializer?.cancel() }
                 #endif
             }
         }
@@ -231,6 +240,58 @@ struct PlaybackSourceSheet: View {
     @ViewBuilder
     private func playbackButton(_ candidate: AddonStreamCandidate) -> some View {
         if let source = candidate.nativePlaybackSource {
+            #if os(macOS)
+            let rowState = PlaybackSourceRowState(candidate: candidate)
+            let preparationState = discPreparationStates[candidate.id]
+            HStack(spacing: 8) {
+                Button {
+                    switch rowState.action {
+                    case .playDirect:
+                        beginPlayback(source, candidate: candidate)
+                    case .prepareDisc:
+                        prepareHTTPSDisc(candidate)
+                    case .resolve, .unavailable:
+                        break
+                    }
+                } label: {
+                    candidateRow(
+                        candidate,
+                        symbol: rowState.action == .prepareDisc
+                            ? "opticaldisc.fill"
+                            : "play.circle.fill",
+                        tint: .accentColor,
+                        status: preparationState.map {
+                            DiscPreparationPresentation(state: $0).status
+                        },
+                        showsDisclosure: false
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(preparingDiscCandidateID != nil)
+                .accessibilityHint(
+                    rowState.action == .prepareDisc
+                        ? "Downloads the disc into Omnia's local cache, then starts playback"
+                        : "Starts native playback"
+                )
+
+                if rowState.allowsExplicitDiscPreparation,
+                   rowState.action == .playDirect {
+                    Menu {
+                        Button("Prepare as Blu-ray Disc", systemImage: "opticaldisc") {
+                            prepareHTTPSDisc(candidate)
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .font(.title3)
+                            .frame(width: 28, height: 28)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .disabled(preparingDiscCandidateID != nil)
+                    .accessibilityLabel("More source actions")
+                }
+            }
+            #else
             Button {
                 beginPlayback(source, candidate: candidate)
             } label: {
@@ -238,6 +299,7 @@ struct PlaybackSourceSheet: View {
             }
             .buttonStyle(.plain)
             .accessibilityHint("Starts native playback")
+            #endif
         }
     }
 
@@ -263,7 +325,7 @@ struct PlaybackSourceSheet: View {
         switch PlaybackSourceRowState(candidate: candidate).action {
         case let .unavailable(message):
             reason = message
-        case .playDirect, .resolve:
+        case .playDirect, .prepareDisc, .resolve:
             reason = "Unavailable"
         }
 
@@ -280,7 +342,8 @@ struct PlaybackSourceSheet: View {
         _ candidate: AddonStreamCandidate,
         symbol: String,
         tint: Color,
-        status: String? = nil
+        status: String? = nil,
+        showsDisclosure: Bool = true
     ) -> some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: symbol)
@@ -318,12 +381,12 @@ struct PlaybackSourceSheet: View {
                 if let status {
                     Text(status)
                         .font(.caption2)
-                        .foregroundStyle(status == "Ready to resolve" ? .green : .orange)
+                        .foregroundStyle(status.localizedCaseInsensitiveContains("ready") ? .green : .orange)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
             Spacer(minLength: 0)
-            if case .nativeHTTPS = candidate.delivery {
+            if showsDisclosure, case .nativeHTTPS = candidate.delivery {
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.tertiary)
@@ -428,12 +491,176 @@ struct PlaybackSourceSheet: View {
         #endif
     }
 
+    #if os(macOS)
+    private func prepareHTTPSDisc(_ candidate: AddonStreamCandidate) {
+        guard case let .nativeHTTPS(url) = candidate.delivery,
+              let sourceMetadata = candidate.nativePlaybackSource,
+              preparingDiscCandidateID == nil
+        else { return }
+
+        preparingDiscCandidateID = candidate.id
+        discPreparationStates[candidate.id] = .detecting
+        discPreparationTask = Task { @MainActor in
+            do {
+                let preferences = localResolverSettings.preferences
+                let source = try await HTTPSDiscByteSource.prepare(
+                    url: url,
+                    maximumBytes: preferences.cacheQuota.bytes,
+                    requestHeaders: candidate.requestHeaders
+                )
+                try Task.checkCancellation()
+
+                let jobID = UUID()
+                let compactID = jobID.uuidString
+                    .replacingOccurrences(of: "-", with: "")
+                    .lowercased()
+                let infoHash = compactID + String(compactID.prefix(8))
+                let policy = LocalTorrentStoragePolicy(
+                    maximumCacheBytes: preferences.cacheQuota.bytes,
+                    minimumFreeBytes: LocalTorrentStoragePolicy.default.minimumFreeBytes,
+                    maximumItemBytes: preferences.cacheQuota.bytes
+                )
+                let reservation = try await Task.detached {
+                    let descriptor = try LocalTorrentPlaybackDescriptor(
+                        infoHash: infoHash,
+                        fileIndex: nil,
+                        displayName: "Blu-ray disc image",
+                        expectedByteCount: source.expectedByteCount
+                    )
+                    let cacheRoot = try LocalTorrentCacheManager.defaultRoot()
+                    let directory = try LocalTorrentCacheManager.prepare(
+                        descriptor: descriptor,
+                        policy: policy,
+                        root: cacheRoot
+                    )
+                    return (cacheRoot, directory)
+                }.value
+                try Task.checkCancellation()
+
+                let file = TorrentMediaFile(
+                    index: 0,
+                    relativePath: "Disc.iso",
+                    size: source.expectedByteCount
+                )
+                let materializer = DiscMaterializer(
+                    reservationRoot: reservation.1,
+                    reservedBytes: source.expectedByteCount,
+                    retainsIncompleteJobs: preferences.retainsIncompleteJobs,
+                    jobID: jobID
+                )
+                discMaterializer = materializer
+                let events = await materializer.materialize(.iso(file), source: source)
+                var preparedDisc: MaterializedDisc?
+                for try await event in events {
+                    try Task.checkCancellation()
+                    switch event {
+                    case let .progress(completedBytes, totalBytes):
+                        discPreparationStates[candidate.id] = .materializing(
+                            completedBytes: completedBytes,
+                            totalBytes: totalBytes
+                        )
+                    case let .ready(disc):
+                        preparedDisc = disc
+                    }
+                }
+                guard let preparedDisc else {
+                    throw DiscPlaybackRequestError.incompleteMaterialization
+                }
+                let request = try await Task.detached {
+                    try DiscPlaybackRequest(
+                        disc: preparedDisc,
+                        cacheRoot: reservation.0
+                    )
+                }.value
+                try Task.checkCancellation()
+
+                discPreparationStates[candidate.id] = .ready
+                preparingDiscCandidateID = nil
+                discMaterializer = nil
+                discPreparationTask = nil
+                beginPlayback(
+                    .disc(source: sourceMetadata, request: request),
+                    candidate: candidate
+                )
+            } catch is CancellationError {
+                preparingDiscCandidateID = nil
+                discMaterializer = nil
+                discPreparationTask = nil
+            } catch let error as HTTPSDiscByteSourceError where error == .cancelled {
+                preparingDiscCandidateID = nil
+                discMaterializer = nil
+                discPreparationTask = nil
+            } catch {
+                discPreparationStates[candidate.id] = .failed(
+                    discPreparationFailure(for: error)
+                )
+                preparingDiscCandidateID = nil
+                discMaterializer = nil
+                discPreparationTask = nil
+            }
+        }
+    }
+
+    private func discPreparationFailure(for error: Error) -> DiscPreparationFailure {
+        if let error = error as? HTTPSDiscByteSourceError {
+            switch error {
+            case .httpsRequired, .credentialedURL, .redirectRejected:
+                return .unsafeSource
+            case .sourceTooLarge:
+                return .storageFull
+            case .invalidContentLength, .invalidResponse, .fileSizeMismatch,
+                 .cancelled, .transportFailure:
+                return .network
+            }
+        }
+        if let error = error as? LocalTorrentStoragePolicy.StorageError {
+            switch error {
+            case .itemTooLarge, .insufficientSpace:
+                return .storageFull
+            case .invalidPolicy:
+                return .unsafeSource
+            }
+        }
+        if let error = error as? LocalTorrentCacheManager.CacheError {
+            switch error {
+            case .cacheUnavailable, .evictionFailed:
+                return .storageFull
+            case .unsafeCacheEntry:
+                return .unsafeSource
+            }
+        }
+        if let error = error as? DiscMaterializationError {
+            switch error {
+            case .insufficientReservation, .storageFailure:
+                return .storageFull
+            case .unsafeReservation:
+                return .unsafeSource
+            case .byteCountMismatch:
+                return .network
+            }
+        }
+        if let error = error as? DiscPlaybackRequestError {
+            switch error {
+            case .unsupportedDisc:
+                return .unsupportedDisc
+            case .outsideCache, .incompleteMaterialization, .unsafeDevice:
+                return .unsafeSource
+            }
+        }
+        return .network
+    }
+    #endif
+
     /// The source picker is itself a transient presentation.  Starting the
     /// root-level player in the same update transaction as dismissing it lets
     /// AppKit occasionally apply the sheet's old presentation state after
     /// `PlaybackSession` has requested the player.  Dismiss first, then start
     /// from the next main-actor turn so the shared player presentation wins.
     private func beginPlayback(_ source: PlaybackSource, candidate: AddonStreamCandidate? = nil) {
+        beginPlayback(.stream(source), candidate: candidate)
+    }
+
+    private func beginPlayback(_ input: PlaybackInput, candidate: AddonStreamCandidate? = nil) {
         let item = item
         let episode = episode
         let resumeAt = resumePlayback ? item.positionSeconds : nil
@@ -446,7 +673,7 @@ struct PlaybackSourceSheet: View {
             playback.start(
                 item: item,
                 episode: episode,
-                source: source,
+                input: input,
                 resumeAt: resumeAt,
                 preferences: settings.preferences
             ) { position, duration in
@@ -485,7 +712,14 @@ struct PlaybackSourceSheet: View {
     }
 
     private func startAutomaticallyIfAllowed() {
+        #if os(macOS)
+        let directCandidates = candidates.filter {
+            $0.nativePlaybackSource != nil
+                && PlaybackSourceRowState(candidate: $0).isEligibleForAutoplay
+        }
+        #else
         let directCandidates = candidates.filter { $0.nativePlaybackSource != nil }
+        #endif
         let remembered = settings.preferences.rememberLastSelection
             ? RememberedSourceStore().source(
                 for: mediaKey,

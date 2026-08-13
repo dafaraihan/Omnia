@@ -14,6 +14,8 @@ Omnia helps people discover titles, inspect metadata, save media to a local libr
 
 Torrent identifiers remain untrusted data. On an eligible macOS Release build, explicit peer consent lets Omnia validate a bounded descriptor, download only the selected file into an excluded-from-backup cache, stop peer activity at cancellation or completion, and hand the completed regular file to libmpv. No remote resolver is used. Debug and mobile builds keep the native peer engine unavailable.
 
+On macOS, an HTTPS source identified as an ISO can be explicitly prepared as an unencrypted Blu-ray disc. Omnia first requires an exact positive size, reserves space under the same bounded excluded-from-backup cache, follows only same-origin HTTPS redirects, writes a complete local image, and then gives libmpv a typed `bd://` request. Extensionless HTTPS sources expose the same operation as an explicit secondary action and never enter it through autoplay. DVD and encrypted Blu-ray inputs remain unsupported. The mobile disc/resolver phase is paused pending its separate product, security, dependency, storage, and layout review.
+
 ## Requirements
 
 - Xcode for Apple-platform development and SwiftUI previews.

@@ -95,6 +95,14 @@ dependency source.
   request timeouts. Direct HTTPS sources go to AVPlayer/libmpv. On eligible
   macOS Release builds, magnet descriptors go only to the bounded local engine;
   the player receives its completed regular cache file, never the magnet URI.
+- macOS HTTPS disc preparation is an explicit non-autoplay action. It rejects
+  insecure, credentialed, fragment-bearing, cross-origin redirected, unknown-
+  length, oversized, truncated, and overlong responses before a typed disc
+  request reaches libmpv. The exact-sized image is written atomically under the
+  bounded excluded-from-backup resolver cache; partial work is removed on
+  failure or cancellation unless the user has explicitly enabled retention.
+  Only unencrypted Blu-ray playback is in scope. No decryption keys, DVD
+  libraries, script execution, or remote resolver is introduced.
 - The plist contains no App Transport Security exception. The built products
   still need release verification because generated or dependency settings can
   alter effective behavior.

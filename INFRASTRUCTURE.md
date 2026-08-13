@@ -31,7 +31,8 @@ used as evidence that uncommitted application work was integrated.
     +--> HTTPS Stremio-compatible add-ons
            |
            +--> direct HTTPS media --------------------+
-           +--> info hash --> macOS local resolver ----+--> completed cache file --> player
+           +--> HTTPS ISO -- explicit macOS prepare ---+
+           +--> info hash --> macOS local resolver ----+--> completed cache input --> player
                                                          macOS: libmpv
                                                          iOS/iPadOS: AVPlayer
 
@@ -60,6 +61,13 @@ CloudLibrarySync (implemented, not composed into app state)
   selected index, filename, size, cache path, and capacity before peer activity.
   It downloads into the sandboxed cache and gives libmpv only a completed local
   regular file. Legacy remote-resolver credentials are inert and removable.
+- An HTTPS ISO is never autoplayed. On macOS, explicit preparation requires a
+  positive exact length within the configured resolver quota, accepts at most
+  five same-origin HTTPS redirects, streams the image into an atomic cache job,
+  validates the completed cache boundary, and gives libmpv only the typed local
+  Blu-ray device plus `bd://longest`. An opaque extensionless HTTPS source may
+  use the same explicit operation. Encrypted Blu-ray and DVD remain unsupported;
+  the separately reviewed mobile phase is paused.
 - macOS links and embeds libmpv; iOS and iPadOS use AVPlayer. The macOS build
   phase copies libmpv plus its non-system Homebrew dynamic-library closure,
   rewrites install names to `@rpath`, and signs the nested libraries before the

@@ -40,9 +40,66 @@ final class PlaybackSourcePresentationTests: XCTestCase {
         )
     }
 
+    func testISOHintsRequireExplicitDiscPreparationIncludingExtensionlessURL() {
+        let extensionURL = fixture(
+            "url-iso",
+            .nativeHTTPS(URL(string: "https://media.example/movie.iso")!)
+        )
+        let extensionless = fixture(
+            "filename-iso",
+            .nativeHTTPS(URL(string: "https://media.example/download/opaque")!),
+            filename: "Movie.ISO"
+        )
+        let opaque = fixture(
+            "opaque",
+            .nativeHTTPS(URL(string: "https://media.example/download/opaque")!)
+        )
+        let regularStream = fixture(
+            "regular-stream",
+            .nativeHTTPS(URL(string: "https://media.example/movie.mkv")!)
+        )
+
+        XCTAssertEqual(PlaybackSourceRowState(candidate: extensionURL).action, .prepareDisc)
+        XCTAssertEqual(PlaybackSourceRowState(candidate: extensionless).action, .prepareDisc)
+        XCTAssertEqual(PlaybackSourceRowState(candidate: opaque).action, .playDirect)
+        XCTAssertFalse(PlaybackSourceRowState(candidate: extensionURL).isEligibleForAutoplay)
+        XCTAssertFalse(PlaybackSourceRowState(candidate: extensionless).isEligibleForAutoplay)
+        XCTAssertTrue(PlaybackSourceRowState(candidate: opaque).isEligibleForAutoplay)
+        XCTAssertTrue(PlaybackSourceRowState(candidate: opaque).allowsExplicitDiscPreparation)
+        XCTAssertFalse(
+            PlaybackSourceRowState(candidate: regularStream).allowsExplicitDiscPreparation
+        )
+    }
+
+    func testDiscPreparationStatesExposeAccessibleStatus() {
+        XCTAssertEqual(
+            DiscPreparationPresentation(state: .detecting).status,
+            "Checking disc size…"
+        )
+        XCTAssertEqual(
+            DiscPreparationPresentation(
+                state: .materializing(completedBytes: 25, totalBytes: 100)
+            ).status,
+            "Preparing disc locally… 25%"
+        )
+        XCTAssertEqual(
+            DiscPreparationPresentation(state: .failed(.storageFull)).status,
+            "Not enough resolver cache space"
+        )
+        XCTAssertEqual(
+            DiscPreparationPresentation(state: .failed(.encryptedDisc)).status,
+            "Encrypted disc media is not supported"
+        )
+        XCTAssertEqual(
+            DiscPreparationPresentation(state: .ready).status,
+            "Disc ready to play"
+        )
+    }
+
     private func fixture(
         _ id: String,
-        _ delivery: AddonStreamCandidate.Delivery
+        _ delivery: AddonStreamCandidate.Delivery,
+        filename: String? = nil
     ) -> AddonStreamCandidate {
         AddonStreamCandidate(
             id: id,
@@ -52,7 +109,7 @@ final class PlaybackSourcePresentationTests: XCTestCase {
             displayName: id,
             displayDescription: nil,
             delivery: delivery,
-            filename: nil,
+            filename: filename,
             videoSize: nil,
             bingeGroup: nil,
             hasPeerDiscoveryHints: false,
