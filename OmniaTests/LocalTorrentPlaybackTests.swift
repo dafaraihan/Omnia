@@ -195,6 +195,35 @@ final class LocalTorrentPlaybackTests: XCTestCase {
         )
     }
 
+    func testCachePreparationExcludesRootAndItemFromBackup() throws {
+        let root = try XCTUnwrap(
+            FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+        )
+            .appendingPathComponent("LocalTorrentCacheTests.\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let descriptor = try descriptor(hash: String(repeating: "e", count: 40), size: 1)
+
+        let item = try LocalTorrentCacheManager.prepare(
+            descriptor: descriptor,
+            policy: .init(
+                maximumCacheBytes: 1_024,
+                minimumFreeBytes: 0,
+                maximumItemBytes: 1_024
+            ),
+            root: root,
+            availableVolumeBytes: 1_000_000
+        )
+
+        XCTAssertEqual(
+            try root.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup,
+            true
+        )
+        XCTAssertEqual(
+            try item.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup,
+            true
+        )
+    }
+
     private func descriptor(
         hash: String,
         fileIndex: Int? = nil,

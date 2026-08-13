@@ -228,9 +228,13 @@ nonisolated enum LocalTorrentCacheManager {
         } else {
             selectedRoot = try defaultRoot(fileManager: fileManager)
         }
-        let root = selectedRoot.standardizedFileURL
+        let root = URL(
+            fileURLWithPath: selectedRoot.standardizedFileURL.path,
+            isDirectory: true
+        )
         guard root.isFileURL else { throw CacheError.cacheUnavailable }
         try ensureDirectory(root, fileManager: fileManager)
+        try excludeFromBackup(root)
 
         let rootValues = try root.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
         guard rootValues.isDirectory == true, rootValues.isSymbolicLink != true else {
@@ -282,6 +286,7 @@ nonisolated enum LocalTorrentCacheManager {
             throw CacheError.unsafeCacheEntry
         }
         try ensureDirectory(itemDirectory, fileManager: fileManager)
+        try excludeFromBackup(itemDirectory)
         let itemValues = try itemDirectory.resourceValues(forKeys: [
             .isDirectoryKey,
             .isSymbolicLinkKey
@@ -302,6 +307,17 @@ nonisolated enum LocalTorrentCacheManager {
         if fileManager.fileExists(atPath: url.path) { return }
         do {
             try fileManager.createDirectory(at: url, withIntermediateDirectories: true)
+        } catch {
+            throw CacheError.cacheUnavailable
+        }
+    }
+
+    private static func excludeFromBackup(_ url: URL) throws {
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        var mutableURL = url
+        do {
+            try mutableURL.setResourceValues(values)
         } catch {
             throw CacheError.cacheUnavailable
         }
