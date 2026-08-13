@@ -58,16 +58,28 @@ final class PlaybackSourcePresentationTests: XCTestCase {
             "regular-stream",
             .nativeHTTPS(URL(string: "https://media.example/movie.mkv")!)
         )
+        let unknownExtension = fixture(
+            "unknown-extension",
+            .nativeHTTPS(URL(string: "https://media.example/movie.avi")!)
+        )
 
         XCTAssertEqual(PlaybackSourceRowState(candidate: extensionURL).action, .prepareDisc)
+        XCTAssertEqual(
+            PlaybackSourceRowState(candidate: extensionURL).idleStatus,
+            "Prepare Blu-ray Disc · Downloads to local resolver cache"
+        )
         XCTAssertEqual(PlaybackSourceRowState(candidate: extensionless).action, .prepareDisc)
         XCTAssertEqual(PlaybackSourceRowState(candidate: opaque).action, .playDirect)
         XCTAssertFalse(PlaybackSourceRowState(candidate: extensionURL).isEligibleForAutoplay)
         XCTAssertFalse(PlaybackSourceRowState(candidate: extensionless).isEligibleForAutoplay)
         XCTAssertTrue(PlaybackSourceRowState(candidate: opaque).isEligibleForAutoplay)
+        XCTAssertNil(PlaybackSourceRowState(candidate: opaque).idleStatus)
         XCTAssertTrue(PlaybackSourceRowState(candidate: opaque).allowsExplicitDiscPreparation)
         XCTAssertFalse(
             PlaybackSourceRowState(candidate: regularStream).allowsExplicitDiscPreparation
+        )
+        XCTAssertFalse(
+            PlaybackSourceRowState(candidate: unknownExtension).allowsExplicitDiscPreparation
         )
     }
 
@@ -85,6 +97,10 @@ final class PlaybackSourcePresentationTests: XCTestCase {
         XCTAssertEqual(
             DiscPreparationPresentation(state: .failed(.storageFull)).status,
             "Not enough resolver cache space"
+        )
+        XCTAssertEqual(
+            DiscPreparationPresentation(state: .failed(.busy)).status,
+            "Another local source is already being prepared"
         )
         XCTAssertEqual(
             DiscPreparationPresentation(state: .failed(.encryptedDisc)).status,

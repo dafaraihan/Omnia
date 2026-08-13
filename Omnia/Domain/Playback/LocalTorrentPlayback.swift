@@ -220,8 +220,10 @@ nonisolated enum LocalTorrentCacheManager {
         policy: LocalTorrentStoragePolicy = .default,
         root: URL? = nil,
         availableVolumeBytes: Int64? = nil,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        cancellationCheck: () throws -> Void = { try Task.checkCancellation() }
     ) throws -> URL {
+        try cancellationCheck()
         let selectedRoot: URL
         if let root {
             selectedRoot = root
@@ -233,6 +235,7 @@ nonisolated enum LocalTorrentCacheManager {
             isDirectory: true
         )
         guard root.isFileURL else { throw CacheError.cacheUnavailable }
+        try cancellationCheck()
         try ensureDirectory(root, fileManager: fileManager)
         try excludeFromBackup(root)
 
@@ -241,7 +244,11 @@ nonisolated enum LocalTorrentCacheManager {
             throw CacheError.unsafeCacheEntry
         }
 
-        let entries = try cacheEntries(at: root, fileManager: fileManager)
+        let entries = try cacheEntries(
+            at: root,
+            fileManager: fileManager,
+            cancellationCheck: cancellationCheck
+        )
         let currentBytes = entries.reduce(Int64(0)) { $0 + $1.byteCount }
         let volumeBytes: Int64
         if let availableVolumeBytes {
@@ -268,6 +275,7 @@ nonisolated enum LocalTorrentCacheManager {
             .filter({ $0.url.lastPathComponent != descriptor.cacheKey })
             .sorted(by: { $0.modifiedAt < $1.modifiedAt })
         where evictedBytes < plan.requiredEvictionBytes {
+            try cancellationCheck()
             do {
                 try fileManager.removeItem(at: entry.url)
                 evictedBytes += entry.byteCount
@@ -285,6 +293,8 @@ nonisolated enum LocalTorrentCacheManager {
         guard itemDirectory.deletingLastPathComponent() == root else {
             throw CacheError.unsafeCacheEntry
         }
+        try cancellationCheck()
+        let itemAlreadyExisted = fileManager.fileExists(atPath: itemDirectory.path)
         try ensureDirectory(itemDirectory, fileManager: fileManager)
         try excludeFromBackup(itemDirectory)
         let itemValues = try itemDirectory.resourceValues(forKeys: [
@@ -293,6 +303,14 @@ nonisolated enum LocalTorrentCacheManager {
         ])
         guard itemValues.isDirectory == true, itemValues.isSymbolicLink != true else {
             throw CacheError.unsafeCacheEntry
+        }
+        do {
+            try cancellationCheck()
+        } catch {
+            if !itemAlreadyExisted {
+                try? fileManager.removeItem(at: itemDirectory)
+            }
+            throw error
         }
         return itemDirectory
     }
@@ -325,8 +343,10 @@ nonisolated enum LocalTorrentCacheManager {
 
     private static func cacheEntries(
         at root: URL,
-        fileManager: FileManager
+        fileManager: FileManager,
+        cancellationCheck: () throws -> Void
     ) throws -> [CacheEntry] {
+        try cancellationCheck()
         let children = try fileManager.contentsOfDirectory(
             at: root,
             includingPropertiesForKeys: [
@@ -338,6 +358,7 @@ nonisolated enum LocalTorrentCacheManager {
         )
 
         return try children.map { child in
+            try cancellationCheck()
             let child = child.standardizedFileURL
             guard child.deletingLastPathComponent() == root else {
                 throw CacheError.unsafeCacheEntry
@@ -352,13 +373,22 @@ nonisolated enum LocalTorrentCacheManager {
             }
             return CacheEntry(
                 url: child,
-                byteCount: try allocatedBytes(at: child, fileManager: fileManager),
+                byteCount: try allocatedBytes(
+                    at: child,
+                    fileManager: fileManager,
+                    cancellationCheck: cancellationCheck
+                ),
                 modifiedAt: values.contentModificationDate ?? .distantPast
             )
         }
     }
 
-    private static func allocatedBytes(at directory: URL, fileManager: FileManager) throws -> Int64 {
+    private static func allocatedBytes(
+        at directory: URL,
+        fileManager: FileManager,
+        cancellationCheck: () throws -> Void
+    ) throws -> Int64 {
+        try cancellationCheck()
         guard let enumerator = fileManager.enumerator(
             at: directory,
             includingPropertiesForKeys: [
@@ -373,6 +403,7 @@ nonisolated enum LocalTorrentCacheManager {
 
         var byteCount: Int64 = 0
         for case let fileURL as URL in enumerator {
+            try cancellationCheck()
             let values = try fileURL.resourceValues(forKeys: [
                 .isRegularFileKey,
                 .isSymbolicLinkKey,
@@ -386,6 +417,89 @@ nonisolated enum LocalTorrentCacheManager {
             }
         }
         return byteCount
+    }
+}
+
+actor LocalPlaybackJobCoordinator {
+    nonisolated enum JobError: LocalizedError, Equatable, Sendable {
+        case busy
+        case invalidLease
+
+        var errorDescription: String? {
+            switch self {
+            case .busy:
+                "Another local playback source is already being prepared."
+            case .invalidLease:
+                "Omnia rejected an invalid local playback cache reservation."
+            }
+        }
+    }
+
+    nonisolated struct Reservation: Sendable {
+        let cacheRoot: URL
+        let itemDirectory: URL
+    }
+
+    static let shared = LocalPlaybackJobCoordinator()
+
+    private var activeLease: UUID?
+
+    func acquire() throws -> UUID {
+        try Task.checkCancellation()
+        guard activeLease == nil else { throw JobError.busy }
+        let lease = UUID()
+        activeLease = lease
+        return lease
+    }
+
+    func prepare(
+        descriptor: LocalTorrentPlaybackDescriptor,
+        policy: LocalTorrentStoragePolicy,
+        lease: UUID
+    ) throws -> Reservation {
+        try Task.checkCancellation()
+        guard activeLease == lease else { throw JobError.invalidLease }
+        let cacheRoot = try LocalTorrentCacheManager.defaultRoot()
+        let expectedItemDirectory = cacheRoot
+            .appendingPathComponent(descriptor.cacheKey, isDirectory: true)
+            .standardizedFileURL
+        let itemAlreadyExisted = FileManager.default.fileExists(
+            atPath: expectedItemDirectory.path
+        )
+        let itemDirectory: URL
+        do {
+            itemDirectory = try LocalTorrentCacheManager.prepare(
+                descriptor: descriptor,
+                policy: policy,
+                root: cacheRoot
+            )
+            try Task.checkCancellation()
+        } catch {
+            if error is CancellationError, !itemAlreadyExisted {
+                try? FileManager.default.removeItem(at: expectedItemDirectory)
+            }
+            throw error
+        }
+        guard activeLease == lease else { throw JobError.invalidLease }
+        return Reservation(cacheRoot: cacheRoot, itemDirectory: itemDirectory)
+    }
+
+    func discPlaybackRequest(
+        disc: MaterializedDisc,
+        cacheRoot: URL,
+        lease: UUID
+    ) throws -> DiscPlaybackRequest {
+        try Task.checkCancellation()
+        guard activeLease == lease else { throw JobError.invalidLease }
+        let request = try DiscPlaybackRequest(disc: disc, cacheRoot: cacheRoot)
+        try Task.checkCancellation()
+        guard activeLease == lease else { throw JobError.invalidLease }
+        return request
+    }
+
+    func release(_ lease: UUID) {
+        guard activeLease == lease else { return }
+        activeLease = nil
     }
 }
 

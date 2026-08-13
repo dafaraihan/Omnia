@@ -45,7 +45,7 @@ struct PlaybackResolverSettingsView: View {
             } header: {
                 Text("Storage")
             } footer: {
-                Text("Torrent data stays in Omnia’s sandboxed cache, is excluded from backup, and preserves at least 5 GB of available disk space. Inactive items are evicted oldest first.")
+                Text("Locally resolved torrent files and prepared Blu-ray images share Omnia’s sandboxed cache, are excluded from backup, and preserve at least 5 GB of available disk space. Inactive items are evicted oldest first. Keep incomplete downloads applies to both source types.")
             }
 
             Section {

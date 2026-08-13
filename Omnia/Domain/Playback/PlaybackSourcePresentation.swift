@@ -57,11 +57,17 @@ struct PlaybackSourceRowState: Equatable, Sendable {
         action == .playDirect
     }
 
+    var idleStatus: String? {
+        action == .prepareDisc
+            ? "Prepare Blu-ray Disc · Downloads to local resolver cache"
+            : nil
+    }
+
     init(candidate: AddonStreamCandidate) {
         switch candidate.delivery {
         case .nativeHTTPS:
             action = candidate.hasDiscImageHint ? .prepareDisc : .playDirect
-            allowsExplicitDiscPreparation = candidate.nativePlaybackCompatibility == .unknown
+            allowsExplicitDiscPreparation = candidate.hasExtensionlessHTTPSURL
         case .localTorrent:
             action = .resolve
             allowsExplicitDiscPreparation = false
@@ -79,6 +85,7 @@ nonisolated enum DiscPreparationFailure: Equatable, Sendable {
     case unsupportedDisc
     case encryptedDisc
     case storageFull
+    case busy
     case unsafeSource
     case network
 }
@@ -115,6 +122,8 @@ nonisolated struct DiscPreparationPresentation: Equatable, Sendable {
                 status = "Encrypted disc media is not supported"
             case .storageFull:
                 status = "Not enough resolver cache space"
+            case .busy:
+                status = "Another local source is already being prepared"
             case .unsafeSource:
                 status = "The add-on returned an unsafe disc source"
             case .network:

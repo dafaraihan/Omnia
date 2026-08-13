@@ -26,6 +26,7 @@ struct PlaybackSourceSheet: View {
     @State private var localTorrentProgress: [String: Double] = [:]
     #if os(macOS)
     @State private var localTorrentEngine: OMLocalTorrentEngine?
+    @State private var localTorrentTask: Task<Void, Never>?
     @State private var discMaterializer: DiscMaterializer?
     @State private var discPreparationTask: Task<Void, Never>?
     @State private var preparingDiscCandidateID: String?
@@ -98,7 +99,7 @@ struct PlaybackSourceSheet: View {
 
                             Section("Source Handling") {
                                 Label("Direct HTTPS streams play in Omnia", systemImage: "play.rectangle")
-                                Text("Torrent-backed streams are resolved locally on macOS after peer consent. Mobile support remains disabled pending its separate review.")
+                                Text("Torrent-backed streams and explicitly selected Blu-ray images use the shared local resolver cache on macOS. Mobile support remains disabled pending its separate review.")
                                     .font(.footnote)
                                     .foregroundStyle(.secondary)
                             }
@@ -148,6 +149,8 @@ struct PlaybackSourceSheet: View {
                 #if os(macOS)
                 localTorrentEngine?.cancel()
                 localTorrentEngine = nil
+                localTorrentTask?.cancel()
+                localTorrentTask = nil
                 let materializer = discMaterializer
                 discPreparationTask?.cancel()
                 discPreparationTask = nil
@@ -243,6 +246,9 @@ struct PlaybackSourceSheet: View {
             #if os(macOS)
             let rowState = PlaybackSourceRowState(candidate: candidate)
             let preparationState = discPreparationStates[candidate.id]
+            let preparationStatus = preparationState.map {
+                DiscPreparationPresentation(state: $0).status
+            } ?? rowState.idleStatus
             HStack(spacing: 8) {
                 Button {
                     switch rowState.action {
@@ -260,14 +266,12 @@ struct PlaybackSourceSheet: View {
                             ? "opticaldisc.fill"
                             : "play.circle.fill",
                         tint: .accentColor,
-                        status: preparationState.map {
-                            DiscPreparationPresentation(state: $0).status
-                        },
+                        status: preparationStatus,
                         showsDisclosure: false
                     )
                 }
                 .buttonStyle(.plain)
-                .disabled(preparingDiscCandidateID != nil)
+                .disabled(isLocalPreparationActive)
                 .accessibilityHint(
                     rowState.action == .prepareDisc
                         ? "Downloads the disc into Omnia's local cache, then starts playback"
@@ -287,7 +291,7 @@ struct PlaybackSourceSheet: View {
                     }
                     .menuStyle(.borderlessButton)
                     .menuIndicator(.hidden)
-                    .disabled(preparingDiscCandidateID != nil)
+                    .disabled(isLocalPreparationActive)
                     .accessibilityLabel("More source actions")
                 }
             }
@@ -316,7 +320,7 @@ struct PlaybackSourceSheet: View {
             )
         }
         .buttonStyle(.plain)
-        .disabled(resolvingCandidateID != nil || !localTorrentIsAvailable)
+        .disabled(isLocalPreparationActive || !localTorrentIsAvailable)
         .accessibilityHint("Downloads the selected torrent file locally, then starts native playback")
     }
 
@@ -411,6 +415,15 @@ struct PlaybackSourceSheet: View {
         #endif
     }
 
+    private var isLocalPreparationActive: Bool {
+        #if os(macOS)
+        resolvingCandidateID != nil
+            || preparingDiscCandidateID != nil
+        #else
+        resolvingCandidateID != nil
+        #endif
+    }
+
     private func localTorrentStatus(for candidate: AddonStreamCandidate) -> String {
         if let failure = resolverFailures[candidate.id] { return failure }
         if resolvingCandidateID == candidate.id {
@@ -430,7 +443,7 @@ struct PlaybackSourceSheet: View {
     }
 
     private func requestLocalTorrent(_ candidate: AddonStreamCandidate) {
-        guard localTorrentIsAvailable else { return }
+        guard localTorrentIsAvailable, !isLocalPreparationActive else { return }
         if localResolverSettings.preferences.hasCurrentConsent {
             downloadLocalTorrent(candidate)
         } else {
@@ -440,11 +453,15 @@ struct PlaybackSourceSheet: View {
 
     private func downloadLocalTorrent(_ candidate: AddonStreamCandidate) {
         #if os(macOS)
+        guard !isLocalPreparationActive else { return }
         resolvingCandidateID = candidate.id
         resolverFailures[candidate.id] = nil
         localTorrentProgress[candidate.id] = 0
-        Task {
+        localTorrentTask = Task { @MainActor in
+            var lease: UUID?
             do {
+                let acquiredLease = try await LocalPlaybackJobCoordinator.shared.acquire()
+                lease = acquiredLease
                 let descriptor = try LocalTorrentPlaybackDescriptor(candidate: candidate)
                 let preferences = localResolverSettings.preferences
                 let policy = LocalTorrentStoragePolicy(
@@ -452,12 +469,14 @@ struct PlaybackSourceSheet: View {
                     minimumFreeBytes: LocalTorrentStoragePolicy.default.minimumFreeBytes,
                     maximumItemBytes: preferences.cacheQuota.bytes
                 )
-                let cacheDirectory = try await Task.detached {
-                    try LocalTorrentCacheManager.prepare(descriptor: descriptor, policy: policy)
-                }.value
-                guard !Task.isCancelled else { return }
+                let reservation = try await LocalPlaybackJobCoordinator.shared.prepare(
+                    descriptor: descriptor,
+                    policy: policy,
+                    lease: acquiredLease
+                )
+                try Task.checkCancellation()
                 let engine = OMLocalTorrentEngine(
-                    cacheDirectory: cacheDirectory,
+                    cacheDirectory: reservation.itemDirectory,
                     maximumDownloadBytes: policy.maximumItemBytes,
                     minimumFreeBytes: policy.minimumFreeBytes,
                     downloadLimitBytesPerSecond: Int64(
@@ -475,8 +494,14 @@ struct PlaybackSourceSheet: View {
                         localTorrentProgress[candidate.id] = progress
                     }
                 )
-                guard !Task.isCancelled, resolvingCandidateID == candidate.id else { return }
+                try Task.checkCancellation()
+                guard resolvingCandidateID == candidate.id else {
+                    throw CancellationError()
+                }
+                await LocalPlaybackJobCoordinator.shared.release(acquiredLease)
+                lease = nil
                 localTorrentEngine = nil
+                localTorrentTask = nil
                 resolvingCandidateID = nil
                 localTorrentProgress[candidate.id] = nil
                 beginPlayback(
@@ -484,6 +509,17 @@ struct PlaybackSourceSheet: View {
                     candidate: candidate
                 )
             } catch {
+                if let lease {
+                    await LocalPlaybackJobCoordinator.shared.release(lease)
+                }
+                localTorrentEngine?.cancel()
+                localTorrentEngine = nil
+                localTorrentTask = nil
+                if error is CancellationError {
+                    resolvingCandidateID = nil
+                    localTorrentProgress[candidate.id] = nil
+                    return
+                }
                 resolverFailures[candidate.id] = error.localizedDescription
                 resolvingCandidateID = nil
             }
@@ -495,13 +531,16 @@ struct PlaybackSourceSheet: View {
     private func prepareHTTPSDisc(_ candidate: AddonStreamCandidate) {
         guard case let .nativeHTTPS(url) = candidate.delivery,
               let sourceMetadata = candidate.nativePlaybackSource,
-              preparingDiscCandidateID == nil
+              !isLocalPreparationActive
         else { return }
 
         preparingDiscCandidateID = candidate.id
         discPreparationStates[candidate.id] = .detecting
         discPreparationTask = Task { @MainActor in
+            var lease: UUID?
             do {
+                let acquiredLease = try await LocalPlaybackJobCoordinator.shared.acquire()
+                lease = acquiredLease
                 let preferences = localResolverSettings.preferences
                 let source = try await HTTPSDiscByteSource.prepare(
                     url: url,
@@ -520,21 +559,17 @@ struct PlaybackSourceSheet: View {
                     minimumFreeBytes: LocalTorrentStoragePolicy.default.minimumFreeBytes,
                     maximumItemBytes: preferences.cacheQuota.bytes
                 )
-                let reservation = try await Task.detached {
-                    let descriptor = try LocalTorrentPlaybackDescriptor(
-                        infoHash: infoHash,
-                        fileIndex: nil,
-                        displayName: "Blu-ray disc image",
-                        expectedByteCount: source.expectedByteCount
-                    )
-                    let cacheRoot = try LocalTorrentCacheManager.defaultRoot()
-                    let directory = try LocalTorrentCacheManager.prepare(
-                        descriptor: descriptor,
-                        policy: policy,
-                        root: cacheRoot
-                    )
-                    return (cacheRoot, directory)
-                }.value
+                let descriptor = try LocalTorrentPlaybackDescriptor(
+                    infoHash: infoHash,
+                    fileIndex: nil,
+                    displayName: "Blu-ray disc image",
+                    expectedByteCount: source.expectedByteCount
+                )
+                let reservation = try await LocalPlaybackJobCoordinator.shared.prepare(
+                    descriptor: descriptor,
+                    policy: policy,
+                    lease: acquiredLease
+                )
                 try Task.checkCancellation()
 
                 let file = TorrentMediaFile(
@@ -543,7 +578,7 @@ struct PlaybackSourceSheet: View {
                     size: source.expectedByteCount
                 )
                 let materializer = DiscMaterializer(
-                    reservationRoot: reservation.1,
+                    reservationRoot: reservation.itemDirectory,
                     reservedBytes: source.expectedByteCount,
                     retainsIncompleteJobs: preferences.retainsIncompleteJobs,
                     jobID: jobID
@@ -566,14 +601,15 @@ struct PlaybackSourceSheet: View {
                 guard let preparedDisc else {
                     throw DiscPlaybackRequestError.incompleteMaterialization
                 }
-                let request = try await Task.detached {
-                    try DiscPlaybackRequest(
-                        disc: preparedDisc,
-                        cacheRoot: reservation.0
-                    )
-                }.value
+                let request = try await LocalPlaybackJobCoordinator.shared.discPlaybackRequest(
+                    disc: preparedDisc,
+                    cacheRoot: reservation.cacheRoot,
+                    lease: acquiredLease
+                )
                 try Task.checkCancellation()
 
+                await LocalPlaybackJobCoordinator.shared.release(acquiredLease)
+                lease = nil
                 discPreparationStates[candidate.id] = .ready
                 preparingDiscCandidateID = nil
                 discMaterializer = nil
@@ -583,14 +619,23 @@ struct PlaybackSourceSheet: View {
                     candidate: candidate
                 )
             } catch is CancellationError {
+                if let lease {
+                    await LocalPlaybackJobCoordinator.shared.release(lease)
+                }
                 preparingDiscCandidateID = nil
                 discMaterializer = nil
                 discPreparationTask = nil
             } catch let error as HTTPSDiscByteSourceError where error == .cancelled {
+                if let lease {
+                    await LocalPlaybackJobCoordinator.shared.release(lease)
+                }
                 preparingDiscCandidateID = nil
                 discMaterializer = nil
                 discPreparationTask = nil
             } catch {
+                if let lease {
+                    await LocalPlaybackJobCoordinator.shared.release(lease)
+                }
                 discPreparationStates[candidate.id] = .failed(
                     discPreparationFailure(for: error)
                 )
@@ -618,6 +663,14 @@ struct PlaybackSourceSheet: View {
             case .itemTooLarge, .insufficientSpace:
                 return .storageFull
             case .invalidPolicy:
+                return .unsafeSource
+            }
+        }
+        if let error = error as? LocalPlaybackJobCoordinator.JobError {
+            switch error {
+            case .busy:
+                return .busy
+            case .invalidLease:
                 return .unsafeSource
             }
         }

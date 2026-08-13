@@ -3,6 +3,22 @@ import XCTest
 @testable import Omnia
 
 final class LocalTorrentPlaybackTests: XCTestCase {
+    func testLocalPlaybackCoordinatorAllowsOnlyOnePreparationUntilRelease() async throws {
+        let coordinator = LocalPlaybackJobCoordinator()
+        let firstLease = try await coordinator.acquire()
+
+        do {
+            _ = try await coordinator.acquire()
+            XCTFail("A second local preparation must not acquire the shared cache")
+        } catch {
+            XCTAssertEqual(error as? LocalPlaybackJobCoordinator.JobError, .busy)
+        }
+
+        await coordinator.release(firstLease)
+        let secondLease = try await coordinator.acquire()
+        await coordinator.release(secondLease)
+    }
+
     func testHexDescriptorNormalizesHashAndPreservesValidatedFileIndex() throws {
         let descriptor = try LocalTorrentPlaybackDescriptor(
             infoHash: String(repeating: "A", count: 40),
@@ -168,6 +184,71 @@ final class LocalTorrentPlaybackTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: old.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: recent.path))
         XCTAssertEqual(directory.lastPathComponent, descriptor.cacheKey)
+    }
+
+    func testCancelledCachePreparationDoesNotEvictOrCreateItem() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LocalTorrentCacheTests.\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let existing = root.appendingPathComponent("existing", isDirectory: true)
+        try FileManager.default.createDirectory(at: existing, withIntermediateDirectories: true)
+        try Data(repeating: 1, count: 4_096).write(
+            to: existing.appendingPathComponent("media.bin")
+        )
+        let descriptor = try descriptor(hash: String(repeating: "f", count: 40), size: 4_096)
+
+        XCTAssertThrowsError(
+            try LocalTorrentCacheManager.prepare(
+                descriptor: descriptor,
+                policy: .init(
+                    maximumCacheBytes: 4_096,
+                    minimumFreeBytes: 0,
+                    maximumItemBytes: 4_096
+                ),
+                root: root,
+                availableVolumeBytes: 1_000_000,
+                cancellationCheck: { throw CancellationError() }
+            )
+        )
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: existing.path))
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: root.appendingPathComponent(descriptor.cacheKey).path
+            )
+        )
+    }
+
+    func testCancellationAfterReservationCreationRemovesNewItem() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LocalTorrentCacheTests.\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let descriptor = try descriptor(hash: String(repeating: "1", count: 40), size: 1)
+        var cancellationChecks = 0
+
+        XCTAssertThrowsError(
+            try LocalTorrentCacheManager.prepare(
+                descriptor: descriptor,
+                policy: .init(
+                    maximumCacheBytes: 1_024,
+                    minimumFreeBytes: 0,
+                    maximumItemBytes: 1_024
+                ),
+                root: root,
+                availableVolumeBytes: 1_000_000,
+                cancellationCheck: {
+                    cancellationChecks += 1
+                    if cancellationChecks == 5 { throw CancellationError() }
+                }
+            )
+        )
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.path))
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: root.appendingPathComponent(descriptor.cacheKey).path
+            )
+        )
     }
 
     func testCachePreparationRejectsSymbolicLinkEntry() throws {

@@ -113,6 +113,11 @@ struct AddonStreamCandidate: Identifiable, Hashable, Sendable {
             } == true
     }
 
+    var hasExtensionlessHTTPSURL: Bool {
+        guard case let .nativeHTTPS(url) = delivery else { return false }
+        return url.pathExtension.isEmpty
+    }
+
     private var urlPathExtension: String {
         guard case let .nativeHTTPS(url) = delivery else { return "" }
         return url.pathExtension.lowercased()

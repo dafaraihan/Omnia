@@ -101,6 +101,9 @@ dependency source.
   request reaches libmpv. The exact-sized image is written atomically under the
   bounded excluded-from-backup resolver cache; partial work is removed on
   failure or cancellation unless the user has explicitly enabled retention.
+  One actor-held lease serializes peer and disc preparation against that shared
+  cache, and cache enumeration, eviction, and reservation creation check task
+  cancellation before continuing.
   Only unencrypted Blu-ray playback is in scope. No decryption keys, DVD
   libraries, script execution, or remote resolver is introduced.
 - The plist contains no App Transport Security exception. The built products
