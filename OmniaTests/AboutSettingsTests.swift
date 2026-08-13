@@ -60,6 +60,18 @@ final class AboutSettingsTests: XCTestCase {
         )
     }
 
+    func testNativePlaybackDescriptionMatchesPinnedMinimalClosure() throws {
+        let nativePlayback = try XCTUnwrap(
+            AboutCatalog.resources.first { $0.id == "native-playback-libraries" }
+        )
+
+        XCTAssertTrue(nativePlayback.purpose.contains("OpenSSL"))
+        XCTAssertTrue(nativePlayback.purpose.contains("libtorrent"))
+        XCTAssertFalse(nativePlayback.purpose.contains("MuJS"))
+        XCTAssertFalse(nativePlayback.purpose.contains("LuaJIT"))
+        XCTAssertTrue(nativePlayback.sections.contains(.licenses))
+    }
+
     func testEveryMDBListRatingSourceHasHTTPSProvenanceAndAboutResource() {
         let aboutIDs = Set(AboutCatalog.resources.map(\.id))
 

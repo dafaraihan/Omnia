@@ -293,7 +293,7 @@ enum AboutCatalog {
         resource(
             id: "native-playback-libraries",
             name: "Native Playback Libraries",
-            purpose: "FFmpeg, libass, libplacebo, MuJS, Little CMS, libarchive, libbluray, LuaJIT, Rubber Band, uchardet, zimg, jpeg-turbo, and the Vulkan loader used by the observed libmpv closure.",
+            purpose: "The pinned macOS playback closure: mpv, FFmpeg, libtorrent, Boost, libbluray/libudfread, libplacebo, libass, FreeType, FriBidi, HarfBuzz, OpenSSL, and audited build-only inputs.",
             sections: [.openSourceSoftware, .licenses],
             links: [
                 link(.license, "mpv Dependency Licenses", "https://github.com/mpv-player/mpv/blob/master/Copyright")
@@ -384,6 +384,20 @@ struct AboutSectionSettingsView: View {
 
     var body: some View {
         Form {
+            if section == .licenses {
+                Section("Bundled with Omnia") {
+                    NavigationLink {
+                        NativePlaybackNoticesView()
+                    } label: {
+                        Label("Native Playback Notices", systemImage: "doc.text")
+                    }
+
+                    Text("Read the local SPDX inventory and exact license notices shipped with this build.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             ForEach(AboutCatalog.items(for: section)) { resource in
                 Section(resource.name) {
                     Text(resource.purpose)

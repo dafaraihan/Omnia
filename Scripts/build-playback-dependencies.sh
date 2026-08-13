@@ -584,5 +584,8 @@ jq -s --slurpfile plan "$output_directory/build-plan.json" '
   }
 ' "$artifact_rows" > "$output_directory/build-metadata.json"
 
+"$script_directory/generate-playback-sbom.sh" \
+    "$manifest" "$output_directory/build-metadata.json" \
+    "$output_directory/native-playback.spdx.json"
 "$script_directory/verify-playback-artifacts.sh" "$output_directory"
 echo "native playback universal artifacts built and verified"

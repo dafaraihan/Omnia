@@ -41,6 +41,39 @@ make_fixture() {
         }]
       }
     ' > "$destination/build-metadata.json"
+
+    jq -n --arg digest "$digest" '{
+      spdxVersion: "SPDX-2.3",
+      dataLicense: "CC0-1.0",
+      SPDXID: "SPDXRef-DOCUMENT",
+      documentNamespace: "https://omnia.invalid/spdx/native-playback/fixture",
+      creationInfo: {
+        created: "1970-01-01T00:00:00Z",
+        creators: ["Tool: fixture"]
+      },
+      packages: [{
+        name: "sample",
+        SPDXID: "SPDXRef-Package-sample",
+        versionInfo: "1.0.0",
+        downloadLocation: "https://example.invalid/sample.tar.gz",
+        filesAnalyzed: false,
+        licenseConcluded: "MIT",
+        licenseDeclared: "MIT",
+        copyrightText: "NOASSERTION",
+        checksums: [{algorithm: "SHA256", checksumValue: $digest}]
+      }],
+      relationships: [{
+        spdxElementId: "SPDXRef-DOCUMENT",
+        relationshipType: "DESCRIBES",
+        relatedSpdxElement: "SPDXRef-Package-sample"
+      }],
+      annotations: [{
+        annotationDate: "1970-01-01T00:00:00Z",
+        annotationType: "OTHER",
+        annotator: "Tool: fixture",
+        comment: ("Verified runtime artifacts: Runtime/libsample.dylib sha256:" + $digest)
+      }]
+    }' > "$destination/native-playback.spdx.json"
 }
 
 expect_failure() {
@@ -82,6 +115,11 @@ remove_license() {
     rm "$fixture/Licenses/sample.txt"
 }
 
+remove_sbom() {
+    local fixture="$1"
+    rm "$fixture/native-playback.spdx.json"
+}
+
 enable_gpl() {
     local fixture="$1"
     jq '.build_flags.ffmpeg += ["--enable-gpl"]' \
@@ -92,6 +130,7 @@ enable_gpl() {
 expect_failure missing-architecture leave_thin
 expect_failure homebrew-install-name add_homebrew_dependency
 expect_failure missing-license remove_license
+expect_failure missing-sbom remove_sbom
 expect_failure gpl-enabled-ffmpeg enable_gpl
 
 valid_fixture="$fixture_root/valid"

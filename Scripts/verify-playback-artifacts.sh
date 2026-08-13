@@ -8,6 +8,7 @@ fi
 
 artifact_root="$1"
 metadata="$artifact_root/build-metadata.json"
+sbom="$artifact_root/native-playback.spdx.json"
 
 fail() {
     echo "error: native playback artifact verification failed: $1" >&2
@@ -20,6 +21,7 @@ done
 
 [[ -d "$artifact_root" ]] || fail "artifact directory is missing"
 [[ -f "$metadata" ]] || fail "build metadata is missing"
+[[ -f "$sbom" ]] || fail "SPDX SBOM is missing"
 [[ -d "$artifact_root/Runtime" ]] || fail "runtime directory is missing"
 
 jq -e '
@@ -46,6 +48,58 @@ jq -e '
 if rg -qi '(/opt/homebrew|/usr/local|/Users/|/home/)' "$metadata"; then
     fail "metadata contains a machine-local path"
 fi
+
+jq -e --slurpfile metadata "$metadata" '
+  .spdxVersion == "SPDX-2.3" and
+  .dataLicense == "CC0-1.0" and
+  .SPDXID == "SPDXRef-DOCUMENT" and
+  (.documentNamespace | type == "string" and test("^https://")) and
+  (.creationInfo.created | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T")) and
+  (.creationInfo.creators | type == "array" and length > 0) and
+  (.packages | type == "array" and length > 0) and
+  (all(.packages[];
+    (.SPDXID | type == "string" and test("^SPDXRef-Package-")) and
+    (.name | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9+._-]*$")) and
+    (.versionInfo | type == "string" and length > 0) and
+    (.downloadLocation | type == "string" and test("^https://")) and
+    .filesAnalyzed == false and
+    (.licenseDeclared | type == "string" and . != "NOASSERTION") and
+    (.checksums | any(
+      .algorithm == "SHA256" and
+      (.checksumValue | test("^[0-9a-f]{64}$"))
+    ))
+  )) and
+  ((.packages | map(.SPDXID) | unique | length) == (.packages | length)) and
+  (.relationships | type == "array" and length > 0) and
+  ([.packages[].SPDXID] as $package_ids |
+    all(.relationships[];
+      . as $relationship |
+      ($relationship.spdxElementId == "SPDXRef-DOCUMENT" or
+        ($package_ids | index($relationship.spdxElementId)) != null) and
+      ($package_ids | index($relationship.relatedSpdxElement)) != null
+    )
+  ) and
+  (.annotations as $annotations |
+    all($metadata[0].artifacts[];
+      . as $artifact |
+      any($annotations[];
+        .comment | contains($artifact.path + " sha256:" + $artifact.sha256)
+      )
+    )
+  )
+' "$sbom" >/dev/null || fail "SPDX SBOM is malformed or differs from runtime metadata"
+
+if rg -qi '(/opt/homebrew|/usr/local|/Users/|/home/|/tmp/)' "$sbom"; then
+    fail "SPDX SBOM contains a machine-local path"
+fi
+
+while IFS= read -r package_name; do
+    package_license="$artifact_root/Licenses/$package_name.txt"
+    [[ -f "$package_license" && -s "$package_license" ]] || \
+        fail "an SPDX package license notice is missing"
+    [[ ! -L "$package_license" ]] || \
+        fail "symbolic-link SPDX package licenses are forbidden"
+done < <(jq -r '.packages[].name' "$sbom")
 
 listed_artifacts="$(mktemp)"
 discovered_artifacts="$(mktemp)"

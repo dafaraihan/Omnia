@@ -25,7 +25,9 @@ native_root="${OMNIA_NATIVE_PLAYBACK_ROOT:-}"
 /bin/bash "$repo_root/Scripts/verify-playback-artifacts.sh" "$native_root"
 
 frameworks_directory="${TARGET_BUILD_DIR}/${WRAPPER_NAME}/Contents/Frameworks"
+legal_directory="${TARGET_BUILD_DIR}/${WRAPPER_NAME}/Contents/Resources/NativePlayback"
 mkdir -p "$frameworks_directory"
+mkdir -p "$legal_directory/Licenses"
 
 while IFS= read -r relative_path; do
     source_library="$native_root/$relative_path"
@@ -37,3 +39,14 @@ while IFS= read -r relative_path; do
             --options runtime --timestamp=none "$destination_library"
     fi
 done < <(jq -r '.artifacts[].path' "$native_root/build-metadata.json")
+
+cp -f "$native_root/build-metadata.json" "$legal_directory/build-metadata.json"
+cp -f "$native_root/native-playback.spdx.json" \
+    "$legal_directory/native-playback.spdx.json"
+cp -f "$native_root/playback-dependencies.json" \
+    "$legal_directory/playback-dependencies.json"
+
+while IFS= read -r package_name; do
+    cp -f "$native_root/Licenses/$package_name.txt" \
+        "$legal_directory/Licenses/$package_name.txt"
+done < <(jq -r '.packages[].name' "$native_root/native-playback.spdx.json")
