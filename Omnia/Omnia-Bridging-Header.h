@@ -5,4 +5,5 @@
 
 #if TARGET_OS_OSX
 #import "Platform/Playback/MPVPlayerController.h"
+#import "Platform/Playback/LocalTorrentEngine.h"
 #endif
