@@ -151,11 +151,9 @@ struct PlaybackSourceSheet: View {
                 localTorrentEngine = nil
                 localTorrentTask?.cancel()
                 localTorrentTask = nil
-                let materializer = discMaterializer
                 discPreparationTask?.cancel()
                 discPreparationTask = nil
                 discMaterializer = nil
-                Task { await materializer?.cancelAndWait() }
                 #endif
             }
         }
@@ -550,6 +548,7 @@ struct PlaybackSourceSheet: View {
         discPreparationStates[candidate.id] = .detecting
         discPreparationTask = Task { @MainActor in
             var lease: UUID?
+            var jobMaterializer: DiscMaterializer?
             do {
                 let acquiredLease = try await LocalPlaybackJobCoordinator.shared.acquire()
                 lease = acquiredLease
@@ -595,6 +594,7 @@ struct PlaybackSourceSheet: View {
                     retainsIncompleteJobs: preferences.retainsIncompleteJobs,
                     jobID: jobID
                 )
+                jobMaterializer = materializer
                 discMaterializer = materializer
                 try await LocalPlaybackJobCoordinator.shared.commitPreparation(
                     acquiredLease
@@ -640,25 +640,31 @@ struct PlaybackSourceSheet: View {
                     candidate: candidate
                 )
             } catch is CancellationError {
-                await discMaterializer?.cancelAndWait()
                 if let lease {
-                    await LocalPlaybackJobCoordinator.shared.release(lease)
+                    await LocalPlaybackJobCoordinator.shared.cancelDiscPreparation(
+                        jobMaterializer,
+                        lease: lease
+                    )
                 }
                 preparingDiscCandidateID = nil
                 discMaterializer = nil
                 discPreparationTask = nil
             } catch let error as HTTPSDiscByteSourceError where error == .cancelled {
-                await discMaterializer?.cancelAndWait()
                 if let lease {
-                    await LocalPlaybackJobCoordinator.shared.release(lease)
+                    await LocalPlaybackJobCoordinator.shared.cancelDiscPreparation(
+                        jobMaterializer,
+                        lease: lease
+                    )
                 }
                 preparingDiscCandidateID = nil
                 discMaterializer = nil
                 discPreparationTask = nil
             } catch {
-                await discMaterializer?.cancelAndWait()
                 if let lease {
-                    await LocalPlaybackJobCoordinator.shared.release(lease)
+                    await LocalPlaybackJobCoordinator.shared.cancelDiscPreparation(
+                        jobMaterializer,
+                        lease: lease
+                    )
                 }
                 discPreparationStates[candidate.id] = .failed(
                     discPreparationFailure(for: error)

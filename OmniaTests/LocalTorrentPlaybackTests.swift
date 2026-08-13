@@ -103,6 +103,55 @@ final class LocalTorrentPlaybackTests: XCTestCase {
         await coordinator.release(retryLease)
     }
 
+    func testCoordinatorWaitsForDiscCleanupBeforeReleasingLease() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LocalPlaybackCoordinatorTests.\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let coordinator = LocalPlaybackJobCoordinator(
+            root: root,
+            availableVolumeBytes: 1_000_000
+        )
+        let descriptor = try descriptor(hash: String(repeating: "5", count: 40), size: 1)
+        let lease = try await coordinator.acquire()
+        let reservation = try await coordinator.prepare(
+            descriptor: descriptor,
+            policy: .init(
+                maximumCacheBytes: 1_024,
+                minimumFreeBytes: 0,
+                maximumItemBytes: 1_024
+            ),
+            lease: lease
+        )
+        try await coordinator.commitPreparation(lease)
+        let source = CoordinatorBlockingDiscByteSource()
+        let materializer = DiscMaterializer(
+            reservationRoot: reservation.itemDirectory,
+            reservedBytes: 1
+        )
+        let stream = await materializer.materialize(
+            .iso(TorrentMediaFile(index: 0, relativePath: "Disc.iso", size: 1)),
+            source: source
+        )
+        let collection = Task {
+            do {
+                for try await _ in stream {}
+            } catch {}
+        }
+        for _ in 0..<10_000 {
+            if await source.didStart { break }
+            await Task.yield()
+        }
+        let didStart = await source.didStart
+        XCTAssertTrue(didStart)
+
+        await coordinator.cancelDiscPreparation(materializer, lease: lease)
+        await collection.value
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: reservation.itemDirectory.path))
+        let nextLease = try await coordinator.acquire()
+        await coordinator.release(nextLease)
+    }
+
     func testHexDescriptorNormalizesHashAndPreservesValidatedFileIndex() throws {
         let descriptor = try LocalTorrentPlaybackDescriptor(
             infoHash: String(repeating: "A", count: 40),
@@ -400,5 +449,29 @@ final class LocalTorrentPlaybackTests: XCTestCase {
             displayName: "Fixture",
             expectedByteCount: size
         )
+    }
+}
+
+private actor CoordinatorBlockingDiscByteSource: DiscByteSource {
+    private(set) var didStart = false
+
+    nonisolated func bytes(for file: TorrentMediaFile) -> AsyncThrowingStream<Data, Error> {
+        AsyncThrowingStream { continuation in
+            let producer = Task {
+                await markStarted()
+                do {
+                    try await Task.sleep(for: .seconds(30))
+                    continuation.yield(Data([0]))
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in producer.cancel() }
+        }
+    }
+
+    private func markStarted() {
+        didStart = true
     }
 }

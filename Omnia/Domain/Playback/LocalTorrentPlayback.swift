@@ -570,6 +570,15 @@ actor LocalPlaybackJobCoordinator {
         playbackProtections[protection.id] = nil
     }
 
+    func cancelDiscPreparation(
+        _ materializer: DiscMaterializer?,
+        lease: UUID
+    ) async {
+        guard activeJob?.lease == lease else { return }
+        await materializer?.cancelAndWait()
+        release(lease)
+    }
+
     func release(_ lease: UUID) {
         guard let job = activeJob, job.lease == lease else { return }
         if job.removesReservationOnRelease, let reservationURL = job.reservationURL {
