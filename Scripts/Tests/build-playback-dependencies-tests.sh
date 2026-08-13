@@ -1,0 +1,67 @@
+#!/bin/bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
+builder="$repo_root/Scripts/build-playback-dependencies.sh"
+real_manifest="$repo_root/NativeDependencies/playback-dependencies.json"
+fixture_root="$(mktemp -d)"
+trap 'rm -rf "$fixture_root"' EXIT
+
+mkdir -p "$fixture_root/safe/package"
+printf '%s\n' 'bounded native source fixture' > "$fixture_root/safe/package/README"
+tar -czf "$fixture_root/safe.tar.gz" -C "$fixture_root/safe" package
+safe_digest="$(shasum -a 256 "$fixture_root/safe.tar.gz" | awk '{print $1}')"
+
+jq --arg digest "$safe_digest" '
+  .components |= map(
+    .source_url = "https://fixtures.example/source.tar.gz"
+    | .sha256 = $digest
+  )
+' "$real_manifest" > "$fixture_root/safe-manifest.json"
+
+run_fetch() {
+    local manifest="$1"
+    local output="$2"
+    OMNIA_NATIVE_BUILD_MODE=fetch-only \
+    OMNIA_TEST_ARCHIVE="$fixture_root/safe.tar.gz" \
+    PATH="$repo_root/Scripts/Tests/Fixtures:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin" \
+        /bin/bash "$builder" "$manifest" "$output"
+}
+
+safe_output="$fixture_root/safe-output"
+run_fetch "$fixture_root/safe-manifest.json" "$safe_output"
+jq -e \
+  --argjson expected "$(jq '.components | length' "$real_manifest")" \
+  --arg digest "$safe_digest" '
+  .schema_version == 1 and
+  (.components | length) == $expected and
+  all(.components[]; .sha256 == $digest)
+' "$safe_output/source-metadata.json" >/dev/null
+
+jq '.components[0].sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"' \
+    "$fixture_root/safe-manifest.json" > "$fixture_root/bad-hash-manifest.json"
+if run_fetch "$fixture_root/bad-hash-manifest.json" "$fixture_root/bad-hash-output" \
+    >/dev/null 2>&1; then
+    echo "expected a source digest mismatch to fail" >&2
+    exit 1
+fi
+
+mkdir -p "$fixture_root/link/package"
+ln -s /tmp "$fixture_root/link/package/escape"
+tar -czf "$fixture_root/link.tar.gz" -C "$fixture_root/link" package
+link_digest="$(shasum -a 256 "$fixture_root/link.tar.gz" | awk '{print $1}')"
+jq --arg digest "$link_digest" '
+  .components |= map(
+    .source_url = "https://fixtures.example/source.tar.gz"
+    | .sha256 = $digest
+  )
+' "$real_manifest" > "$fixture_root/link-manifest.json"
+
+if OMNIA_NATIVE_BUILD_MODE=fetch-only \
+    OMNIA_TEST_ARCHIVE="$fixture_root/link.tar.gz" \
+    PATH="$repo_root/Scripts/Tests/Fixtures:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin" \
+    /bin/bash "$builder" "$fixture_root/link-manifest.json" "$fixture_root/link-output" \
+    >/dev/null 2>&1; then
+    echo "expected an archive containing a symbolic link to fail" >&2
+    exit 1
+fi
