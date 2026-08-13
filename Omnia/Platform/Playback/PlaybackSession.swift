@@ -12,6 +12,24 @@ import AppKit
 import AVFoundation
 #endif
 
+nonisolated enum PlaybackInput: Sendable {
+    case stream(PlaybackSource)
+    #if os(macOS)
+    case disc(source: PlaybackSource, request: DiscPlaybackRequest)
+    #endif
+
+    var source: PlaybackSource {
+        switch self {
+        case let .stream(source):
+            source
+        #if os(macOS)
+        case let .disc(source, _):
+            source
+        #endif
+        }
+    }
+}
+
 /// One shared player session keeps playback independent from the transient
 /// source picker. macOS is backed by libmpv; iOS retains an AVFoundation
 /// fallback because libmpv is not bundled for Apple's mobile platforms.
@@ -53,8 +71,27 @@ final class PlaybackSession {
         preferences: SettingsPreferences,
         onProgress: @escaping @MainActor (Double, Double?) -> Void
     ) {
+        start(
+            item: item,
+            episode: episode,
+            input: .stream(source),
+            resumeAt: position,
+            preferences: preferences,
+            onProgress: onProgress
+        )
+    }
+
+    func start(
+        item: MediaItem,
+        episode: MediaEpisode? = nil,
+        input: PlaybackInput,
+        resumeAt position: Double?,
+        preferences: SettingsPreferences,
+        onProgress: @escaping @MainActor (Double, Double?) -> Void
+    ) {
         stop(persisting: true)
 
+        let source = input.source
         self.source = source
         mediaItem = item
         self.episode = episode
@@ -69,7 +106,20 @@ final class PlaybackSession {
         areTracksLoading = false
 
         #if os(macOS)
-        let mpv = OMMpvPlayerController(url: source.url, requestHeaders: source.requestHeaders)
+        let mpv: OMMpvPlayerController
+        switch input {
+        case .stream:
+            mpv = OMMpvPlayerController(
+                url: source.url,
+                requestHeaders: source.requestHeaders
+            )
+        case let .disc(_, request):
+            mpv = OMMpvPlayerController(
+                url: request.playbackURL,
+                requestHeaders: request.requestHeaders,
+                blurayDeviceURL: request.deviceURL
+            )
+        }
         mpv.stateChangeHandler = { [weak self] snapshot in
             self?.apply(snapshot)
         }

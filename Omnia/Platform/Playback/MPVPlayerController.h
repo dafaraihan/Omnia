@@ -59,7 +59,10 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, copy, nullable) void (^stateChangeHandler)(OMMpvPlaybackSnapshot *snapshot);
 
 - (instancetype)initWithURL:(NSURL *)URL
-              requestHeaders:(NSDictionary<NSString *, NSString *> *)requestHeaders NS_DESIGNATED_INITIALIZER;
+              requestHeaders:(NSDictionary<NSString *, NSString *> *)requestHeaders;
+- (instancetype)initWithURL:(NSURL *)URL
+              requestHeaders:(NSDictionary<NSString *, NSString *> *)requestHeaders
+              blurayDeviceURL:(nullable NSURL *)blurayDeviceURL NS_DESIGNATED_INITIALIZER;
 - (instancetype)init NS_UNAVAILABLE;
 
 /// Starts only once `videoView` belongs to a real macOS window. Calling this

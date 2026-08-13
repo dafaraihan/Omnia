@@ -41,15 +41,15 @@ nonisolated enum DiscMaterializationError: LocalizedError, Equatable, Sendable {
     }
 }
 
-actor DiscMaterializer {
-    private struct CompletionManifest: Codable {
-        let version: Int
-        let jobID: UUID
-        let kind: String
-        let bytes: Int64
-        let completedAt: Date
-    }
+nonisolated struct DiscMaterializationManifest: Codable, Equatable, Sendable {
+    let version: Int
+    let jobID: UUID
+    let kind: String
+    let bytes: Int64
+    let completedAt: Date
+}
 
+actor DiscMaterializer {
     private let reservationRoot: URL
     private let reservedBytes: Int64
     private let retainsIncompleteJobs: Bool
@@ -353,7 +353,7 @@ actor DiscMaterializer {
     ) throws {
         let manifestURL = try confinedURL(for: "complete.plist")
         try rejectExistingItem(at: manifestURL)
-        let manifest = CompletionManifest(
+        let manifest = DiscMaterializationManifest(
             version: 1,
             jobID: jobID,
             kind: kind == .iso ? "iso" : "bluRayDirectory",

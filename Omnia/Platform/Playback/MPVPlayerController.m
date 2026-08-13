@@ -141,6 +141,7 @@ static void OMMpvRequestRedraw(void *context) {
     mpv_render_context *_renderContext;
     NSURL *_URL;
     NSDictionary<NSString *, NSString *> *_requestHeaders;
+    NSURL *_blurayDeviceURL;
     BOOL _didStart;
     BOOL _stopped;
     BOOL _paused;
@@ -170,11 +171,18 @@ static void OMMpvWakeup(void *context) {
 
 - (instancetype)initWithURL:(NSURL *)URL
               requestHeaders:(NSDictionary<NSString *, NSString *> *)requestHeaders {
+    return [self initWithURL:URL requestHeaders:requestHeaders blurayDeviceURL:nil];
+}
+
+- (instancetype)initWithURL:(NSURL *)URL
+              requestHeaders:(NSDictionary<NSString *, NSString *> *)requestHeaders
+              blurayDeviceURL:(NSURL *)blurayDeviceURL {
     self = [super init];
     if (!self) return nil;
 
     _URL = URL;
     _requestHeaders = [requestHeaders copy];
+    _blurayDeviceURL = [blurayDeviceURL copy];
     _volume = 100;
     _playbackRate = 1;
     _tracksLoading = YES;
@@ -220,6 +228,12 @@ static void OMMpvWakeup(void *context) {
     mpv_set_option_string(_mpv, "vo", "libmpv");
     mpv_set_option_string(_mpv, "hwdec", "auto-safe");
     mpv_set_option_string(_mpv, "video-sync", "display-resample");
+    if (_blurayDeviceURL) {
+        // The Swift boundary accepts only a completed, cache-owned ISO or
+        // BDMV directory. Loading the longest title avoids disc menus and
+        // therefore never starts BD-J.
+        mpv_set_option_string(_mpv, "bluray-device", _blurayDeviceURL.path.UTF8String);
+    }
 
     if (_preferredAudioLanguages.count > 0) {
         mpv_set_option_string(
@@ -456,6 +470,11 @@ static void OMMpvWakeup(void *context) {
             _tracksLoading = NO;
             mpv_event_end_file *endFile = event->data;
             if (endFile && endFile->reason == MPV_END_FILE_REASON_ERROR) {
+                if (_blurayDeviceURL) {
+                    self.errorMessage = @"This disc is not a supported unencrypted Blu-ray.";
+                    shouldEmitSnapshot = YES;
+                    break;
+                }
                 const char *description = mpv_error_string(endFile->error);
                 NSString *detail = description
                     ? [NSString stringWithUTF8String:description]
