@@ -211,6 +211,20 @@ struct PlaybackSourceResolution: Sendable {
     }
 }
 
+extension LocalTorrentPlaybackDescriptor {
+    init(candidate: AddonStreamCandidate) throws {
+        guard case let .resolverRequired(infoHash, fileIndex) = candidate.delivery else {
+            throw DescriptorError.invalidInfoHash
+        }
+        try self.init(
+            infoHash: infoHash,
+            fileIndex: fileIndex,
+            displayName: candidate.filename ?? candidate.displayName,
+            expectedByteCount: candidate.videoSize
+        )
+    }
+}
+
 enum PlaybackSourceResolver {
     static func resolve(
         for item: MediaItem,
