@@ -122,30 +122,27 @@ final class LocalTorrentPlaybackTests: XCTestCase {
             ),
             lease: lease
         )
-        try await coordinator.commitPreparation(lease)
-        let source = CoordinatorBlockingDiscByteSource()
-        let materializer = DiscMaterializer(
-            reservationRoot: reservation.itemDirectory,
-            reservedBytes: 1
-        )
-        let stream = await materializer.materialize(
-            .iso(TorrentMediaFile(index: 0, relativePath: "Disc.iso", size: 1)),
-            source: source
-        )
-        let collection = Task {
-            do {
-                for try await _ in stream {}
-            } catch {}
+        let cancellation = BlockingLocalPlaybackCancellation()
+        let cancellationTask = Task {
+            await coordinator.cancelDiscPreparation(cancellation, lease: lease)
         }
         for _ in 0..<10_000 {
-            if await source.didStart { break }
+            if await cancellation.didStart { break }
             await Task.yield()
         }
-        let didStart = await source.didStart
+        let didStart = await cancellation.didStart
         XCTAssertTrue(didStart)
 
-        await coordinator.cancelDiscPreparation(materializer, lease: lease)
-        await collection.value
+        do {
+            _ = try await coordinator.acquire()
+            XCTFail("The cache lease must remain busy until cleanup finishes")
+        } catch {
+            XCTAssertEqual(error as? LocalPlaybackJobCoordinator.JobError, .busy)
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: reservation.itemDirectory.path))
+
+        await cancellation.unblock()
+        await cancellationTask.value
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: reservation.itemDirectory.path))
         let nextLease = try await coordinator.acquire()
@@ -452,26 +449,19 @@ final class LocalTorrentPlaybackTests: XCTestCase {
     }
 }
 
-private actor CoordinatorBlockingDiscByteSource: DiscByteSource {
+private actor BlockingLocalPlaybackCancellation: LocalPlaybackCancellation {
     private(set) var didStart = false
+    private var continuation: CheckedContinuation<Void, Never>?
 
-    nonisolated func bytes(for file: TorrentMediaFile) -> AsyncThrowingStream<Data, Error> {
-        AsyncThrowingStream { continuation in
-            let producer = Task {
-                await markStarted()
-                do {
-                    try await Task.sleep(for: .seconds(30))
-                    continuation.yield(Data([0]))
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
-            }
-            continuation.onTermination = { _ in producer.cancel() }
+    func cancelAndWait() async {
+        didStart = true
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
         }
     }
 
-    private func markStarted() {
-        didStart = true
+    func unblock() {
+        continuation?.resume()
+        continuation = nil
     }
 }

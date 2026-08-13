@@ -1,5 +1,9 @@
 import Foundation
 
+nonisolated protocol LocalPlaybackCancellation: Sendable {
+    func cancelAndWait() async
+}
+
 nonisolated struct LocalTorrentPlaybackDescriptor: Hashable, Sendable {
     enum DescriptorError: LocalizedError, Equatable {
         case invalidInfoHash
@@ -571,7 +575,7 @@ actor LocalPlaybackJobCoordinator {
     }
 
     func cancelDiscPreparation(
-        _ materializer: DiscMaterializer?,
+        _ materializer: (any LocalPlaybackCancellation)?,
         lease: UUID
     ) async {
         guard activeJob?.lease == lease else { return }

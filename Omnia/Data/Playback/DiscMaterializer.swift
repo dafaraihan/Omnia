@@ -49,7 +49,7 @@ nonisolated struct DiscMaterializationManifest: Codable, Equatable, Sendable {
     let completedAt: Date
 }
 
-actor DiscMaterializer {
+actor DiscMaterializer: LocalPlaybackCancellation {
     private let reservationRoot: URL
     private let reservedBytes: Int64
     private let retainsIncompleteJobs: Bool
