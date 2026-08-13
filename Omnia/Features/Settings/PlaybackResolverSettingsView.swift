@@ -1,78 +1,80 @@
 import SwiftUI
 
 struct PlaybackResolverSettingsView: View {
-    @Environment(OmniaStore.self) private var store
-    @AppStorage(PlaybackResolverSettings.endpointKey) private var endpoint = ""
-    @AppStorage(PlaybackResolverSettings.approvedAddonIDsKey) private var approvedAddonIDs = ""
-    @AppStorage(PlaybackResolverSettings.approvedStreamHostsKey) private var approvedStreamHosts = ""
-
-    @State private var authorizationToken = ""
-    @State private var hasStoredToken = PlaybackResolverCredentialStore.hasAuthorizationToken
-    @State private var statusMessage: String?
+    @State private var localSettings = LocalResolverSettingsStore()
     @State private var confirmation = SettingsConfirmation<DestructiveAction>()
+    @State private var statusMessage: String?
 
     private enum DestructiveAction: Equatable {
-        case removeToken
+        case revokeConsent
+        case removeLegacyToken
     }
 
     var body: some View {
         Form {
             Section {
-                TextField("HTTPS endpoint", text: $endpoint, prompt: Text("https://resolver.example/v1/resolve"))
-                    .textContentType(.URL)
-            } header: {
-                Text("Resolver Endpoint")
-            } footer: {
-                Text("Omnia sends a versioned source request only to this HTTPS endpoint and only for an approved add-on.")
-            }
-
-            Section {
-                SecureField(
-                    hasStoredToken ? "Replace stored bearer token" : "Bearer token",
-                    text: $authorizationToken
+                LabeledContent("Resolver", value: "On this Mac")
+                LabeledContent(
+                    "Peer access",
+                    value: localSettings.preferences.hasCurrentConsent ? "Allowed" : "Consent required"
                 )
-                .textContentType(.password)
 
-                Button(hasStoredToken ? "Replace Token" : "Save Token") { saveToken() }
-                    .disabled(authorizationToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-                if hasStoredToken {
-                    Button("Remove Token", role: .destructive) {
-                        confirmation.request(.removeToken)
+                if localSettings.preferences.hasCurrentConsent {
+                    Button("Revoke Peer Access", role: .destructive) {
+                        confirmation.request(.revokeConsent)
+                    }
+                } else {
+                    Button("Allow Local Peer Playback") {
+                        localSettings.acceptConsent()
+                        statusMessage = "Local peer playback was enabled on this Mac."
                     }
                 }
             } header: {
-                Text("Authorization")
+                Text("Local Resolver")
             } footer: {
-                Text("The token stays in the local Keychain. It is never synced, logged, sent to add-ons, or included in playback URLs.")
+                Text(LocalTorrentConsent.disclosure)
             }
 
             Section {
-                TextEditor(text: $approvedAddonIDs)
-                    .font(.body.monospaced())
-                    .frame(minHeight: 92)
-
-                ForEach(streamAddons) { addon in
-                    Button {
-                        addAddonID(addon.id)
-                    } label: {
-                        LabeledContent(addon.manifest.name, value: addon.id)
+                Picker("Maximum cache", selection: cacheQuotaBinding) {
+                    ForEach(ResolverCacheQuota.allCases, id: \.self) { quota in
+                        Text(quota.title).tag(quota)
                     }
                 }
+                Toggle("Keep incomplete downloads", isOn: retainsIncompleteJobsBinding)
             } header: {
-                Text("Approved Add-ons")
+                Text("Storage")
             } footer: {
-                Text("Enter add-on IDs one per line or comma-separated. Only these add-ons may send an info hash to the resolver.")
+                Text("Torrent data stays in Omnia’s sandboxed cache, is excluded from backup, and preserves at least 5 GB of available disk space. Inactive items are evicted oldest first.")
             }
 
             Section {
-                TextEditor(text: $approvedStreamHosts)
-                    .font(.body.monospaced())
-                    .frame(minHeight: 92)
+                TextField(
+                    "Download limit (KiB/s, 0 is unlimited)",
+                    value: downloadLimitBinding,
+                    format: .number
+                )
+                TextField(
+                    "Upload limit (KiB/s)",
+                    value: uploadLimitBinding,
+                    format: .number
+                )
             } header: {
-                Text("Approved HTTPS Stream Hosts")
+                Text("Bandwidth")
             } footer: {
-                Text("Enter exact host names only, one per line or comma-separated. Results are rejected unless they use HTTPS and exactly match this allow-list.")
+                Text("Limits are bounded from 0 through 1,000,000 KiB/s. Peer activity is allowed only during an explicitly selected playback job and stops when that job ends.")
+            }
+
+            if PlaybackResolverCredentialStore.hasAuthorizationToken {
+                Section {
+                    Button("Remove Legacy Resolver Token", role: .destructive) {
+                        confirmation.request(.removeLegacyToken)
+                    }
+                } header: {
+                    Text("Legacy Remote Resolver")
+                } footer: {
+                    Text("Remote resolving is no longer used. This only deletes the old token from this Mac’s Keychain.")
+                }
             }
 
             if let statusMessage {
@@ -82,63 +84,78 @@ struct PlaybackResolverSettingsView: View {
                 }
             }
         }
-        .navigationTitle("Playback Resolver")
+        .navigationTitle("Local Playback Resolver")
         .confirmationDialog(
-            "Remove Resolver Token?",
+            confirmationTitle,
             isPresented: confirmationPresentation,
             titleVisibility: .visible
         ) {
-            Button("Remove Token", role: .destructive) {
-                guard confirmation.confirm() == .removeToken else { return }
-                removeToken()
+            if confirmation.pending == .revokeConsent {
+                Button("Revoke Peer Access", role: .destructive) {
+                    guard confirmation.confirm() == .revokeConsent else { return }
+                    localSettings.revokeConsent()
+                    statusMessage = "Local peer playback was disabled."
+                }
+            }
+            if confirmation.pending == .removeLegacyToken {
+                Button("Remove Legacy Token", role: .destructive) {
+                    guard confirmation.confirm() == .removeLegacyToken else { return }
+                    removeLegacyToken()
+                }
             }
             Button("Cancel", role: .cancel) { confirmation.cancel() }
         }
     }
 
-    private var streamAddons: [InstalledAddon] {
-        store.installedAddons.filter { $0.manifest.supportsStreams }
+    private var cacheQuotaBinding: Binding<ResolverCacheQuota> {
+        Binding(
+            get: { localSettings.preferences.cacheQuota },
+            set: { value in localSettings.update { $0.cacheQuota = value } }
+        )
+    }
+
+    private var retainsIncompleteJobsBinding: Binding<Bool> {
+        Binding(
+            get: { localSettings.preferences.retainsIncompleteJobs },
+            set: { value in localSettings.update { $0.retainsIncompleteJobs = value } }
+        )
+    }
+
+    private var downloadLimitBinding: Binding<Int> {
+        Binding(
+            get: { localSettings.preferences.downloadLimitKilobytesPerSecond },
+            set: { value in localSettings.update { $0.downloadLimitKilobytesPerSecond = value } }
+        )
+    }
+
+    private var uploadLimitBinding: Binding<Int> {
+        Binding(
+            get: { localSettings.preferences.uploadLimitKilobytesPerSecond },
+            set: { value in localSettings.update { $0.uploadLimitKilobytesPerSecond = value } }
+        )
     }
 
     private var confirmationPresentation: Binding<Bool> {
         Binding(
             get: { confirmation.pending != nil },
-            set: { isPresented in
-                if !isPresented { confirmation.cancel() }
-            }
+            set: { if !$0 { confirmation.cancel() } }
         )
     }
 
-    private func addAddonID(_ id: String) {
-        let existing = approvedAddonIDs
-            .split(whereSeparator: { $0 == "," || $0 == "\n" })
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-        guard !existing.contains(id) else { return }
-        approvedAddonIDs = (existing + [id]).joined(separator: "\n")
-    }
-
-    private func saveToken() {
-        let value = authorizationToken.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty else { return }
-
-        do {
-            try PlaybackResolverCredentialStore.saveAuthorizationToken(value)
-            authorizationToken = ""
-            hasStoredToken = true
-            statusMessage = "Authorization token saved in the local Keychain."
-        } catch {
-            statusMessage = "Omnia could not save the authorization token."
+    private var confirmationTitle: String {
+        switch confirmation.pending {
+        case .revokeConsent: "Disable Local Peer Playback?"
+        case .removeLegacyToken: "Remove Legacy Resolver Token?"
+        case nil: "Confirm Change"
         }
     }
 
-    private func removeToken() {
+    private func removeLegacyToken() {
         do {
             try PlaybackResolverCredentialStore.deleteAuthorizationToken()
-            authorizationToken = ""
-            hasStoredToken = false
-            statusMessage = "Authorization token removed from the local Keychain."
+            statusMessage = "The legacy resolver token was removed from the local Keychain."
         } catch {
-            statusMessage = "Omnia could not remove the authorization token."
+            statusMessage = "Omnia could not remove the legacy resolver token."
         }
     }
 }

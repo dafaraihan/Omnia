@@ -2,6 +2,7 @@ import SwiftUI
 
 struct VideoPlayerSettingsView: View {
     @Environment(SettingsPreferencesStore.self) private var settings
+    @State private var localResolverSettings = LocalResolverSettingsStore()
 
     private var model: VideoPlayerSettingsModel {
         VideoPlayerSettingsModel(preferences: settings.preferences)
@@ -67,7 +68,7 @@ struct VideoPlayerSettingsView: View {
                 Toggle("Play Continue Watching Directly", isOn: settings.binding(\.directContinueWatchingPlayback))
                 Toggle("Show Only Compatible Formats", isOn: settings.binding(\.compatibleFormatsOnly))
                 NavigationLink(value: SettingsRoute.playbackResolver) {
-                    LabeledContent("Playback Resolver", value: resolverSummary)
+                    LabeledContent("Local Playback Resolver", value: resolverSummary)
                 }
             }
 
@@ -99,7 +100,7 @@ struct VideoPlayerSettingsView: View {
     }
 
     private var resolverSummary: String {
-        PlaybackResolverCredentialStore.hasAuthorizationToken ? "Configured locally" : "Not configured"
+        localResolverSettings.preferences.hasCurrentConsent ? "Ready on this Mac" : "Consent required"
     }
 }
 
