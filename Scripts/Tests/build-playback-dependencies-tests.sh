@@ -38,6 +38,36 @@ jq -e \
   all(.components[]; .sha256 == $digest)
 ' "$safe_output/source-metadata.json" >/dev/null
 
+mkdir -p "$fixture_root/cache"
+cp "$fixture_root/safe.tar.gz" "$fixture_root/cache/$safe_digest"
+cache_output="$fixture_root/cache-output"
+OMNIA_NATIVE_BUILD_MODE=fetch-only \
+OMNIA_NATIVE_SOURCE_CACHE="$fixture_root/cache" \
+OMNIA_TEST_ARCHIVE=/missing \
+PATH="$repo_root/Scripts/Tests/Fixtures:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin" \
+    /bin/bash "$builder" "$fixture_root/safe-manifest.json" "$cache_output"
+jq -e --arg digest "$safe_digest" '
+  all(.components[]; .sha256 == $digest)
+' "$cache_output/source-metadata.json" >/dev/null
+
+mkdir -p "$fixture_root/relative-link/package"
+printf '%s\n' 'relative link target' > "$fixture_root/relative-link/package/AGENTS.md"
+ln -s AGENTS.md "$fixture_root/relative-link/package/CLAUDE.md"
+tar -czf "$fixture_root/relative-link.tar.gz" -C "$fixture_root/relative-link" package
+relative_link_digest="$(shasum -a 256 "$fixture_root/relative-link.tar.gz" | awk '{print $1}')"
+jq --arg digest "$relative_link_digest" '
+  .components |= map(
+    .source_url = "https://fixtures.example/source.tar.gz"
+    | .sha256 = $digest
+  )
+' "$real_manifest" > "$fixture_root/relative-link-manifest.json"
+OMNIA_NATIVE_BUILD_MODE=fetch-only \
+OMNIA_TEST_ARCHIVE="$fixture_root/relative-link.tar.gz" \
+PATH="$repo_root/Scripts/Tests/Fixtures:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin" \
+    /bin/bash "$builder" \
+    "$fixture_root/relative-link-manifest.json" \
+    "$fixture_root/relative-link-output"
+
 jq '.components[0].sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"' \
     "$fixture_root/safe-manifest.json" > "$fixture_root/bad-hash-manifest.json"
 if run_fetch "$fixture_root/bad-hash-manifest.json" "$fixture_root/bad-hash-output" \

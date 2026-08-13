@@ -22,7 +22,7 @@ esac
 script_directory="$(cd "$(dirname "$0")" && pwd)"
 repo_root="$(cd "$script_directory/.." && pwd)"
 
-for command_name in curl jq shasum tar awk mktemp; do
+for command_name in curl jq shasum tar awk mktemp cp; do
     command -v "$command_name" >/dev/null 2>&1 || {
         echo "error: required native build tool is unavailable: $command_name" >&2
         exit 69
@@ -53,6 +53,21 @@ case "$output_directory" in
         ;;
 esac
 
+source_cache="${OMNIA_NATIVE_SOURCE_CACHE:-}"
+if [[ -n "$source_cache" ]]; then
+    [[ -d "$source_cache" && ! -L "$source_cache" ]] || {
+        echo "error: native source cache must be a directory" >&2
+        exit 73
+    }
+    source_cache="$(cd "$source_cache" && pwd -P)"
+    case "$source_cache" in
+        /|"$repo_root"|"$repo_root"/*)
+            echo "error: native source cache must be outside the repository" >&2
+            exit 73
+            ;;
+    esac
+fi
+
 work_directory="$(mktemp -d /tmp/omnia-native-build.XXXXXX)"
 cleanup() {
     case "$work_directory" in
@@ -75,9 +90,24 @@ archive_is_confined() {
       END { exit invalid ? 1 : 0 }
     ' || return 1
 
-    if tar -tvf "$archive" | awk 'substr($1, 1, 1) == "l" || substr($1, 1, 1) == "h" { found = 1 } END { exit found ? 0 : 1 }'; then
-        return 1
-    fi
+    tar -tvf "$archive" | awk '
+      substr($1, 1, 1) == "h" { invalid = 1 }
+      substr($1, 1, 1) == "l" {
+        separator = " -> "
+        separator_index = index($0, separator)
+        if (separator_index == 0) {
+          invalid = 1
+          next
+        }
+        target = substr($0, separator_index + length(separator))
+        if (target ~ /^\//) invalid = 1
+        target_count = split(target, target_parts, "/")
+        for (target_index = 1; target_index <= target_count; target_index++) {
+          if (target_parts[target_index] == "..") invalid = 1
+        }
+      }
+      END { exit invalid ? 1 : 0 }
+    ' || return 1
 }
 
 while IFS=$'\t' read -r name version source_url expected_digest; do
@@ -85,8 +115,16 @@ while IFS=$'\t' read -r name version source_url expected_digest; do
     source_directory="$work_directory/Sources/$name"
     mkdir -p "$source_directory"
 
-    curl --fail --location --proto '=https' --tlsv1.2 \
-        "$source_url" --output "$archive"
+    cached_archive="${source_cache:+$source_cache/$expected_digest}"
+    if [[ -n "$cached_archive" && -f "$cached_archive" && ! -L "$cached_archive" ]]; then
+        cp "$cached_archive" "$archive"
+    else
+        curl --fail --location --proto '=https' --tlsv1.2 \
+            --connect-timeout 15 --max-time 300 \
+            --speed-limit 1 --speed-time 30 \
+            --retry 2 --retry-connrefused \
+            "$source_url" --output "$archive"
+    fi
 
     actual_digest="$(shasum -a 256 "$archive" | awk '{print $1}')"
     if [[ "$actual_digest" != "$expected_digest" ]]; then

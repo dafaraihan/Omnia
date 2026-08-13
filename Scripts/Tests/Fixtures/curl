@@ -2,10 +2,22 @@
 set -euo pipefail
 
 output=""
+has_connect_timeout=false
+has_max_time=false
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --output|-o)
             output="${2:-}"
+            shift 2
+            ;;
+        --connect-timeout)
+            [[ "${2:-}" == "15" ]] || exit 65
+            has_connect_timeout=true
+            shift 2
+            ;;
+        --max-time)
+            [[ "${2:-}" == "300" ]] || exit 65
+            has_max_time=true
             shift 2
             ;;
         *)
@@ -14,5 +26,6 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+[[ "$has_connect_timeout" == true && "$has_max_time" == true ]] || exit 65
 [[ -n "$output" && -f "${OMNIA_TEST_ARCHIVE:-}" ]] || exit 64
 cp "$OMNIA_TEST_ARCHIVE" "$output"
