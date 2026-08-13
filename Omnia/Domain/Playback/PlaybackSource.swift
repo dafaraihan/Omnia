@@ -164,9 +164,8 @@ struct AddonStreamCandidate: Identifiable, Hashable, Sendable {
     }
 }
 
-/// A final HTTPS stream offered by an enabled add-on. libmpv on macOS (and
-/// AVPlayer on iOS) receives only this transport description, never a torrent
-/// hash, magnet URI, tracker, or third-party handoff link.
+/// A validated direct HTTPS stream or completed local cache file. The player
+/// never receives a torrent hash, magnet URI, tracker, or webpage handoff.
 struct PlaybackSource: Identifiable, Hashable, Sendable {
     let id: String
     let addonID: String
@@ -186,6 +185,17 @@ struct PlaybackSource: Identifiable, Hashable, Sendable {
         streamIdentifier = candidate.streamIdentifier
         self.url = url
         requestHeaders = candidate.requestHeaders
+    }
+
+    init(localCandidate candidate: AddonStreamCandidate, fileURL: URL) {
+        id = candidate.id
+        addonID = candidate.addonID
+        addonName = candidate.addonName
+        title = candidate.displayName
+        detail = candidate.displayDescription
+        streamIdentifier = candidate.streamIdentifier
+        url = fileURL
+        requestHeaders = [:]
     }
 
     #if DEBUG

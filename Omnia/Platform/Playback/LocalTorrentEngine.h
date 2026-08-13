@@ -17,7 +17,9 @@ typedef void (^OMLocalTorrentCompletionHandler)(NSURL * _Nullable fileURL, NSErr
 - (instancetype)initWithCacheDirectory:(NSURL *)cacheDirectory
                    maximumDownloadBytes:(int64_t)maximumDownloadBytes
                        minimumFreeBytes:(int64_t)minimumFreeBytes
-    NS_SWIFT_NAME(init(cacheDirectory:maximumDownloadBytes:minimumFreeBytes:))
+             downloadLimitBytesPerSecond:(int64_t)downloadLimitBytesPerSecond
+               uploadLimitBytesPerSecond:(int64_t)uploadLimitBytesPerSecond
+    NS_SWIFT_NAME(init(cacheDirectory:maximumDownloadBytes:minimumFreeBytes:downloadLimitBytesPerSecond:uploadLimitBytesPerSecond:))
     NS_DESIGNATED_INITIALIZER;
 - (instancetype)init NS_UNAVAILABLE;
 

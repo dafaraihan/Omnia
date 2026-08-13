@@ -3,7 +3,7 @@
 This document is the authoritative security model, release checklist, and
 hardening register for Omnia. It covers the native SwiftUI client, its
 AVPlayer/libmpv playback boundary, Supabase Auth and data access, the metadata
-Edge Function, user-configured playback resolvers, and untrusted
+Edge Function, the local macOS playback resolver, and untrusted
 Stremio-compatible add-ons.
 
 The findings below are from a static repository audit performed on 2026-08-10;
@@ -39,7 +39,7 @@ the deliberately public publishable key.
 | Library entries and playback history | Private behavioral data. RLS must bind every client operation to `auth.uid()`. |
 | User-owned provider credentials | MDBList API keys and AniList tokens belong to the local user and must remain in Keychain. |
 | Add-on manifest URLs and enabled state | User-selected configuration that can reveal interests and causes requests to an untrusted origin. It must not contain credentials. |
-| Resolver endpoint, token, and allow-lists | The endpoint and allow-lists are local configuration; the bearer token is a Keychain-only secret. |
+| Local torrent cache and peer consent | Device-owned, excluded-from-backup cache data. Peer access is off until the current consent version is accepted. |
 | Backend provider and operational secrets | TMDB/TVDB credentials, the metadata seed token, and the Supabase service-role key are server-only secrets. |
 | Supabase URL and publishable key | Public client configuration, not a secret. Its exposure must never grant authorization or unmetered privileged work. |
 | Third-party payloads | Add-on manifests/catalogs/streams, provider JSON, artwork, subtitles, and resolver responses are untrusted input. |
@@ -66,10 +66,11 @@ dependency source.
    returned JSON. Its text, identifiers, artwork, headers, and URLs remain data,
    never executable configuration. Installing an add-on is not permission to
    receive other credentials.
-4. **Device to optional resolver.** Only a resolver-required candidate from an
-   explicitly approved add-on may cross this boundary. The token goes only in an
-   authorization header to the configured HTTPS endpoint. The returned media
-   URL must use HTTPS and match an exact approved host.
+4. **Device to local peers and trackers.** This macOS-only boundary opens only
+   after explicit consent and source selection. Hashes, indexes, filenames,
+   sizes, and tracker hints are bounded before native code. Incoming listeners,
+   LSD, UPnP, and NAT-PMP are disabled. Cache paths are app-owned and confined;
+   native error details, peer addresses, and tracker data are not surfaced.
 5. **Playback engine.** AVPlayer or libmpv consumes attacker-influenced media,
    container metadata, subtitles, URLs, and selected headers. This is a native
    parser boundary with memory-safety and supply-chain risk; no scripts,
@@ -84,16 +85,16 @@ dependency source.
 
 ## Confirmed repository controls
 
-- User-owned provider credentials and the resolver bearer token use
+- User-owned provider credentials and the legacy resolver bearer token use
   `KeychainStore`; mobile items use `WhenUnlockedThisDeviceOnly`, and no
   synchronizable Keychain attribute is enabled. The resolver endpoint and exact
   add-on/stream-host allow-lists are separate local settings.
-- The resolver requires an HTTPS endpoint without URL user information, checks
-  the add-on ID before sending data, uses a 20-second request timeout, and checks
-  that its returned HTTPS URL has an exact approved host.
+- The legacy remote resolver is no longer called by source selection. Its old
+  Keychain token can be deleted from Local Playback Resolver settings.
 - Add-on manifest/resource requests require HTTPS and specify 15- or 20-second
-  request timeouts. The app hands final HTTPS media sources to AVPlayer/libmpv;
-  magnet and handoff links are not treated as final native playback URLs.
+  request timeouts. Direct HTTPS sources go to AVPlayer/libmpv. On eligible
+  macOS Release builds, magnet descriptors go only to the bounded local engine;
+  the player receives its completed regular cache file, never the magnet URI.
 - The plist contains no App Transport Security exception. The built products
   still need release verification because generated or dependency settings can
   alter effective behavior.

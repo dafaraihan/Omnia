@@ -31,7 +31,7 @@ used as evidence that uncommitted application work was integrated.
     +--> HTTPS Stremio-compatible add-ons
            |
            +--> direct HTTPS media --------------------+
-           +--> info hash --> authorized resolver -----+--> player
+           +--> info hash --> macOS local resolver ----+--> completed cache file --> player
                                                          macOS: libmpv
                                                          iOS/iPadOS: AVPlayer
 
@@ -55,10 +55,11 @@ CloudLibrarySync (implemented, not composed into app state)
   integrations. AniList public discovery needs no credential. Personal tokens
   remain on the device in Keychain.
 - Stremio-compatible add-ons are external HTTPS systems selected by the user.
-  Direct HTTPS media can go to the platform player. An info hash is not media:
-  only an opt-in resolver may exchange it for an HTTPS URL, and only for an
-  approved add-on and an exact approved result host. The resolver bearer token
-  stays in Keychain and is never forwarded to the player.
+  Direct HTTPS media can go to the platform player. An info hash is not media.
+  On macOS Release, the opt-in local resolver validates the hash, tracker hints,
+  selected index, filename, size, cache path, and capacity before peer activity.
+  It downloads into the sandboxed cache and gives libmpv only a completed local
+  regular file. Legacy remote-resolver credentials are inert and removable.
 - macOS links and embeds libmpv; iOS and iPadOS use AVPlayer. The macOS build
   phase copies libmpv plus its non-system Homebrew dynamic-library closure,
   rewrites install names to `@rpath`, and signs the nested libraries before the

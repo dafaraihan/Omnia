@@ -21,6 +21,12 @@ struct PlaybackSourceSheet: View {
     @State private var selectedAddonID: String?
     @State private var resolvingCandidateID: String?
     @State private var resolverFailures: [String: String] = [:]
+    @State private var localResolverSettings = LocalResolverSettingsStore()
+    @State private var pendingLocalTorrentCandidate: AddonStreamCandidate?
+    @State private var localTorrentProgress: [String: Double] = [:]
+    #if os(macOS)
+    @State private var localTorrentEngine: OMLocalTorrentEngine?
+    #endif
 
     var body: some View {
         NavigationStack {
@@ -58,9 +64,9 @@ struct PlaybackSourceSheet: View {
                                         resolverRequiredRow(candidate)
                                     }
                                 } header: {
-                                    Text("Requires a Configured Resolver")
+                                    Text("Local Peer-to-Peer Sources")
                                 } footer: {
-                                    Text("These add-ons supplied a torrent info hash and file index. Omnia retains the exact source data until a configured resolver turns it into a final HTTPS media URL for the player.")
+                                    Text("On macOS, Omnia resolves these locally into its bounded cache, then opens the completed selected file with libmpv. Peer activity never starts through autoplay.")
                                 }
                             }
 
@@ -88,7 +94,7 @@ struct PlaybackSourceSheet: View {
 
                             Section("Source Handling") {
                                 Label("Direct HTTPS streams play in Omnia", systemImage: "play.rectangle")
-                                Text("Torrent-backed streams retain their add-on-provided info hash and file index until a configured resolver returns an authorized HTTPS stream for Omnia.")
+                                Text("Torrent-backed streams are resolved locally on macOS after peer consent. Mobile support remains disabled pending its separate review.")
                                     .font(.footnote)
                                     .foregroundStyle(.secondary)
                             }
@@ -116,6 +122,29 @@ struct PlaybackSourceSheet: View {
                 candidates = result.candidates
                 isResolving = false
                 startAutomaticallyIfAllowed()
+            }
+            .confirmationDialog(
+                "Allow Local Peer Playback?",
+                isPresented: localTorrentConsentPresentation,
+                titleVisibility: .visible
+            ) {
+                Button("Allow and Download") {
+                    guard let candidate = pendingLocalTorrentCandidate else { return }
+                    pendingLocalTorrentCandidate = nil
+                    localResolverSettings.acceptConsent()
+                    downloadLocalTorrent(candidate)
+                }
+                Button("Cancel", role: .cancel) {
+                    pendingLocalTorrentCandidate = nil
+                }
+            } message: {
+                Text(LocalTorrentConsent.disclosure)
+            }
+            .onDisappear {
+                #if os(macOS)
+                localTorrentEngine?.cancel()
+                localTorrentEngine = nil
+                #endif
             }
         }
         #if os(macOS)
@@ -212,30 +241,21 @@ struct PlaybackSourceSheet: View {
         }
     }
 
-    @ViewBuilder
     private func resolverRequiredRow(_ candidate: AddonStreamCandidate) -> some View {
-        let status = resolverStatus(for: candidate)
-        Group {
-            if status == nil {
-                Button {
-                    resolveAndStart(candidate)
-                } label: {
-                    candidateRow(
-                        candidate,
-                        symbol: resolvingCandidateID == candidate.id ? "hourglass" : "play.circle.fill",
-                        tint: .accentColor,
-                        status: resolvingCandidateID == candidate.id ? "Resolving authorized HTTPS stream…" : "Ready to resolve"
-                    )
-                }
-                .buttonStyle(.plain)
-                .disabled(resolvingCandidateID != nil)
-                .accessibilityHint("Requests an authorized HTTPS stream from your configured resolver")
-            } else {
-                candidateRow(candidate, symbol: "lock.slash", tint: .secondary, status: status)
-                    .accessibilityElement(children: .combine)
-                    .accessibilityHint("Configure or authorize a resolver before this source can play")
-            }
+        let status = localTorrentStatus(for: candidate)
+        return Button {
+            requestLocalTorrent(candidate)
+        } label: {
+            candidateRow(
+                candidate,
+                symbol: resolvingCandidateID == candidate.id ? "arrow.down.circle" : "play.circle.fill",
+                tint: .accentColor,
+                status: status
+            )
         }
+        .buttonStyle(.plain)
+        .disabled(resolvingCandidateID != nil || !localTorrentIsAvailable)
+        .accessibilityHint("Downloads the selected torrent file locally, then starts native playback")
     }
 
     private func unavailableRow(_ candidate: AddonStreamCandidate) -> some View {
@@ -313,33 +333,99 @@ struct PlaybackSourceSheet: View {
         .contentShape(.rect)
     }
 
-    private func resolverStatus(for candidate: AddonStreamCandidate) -> String? {
+    private var localTorrentConsentPresentation: Binding<Bool> {
+        Binding(
+            get: { pendingLocalTorrentCandidate != nil },
+            set: { if !$0 { pendingLocalTorrentCandidate = nil } }
+        )
+    }
+
+    private var localTorrentIsAvailable: Bool {
+        #if os(macOS)
+        OMLocalTorrentEngine.isAvailable
+        #else
+        false
+        #endif
+    }
+
+    private func localTorrentStatus(for candidate: AddonStreamCandidate) -> String {
         if let failure = resolverFailures[candidate.id] { return failure }
-        do {
-            let configuration = try PlaybackResolverSettings.configuration()
-            guard configuration.approvedAddonIDs.contains(candidate.addonID) else {
-                return PlaybackResolverError.candidateNotApproved.localizedDescription
-            }
-            return nil
-        } catch {
-            return error.localizedDescription
+        if resolvingCandidateID == candidate.id {
+            let progress = localTorrentProgress[candidate.id] ?? 0
+            return "Downloading locally… \(Int(progress * 100))%"
+        }
+        #if os(macOS)
+        if !OMLocalTorrentEngine.isAvailable {
+            return "The reviewed local torrent engine is not included in this build"
+        }
+        return localResolverSettings.preferences.hasCurrentConsent
+            ? "Ready to download locally"
+            : "Peer consent required"
+        #else
+        return "Mobile local resolving awaits separate review"
+        #endif
+    }
+
+    private func requestLocalTorrent(_ candidate: AddonStreamCandidate) {
+        guard localTorrentIsAvailable else { return }
+        if localResolverSettings.preferences.hasCurrentConsent {
+            downloadLocalTorrent(candidate)
+        } else {
+            pendingLocalTorrentCandidate = candidate
         }
     }
 
-    private func resolveAndStart(_ candidate: AddonStreamCandidate) {
+    private func downloadLocalTorrent(_ candidate: AddonStreamCandidate) {
+        #if os(macOS)
         resolvingCandidateID = candidate.id
         resolverFailures[candidate.id] = nil
+        localTorrentProgress[candidate.id] = 0
         Task {
             do {
-                let configuration = try PlaybackResolverSettings.configuration()
-                let source = try await AuthorizedPlaybackResolver.resolve(candidate, configuration: configuration)
+                let descriptor = try LocalTorrentPlaybackDescriptor(candidate: candidate)
+                let preferences = localResolverSettings.preferences
+                let policy = LocalTorrentStoragePolicy(
+                    maximumCacheBytes: preferences.cacheQuota.bytes,
+                    minimumFreeBytes: LocalTorrentStoragePolicy.default.minimumFreeBytes,
+                    maximumItemBytes: preferences.cacheQuota.bytes
+                )
+                let cacheDirectory = try await Task.detached {
+                    try LocalTorrentCacheManager.prepare(descriptor: descriptor, policy: policy)
+                }.value
                 guard !Task.isCancelled else { return }
-                beginPlayback(source, candidate: candidate)
+                let engine = OMLocalTorrentEngine(
+                    cacheDirectory: cacheDirectory,
+                    maximumDownloadBytes: policy.maximumItemBytes,
+                    minimumFreeBytes: policy.minimumFreeBytes,
+                    downloadLimitBytesPerSecond: Int64(
+                        preferences.downloadLimitKilobytesPerSecond
+                    ) * 1_024,
+                    uploadLimitBytesPerSecond: Int64(
+                        preferences.uploadLimitKilobytesPerSecond
+                    ) * 1_024
+                )
+                localTorrentEngine = engine
+                let fileURL = try await engine.download(
+                    magnetURL: descriptor.magnetURL,
+                    fileIndex: descriptor.fileIndex.map(NSNumber.init(value:)),
+                    progress: { progress, _, _ in
+                        localTorrentProgress[candidate.id] = progress
+                    }
+                )
+                guard !Task.isCancelled, resolvingCandidateID == candidate.id else { return }
+                localTorrentEngine = nil
+                resolvingCandidateID = nil
+                localTorrentProgress[candidate.id] = nil
+                beginPlayback(
+                    PlaybackSource(localCandidate: candidate, fileURL: fileURL),
+                    candidate: candidate
+                )
             } catch {
                 resolverFailures[candidate.id] = error.localizedDescription
                 resolvingCandidateID = nil
             }
         }
+        #endif
     }
 
     /// The source picker is itself a transient presentation.  Starting the

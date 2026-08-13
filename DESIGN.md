@@ -12,7 +12,7 @@ This is the canonical product, flow, screen, and UI-element specification for Om
 
 ## Product Definition and Principles
 
-**Current.** Omnia is a native media discovery, local-library, source-selection, and playback hub for iPhone, iPad, and Mac. A person can browse or search, inspect a title, save it, select an episode or source, and play an approved HTTPS media URL. Omnia does not host media, implement torrent transport, or trust add-on data automatically.
+**Current.** Omnia is a native media discovery, local-library, source-selection, and playback hub for iPhone, iPad, and Mac. A person can browse or search, inspect a title, save it, select an episode or source, and play an approved direct HTTPS source. The review-gated macOS Release path can also materialize a validated torrent file locally after explicit peer consent; Omnia does not host media or trust add-on data automatically.
 
 **Requirement.** Design decisions follow these priorities:
 
@@ -124,14 +124,14 @@ Each contract maps a verified SwiftUI screen where one exists. Purpose statement
 
 - **Purpose:** **Requirement:** make source provenance and delivery method understandable before playback or external handoff.
 - **Entry and exit:** **Current:** presented from Detail for a title or selected episode. Cancel returns without side effects; choosing an approved playable source dismisses the sheet then opens playback; an external source opens only after explicit selection.
-- **Primary action:** **Current:** choose a direct HTTPS source or explicitly resolve an authorized candidate. Sources are grouped as direct, resolver-required, external, and unavailable and can be filtered by add-on.
-- **Loading, empty, error:** **Current:** source lookup has labeled progress and an episode/title-specific empty explanation. Resolver configuration and request failures stay attached to their candidate row. Direct playback can still fail later in Playback. **Intended:** add retry for source lookup without dismissing the sheet.
+- **Primary action:** **Current:** choose a direct HTTPS source or explicitly download a local peer source on an eligible macOS Release build. Sources are grouped as direct, local peer-to-peer, external, and unavailable and can be filtered by add-on. Peer sources never autoplay.
+- **Loading, empty, error:** **Current:** source lookup has labeled progress and an episode/title-specific empty explanation. Local download percentage and redacted storage/network failures stay attached to their candidate row. Direct playback can still fail later in Playback. **Intended:** add retry for source lookup without dismissing the sheet and replace complete-file materialization with verified range streaming.
 - **Platform interaction:** **Current:** uses a system sheet, navigation title, Cancel toolbar action, horizontal filter controls, and inset list. macOS gives the sheet a minimum size; iPhone/iPad size through system presentation.
 - **Accessibility:** **Current:** filters include source counts; playable and external rows have action hints; unavailable/resolver-blocked rows combine their descriptive text; technical identifiers can be selected. **Requirement:** the human-readable name and state precede technical detail.
 
 ### Playback — `PlaybackExperienceView`
 
-- **Purpose:** **Requirement:** play the selected approved HTTPS source, expose transport and track choices, and report progress to the local library.
+- **Purpose:** **Requirement:** play the selected approved HTTPS source or completed validated local cache file, expose transport and embedded track choices, and report progress to the local library.
 - **Entry and exit:** **Current:** begins after source selection. Close stops playback and returns to browsing; iOS dismissal also stops; macOS playback covers the root window and owns full-screen state.
 - **Primary action:** **Current:** Play/Pause, Seek, Close, Volume, backward/forward 10 seconds, Rate, and Position operate in both player paths; Subtitle, Audio, and Full Screen operate in the macOS libmpv path. **Current gap:** the iPhone/iPad chrome still renders Subtitle, Audio, and Full Screen affordances, but the AVPlayer branch does not implement track selection or a full-screen toggle for them.
 - **Loading, empty, error:** **Current:** absence of a player shows Playback Unavailable; a player error shows Playback Failed with its message. **Current gap:** there is no dedicated buffering/reconnecting state. **Intended:** distinguish startup, buffering, recoverable network interruption, and terminal failure while keeping Close available.

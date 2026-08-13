@@ -1,6 +1,6 @@
 # Omnia
 
-Omnia is a native media discovery, library, and HTTPS playback hub for iPhone, iPad, and Mac. It brings built-in metadata, user-selected providers, and declarative HTTPS add-ons into one Apple-platform experience.
+Omnia is a native media discovery, library, and playback hub for iPhone, iPad, and Mac. It brings built-in metadata, user-selected providers, and declarative HTTPS add-ons into one Apple-platform experience.
 
 Apple TV is a design reference for cinematic hierarchy, focus, and playback inspiration. It is not a current deployment target: the Xcode project supports iOS, iPadOS, and macOS, and tvOS needs a dedicated target and platform-specific design work before it can be supported.
 
@@ -9,10 +9,10 @@ Apple TV is a design reference for cinematic hierarchy, focus, and playback insp
 Omnia helps people discover titles, inspect metadata, save media to a local library, choose sources from enabled add-ons, and play media using the platform-specific playback boundary. The macOS native playback expansion is under development and remains distribution-blocked pending the review gates in [NativeDependencies](NativeDependencies/README.md). Released behavior does not yet:
 
 - host media;
-- provide an approved local torrent or peer-to-peer transport; or
+- provide reviewed mobile peer-to-peer transport; or
 - trust add-on manifests, responses, resolvers, or stream URLs by default.
 
-Torrent identifiers are data, not playable media. A resolver is optional and must be explicitly configured by the user; only an approved HTTPS result may reach the player.
+Torrent identifiers remain untrusted data. On an eligible macOS Release build, explicit peer consent lets Omnia validate a bounded descriptor, download only the selected file into an excluded-from-backup cache, stop peer activity at cancellation or completion, and hand the completed regular file to libmpv. No remote resolver is used. Debug and mobile builds keep the native peer engine unavailable.
 
 ## Requirements
 

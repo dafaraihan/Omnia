@@ -2,6 +2,7 @@
 
 #if TARGET_OS_OSX
 #import <atomic>
+#import <climits>
 
 static NSString *const OMLocalTorrentErrorDomain = @"PrimeDeca.Omnia.LocalTorrent";
 
@@ -61,6 +62,8 @@ static bool OMIsPadFile(lt::file_storage const& files, lt::file_index_t index) {
 @property (nonatomic, readonly) NSURL *cacheDirectory;
 @property (nonatomic, readonly) int64_t maximumDownloadBytes;
 @property (nonatomic, readonly) int64_t minimumFreeBytes;
+@property (nonatomic, readonly) int64_t downloadLimitBytesPerSecond;
+@property (nonatomic, readonly) int64_t uploadLimitBytesPerSecond;
 @end
 
 @implementation OMLocalTorrentEngine
@@ -69,12 +72,16 @@ static bool OMIsPadFile(lt::file_storage const& files, lt::file_index_t index) {
 
 - (instancetype)initWithCacheDirectory:(NSURL *)cacheDirectory
                    maximumDownloadBytes:(int64_t)maximumDownloadBytes
-                       minimumFreeBytes:(int64_t)minimumFreeBytes {
+                       minimumFreeBytes:(int64_t)minimumFreeBytes
+             downloadLimitBytesPerSecond:(int64_t)downloadLimitBytesPerSecond
+               uploadLimitBytesPerSecond:(int64_t)uploadLimitBytesPerSecond {
     self = [super init];
     if (!self) return nil;
     _cacheDirectory = [cacheDirectory copy];
     _maximumDownloadBytes = maximumDownloadBytes;
     _minimumFreeBytes = minimumFreeBytes;
+    _downloadLimitBytesPerSecond = downloadLimitBytesPerSecond;
+    _uploadLimitBytesPerSecond = uploadLimitBytesPerSecond;
     _workQueue = dispatch_queue_create("PrimeDeca.Omnia.LocalTorrent", DISPATCH_QUEUE_SERIAL);
     _cancelled.store(false);
     return self;
@@ -85,7 +92,9 @@ static bool OMIsPadFile(lt::file_storage const& files, lt::file_index_t index) {
                   progress:(OMLocalTorrentProgressHandler)progress
                 completion:(OMLocalTorrentCompletionHandler)completion {
     if (!self.cacheDirectory.isFileURL || ![magnetURL.scheme.lowercaseString isEqualToString:@"magnet"] ||
-        self.maximumDownloadBytes <= 0 || self.minimumFreeBytes < 0) {
+        self.maximumDownloadBytes <= 0 || self.minimumFreeBytes < 0 ||
+        self.downloadLimitBytesPerSecond < 0 || self.uploadLimitBytesPerSecond < 0 ||
+        self.downloadLimitBytesPerSecond > INT_MAX || self.uploadLimitBytesPerSecond > INT_MAX) {
         completion(nil, OMTorrentError(OMLocalTorrentErrorInvalidInput, @"The local torrent request is invalid."));
         return;
     }
@@ -94,6 +103,8 @@ static bool OMIsPadFile(lt::file_storage const& files, lt::file_index_t index) {
     NSURL *cacheDirectory = self.cacheDirectory;
     int64_t maximumDownloadBytes = self.maximumDownloadBytes;
     int64_t minimumFreeBytes = self.minimumFreeBytes;
+    int64_t downloadLimitBytesPerSecond = self.downloadLimitBytesPerSecond;
+    int64_t uploadLimitBytesPerSecond = self.uploadLimitBytesPerSecond;
     dispatch_async(_workQueue, ^{
         @autoreleasepool {
             [self runMagnetURL:magnetURL
@@ -101,6 +112,8 @@ static bool OMIsPadFile(lt::file_storage const& files, lt::file_index_t index) {
                 cacheDirectory:cacheDirectory
           maximumDownloadBytes:maximumDownloadBytes
               minimumFreeBytes:minimumFreeBytes
+    downloadLimitBytesPerSecond:downloadLimitBytesPerSecond
+      uploadLimitBytesPerSecond:uploadLimitBytesPerSecond
                        progress:progress
                      completion:completion];
         }
@@ -114,6 +127,8 @@ static bool OMIsPadFile(lt::file_storage const& files, lt::file_index_t index) {
        cacheDirectory:(NSURL *)cacheDirectory
  maximumDownloadBytes:(int64_t)maximumDownloadBytes
      minimumFreeBytes:(int64_t)minimumFreeBytes
+downloadLimitBytesPerSecond:(int64_t)downloadLimitBytesPerSecond
+  uploadLimitBytesPerSecond:(int64_t)uploadLimitBytesPerSecond
               progress:(OMLocalTorrentProgressHandler)progressHandler
             completion:(OMLocalTorrentCompletionHandler)completion {
     auto finish = ^(NSURL *fileURL, NSError *error) {
@@ -148,6 +163,14 @@ static bool OMIsPadFile(lt::file_storage const& files, lt::file_index_t index) {
         settings.set_int(lt::settings_pack::out_enc_policy, lt::settings_pack::pe_enabled);
         settings.set_int(lt::settings_pack::in_enc_policy, lt::settings_pack::pe_enabled);
         settings.set_str(lt::settings_pack::user_agent, "Omnia/1 local playback");
+        settings.set_int(
+            lt::settings_pack::download_rate_limit,
+            static_cast<int>(downloadLimitBytesPerSecond)
+        );
+        settings.set_int(
+            lt::settings_pack::upload_rate_limit,
+            static_cast<int>(uploadLimitBytesPerSecond)
+        );
 
         lt::session session(settings);
         lt::error_code parseError;
@@ -299,7 +322,9 @@ static bool OMIsPadFile(lt::file_storage const& files, lt::file_index_t index) {
 
 - (instancetype)initWithCacheDirectory:(NSURL *)cacheDirectory
                    maximumDownloadBytes:(int64_t)maximumDownloadBytes
-                       minimumFreeBytes:(int64_t)minimumFreeBytes {
+                       minimumFreeBytes:(int64_t)minimumFreeBytes
+             downloadLimitBytesPerSecond:(int64_t)downloadLimitBytesPerSecond
+               uploadLimitBytesPerSecond:(int64_t)uploadLimitBytesPerSecond {
     return [super init];
 }
 
