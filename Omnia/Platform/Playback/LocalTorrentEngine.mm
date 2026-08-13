@@ -2,7 +2,119 @@
 
 #if TARGET_OS_OSX
 #import <atomic>
+#import <algorithm>
+#import <cctype>
 #import <climits>
+#include <filesystem>
+#include <vector>
+
+namespace fs = std::filesystem;
+
+struct OMMediaPath {
+    fs::path relativePath;
+    bool isSymbolicLink;
+};
+
+static std::string OMLowerASCII(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char character) {
+        return static_cast<char>(std::tolower(character));
+    });
+    return value;
+}
+
+static std::vector<std::string> OMPathComponents(fs::path const& path) {
+    std::vector<std::string> components;
+    for (auto const& component : path) components.push_back(component.string());
+    return components;
+}
+
+static bool OMIsSafeRelativePath(fs::path const& path) {
+    if (path.empty() || path.is_absolute()) return false;
+    for (auto const& component : path) {
+        auto value = component.string();
+        if (value.empty() || value == "." || value == "..") return false;
+    }
+    return true;
+}
+
+static bool OMComponentsHaveCaseInsensitivePrefix(
+    std::vector<std::string> const& components,
+    std::vector<std::string> const& prefix
+) {
+    if (components.size() < prefix.size()) return false;
+    for (std::size_t offset = 0; offset < prefix.size(); ++offset) {
+        if (OMLowerASCII(components[offset]) != OMLowerASCII(prefix[offset])) return false;
+    }
+    return true;
+}
+
+static bool OMDetectBluRayRoot(
+    std::vector<OMMediaPath> const& mediaPaths,
+    fs::path& detectedRoot
+) {
+    bool foundMarker = false;
+    std::vector<std::string> expectedPrefix;
+    for (OMMediaPath const& mediaPath : mediaPaths) {
+        if (mediaPath.isSymbolicLink) return false;
+        fs::path const& relative = mediaPath.relativePath;
+        if (!OMIsSafeRelativePath(relative)) return false;
+        auto components = OMPathComponents(relative);
+        if (components.size() < 2 ||
+            OMLowerASCII(components.back()) != "index.bdmv" ||
+            OMLowerASCII(components[components.size() - 2]) != "bdmv") {
+            continue;
+        }
+        std::vector<std::string> rootComponents(
+            components.begin(), components.end() - 2);
+        if (foundMarker) return false;
+        foundMarker = true;
+        expectedPrefix = rootComponents;
+        detectedRoot.clear();
+        for (auto const& component : rootComponents) detectedRoot /= component;
+    }
+    if (!foundMarker) return false;
+
+    auto bdmvPrefix = expectedPrefix;
+    bdmvPrefix.push_back("BDMV");
+    for (OMMediaPath const& mediaPath : mediaPaths) {
+        if (!OMComponentsHaveCaseInsensitivePrefix(
+                OMPathComponents(mediaPath.relativePath),
+                bdmvPrefix
+            )) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static int64_t OMRemainingDownloadBytes(
+    int64_t selectedBytes,
+    NSURL *rootURL,
+    NSArray<NSURL *> *selectedFileURLs
+) {
+    if (selectedBytes <= 0 || !rootURL.isFileURL) return selectedBytes;
+    NSString *rootPath = rootURL.standardizedURL.path;
+    if (rootPath.length == 0) return selectedBytes;
+    int64_t existingBytes = 0;
+    for (NSURL *fileURL in selectedFileURLs) {
+        NSString *path = fileURL.standardizedURL.path;
+        if (![path hasPrefix:[rootPath stringByAppendingString:@"/"]]) continue;
+        NSNumber *isRegular = nil;
+        NSNumber *isSymbolicLink = nil;
+        NSNumber *allocatedSize = nil;
+        [fileURL getResourceValue:&isRegular forKey:NSURLIsRegularFileKey error:nil];
+        [fileURL getResourceValue:&isSymbolicLink forKey:NSURLIsSymbolicLinkKey error:nil];
+        [fileURL getResourceValue:&allocatedSize forKey:NSURLFileAllocatedSizeKey error:nil];
+        if (!isRegular.boolValue || isSymbolicLink.boolValue ||
+            allocatedSize == nil || allocatedSize.longLongValue < 0) {
+            continue;
+        }
+        int64_t fileBytes = allocatedSize.longLongValue;
+        if (fileBytes >= selectedBytes - existingBytes) return 0;
+        existingBytes += fileBytes;
+    }
+    return selectedBytes - existingBytes;
+}
 
 static NSString *const OMLocalTorrentErrorDomain = @"PrimeDeca.Omnia.LocalTorrent";
 
@@ -24,10 +136,8 @@ static NSError *OMTorrentError(OMLocalTorrentErrorCode code, NSString *message) 
 
 #if defined(OMNIA_LOCAL_TORRENT) && OMNIA_LOCAL_TORRENT
 #include <chrono>
-#include <filesystem>
 #include <memory>
 #include <thread>
-#include <vector>
 #include <libtorrent/alert_types.hpp>
 #include <libtorrent/magnet_uri.hpp>
 #include <libtorrent/session.hpp>
@@ -36,7 +146,6 @@ static NSError *OMTorrentError(OMLocalTorrentErrorCode code, NSString *message) 
 #include <libtorrent/torrent_info.hpp>
 
 namespace lt = libtorrent;
-namespace fs = std::filesystem;
 
 static bool OMPathIsConfined(fs::path const& root, fs::path const& candidate) {
     auto normalizedRoot = root.lexically_normal();
@@ -55,6 +164,23 @@ static bool OMIsPadFile(lt::file_storage const& files, lt::file_index_t index) {
     return (files.file_flags(index) & lt::file_storage::flag_pad_file) != lt::file_flags_t{};
 }
 
+static bool OMIsSymbolicLink(lt::file_storage const& files, lt::file_index_t index) {
+    return (files.file_flags(index) & lt::file_storage::flag_symlink) != lt::file_flags_t{};
+}
+
+static bool OMDetectBluRayRoot(lt::file_storage const& files, fs::path& detectedRoot) {
+    std::vector<OMMediaPath> mediaPaths;
+    for (lt::file_index_t index : files.file_range()) {
+        if (!OMIsPadFile(files, index)) {
+            mediaPaths.push_back({
+                fs::path(files.file_path(index)),
+                OMIsSymbolicLink(files, index),
+            });
+        }
+    }
+    return !mediaPaths.empty() && OMDetectBluRayRoot(mediaPaths, detectedRoot);
+}
+
 @interface OMLocalTorrentEngine () {
     dispatch_queue_t _workQueue;
     std::atomic_bool _cancelled;
@@ -64,11 +190,41 @@ static bool OMIsPadFile(lt::file_storage const& files, lt::file_index_t index) {
 @property (nonatomic, readonly) int64_t minimumFreeBytes;
 @property (nonatomic, readonly) int64_t downloadLimitBytesPerSecond;
 @property (nonatomic, readonly) int64_t uploadLimitBytesPerSecond;
+@property (nonatomic, readwrite) OMLocalTorrentMediaKind completedMediaKind;
+@property (nonatomic, readwrite) int64_t completedBytes;
 @end
 
 @implementation OMLocalTorrentEngine
 
 + (BOOL)isAvailable { return YES; }
+
++ (BOOL)isSupportedBluRayLayoutForTesting:(NSArray<NSString *> *)relativePaths
+                                    sizes:(NSArray<NSNumber *> *)sizes
+                    symbolicLinkIndices:(NSArray<NSNumber *> *)symbolicLinkIndices {
+    if (relativePaths.count == 0 || relativePaths.count != sizes.count ||
+        relativePaths.count > 10000) {
+        return NO;
+    }
+    NSSet<NSNumber *> *links = [NSSet setWithArray:symbolicLinkIndices];
+    std::vector<OMMediaPath> mediaPaths;
+    for (NSUInteger offset = 0; offset < relativePaths.count; ++offset) {
+        NSString *path = relativePaths[offset];
+        int64_t size = sizes[offset].longLongValue;
+        if (path.length == 0 || size < 0) return NO;
+        mediaPaths.push_back({
+            fs::path(path.UTF8String),
+            [links containsObject:@(offset)] == YES,
+        });
+    }
+    fs::path root;
+    return OMDetectBluRayRoot(mediaPaths, root);
+}
+
++ (int64_t)remainingDownloadBytesForTesting:(int64_t)selectedBytes
+                                    rootURL:(NSURL *)rootURL
+                           selectedFileURLs:(NSArray<NSURL *> *)selectedFileURLs {
+    return OMRemainingDownloadBytes(selectedBytes, rootURL, selectedFileURLs);
+}
 
 - (instancetype)initWithCacheDirectory:(NSURL *)cacheDirectory
                    maximumDownloadBytes:(int64_t)maximumDownloadBytes
@@ -84,6 +240,8 @@ static bool OMIsPadFile(lt::file_storage const& files, lt::file_index_t index) {
     _uploadLimitBytesPerSecond = uploadLimitBytesPerSecond;
     _workQueue = dispatch_queue_create("PrimeDeca.Omnia.LocalTorrent", DISPATCH_QUEUE_SERIAL);
     _cancelled.store(false);
+    _completedMediaKind = OMLocalTorrentMediaKindFile;
+    _completedBytes = 0;
     return self;
 }
 
@@ -100,6 +258,8 @@ static bool OMIsPadFile(lt::file_storage const& files, lt::file_index_t index) {
     }
 
     _cancelled.store(false);
+    self.completedMediaKind = OMLocalTorrentMediaKindFile;
+    self.completedBytes = 0;
     NSURL *cacheDirectory = self.cacheDirectory;
     int64_t maximumDownloadBytes = self.maximumDownloadBytes;
     int64_t minimumFreeBytes = self.minimumFreeBytes;
@@ -189,7 +349,8 @@ downloadLimitBytesPerSecond:(int64_t)downloadLimitBytesPerSecond
 
         auto metadataDeadline = std::chrono::steady_clock::now() + std::chrono::minutes(2);
         bool configuredFile = false;
-        lt::file_index_t selectedIndex{0};
+        bool selectedBluRayDirectory = false;
+        std::vector<lt::file_index_t> selectedIndices;
         std::int64_t selectedSize = 0;
         fs::path selectedPath;
 
@@ -198,57 +359,107 @@ downloadLimitBytesPerSecond:(int64_t)downloadLimitBytesPerSecond
                 std::shared_ptr<lt::torrent_info const> info = handle.torrent_file();
                 if (!info) continue;
                 lt::file_storage const& files = info->files();
-                if (files.num_files() <= 0) {
+                if (files.num_files() <= 0 || files.num_files() > 10000) {
                     finish(nil, OMTorrentError(OMLocalTorrentErrorInvalidFile, @"The torrent contains no files."));
                     return;
                 }
-
-                if (requestedFileIndex != nil) {
-                    NSInteger requested = requestedFileIndex.integerValue;
-                    if (requested < 0 || requested >= files.num_files()) {
-                        finish(nil, OMTorrentError(OMLocalTorrentErrorInvalidFile, @"The requested torrent file does not exist."));
+                for (lt::file_index_t index : files.file_range()) {
+                    if (!OMIsPadFile(files, index) && OMIsSymbolicLink(files, index)) {
+                        finish(nil, OMTorrentError(OMLocalTorrentErrorInvalidFile, @"The torrent contains an unsafe symbolic link."));
                         return;
                     }
-                    selectedIndex = lt::file_index_t(static_cast<int>(requested));
-                } else {
-                    std::int64_t largestSize = -1;
+                }
+
+                fs::path bluRayRoot;
+                selectedBluRayDirectory = OMDetectBluRayRoot(files, bluRayRoot);
+                if (selectedBluRayDirectory) {
                     for (lt::file_index_t index : files.file_range()) {
                         if (OMIsPadFile(files, index)) continue;
                         std::int64_t size = files.file_size(index);
-                        if (size > largestSize) {
-                            largestSize = size;
-                            selectedIndex = index;
+                        if (size < 0 || selectedSize > maximumDownloadBytes - size) {
+                            finish(nil, OMTorrentError(OMLocalTorrentErrorItemTooLarge, @"The Blu-ray directory exceeds the local item limit."));
+                            return;
                         }
+                        selectedSize += size;
+                        selectedIndices.push_back(index);
+                    }
+                    fs::path root(cachePath.fileSystemRepresentation);
+                    selectedPath = (root / bluRayRoot).lexically_normal();
+                } else {
+                    lt::file_index_t selectedIndex{0};
+                    if (requestedFileIndex != nil) {
+                        NSInteger requested = requestedFileIndex.integerValue;
+                        if (requested < 0 || requested >= files.num_files()) {
+                            finish(nil, OMTorrentError(OMLocalTorrentErrorInvalidFile, @"The requested torrent file does not exist."));
+                            return;
+                        }
+                        selectedIndex = lt::file_index_t(static_cast<int>(requested));
+                    } else {
+                        std::int64_t largestSize = -1;
+                        for (lt::file_index_t index : files.file_range()) {
+                            if (OMIsPadFile(files, index)) continue;
+                            std::int64_t size = files.file_size(index);
+                            if (size > largestSize) {
+                                largestSize = size;
+                                selectedIndex = index;
+                            }
+                        }
+                    }
+                    selectedSize = files.file_size(selectedIndex);
+                    if (selectedSize < 0 || selectedSize > maximumDownloadBytes ||
+                        OMIsPadFile(files, selectedIndex)) {
+                        finish(nil, OMTorrentError(OMLocalTorrentErrorItemTooLarge, @"The selected torrent file exceeds the local item limit."));
+                        return;
+                    }
+                    selectedIndices.push_back(selectedIndex);
+                    fs::path root(cachePath.fileSystemRepresentation);
+                    selectedPath = fs::path(files.file_path(selectedIndex, root.string()));
+                }
+
+                if (selectedIndices.empty() || selectedSize <= 0) {
+                    finish(nil, OMTorrentError(OMLocalTorrentErrorInvalidFile, @"The torrent contains no downloadable media."));
+                    return;
+                }
+                fs::path root(cachePath.fileSystemRepresentation);
+                if (!OMPathIsConfined(root, selectedPath)) {
+                    finish(nil, OMTorrentError(OMLocalTorrentErrorInvalidFile, @"The torrent contains an unsafe file path."));
+                    return;
+                }
+                for (lt::file_index_t index : selectedIndices) {
+                    fs::path filePath(files.file_path(index, root.string()));
+                    if (!OMPathIsConfined(root, filePath)) {
+                        finish(nil, OMTorrentError(OMLocalTorrentErrorInvalidFile, @"The torrent contains an unsafe file path."));
+                        return;
                     }
                 }
 
-                selectedSize = files.file_size(selectedIndex);
-                if (selectedSize < 0 || selectedSize > maximumDownloadBytes ||
-                    OMIsPadFile(files, selectedIndex)) {
-                    finish(nil, OMTorrentError(OMLocalTorrentErrorItemTooLarge, @"The selected torrent file exceeds the local item limit."));
-                    return;
+                NSMutableArray<NSURL *> *selectedFileURLs = [NSMutableArray array];
+                for (lt::file_index_t index : selectedIndices) {
+                    fs::path path(files.file_path(index, root.string()));
+                    [selectedFileURLs addObject:[NSURL fileURLWithPath:
+                        [NSString stringWithUTF8String:path.string().c_str()]]];
                 }
-
+                std::int64_t remainingBytes = OMRemainingDownloadBytes(
+                    selectedSize,
+                    cacheDirectory,
+                    selectedFileURLs
+                );
                 NSNumber *availableCapacity = nil;
                 [cacheDirectory getResourceValue:&availableCapacity
                                            forKey:NSURLVolumeAvailableCapacityForImportantUsageKey
                                              error:nil];
                 if (availableCapacity == nil ||
-                    availableCapacity.longLongValue < selectedSize + minimumFreeBytes) {
+                    availableCapacity.longLongValue < minimumFreeBytes ||
+                    remainingBytes > availableCapacity.longLongValue - minimumFreeBytes) {
                     finish(nil, OMTorrentError(OMLocalTorrentErrorItemTooLarge, @"There is not enough local storage for this torrent and the required reserve."));
-                    return;
-                }
-
-                fs::path root(cachePath.fileSystemRepresentation);
-                selectedPath = fs::path(files.file_path(selectedIndex, root.string()));
-                if (!OMPathIsConfined(root, selectedPath)) {
-                    finish(nil, OMTorrentError(OMLocalTorrentErrorInvalidFile, @"The torrent contains an unsafe file path."));
                     return;
                 }
 
                 std::vector<lt::download_priority_t> priorities(
                     static_cast<std::size_t>(files.num_files()), lt::dont_download);
-                priorities[static_cast<std::size_t>(static_cast<int>(selectedIndex))] = lt::default_priority;
+                for (lt::file_index_t index : selectedIndices) {
+                    priorities[static_cast<std::size_t>(static_cast<int>(index))] = lt::default_priority;
+                }
                 handle.prioritize_files(priorities);
                 handle.set_flags(lt::torrent_flags::sequential_download);
                 configuredFile = true;
@@ -261,8 +472,17 @@ downloadLimitBytesPerSecond:(int64_t)downloadLimitBytesPerSecond
 
             if (configuredFile) {
                 std::vector<std::int64_t> fileProgress = handle.file_progress();
-                std::size_t offset = static_cast<std::size_t>(static_cast<int>(selectedIndex));
-                std::int64_t downloaded = offset < fileProgress.size() ? fileProgress[offset] : 0;
+                std::int64_t downloaded = 0;
+                for (lt::file_index_t index : selectedIndices) {
+                    std::size_t offset = static_cast<std::size_t>(static_cast<int>(index));
+                    if (offset >= fileProgress.size()) continue;
+                    std::int64_t fileBytes = std::max(fileProgress[offset], std::int64_t{0});
+                    if (fileBytes >= selectedSize - downloaded) {
+                        downloaded = selectedSize;
+                        break;
+                    }
+                    downloaded += fileBytes;
+                }
                 double fraction = selectedSize > 0
                     ? std::min(std::max(double(downloaded) / double(selectedSize), 0.0), 1.0)
                     : 1.0;
@@ -276,14 +496,23 @@ downloadLimitBytesPerSecond:(int64_t)downloadLimitBytesPerSecond
                     session.remove_torrent(handle);
                     NSURL *fileURL = [NSURL fileURLWithPath:
                         [NSString stringWithUTF8String:selectedPath.string().c_str()]];
+                    NSNumber *isDirectory = nil;
                     NSNumber *isRegular = nil;
                     NSNumber *isSymbolicLink = nil;
+                    [fileURL getResourceValue:&isDirectory forKey:NSURLIsDirectoryKey error:nil];
                     [fileURL getResourceValue:&isRegular forKey:NSURLIsRegularFileKey error:nil];
                     [fileURL getResourceValue:&isSymbolicLink forKey:NSURLIsSymbolicLinkKey error:nil];
-                    if (!isRegular.boolValue || isSymbolicLink.boolValue) {
+                    BOOL validType = selectedBluRayDirectory
+                        ? isDirectory.boolValue
+                        : isRegular.boolValue;
+                    if (!validType || isSymbolicLink.boolValue) {
                         finish(nil, OMTorrentError(OMLocalTorrentErrorInvalidFile, @"The completed torrent output is not a regular local file."));
                         return;
                     }
+                    self.completedMediaKind = selectedBluRayDirectory
+                        ? OMLocalTorrentMediaKindBluRayDirectory
+                        : OMLocalTorrentMediaKindFile;
+                    self.completedBytes = selectedSize;
                     finish(fileURL, nil);
                     return;
                 }
@@ -319,6 +548,34 @@ downloadLimitBytesPerSecond:(int64_t)downloadLimitBytesPerSecond
 @implementation OMLocalTorrentEngine
 
 + (BOOL)isAvailable { return NO; }
+
++ (BOOL)isSupportedBluRayLayoutForTesting:(NSArray<NSString *> *)relativePaths
+                                    sizes:(NSArray<NSNumber *> *)sizes
+                    symbolicLinkIndices:(NSArray<NSNumber *> *)symbolicLinkIndices {
+    if (relativePaths.count == 0 || relativePaths.count != sizes.count ||
+        relativePaths.count > 10000) {
+        return NO;
+    }
+    NSSet<NSNumber *> *links = [NSSet setWithArray:symbolicLinkIndices];
+    std::vector<OMMediaPath> mediaPaths;
+    for (NSUInteger offset = 0; offset < relativePaths.count; ++offset) {
+        NSString *path = relativePaths[offset];
+        int64_t size = sizes[offset].longLongValue;
+        if (path.length == 0 || size < 0) return NO;
+        mediaPaths.push_back({
+            fs::path(path.UTF8String),
+            [links containsObject:@(offset)] == YES,
+        });
+    }
+    fs::path root;
+    return OMDetectBluRayRoot(mediaPaths, root);
+}
+
++ (int64_t)remainingDownloadBytesForTesting:(int64_t)selectedBytes
+                                    rootURL:(NSURL *)rootURL
+                           selectedFileURLs:(NSArray<NSURL *> *)selectedFileURLs {
+    return OMRemainingDownloadBytes(selectedBytes, rootURL, selectedFileURLs);
+}
 
 - (instancetype)initWithCacheDirectory:(NSURL *)cacheDirectory
                    maximumDownloadBytes:(int64_t)maximumDownloadBytes

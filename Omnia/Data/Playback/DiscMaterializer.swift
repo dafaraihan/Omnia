@@ -413,3 +413,208 @@ actor DiscMaterializer: LocalPlaybackCancellation {
             && !components.contains("..")
     }
 }
+
+nonisolated enum TorrentDiscFinalizer {
+    static func finalizeBluRayDirectory(
+        _ sourceURL: URL,
+        declaredBytes: Int64,
+        cacheRoot: URL,
+        jobID: UUID,
+        fileManager: FileManager = .default
+    ) throws -> MaterializedDisc {
+        let cacheRoot = URL(
+            fileURLWithPath: cacheRoot.standardizedFileURL.path,
+            isDirectory: true
+        )
+        let sourceURL = URL(
+            fileURLWithPath: sourceURL.standardizedFileURL.path,
+            isDirectory: true
+        )
+        guard declaredBytes > 0,
+              cacheRoot.isFileURL,
+              sourceURL.isFileURL,
+              sourceURL.path.hasPrefix(cacheRoot.path + "/")
+        else {
+            throw DiscMaterializationError.unsafeReservation
+        }
+        try rejectLinks(
+            from: cacheRoot,
+            through: sourceURL,
+            fileManager: fileManager
+        )
+
+        let sourceValues = try sourceURL.resourceValues(forKeys: [
+            .isDirectoryKey,
+            .isSymbolicLinkKey,
+        ])
+        guard sourceValues.isDirectory == true,
+              sourceValues.isSymbolicLink != true,
+              let bdmv = try child(named: "BDMV", at: sourceURL, fileManager: fileManager)
+        else {
+            throw DiscMaterializationError.unsafeReservation
+        }
+        let bdmvValues = try bdmv.resourceValues(forKeys: [
+            .isDirectoryKey,
+            .isSymbolicLinkKey,
+        ])
+        guard bdmvValues.isDirectory == true,
+              bdmvValues.isSymbolicLink != true,
+              let marker = try child(
+                named: "index.bdmv",
+                at: bdmv,
+                fileManager: fileManager
+              )
+        else {
+            throw DiscMaterializationError.unsafeReservation
+        }
+        let markerValues = try marker.resourceValues(forKeys: [
+            .isRegularFileKey,
+            .isSymbolicLinkKey,
+        ])
+        guard markerValues.isRegularFile == true,
+              markerValues.isSymbolicLink != true
+        else {
+            throw DiscMaterializationError.unsafeReservation
+        }
+
+        guard let enumerator = fileManager.enumerator(
+            at: sourceURL,
+            includingPropertiesForKeys: [
+                .isDirectoryKey,
+                .isRegularFileKey,
+                .isSymbolicLinkKey,
+                .fileSizeKey,
+            ],
+            options: []
+        ) else {
+            throw DiscMaterializationError.storageFailure
+        }
+        var fileCount = 0
+        var actualBytes: Int64 = 0
+        for case let itemURL as URL in enumerator {
+            let values = try itemURL.resourceValues(forKeys: [
+                .isDirectoryKey,
+                .isRegularFileKey,
+                .isSymbolicLinkKey,
+                .fileSizeKey,
+            ])
+            guard values.isSymbolicLink != true,
+                  values.isDirectory == true || values.isRegularFile == true
+            else {
+                throw DiscMaterializationError.unsafeReservation
+            }
+            guard values.isRegularFile == true else { continue }
+            fileCount += 1
+            guard fileCount <= DiscDetectionPolicy.maximumMetadataFiles,
+                  let size = values.fileSize,
+                  size >= 0
+            else {
+                throw DiscMaterializationError.unsafeReservation
+            }
+            let (sum, overflow) = actualBytes.addingReportingOverflow(Int64(size))
+            guard !overflow, sum <= declaredBytes else {
+                throw DiscMaterializationError.byteCountMismatch
+            }
+            actualBytes = sum
+        }
+        guard actualBytes == declaredBytes else {
+            throw DiscMaterializationError.byteCountMismatch
+        }
+
+        let manifestURL = sourceURL
+            .deletingLastPathComponent()
+            .appendingPathComponent("complete.plist")
+        guard manifestURL.path.hasPrefix(cacheRoot.path + "/") else {
+            throw DiscMaterializationError.unsafeReservation
+        }
+        if fileManager.fileExists(atPath: manifestURL.path) {
+            let values = try manifestURL.resourceValues(forKeys: [
+                .isRegularFileKey,
+                .isSymbolicLinkKey,
+                .fileSizeKey,
+            ])
+            guard values.isRegularFile == true,
+                  values.isSymbolicLink != true,
+                  let size = values.fileSize,
+                  (1...4_096).contains(size),
+                  let data = try? Data(contentsOf: manifestURL, options: [.mappedIfSafe]),
+                  let manifest = try? PropertyListDecoder().decode(
+                    DiscMaterializationManifest.self,
+                    from: data
+                  ),
+                  manifest.version == 1,
+                  manifest.kind == "bluRayDirectory",
+                  manifest.bytes == actualBytes
+            else {
+                throw DiscMaterializationError.unsafeReservation
+            }
+            return MaterializedDisc(
+                jobID: manifest.jobID,
+                rootURL: sourceURL,
+                kindHint: .bluRayDirectory,
+                bytes: actualBytes
+            )
+        }
+        let manifest = DiscMaterializationManifest(
+            version: 1,
+            jobID: jobID,
+            kind: "bluRayDirectory",
+            bytes: actualBytes,
+            completedAt: Date()
+        )
+        do {
+            let data = try PropertyListEncoder().encode(manifest)
+            guard data.count <= 4_096 else {
+                throw DiscMaterializationError.storageFailure
+            }
+            try data.write(to: manifestURL, options: [.atomic])
+        } catch let error as DiscMaterializationError {
+            throw error
+        } catch {
+            throw DiscMaterializationError.storageFailure
+        }
+        return MaterializedDisc(
+            jobID: jobID,
+            rootURL: sourceURL,
+            kindHint: .bluRayDirectory,
+            bytes: actualBytes
+        )
+    }
+
+    private static func child(
+        named name: String,
+        at directory: URL,
+        fileManager: FileManager
+    ) throws -> URL? {
+        let children = try fileManager.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil
+        )
+        let matches = children.filter {
+            $0.lastPathComponent.caseInsensitiveCompare(name) == .orderedSame
+        }
+        guard matches.count <= 1 else {
+            throw DiscMaterializationError.unsafeReservation
+        }
+        return matches.first
+    }
+
+    private static func rejectLinks(
+        from root: URL,
+        through target: URL,
+        fileManager: FileManager
+    ) throws {
+        var cursor = root
+        let components = target.path
+            .dropFirst(root.path.count)
+            .split(separator: "/")
+            .map(String.init)
+        for component in components {
+            cursor.appendPathComponent(component)
+            let values = try cursor.resourceValues(forKeys: [.isSymbolicLinkKey])
+            guard values.isSymbolicLink != true else {
+                throw DiscMaterializationError.unsafeReservation
+            }
+        }
+    }
+}

@@ -161,14 +161,17 @@ nonisolated struct LocalTorrentStoragePolicy: Equatable, Sendable {
     func plan(
         expectedItemBytes: Int64,
         currentCacheBytes: Int64,
-        availableVolumeBytes: Int64
+        availableVolumeBytes: Int64,
+        existingItemBytes: Int64 = 0
     ) throws -> Plan {
         guard maximumCacheBytes > 0,
               minimumFreeBytes >= 0,
               maximumItemBytes > 0,
               expectedItemBytes >= 0,
               currentCacheBytes >= 0,
-              availableVolumeBytes >= 0 else {
+              availableVolumeBytes >= 0,
+              existingItemBytes >= 0,
+              existingItemBytes <= currentCacheBytes else {
             throw StorageError.invalidPolicy
         }
         guard expectedItemBytes <= maximumItemBytes,
@@ -177,10 +180,12 @@ nonisolated struct LocalTorrentStoragePolicy: Equatable, Sendable {
         }
 
         let requiredEviction = max(
-            currentCacheBytes + expectedItemBytes - maximumCacheBytes,
+            currentCacheBytes - existingItemBytes
+                + expectedItemBytes - maximumCacheBytes,
             0
         )
-        let requiredAvailable = expectedItemBytes + minimumFreeBytes
+        let requiredAvailable = max(expectedItemBytes - existingItemBytes, 0)
+            + minimumFreeBytes
         guard availableVolumeBytes + requiredEviction >= requiredAvailable else {
             throw StorageError.insufficientSpace
         }
@@ -249,12 +254,31 @@ nonisolated enum LocalTorrentCacheManager {
             throw CacheError.unsafeCacheEntry
         }
 
+        let expectedItemDirectory = root
+            .appendingPathComponent(descriptor.cacheKey, isDirectory: true)
+            .standardizedFileURL
+        guard expectedItemDirectory.deletingLastPathComponent() == root else {
+            throw CacheError.unsafeCacheEntry
+        }
+        guard !protectedCacheKeys.contains(descriptor.cacheKey) else {
+            throw CacheError.evictionFailed
+        }
+        try cancellationCheck()
+        try migrateLegacyItemIfNeeded(
+            at: expectedItemDirectory,
+            fileManager: fileManager,
+            cancellationCheck: cancellationCheck
+        )
+
         let entries = try cacheEntries(
             at: root,
             fileManager: fileManager,
             cancellationCheck: cancellationCheck
         )
         let currentBytes = entries.reduce(Int64(0)) { $0 + $1.byteCount }
+        let existingItemBytes = entries.first {
+            $0.url.lastPathComponent == descriptor.cacheKey
+        }?.byteCount ?? 0
         let volumeBytes: Int64
         if let availableVolumeBytes {
             volumeBytes = availableVolumeBytes
@@ -272,7 +296,8 @@ nonisolated enum LocalTorrentCacheManager {
         let plan = try policy.plan(
             expectedItemBytes: reservedItemBytes,
             currentCacheBytes: currentBytes,
-            availableVolumeBytes: volumeBytes
+            availableVolumeBytes: volumeBytes,
+            existingItemBytes: existingItemBytes
         )
 
         var evictedBytes: Int64 = 0
@@ -295,12 +320,7 @@ nonisolated enum LocalTorrentCacheManager {
             throw CacheError.evictionFailed
         }
 
-        let itemDirectory = root
-            .appendingPathComponent(descriptor.cacheKey, isDirectory: true)
-            .standardizedFileURL
-        guard itemDirectory.deletingLastPathComponent() == root else {
-            throw CacheError.unsafeCacheEntry
-        }
+        let itemDirectory = expectedItemDirectory
         try cancellationCheck()
         let itemAlreadyExisted = fileManager.fileExists(atPath: itemDirectory.path)
         try ensureDirectory(itemDirectory, fileManager: fileManager)
@@ -335,6 +355,51 @@ nonisolated enum LocalTorrentCacheManager {
             try fileManager.createDirectory(at: url, withIntermediateDirectories: true)
         } catch {
             throw CacheError.cacheUnavailable
+        }
+    }
+
+    private static func migrateLegacyItemIfNeeded(
+        at itemDirectory: URL,
+        fileManager: FileManager,
+        cancellationCheck: () throws -> Void
+    ) throws {
+        guard fileManager.fileExists(atPath: itemDirectory.path) else { return }
+        let values = try itemDirectory.resourceValues(forKeys: [
+            .isDirectoryKey,
+            .isSymbolicLinkKey,
+        ])
+        guard values.isDirectory == true, values.isSymbolicLink != true else {
+            throw CacheError.unsafeCacheEntry
+        }
+        let media = itemDirectory.appendingPathComponent("Media", isDirectory: true)
+        guard fileManager.fileExists(atPath: media.path) else {
+            try cancellationCheck()
+            do {
+                try fileManager.removeItem(at: itemDirectory)
+            } catch {
+                throw CacheError.evictionFailed
+            }
+            return
+        }
+        let mediaValues = try media.resourceValues(forKeys: [
+            .isDirectoryKey,
+            .isSymbolicLinkKey,
+        ])
+        guard mediaValues.isDirectory == true, mediaValues.isSymbolicLink != true else {
+            throw CacheError.unsafeCacheEntry
+        }
+        let allowedChildren = Set(["Media", "complete.plist"])
+        let children = try fileManager.contentsOfDirectory(
+            at: itemDirectory,
+            includingPropertiesForKeys: nil
+        )
+        for child in children where !allowedChildren.contains(child.lastPathComponent) {
+            try cancellationCheck()
+            do {
+                try fileManager.removeItem(at: child)
+            } catch {
+                throw CacheError.evictionFailed
+            }
         }
     }
 
@@ -503,7 +568,9 @@ actor LocalPlaybackJobCoordinator {
             .appendingPathComponent(descriptor.cacheKey, isDirectory: true)
             .standardizedFileURL
         let itemAlreadyExisted = fileManager.fileExists(
-            atPath: expectedItemDirectory.path
+            atPath: expectedItemDirectory
+                .appendingPathComponent("Media", isDirectory: true)
+                .path
         )
         let itemDirectory: URL
         do {

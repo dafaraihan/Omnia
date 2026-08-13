@@ -71,7 +71,7 @@ struct PlaybackSourceSheet: View {
                                 } header: {
                                     Text("Local Peer-to-Peer Sources")
                                 } footer: {
-                                    Text("On macOS, Omnia resolves these locally into its bounded cache, then opens the completed selected file with libmpv. Peer activity never starts through autoplay.")
+                                    Text("On macOS, Omnia resolves these locally into its bounded cache, then opens the completed file or a validated single BDMV tree with libmpv. Peer activity never starts through autoplay.")
                                 }
                             }
 
@@ -471,14 +471,26 @@ struct PlaybackSourceSheet: View {
                     minimumFreeBytes: LocalTorrentStoragePolicy.default.minimumFreeBytes,
                     maximumItemBytes: preferences.cacheQuota.bytes
                 )
+                // Torrent metadata arrives only after peer discovery. Reserve
+                // the full configured item allowance so a metadata-discovered
+                // BDMV cannot exceed the cache quota based on an add-on's
+                // selected-file size hint.
+                let cacheDescriptor = try LocalTorrentPlaybackDescriptor(
+                    infoHash: descriptor.infoHash,
+                    fileIndex: descriptor.fileIndex,
+                    displayName: descriptor.displayName,
+                    expectedByteCount: nil
+                )
                 let reservation = try await LocalPlaybackJobCoordinator.shared.prepare(
-                    descriptor: descriptor,
+                    descriptor: cacheDescriptor,
                     policy: policy,
                     lease: acquiredLease
                 )
                 try Task.checkCancellation()
+                let mediaDirectory = reservation.itemDirectory
+                    .appendingPathComponent("Media", isDirectory: true)
                 let engine = OMLocalTorrentEngine(
-                    cacheDirectory: reservation.itemDirectory,
+                    cacheDirectory: mediaDirectory,
                     maximumDownloadBytes: policy.maximumItemBytes,
                     minimumFreeBytes: policy.minimumFreeBytes,
                     downloadLimitBytesPerSecond: Int64(
@@ -503,19 +515,43 @@ struct PlaybackSourceSheet: View {
                 guard resolvingCandidateID == candidate.id else {
                     throw CancellationError()
                 }
-                let protection = try await LocalPlaybackJobCoordinator.shared.protectForPlayback(
-                    acquiredLease
-                )
+                let playbackInput: PlaybackInput
+                if engine.completedMediaKind == .bluRayDirectory {
+                    let disc = try TorrentDiscFinalizer.finalizeBluRayDirectory(
+                        fileURL,
+                        declaredBytes: engine.completedBytes,
+                        cacheRoot: reservation.cacheRoot,
+                        jobID: UUID()
+                    )
+                    let request = try await LocalPlaybackJobCoordinator.shared.discPlaybackRequest(
+                        disc: disc,
+                        cacheRoot: reservation.cacheRoot,
+                        lease: acquiredLease
+                    )
+                    let protection = try await LocalPlaybackJobCoordinator.shared.protectForPlayback(
+                        acquiredLease
+                    )
+                    playbackInput = .disc(
+                        source: PlaybackSource(localCandidate: candidate, fileURL: fileURL),
+                        request: request,
+                        protection: protection
+                    )
+                } else {
+                    let protection = try await LocalPlaybackJobCoordinator.shared.protectForPlayback(
+                        acquiredLease
+                    )
+                    playbackInput = .cachedStream(
+                        source: PlaybackSource(localCandidate: candidate, fileURL: fileURL),
+                        protection: protection
+                    )
+                }
                 lease = nil
                 localTorrentEngine = nil
                 localTorrentTask = nil
                 resolvingCandidateID = nil
                 localTorrentProgress[candidate.id] = nil
                 beginPlayback(
-                    .cachedStream(
-                        source: PlaybackSource(localCandidate: candidate, fileURL: fileURL),
-                        protection: protection
-                    ),
+                    playbackInput,
                     candidate: candidate
                 )
             } catch {

@@ -60,7 +60,10 @@ CloudLibrarySync (implemented, not composed into app state)
   On macOS Release, the opt-in local resolver validates the hash, tracker hints,
   selected index, filename, size, cache path, and capacity before peer activity.
   It downloads into the sandboxed cache and gives libmpv only a completed local
-  regular file. Legacy remote-resolver credentials are inert and removable.
+  regular file or a validated single-root BDMV directory. BDMV selection is
+  bounded by the same quota and reserve, a 10,000-entry metadata ceiling, safe
+  relative paths, exact aggregate bytes, and a completion manifest. Legacy
+  remote-resolver credentials are inert and removable.
 - An HTTPS ISO is never autoplayed. On macOS, explicit preparation requires a
   positive exact length within the configured resolver quota, accepts at most
   five same-origin HTTPS redirects, streams the image into an atomic cache job,

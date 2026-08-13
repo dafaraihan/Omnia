@@ -108,6 +108,13 @@ dependency source.
   playback cache keys remain protected from eviction until the player stops or
   replaces the source. Cancellation waits for the disc writer to finish its
   partial-file cleanup before releasing the shared cache lease.
+  Peer metadata can select multi-file disc mode only when at most 10,000
+  entries form one path-confined BDMV tree. Omnia reserves the configured item
+  allowance before metadata arrives, rejects torrent symlink metadata before
+  assigning any download priority, bounds the aggregate download, validates
+  every completed entry as a non-link regular file or directory, verifies the
+  exact aggregate byte count, and writes or reuses a matching completion
+  manifest before constructing the typed local Blu-ray request.
   Only unencrypted Blu-ray playback is in scope. No decryption keys, DVD
   libraries, script execution, or remote resolver is introduced.
 - The plist contains no App Transport Security exception. The built products

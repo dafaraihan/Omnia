@@ -316,6 +316,166 @@ final class LocalTorrentPlaybackTests: XCTestCase {
         XCTAssertEqual(directory.lastPathComponent, descriptor.cacheKey)
     }
 
+    func testCachePreparationReusesExistingItemWithoutDoubleChargingQuota() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LocalTorrentCacheTests.\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let descriptor = try descriptor(
+            hash: String(repeating: "7", count: 40),
+            size: nil
+        )
+        let existing = root.appendingPathComponent(
+            descriptor.cacheKey,
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: existing,
+            withIntermediateDirectories: true
+        )
+        let media = existing.appendingPathComponent("Media", isDirectory: true)
+        try FileManager.default.createDirectory(at: media, withIntermediateDirectories: true)
+        try Data(repeating: 1, count: 4_096).write(
+            to: media.appendingPathComponent("movie.mkv")
+        )
+
+        let directory = try LocalTorrentCacheManager.prepare(
+            descriptor: descriptor,
+            policy: .init(
+                maximumCacheBytes: 4_096,
+                minimumFreeBytes: 0,
+                maximumItemBytes: 4_096
+            ),
+            root: root,
+            availableVolumeBytes: 0
+        )
+
+        XCTAssertEqual(directory, existing)
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: media.appendingPathComponent("movie.mkv").path
+            )
+        )
+    }
+
+    func testCachePreparationClearsLegacySameKeyBeforeCreditingReplacement() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LocalTorrentCacheTests.\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let descriptor = try descriptor(
+            hash: String(repeating: "8", count: 40),
+            size: nil
+        )
+        let legacy = root.appendingPathComponent(
+            descriptor.cacheKey,
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: legacy,
+            withIntermediateDirectories: true
+        )
+        try Data(repeating: 1, count: 4_096).write(
+            to: legacy.appendingPathComponent("legacy.mkv")
+        )
+
+        let replacement = try LocalTorrentCacheManager.prepare(
+            descriptor: descriptor,
+            policy: .init(
+                maximumCacheBytes: 4_096,
+                minimumFreeBytes: 0,
+                maximumItemBytes: 4_096
+            ),
+            root: root,
+            availableVolumeBytes: 4_096
+        )
+
+        XCTAssertEqual(replacement, legacy)
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: replacement.appendingPathComponent("legacy.mkv").path
+            )
+        )
+    }
+
+    func testCancellationPreservesLegacySameKeyBeforeMigration() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LocalTorrentCacheTests.\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let descriptor = try descriptor(
+            hash: String(repeating: "9", count: 40),
+            size: nil
+        )
+        let legacy = root.appendingPathComponent(
+            descriptor.cacheKey,
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: legacy,
+            withIntermediateDirectories: true
+        )
+        let legacyFile = legacy.appendingPathComponent("legacy.mkv")
+        try Data(repeating: 1, count: 4_096).write(to: legacyFile)
+        var checks = 0
+
+        XCTAssertThrowsError(
+            try LocalTorrentCacheManager.prepare(
+                descriptor: descriptor,
+                policy: .init(
+                    maximumCacheBytes: 4_096,
+                    minimumFreeBytes: 0,
+                    maximumItemBytes: 4_096
+                ),
+                root: root,
+                availableVolumeBytes: 4_096,
+                cancellationCheck: {
+                    checks += 1
+                    if checks == 4 { throw CancellationError() }
+                }
+            )
+        ) { error in
+            XCTAssertTrue(error is CancellationError)
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: legacyFile.path))
+    }
+
+    func testCancellationPreservesUnexpectedModernCacheChild() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LocalTorrentCacheTests.\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let descriptor = try descriptor(
+            hash: String(repeating: "0", count: 40),
+            size: nil
+        )
+        let item = root.appendingPathComponent(
+            descriptor.cacheKey,
+            isDirectory: true
+        )
+        let media = item.appendingPathComponent("Media", isDirectory: true)
+        try FileManager.default.createDirectory(at: media, withIntermediateDirectories: true)
+        let extra = item.appendingPathComponent("stale.partial")
+        try Data(repeating: 1, count: 4_096).write(to: extra)
+        var checks = 0
+
+        XCTAssertThrowsError(
+            try LocalTorrentCacheManager.prepare(
+                descriptor: descriptor,
+                policy: .init(
+                    maximumCacheBytes: 4_096,
+                    minimumFreeBytes: 0,
+                    maximumItemBytes: 4_096
+                ),
+                root: root,
+                availableVolumeBytes: 4_096,
+                cancellationCheck: {
+                    checks += 1
+                    if checks == 4 { throw CancellationError() }
+                }
+            )
+        ) { error in
+            XCTAssertTrue(error is CancellationError)
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: extra.path))
+    }
+
     func testCancelledCachePreparationDoesNotEvictOrCreateItem() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("LocalTorrentCacheTests.\(UUID().uuidString)")
