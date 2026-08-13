@@ -22,7 +22,7 @@ struct PlaybackSourceSections: Equatable, Sendable {
             switch candidate.delivery {
             case .nativeHTTPS:
                 direct.append(candidate)
-            case .resolverRequired:
+            case .localTorrent:
                 resolverRequired.append(candidate)
             case .externalHandoff:
                 external.append(candidate)
@@ -55,7 +55,7 @@ struct PlaybackSourceRowState: Equatable, Sendable {
         switch candidate.delivery {
         case .nativeHTTPS:
             action = .playDirect
-        case .resolverRequired:
+        case .localTorrent:
             action = .resolve
         case .externalHandoff:
             action = .unavailable("External page—not locally resolved")

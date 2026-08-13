@@ -8,8 +8,8 @@ import Foundation
 /// A source returned by an enabled, declarative add-on.
 ///
 /// Omnia keeps this separate from `PlaybackSource`: an add-on may identify a
-/// stream with a direct URL, a torrent info hash and file index, or an
-/// external handoff URL. Only a final HTTPS media URL is handed to libmpv.
+/// stream with a direct URL, a bounded local torrent descriptor, or an
+/// external handoff URL. Only validated playback input reaches libmpv.
 struct AddonStreamCandidate: Identifiable, Hashable, Sendable {
     enum NativePlaybackCompatibility: Hashable, Sendable {
         /// HLS and common containers are expected to play directly.
@@ -23,7 +23,7 @@ struct AddonStreamCandidate: Identifiable, Hashable, Sendable {
 
     enum Delivery: Hashable, Sendable {
         case nativeHTTPS(URL)
-        case resolverRequired(infoHash: String, fileIndex: Int?)
+        case localTorrent(LocalTorrentPlaybackDescriptor)
         case externalHandoff(URL)
         case unsupported
     }
@@ -50,7 +50,7 @@ struct AddonStreamCandidate: Identifiable, Hashable, Sendable {
         let directURL = URL.validHTTPSURL(from: stream.url)
         let externalURL = URL.validWebURL(from: stream.externalURL)
             ?? URL.youtubeWatchURL(for: stream.ytId)
-        let needsResolver = stream.infoHash?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
+        let torrentHash = stream.infoHash?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
             ?? stream.sources?.compactMap(Self.infoHash(in:)).first
 
         id = "\(addon.id)::\(streamIdentifier)::\(position)::\(stream.url ?? stream.infoHash ?? stream.externalURL ?? stream.ytId ?? "unknown")"
@@ -69,8 +69,15 @@ struct AddonStreamCandidate: Identifiable, Hashable, Sendable {
         // hints and filename extensions do not determine native playability.
         if let directURL {
             delivery = .nativeHTTPS(directURL)
-        } else if let needsResolver {
-            delivery = .resolverRequired(infoHash: needsResolver, fileIndex: stream.fileIdx)
+        } else if let torrentHash,
+                  let descriptor = try? LocalTorrentPlaybackDescriptor(
+                    infoHash: torrentHash,
+                    fileIndex: stream.fileIdx,
+                    displayName: filename ?? displayName,
+                    expectedByteCount: videoSize,
+                    sources: stream.sources ?? []
+                  ) {
+            delivery = .localTorrent(descriptor)
         } else if let externalURL {
             delivery = .externalHandoff(externalURL)
         } else {
@@ -110,7 +117,7 @@ struct AddonStreamCandidate: Identifiable, Hashable, Sendable {
             case .unknown: "Direct HTTPS — libmpv will inspect"
             case .unsupportedFormat: "Direct HTTPS — libmpv will inspect"
             }
-        case .resolverRequired: "Requires a resolver"
+        case .localTorrent: "Local peer-to-peer source"
         case .externalHandoff: "Opens externally"
         case .unsupported: "Unsupported source"
         }
@@ -120,7 +127,7 @@ struct AddonStreamCandidate: Identifiable, Hashable, Sendable {
         var values: [String] = []
         if let filename { values.append(filename) }
         if let videoSize { values.append(ByteCountFormatter.string(fromByteCount: videoSize, countStyle: .file)) }
-        if case let .resolverRequired(_, fileIndex) = delivery, let fileIndex {
+        if case let .localTorrent(descriptor) = delivery, let fileIndex = descriptor.fileIndex {
             values.append("File \(fileIndex + 1)")
         }
         return values.isEmpty ? nil : values.joined(separator: " · ")
@@ -130,7 +137,9 @@ struct AddonStreamCandidate: Identifiable, Hashable, Sendable {
     /// one-line label. The selector renders this as selectable, wrapping text
     /// so a long source identifier never gets clipped.
     var sourceIndexDetail: String? {
-        guard case let .resolverRequired(infoHash, fileIndex) = delivery else { return nil }
+        guard case let .localTorrent(descriptor) = delivery else { return nil }
+        let infoHash = descriptor.infoHash
+        let fileIndex = descriptor.fileIndex
         if let fileIndex {
             return "Info hash: \(infoHash) · File \(fileIndex + 1)"
         }
@@ -140,7 +149,7 @@ struct AddonStreamCandidate: Identifiable, Hashable, Sendable {
     var deduplicationKey: String {
         switch delivery {
         case let .nativeHTTPS(url): "url:\(url.absoluteString)"
-        case let .resolverRequired(infoHash, fileIndex): "hash:\(infoHash):\(fileIndex.map(String.init) ?? "")"
+        case let .localTorrent(descriptor): "hash:\(descriptor.cacheKey)"
         case let .externalHandoff(url): "handoff:\(url.absoluteString)"
         case .unsupported: "unsupported:\(id)"
         }
@@ -213,15 +222,10 @@ struct PlaybackSourceResolution: Sendable {
 
 extension LocalTorrentPlaybackDescriptor {
     init(candidate: AddonStreamCandidate) throws {
-        guard case let .resolverRequired(infoHash, fileIndex) = candidate.delivery else {
+        guard case let .localTorrent(descriptor) = candidate.delivery else {
             throw DescriptorError.invalidInfoHash
         }
-        try self.init(
-            infoHash: infoHash,
-            fileIndex: fileIndex,
-            displayName: candidate.filename ?? candidate.displayName,
-            expectedByteCount: candidate.videoSize
-        )
+        self = descriptor
     }
 }
 

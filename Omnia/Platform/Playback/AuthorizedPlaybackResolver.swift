@@ -162,9 +162,11 @@ enum AuthorizedPlaybackResolver {
         configuration: AuthorizedPlaybackResolverConfiguration,
         session: URLSession = .shared
     ) async throws -> PlaybackSource {
-        guard case let .resolverRequired(infoHash, fileIndex) = candidate.delivery else {
+        guard case let .localTorrent(descriptor) = candidate.delivery else {
             throw PlaybackResolverError.candidateNotApproved
         }
+        let infoHash = descriptor.infoHash
+        let fileIndex = descriptor.fileIndex
         guard configuration.approvedAddonIDs.contains(candidate.addonID) else {
             throw PlaybackResolverError.candidateNotApproved
         }

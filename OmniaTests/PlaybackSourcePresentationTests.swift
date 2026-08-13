@@ -6,10 +6,7 @@ final class PlaybackSourcePresentationTests: XCTestCase {
     func testEveryCandidateAppearsInExactlyOneSection() {
         let candidates = [
             fixture("direct", .nativeHTTPS(URL(string: "https://media.example/play")!)),
-            fixture(
-                "torrent",
-                .resolverRequired(infoHash: String(repeating: "a", count: 40), fileIndex: 2)
-            ),
+            fixture("torrent", localTorrentDelivery()),
             fixture("external", .externalHandoff(URL(string: "https://player.example/watch")!)),
             fixture("bad", .unsupported),
         ]
@@ -26,10 +23,7 @@ final class PlaybackSourcePresentationTests: XCTestCase {
     func testDeliveryKindsExposeOnlySafeLocalActions() {
         let candidates = [
             fixture("direct", .nativeHTTPS(URL(string: "https://media.example/play")!)),
-            fixture(
-                "torrent",
-                .resolverRequired(infoHash: String(repeating: "a", count: 40), fileIndex: 2)
-            ),
+            fixture("torrent", localTorrentDelivery()),
             fixture("external", .externalHandoff(URL(string: "https://player.example/watch")!)),
             fixture("bad", .unsupported),
         ]
@@ -64,5 +58,14 @@ final class PlaybackSourcePresentationTests: XCTestCase {
             hasPeerDiscoveryHints: false,
             requestHeaders: [:]
         )
+    }
+
+    private func localTorrentDelivery() -> AddonStreamCandidate.Delivery {
+        .localTorrent(try! LocalTorrentPlaybackDescriptor(
+            infoHash: String(repeating: "a", count: 40),
+            fileIndex: 2,
+            displayName: "Movie.mkv",
+            expectedByteCount: nil
+        ))
     }
 }

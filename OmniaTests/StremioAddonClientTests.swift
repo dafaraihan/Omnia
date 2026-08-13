@@ -83,6 +83,42 @@ final class StremioAddonClientTests: XCTestCase {
         XCTAssertEqual(url.absoluteString, "https://media.example/opaque")
     }
 
+    func testTorrentCandidateRetainsOnlyValidatedLocalDescriptorData() async throws {
+        let data = Data(
+            """
+            {"streams":[{
+              "infoHash":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "fileIdx":2,
+              "name":"Remux",
+              "sources":[
+                "tracker:https://tracker.example/announce",
+                "tracker:http://insecure.example/announce"
+              ],
+              "behaviorHints":{"filename":"Movie.mkv","videoSize":12000}
+            }]}
+            """.utf8
+        )
+        let transport = RecordingTransport(data: data)
+        let addon = streamAddon()
+        defer { addon.removeSecureManifestURL() }
+
+        let candidates = try await StremioAddonClient.fetchStreamCandidates(
+            from: addon,
+            mediaTypes: ["movie"],
+            identifiers: ["tt1234567"],
+            timeout: .seconds10,
+            transport: transport
+        )
+
+        guard case let .localTorrent(descriptor) = try XCTUnwrap(candidates.first).delivery else {
+            return XCTFail("Expected a bounded local torrent descriptor")
+        }
+        XCTAssertEqual(descriptor.fileIndex, 2)
+        XCTAssertEqual(descriptor.displayName, "Movie.mkv")
+        XCTAssertEqual(descriptor.expectedByteCount, 12_000)
+        XCTAssertEqual(descriptor.trackers.map(\.absoluteString), ["https://tracker.example/announce"])
+    }
+
     private func validManifestData(name: String = "Example") -> Data {
         let object: [String: Any] = [
             "id": "org.example.addon",
