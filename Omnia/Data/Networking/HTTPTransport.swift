@@ -1,10 +1,10 @@
 import Foundation
 
-protocol HTTPTransporting: Sendable {
+nonisolated protocol HTTPTransporting: Sendable {
     func data(for policy: HTTPRequestPolicy) async throws -> Data
 }
 
-struct HTTPRequestPolicy: Sendable {
+nonisolated struct HTTPRequestPolicy: Sendable {
     let url: URL
     let allowedOrigin: NormalizedOrigin
     let timeout: TimeInterval
@@ -26,7 +26,7 @@ struct HTTPRequestPolicy: Sendable {
     }
 }
 
-struct NormalizedOrigin: Equatable, Sendable {
+nonisolated struct NormalizedOrigin: Equatable, Sendable {
     let scheme: String
     let host: String
     let port: Int?
@@ -57,7 +57,7 @@ struct NormalizedOrigin: Equatable, Sendable {
     }
 }
 
-enum HTTPTransportError: Error, Equatable, LocalizedError {
+nonisolated enum HTTPTransportError: Error, Equatable, LocalizedError {
     case httpsRequired
     case originRejected
     case redirectRejected
