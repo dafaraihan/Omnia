@@ -8,11 +8,17 @@ fixture_root="$(mktemp -d)"
 trap 'rm -rf "$fixture_root"' EXIT
 
 plan_output="$fixture_root/plan-output"
-OMNIA_NATIVE_BUILD_MODE=plan-only \
-    /bin/bash "$builder" "$real_manifest" "$plan_output"
+(
+    cd "$repo_root"
+    OMNIA_NATIVE_BUILD_MODE=plan-only \
+        /bin/bash Scripts/build-playback-dependencies.sh \
+        NativeDependencies/playback-dependencies.json "$plan_output"
+)
 jq -e '
   .schema_version == 1 and
+  .deployment_target == "26.5" and
   .architectures == ["arm64", "x86_64"] and
+  .architecture_configuration.x86_64 == "meson-cross-file" and
   .build_order == [
     "boost", "openssl", "freetype", "fribidi", "harfbuzz", "libass",
     "libplacebo", "ffmpeg", "libbluray", "libtorrent", "mpv"
@@ -25,6 +31,8 @@ jq -e '
   (.build_flags.ffmpeg | index("--disable-gpl") != null) and
   (.build_flags.ffmpeg | index("--disable-nonfree") != null) and
   (.build_flags.libplacebo | index("-Dopengl=disabled") != null) and
+  (.build_flags.harfbuzz | index("-Dsubset=disabled") != null) and
+  (.build_flags.openssl | index("no-module") != null) and
   (.build_flags.libtorrent | index("TORRENT_DISABLE_LOGGING=ON") != null) and
   (.embedded_components == ["libudfread"])
 ' "$plan_output/build-plan.json" >/dev/null
