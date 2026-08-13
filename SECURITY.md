@@ -103,7 +103,10 @@ dependency source.
   failure or cancellation unless the user has explicitly enabled retention.
   One actor-held lease serializes peer and disc preparation against that shared
   cache, and cache enumeration, eviction, and reservation creation check task
-  cancellation before continuing.
+  cancellation before continuing. Newly reserved directories remain
+  provisional until a downloader or materializer owns them, and active
+  playback cache keys remain protected from eviction until the player stops or
+  replaces the source.
   Only unencrypted Blu-ray playback is in scope. No decryption keys, DVD
   libraries, script execution, or remote resolver is introduced.
 - The plist contains no App Transport Security exception. The built products

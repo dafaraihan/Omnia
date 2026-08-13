@@ -71,8 +71,16 @@ final class PlaybackSourcePresentationTests: XCTestCase {
         XCTAssertEqual(PlaybackSourceRowState(candidate: extensionless).action, .prepareDisc)
         XCTAssertEqual(PlaybackSourceRowState(candidate: opaque).action, .playDirect)
         XCTAssertFalse(PlaybackSourceRowState(candidate: extensionURL).isEligibleForAutoplay)
+        XCTAssertTrue(
+            PlaybackSourceRowState(candidate: extensionURL)
+                .isPrimaryActionDisabled(isLocalPreparationActive: true)
+        )
         XCTAssertFalse(PlaybackSourceRowState(candidate: extensionless).isEligibleForAutoplay)
         XCTAssertTrue(PlaybackSourceRowState(candidate: opaque).isEligibleForAutoplay)
+        XCTAssertFalse(
+            PlaybackSourceRowState(candidate: opaque)
+                .isPrimaryActionDisabled(isLocalPreparationActive: true)
+        )
         XCTAssertNil(PlaybackSourceRowState(candidate: opaque).idleStatus)
         XCTAssertTrue(PlaybackSourceRowState(candidate: opaque).allowsExplicitDiscPreparation)
         XCTAssertFalse(

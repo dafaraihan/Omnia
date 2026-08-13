@@ -15,7 +15,15 @@ import AVFoundation
 nonisolated enum PlaybackInput: Sendable {
     case stream(PlaybackSource)
     #if os(macOS)
-    case disc(source: PlaybackSource, request: DiscPlaybackRequest)
+    case cachedStream(
+        source: PlaybackSource,
+        protection: LocalPlaybackJobCoordinator.PlaybackProtection
+    )
+    case disc(
+        source: PlaybackSource,
+        request: DiscPlaybackRequest,
+        protection: LocalPlaybackJobCoordinator.PlaybackProtection
+    )
     #endif
 
     var source: PlaybackSource {
@@ -23,11 +31,22 @@ nonisolated enum PlaybackInput: Sendable {
         case let .stream(source):
             source
         #if os(macOS)
-        case let .disc(source, _):
+        case let .cachedStream(source, _), let .disc(source, _, _):
             source
         #endif
         }
     }
+
+    #if os(macOS)
+    var cacheProtection: LocalPlaybackJobCoordinator.PlaybackProtection? {
+        switch self {
+        case .stream:
+            nil
+        case let .cachedStream(_, protection), let .disc(_, _, protection):
+            protection
+        }
+    }
+    #endif
 }
 
 /// One shared player session keeps playback independent from the transient
@@ -60,6 +79,8 @@ final class PlaybackSession {
     @ObservationIgnored private var stateTask: Task<Void, Never>?
     #if !os(macOS)
     @ObservationIgnored private var mediaSelectionTask: Task<Void, Never>?
+    #else
+    @ObservationIgnored private var cacheProtection: LocalPlaybackJobCoordinator.PlaybackProtection?
     #endif
     @ObservationIgnored private var lastPersistedPosition: Double = 0
 
@@ -106,14 +127,15 @@ final class PlaybackSession {
         areTracksLoading = false
 
         #if os(macOS)
+        cacheProtection = input.cacheProtection
         let mpv: OMMpvPlayerController
         switch input {
-        case .stream:
+        case .stream, .cachedStream:
             mpv = OMMpvPlayerController(
                 url: source.url,
                 requestHeaders: source.requestHeaders
             )
-        case let .disc(_, request):
+        case let .disc(_, request, _):
             mpv = OMMpvPlayerController(
                 url: request.playbackURL,
                 requestHeaders: request.requestHeaders,
@@ -250,6 +272,13 @@ final class PlaybackSession {
         mediaSelectionTask = nil
         #endif
         #if os(macOS)
+        let cacheProtection = cacheProtection
+        self.cacheProtection = nil
+        if let cacheProtection {
+            Task {
+                await LocalPlaybackJobCoordinator.shared.unprotect(cacheProtection)
+            }
+        }
         player?.stateChangeHandler = nil
         player?.stop()
         #else

@@ -63,6 +63,10 @@ struct PlaybackSourceRowState: Equatable, Sendable {
             : nil
     }
 
+    func isPrimaryActionDisabled(isLocalPreparationActive: Bool) -> Bool {
+        action == .prepareDisc && isLocalPreparationActive
+    }
+
     init(candidate: AddonStreamCandidate) {
         switch candidate.delivery {
         case .nativeHTTPS:

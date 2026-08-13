@@ -19,6 +19,90 @@ final class LocalTorrentPlaybackTests: XCTestCase {
         await coordinator.release(secondLease)
     }
 
+    func testCoordinatorReleaseRollsBackUncommittedReservation() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LocalPlaybackCoordinatorTests.\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let coordinator = LocalPlaybackJobCoordinator(
+            root: root,
+            availableVolumeBytes: 1_000_000
+        )
+        let descriptor = try descriptor(hash: String(repeating: "2", count: 40), size: 1)
+        let lease = try await coordinator.acquire()
+        let reservation = try await coordinator.prepare(
+            descriptor: descriptor,
+            policy: .init(
+                maximumCacheBytes: 1_024,
+                minimumFreeBytes: 0,
+                maximumItemBytes: 1_024
+            ),
+            lease: lease
+        )
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: reservation.itemDirectory.path))
+        await coordinator.release(lease)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: reservation.itemDirectory.path))
+    }
+
+    func testCoordinatorProtectsActivePlaybackFromEviction() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LocalPlaybackCoordinatorTests.\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let coordinator = LocalPlaybackJobCoordinator(
+            root: root,
+            availableVolumeBytes: 1_000_000
+        )
+        let policy = LocalTorrentStoragePolicy(
+            maximumCacheBytes: 4_096,
+            minimumFreeBytes: 0,
+            maximumItemBytes: 4_096
+        )
+        let activeDescriptor = try descriptor(
+            hash: String(repeating: "3", count: 40),
+            size: 4_096
+        )
+        let activeLease = try await coordinator.acquire()
+        let activeReservation = try await coordinator.prepare(
+            descriptor: activeDescriptor,
+            policy: policy,
+            lease: activeLease
+        )
+        try Data(repeating: 1, count: 4_096).write(
+            to: activeReservation.itemDirectory.appendingPathComponent("movie.mkv")
+        )
+        try await coordinator.commitPreparation(activeLease)
+        let protection = try await coordinator.protectForPlayback(activeLease)
+
+        let nextDescriptor = try descriptor(
+            hash: String(repeating: "4", count: 40),
+            size: 4_096
+        )
+        let nextLease = try await coordinator.acquire()
+        do {
+            _ = try await coordinator.prepare(
+                descriptor: nextDescriptor,
+                policy: policy,
+                lease: nextLease
+            )
+            XCTFail("Active playback must not be evicted")
+        } catch {
+            XCTAssertEqual(error as? LocalTorrentCacheManager.CacheError, .evictionFailed)
+        }
+        await coordinator.release(nextLease)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: activeReservation.itemDirectory.path))
+
+        await coordinator.unprotect(protection)
+        let retryLease = try await coordinator.acquire()
+        let nextReservation = try await coordinator.prepare(
+            descriptor: nextDescriptor,
+            policy: policy,
+            lease: retryLease
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: activeReservation.itemDirectory.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: nextReservation.itemDirectory.path))
+        await coordinator.release(retryLease)
+    }
+
     func testHexDescriptorNormalizesHashAndPreservesValidatedFileIndex() throws {
         let descriptor = try LocalTorrentPlaybackDescriptor(
             infoHash: String(repeating: "A", count: 40),

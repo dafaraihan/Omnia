@@ -253,7 +253,7 @@ struct PlaybackSourceSheet: View {
                 Button {
                     switch rowState.action {
                     case .playDirect:
-                        beginPlayback(source, candidate: candidate)
+                        beginDirectPlayback(source, candidate: candidate)
                     case .prepareDisc:
                         prepareHTTPSDisc(candidate)
                     case .resolve, .unavailable:
@@ -271,7 +271,11 @@ struct PlaybackSourceSheet: View {
                     )
                 }
                 .buttonStyle(.plain)
-                .disabled(isLocalPreparationActive)
+                .disabled(
+                    rowState.isPrimaryActionDisabled(
+                        isLocalPreparationActive: isLocalPreparationActive
+                    )
+                )
                 .accessibilityHint(
                     rowState.action == .prepareDisc
                         ? "Downloads the disc into Omnia's local cache, then starts playback"
@@ -487,6 +491,9 @@ struct PlaybackSourceSheet: View {
                     ) * 1_024
                 )
                 localTorrentEngine = engine
+                try await LocalPlaybackJobCoordinator.shared.commitPreparation(
+                    acquiredLease
+                )
                 let fileURL = try await engine.download(
                     magnetURL: descriptor.magnetURL,
                     fileIndex: descriptor.fileIndex.map(NSNumber.init(value:)),
@@ -498,14 +505,19 @@ struct PlaybackSourceSheet: View {
                 guard resolvingCandidateID == candidate.id else {
                     throw CancellationError()
                 }
-                await LocalPlaybackJobCoordinator.shared.release(acquiredLease)
+                let protection = try await LocalPlaybackJobCoordinator.shared.protectForPlayback(
+                    acquiredLease
+                )
                 lease = nil
                 localTorrentEngine = nil
                 localTorrentTask = nil
                 resolvingCandidateID = nil
                 localTorrentProgress[candidate.id] = nil
                 beginPlayback(
-                    PlaybackSource(localCandidate: candidate, fileURL: fileURL),
+                    .cachedStream(
+                        source: PlaybackSource(localCandidate: candidate, fileURL: fileURL),
+                        protection: protection
+                    ),
                     candidate: candidate
                 )
             } catch {
@@ -584,6 +596,9 @@ struct PlaybackSourceSheet: View {
                     jobID: jobID
                 )
                 discMaterializer = materializer
+                try await LocalPlaybackJobCoordinator.shared.commitPreparation(
+                    acquiredLease
+                )
                 let events = await materializer.materialize(.iso(file), source: source)
                 var preparedDisc: MaterializedDisc?
                 for try await event in events {
@@ -608,14 +623,20 @@ struct PlaybackSourceSheet: View {
                 )
                 try Task.checkCancellation()
 
-                await LocalPlaybackJobCoordinator.shared.release(acquiredLease)
+                let protection = try await LocalPlaybackJobCoordinator.shared.protectForPlayback(
+                    acquiredLease
+                )
                 lease = nil
                 discPreparationStates[candidate.id] = .ready
                 preparingDiscCandidateID = nil
                 discMaterializer = nil
                 discPreparationTask = nil
                 beginPlayback(
-                    .disc(source: sourceMetadata, request: request),
+                    .disc(
+                        source: sourceMetadata,
+                        request: request,
+                        protection: protection
+                    ),
                     candidate: candidate
                 )
             } catch is CancellationError {
@@ -711,6 +732,27 @@ struct PlaybackSourceSheet: View {
     /// from the next main-actor turn so the shared player presentation wins.
     private func beginPlayback(_ source: PlaybackSource, candidate: AddonStreamCandidate? = nil) {
         beginPlayback(.stream(source), candidate: candidate)
+    }
+
+    private func beginDirectPlayback(
+        _ source: PlaybackSource,
+        candidate: AddonStreamCandidate
+    ) {
+        #if os(macOS)
+        let torrentTask = localTorrentTask
+        let preparationTask = discPreparationTask
+        localTorrentEngine?.cancel()
+        torrentTask?.cancel()
+        preparationTask?.cancel()
+        Task { @MainActor in
+            await torrentTask?.value
+            await preparationTask?.value
+            guard !Task.isCancelled else { return }
+            beginPlayback(source, candidate: candidate)
+        }
+        #else
+        beginPlayback(source, candidate: candidate)
+        #endif
     }
 
     private func beginPlayback(_ input: PlaybackInput, candidate: AddonStreamCandidate? = nil) {

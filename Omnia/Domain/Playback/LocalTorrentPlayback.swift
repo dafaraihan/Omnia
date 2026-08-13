@@ -221,6 +221,7 @@ nonisolated enum LocalTorrentCacheManager {
         root: URL? = nil,
         availableVolumeBytes: Int64? = nil,
         fileManager: FileManager = .default,
+        protectedCacheKeys: Set<String> = [],
         cancellationCheck: () throws -> Void = { try Task.checkCancellation() }
     ) throws -> URL {
         try cancellationCheck()
@@ -272,7 +273,10 @@ nonisolated enum LocalTorrentCacheManager {
 
         var evictedBytes: Int64 = 0
         for entry in entries
-            .filter({ $0.url.lastPathComponent != descriptor.cacheKey })
+            .filter({
+                $0.url.lastPathComponent != descriptor.cacheKey
+                    && !protectedCacheKeys.contains($0.url.lastPathComponent)
+            })
             .sorted(by: { $0.modifiedAt < $1.modifiedAt })
         where evictedBytes < plan.requiredEvictionBytes {
             try cancellationCheck()
@@ -440,15 +444,46 @@ actor LocalPlaybackJobCoordinator {
         let itemDirectory: URL
     }
 
+    nonisolated struct PlaybackProtection: Equatable, Sendable {
+        fileprivate let id: UUID
+        fileprivate let cacheKey: String
+    }
+
+    private struct ActiveJob {
+        let lease: UUID
+        var reservationURL: URL?
+        var cacheKey: String?
+        var removesReservationOnRelease: Bool
+    }
+
     static let shared = LocalPlaybackJobCoordinator()
 
-    private var activeLease: UUID?
+    private let root: URL?
+    private let availableVolumeBytes: Int64?
+    private let fileManager: FileManager
+    private var activeJob: ActiveJob?
+    private var playbackProtections: [UUID: String] = [:]
+
+    init(
+        root: URL? = nil,
+        availableVolumeBytes: Int64? = nil,
+        fileManager: FileManager = .default
+    ) {
+        self.root = root
+        self.availableVolumeBytes = availableVolumeBytes
+        self.fileManager = fileManager
+    }
 
     func acquire() throws -> UUID {
         try Task.checkCancellation()
-        guard activeLease == nil else { throw JobError.busy }
+        guard activeJob == nil else { throw JobError.busy }
         let lease = UUID()
-        activeLease = lease
+        activeJob = ActiveJob(
+            lease: lease,
+            reservationURL: nil,
+            cacheKey: nil,
+            removesReservationOnRelease: false
+        )
         return lease
     }
 
@@ -458,12 +493,12 @@ actor LocalPlaybackJobCoordinator {
         lease: UUID
     ) throws -> Reservation {
         try Task.checkCancellation()
-        guard activeLease == lease else { throw JobError.invalidLease }
-        let cacheRoot = try LocalTorrentCacheManager.defaultRoot()
+        guard activeJob?.lease == lease else { throw JobError.invalidLease }
+        let cacheRoot = try root ?? LocalTorrentCacheManager.defaultRoot(fileManager: fileManager)
         let expectedItemDirectory = cacheRoot
             .appendingPathComponent(descriptor.cacheKey, isDirectory: true)
             .standardizedFileURL
-        let itemAlreadyExisted = FileManager.default.fileExists(
+        let itemAlreadyExisted = fileManager.fileExists(
             atPath: expectedItemDirectory.path
         )
         let itemDirectory: URL
@@ -471,17 +506,35 @@ actor LocalPlaybackJobCoordinator {
             itemDirectory = try LocalTorrentCacheManager.prepare(
                 descriptor: descriptor,
                 policy: policy,
-                root: cacheRoot
+                root: cacheRoot,
+                availableVolumeBytes: availableVolumeBytes,
+                fileManager: fileManager,
+                protectedCacheKeys: Set(playbackProtections.values)
             )
+            guard activeJob?.lease == lease else { throw JobError.invalidLease }
+            activeJob?.reservationURL = itemDirectory
+            activeJob?.cacheKey = descriptor.cacheKey
+            activeJob?.removesReservationOnRelease = !itemAlreadyExisted
             try Task.checkCancellation()
         } catch {
             if error is CancellationError, !itemAlreadyExisted {
-                try? FileManager.default.removeItem(at: expectedItemDirectory)
+                try? fileManager.removeItem(at: expectedItemDirectory)
             }
             throw error
         }
-        guard activeLease == lease else { throw JobError.invalidLease }
+        guard activeJob?.lease == lease else { throw JobError.invalidLease }
         return Reservation(cacheRoot: cacheRoot, itemDirectory: itemDirectory)
+    }
+
+    func commitPreparation(_ lease: UUID) throws {
+        try Task.checkCancellation()
+        guard activeJob?.lease == lease,
+              activeJob?.reservationURL != nil,
+              activeJob?.cacheKey != nil
+        else {
+            throw JobError.invalidLease
+        }
+        activeJob?.removesReservationOnRelease = false
     }
 
     func discPlaybackRequest(
@@ -490,16 +543,39 @@ actor LocalPlaybackJobCoordinator {
         lease: UUID
     ) throws -> DiscPlaybackRequest {
         try Task.checkCancellation()
-        guard activeLease == lease else { throw JobError.invalidLease }
+        guard activeJob?.lease == lease else { throw JobError.invalidLease }
         let request = try DiscPlaybackRequest(disc: disc, cacheRoot: cacheRoot)
         try Task.checkCancellation()
-        guard activeLease == lease else { throw JobError.invalidLease }
+        guard activeJob?.lease == lease else { throw JobError.invalidLease }
         return request
     }
 
+    func protectForPlayback(_ lease: UUID) throws -> PlaybackProtection {
+        try Task.checkCancellation()
+        guard let job = activeJob,
+              job.lease == lease,
+              let cacheKey = job.cacheKey,
+              !job.removesReservationOnRelease
+        else {
+            throw JobError.invalidLease
+        }
+        let protection = PlaybackProtection(id: UUID(), cacheKey: cacheKey)
+        playbackProtections[protection.id] = protection.cacheKey
+        activeJob = nil
+        return protection
+    }
+
+    func unprotect(_ protection: PlaybackProtection) {
+        guard playbackProtections[protection.id] == protection.cacheKey else { return }
+        playbackProtections[protection.id] = nil
+    }
+
     func release(_ lease: UUID) {
-        guard activeLease == lease else { return }
-        activeLease = nil
+        guard let job = activeJob, job.lease == lease else { return }
+        if job.removesReservationOnRelease, let reservationURL = job.reservationURL {
+            try? fileManager.removeItem(at: reservationURL)
+        }
+        activeJob = nil
     }
 }
 
