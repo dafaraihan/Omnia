@@ -225,18 +225,55 @@ struct PlaybackSource: Identifiable, Hashable, Sendable {
     #endif
 }
 
-struct PlaybackSourceResolution: Sendable {
+struct AddonSourceResolution: Identifiable, Equatable, Sendable {
+    enum State: Equatable, Sendable {
+        case loaded
+        case empty
+        case failed
+    }
+
+    let addonID: String
+    let addonName: String
     let candidates: [AddonStreamCandidate]
-    let enabledAddonCount: Int
+    let state: State
+
+    var id: String { addonID }
+}
+
+struct PlaybackSourceResolution: Sendable {
+    let addonResults: [AddonSourceResolution]
     let attemptedIdentifiers: [String]
-    let errors: [String]
+
+    var candidates: [AddonStreamCandidate] {
+        addonResults.flatMap(\.candidates)
+    }
+
+    var enabledAddonCount: Int { addonResults.count }
+
+    var failedAddonResults: [AddonSourceResolution] {
+        addonResults.filter { $0.state == .failed }
+    }
+
+    var emptyAddonResults: [AddonSourceResolution] {
+        addonResults.filter { $0.state == .empty }
+    }
+
+    func replacingAddonResult(_ replacement: AddonSourceResolution) -> Self {
+        var results = addonResults
+        if let index = results.firstIndex(where: { $0.addonID == replacement.addonID }) {
+            results[index] = replacement
+        } else {
+            results.append(replacement)
+        }
+        return Self(addonResults: results, attemptedIdentifiers: attemptedIdentifiers)
+    }
 
     var emptyStateDescription: String {
         guard enabledAddonCount > 0 else {
             return "Enable a trusted add-on that supplies streams, then try again."
         }
 
-        if !errors.isEmpty {
+        if !failedAddonResults.isEmpty {
             return "Omnia could not read the response from the enabled add-on. Check the add-on connection and try again."
         }
 
@@ -255,6 +292,33 @@ extension LocalTorrentPlaybackDescriptor {
 
 enum PlaybackSourceResolver {
     static func resolve(
+        addon: InstalledAddon,
+        mediaTypes: [String],
+        identifiers: [String]
+    ) async -> AddonSourceResolution {
+        do {
+            let candidates = try await StremioAddonClient.fetchStreamCandidates(
+                from: addon,
+                mediaTypes: mediaTypes,
+                identifiers: identifiers
+            )
+            return AddonSourceResolution(
+                addonID: addon.id,
+                addonName: addon.manifest.name,
+                candidates: candidates,
+                state: candidates.isEmpty ? .empty : .loaded
+            )
+        } catch {
+            return AddonSourceResolution(
+                addonID: addon.id,
+                addonName: addon.manifest.name,
+                candidates: [],
+                state: .failed
+            )
+        }
+    }
+
+    static func resolve(
         for item: MediaItem,
         episode: MediaEpisode? = nil,
         addons: [InstalledAddon]
@@ -263,35 +327,42 @@ enum PlaybackSourceResolver {
         let mediaTypes = item.streamMediaTypes
         let enabledAddons = addons.filter { $0.isEnabled && $0.manifest.supportsStreams }
         guard !identifiers.isEmpty else {
-            return .init(candidates: [], enabledAddonCount: enabledAddons.count, attemptedIdentifiers: [], errors: [])
+            return .init(
+                addonResults: enabledAddons.map {
+                    AddonSourceResolution(
+                        addonID: $0.id,
+                        addonName: $0.manifest.name,
+                        candidates: [],
+                        state: .empty
+                    )
+                },
+                attemptedIdentifiers: []
+            )
         }
 
-        return await withTaskGroup(of: (Int, [AddonStreamCandidate], String?).self, returning: PlaybackSourceResolution.self) { group in
+        return await withTaskGroup(
+            of: (Int, AddonSourceResolution).self,
+            returning: PlaybackSourceResolution.self
+        ) { group in
             for (position, addon) in enabledAddons.enumerated() {
                 group.addTask {
-                    do {
-                        let candidates = try await StremioAddonClient.fetchStreamCandidates(
-                            from: addon,
-                            mediaTypes: mediaTypes,
-                            identifiers: identifiers
-                        )
-                        return (position, candidates, nil)
-                    } catch {
-                        return (position, [], error.localizedDescription)
-                    }
+                    let result = await resolve(
+                        addon: addon,
+                        mediaTypes: mediaTypes,
+                        identifiers: identifiers
+                    )
+                    return (position, result)
                 }
             }
 
-            var batches: [(Int, [AddonStreamCandidate], String?)] = []
+            var batches: [(Int, AddonSourceResolution)] = []
             for await batch in group {
                 batches.append(batch)
             }
             let ordered = batches.sorted { $0.0 < $1.0 }
             return .init(
-                candidates: ordered.flatMap(\.1),
-                enabledAddonCount: enabledAddons.count,
-                attemptedIdentifiers: identifiers,
-                errors: ordered.compactMap(\.2)
+                addonResults: ordered.map(\.1),
+                attemptedIdentifiers: identifiers
             )
         }
     }

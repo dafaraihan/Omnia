@@ -358,7 +358,11 @@ downloadLimitBytesPerSecond:(int64_t)downloadLimitBytesPerSecond
             if (!configuredFile && handle.status().has_metadata) {
                 std::shared_ptr<lt::torrent_info const> info = handle.torrent_file();
                 if (!info) continue;
+                #if LIBTORRENT_VERSION_NUM >= 20100
+                lt::file_storage const& files = info->layout();
+                #else
                 lt::file_storage const& files = info->files();
+                #endif
                 if (files.num_files() <= 0 || files.num_files() > 10000) {
                     finish(nil, OMTorrentError(OMLocalTorrentErrorInvalidFile, @"The torrent contains no files."));
                     return;

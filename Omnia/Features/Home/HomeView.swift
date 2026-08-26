@@ -14,8 +14,7 @@ struct HomeView: View {
     @State private var isLoadingUpcoming = false
     @State private var heroIndex = 0
     @AppStorage("home-show-continue-watching") private var showsContinueWatching = true
-    @AppStorage("home-show-movie-shelf") private var showsMovieShelf = true
-    @AppStorage("home-show-series-shelf") private var showsSeriesShelf = true
+    @AppStorage(HomeShelfPreferences.storageKey) private var disabledHomeShelfIDs = ""
 
     private var continuing: [MediaItem] {
         let values = store.library.filter { $0.progress != nil }
@@ -26,7 +25,7 @@ struct HomeView: View {
     /// cinematic treatment, while retaining useful fallbacks when a provider
     /// has incomplete artwork.
     private var heroCandidates: [MediaItem] {
-        let catalogItems = metadata.homeCatalogs.flatMap(\.items)
+        let catalogItems = visibleHomeCatalogs.flatMap(\.items)
             + metadata.movieCatalog
             + metadata.seriesCatalog
             + store.library
@@ -37,6 +36,11 @@ struct HomeView: View {
 
         var identifiers = Set<String>()
         return artworkFirst.filter { identifiers.insert($0.id).inserted }.prefix(6).map { $0 }
+    }
+
+    private var visibleHomeCatalogs: [BuiltInHomeCatalog] {
+        let preferences = HomeShelfPreferences(rawValue: disabledHomeShelfIDs)
+        return metadata.homeCatalogs.filter { preferences.isEnabled($0.shelf) }
     }
 
     private var featured: MediaItem? {
@@ -100,10 +104,8 @@ struct HomeView: View {
                             }
                         }
 
-                        ForEach(metadata.homeCatalogs) { catalog in
-                            if (catalog.kind == .movie && showsMovieShelf) || (catalog.kind == .series && showsSeriesShelf) {
-                                shelf(title: catalog.title, items: Array(catalog.items.prefix(16)), type: catalog.kind == .movie ? .movie : .series, category: catalog.category)
-                            }
+                        ForEach(visibleHomeCatalogs) { catalog in
+                            shelf(title: catalog.title, items: Array(catalog.items.prefix(16)), type: catalog.kind == .movie ? .movie : .series, category: catalog.category)
                         }
                     }
                 }
@@ -657,35 +659,40 @@ private struct HeroNavigationButton: View {
     let action: () -> Void
 
     @State private var isHovered = false
-    @State private var isPressing = false
-
-    private var isActive: Bool { isHovered || isPressing }
 
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.body.weight(.semibold))
-                .foregroundStyle(.white.opacity(isActive ? 1 : 0.72))
                 .frame(width: 40, height: 72)
-                .background {
-                Capsule()
-                        .fill(.clear)
-                        .glassEffect(.regular.interactive(), in: Capsule())
-                        .opacity(isActive ? 1 : 0)
-                }
-                .contentShape(Capsule())
-                .animation(.easeInOut(duration: 0.16), value: isActive)
         }
-        .buttonStyle(.plain)
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in isPressing = true }
-                .onEnded { _ in isPressing = false }
-        )
+        .buttonStyle(HeroNavigationButtonStyle(isHovered: isHovered))
         #if os(macOS)
         .onHover { isHovered = $0 }
         #endif
         .accessibilityLabel(label)
+    }
+}
+
+private struct HeroNavigationButtonStyle: ButtonStyle {
+    let isHovered: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        let isActive = ButtonInteractionPresentation.isActive(
+            isHovered: isHovered,
+            isPressed: configuration.isPressed
+        )
+
+        configuration.label
+            .foregroundStyle(.white.opacity(isActive ? 1 : 0.72))
+            .background {
+                Capsule()
+                    .fill(.clear)
+                    .glassEffect(.regular, in: Capsule())
+                    .opacity(isActive ? 1 : 0)
+            }
+            .contentShape(Capsule())
+            .animation(.easeInOut(duration: 0.16), value: isActive)
     }
 }
 

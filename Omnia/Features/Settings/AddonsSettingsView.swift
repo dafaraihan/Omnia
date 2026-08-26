@@ -40,7 +40,8 @@ struct AddonsSettingsView: View {
                             isEnabled: Binding(
                                 get: { addon.isEnabled },
                                 set: { _ in store.toggleAddon(id: addon.id) }
-                            )
+                            ),
+                            onRemove: { addonToRemove = addon }
                         )
                         .swipeActions {
                             Button("Remove", role: .destructive) { addonToRemove = addon }
@@ -196,6 +197,7 @@ struct AddonsSettingsView: View {
 private struct AddonSettingsRow: View {
     let addon: InstalledAddon
     @Binding var isEnabled: Bool
+    let onRemove: () -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -210,7 +212,13 @@ private struct AddonSettingsRow: View {
                 Text(capabilities(for: addon)).font(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength: 8)
-            Toggle("Enabled", isOn: $isEnabled).labelsHidden()
+            VStack(spacing: 10) {
+                Toggle("Enabled", isOn: $isEnabled).labelsHidden()
+                Button("Remove", systemImage: "trash", role: .destructive, action: onRemove)
+                    .labelStyle(.iconOnly)
+                    .help("Remove \(addon.manifest.name)")
+                    .accessibilityLabel("Remove \(addon.manifest.name)")
+            }
         }
         .padding(.vertical, 4)
     }

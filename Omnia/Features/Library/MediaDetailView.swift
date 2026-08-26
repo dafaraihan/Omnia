@@ -598,7 +598,6 @@ private struct EpisodeCard: View {
     let episode: MediaEpisode
     let action: () -> Void
     @State private var isHovered = false
-    @State private var isPressing = false
 
     var body: some View {
         Button(action: action) {
@@ -632,8 +631,8 @@ private struct EpisodeCard: View {
                     .foregroundStyle(.black)
                     .frame(width: 42, height: 42)
                     .background(.white, in: Circle())
-                    .opacity(isHovered || isPressing ? 1 : 0)
-                    .animation(.easeInOut(duration: 0.14), value: isHovered || isPressing)
+                    .opacity(isHovered ? 1 : 0)
+                    .animation(.easeInOut(duration: 0.14), value: isHovered)
             }
             .clipShape(.rect(cornerRadius: 16, style: .continuous))
 
@@ -669,12 +668,7 @@ private struct EpisodeCard: View {
         }
         .frame(width: cardWidth, alignment: .leading)
         }
-        .buttonStyle(.plain)
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in isPressing = true }
-                .onEnded { _ in isPressing = false }
-        )
+        .buttonStyle(EpisodeCardButtonStyle())
         #if os(macOS)
         .onHover { isHovered = $0 }
         #endif
@@ -726,6 +720,17 @@ private struct EpisodeCard: View {
         formatter.dateFormat = "d MMM yyyy"
         return formatter
     }()
+}
+
+private struct EpisodeCardButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        // Native press state preserves feedback without installing a gesture
+        // that competes with the enclosing horizontal ScrollView.
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.985 : 1)
+            .opacity(configuration.isPressed ? 0.86 : 1)
+            .animation(.easeInOut(duration: 0.12), value: configuration.isPressed)
+    }
 }
 
 private struct VideoShelf: View {

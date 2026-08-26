@@ -82,14 +82,14 @@ final class LiveMetadataStore {
         let rankedMovies = Array(responses.8.prefix(10))
             let rankedSeries = Array(responses.6.prefix(10))
             let shelves = Self.uniqueHomeCatalogs([
-                BuiltInHomeCatalog(title: "Trending Now", kind: .movie, category: .trending, items: responses.0),
-                BuiltInHomeCatalog(title: "Popular Movies", kind: .movie, category: .popular, items: responses.1),
-                BuiltInHomeCatalog(title: "Popular Series", kind: .series, category: .popular, items: responses.5),
-                BuiltInHomeCatalog(title: "In Theaters", kind: .movie, category: .nowPlaying, items: responses.2),
-                BuiltInHomeCatalog(title: "Coming Soon", kind: .movie, category: .upcoming, items: responses.3),
-                BuiltInHomeCatalog(title: "Series Worth Starting", kind: .series, category: .trending, items: responses.4),
-                BuiltInHomeCatalog(title: "Top Rated Series", kind: .series, category: .topRated, items: responses.6),
-                BuiltInHomeCatalog(title: "Airing Today", kind: .series, category: .airingToday, items: responses.7),
+                BuiltInHomeCatalog(shelf: .trendingMovies, items: responses.0),
+                BuiltInHomeCatalog(shelf: .popularMovies, items: responses.1),
+                BuiltInHomeCatalog(shelf: .popularSeries, items: responses.5),
+                BuiltInHomeCatalog(shelf: .nowPlayingMovies, items: responses.2),
+                BuiltInHomeCatalog(shelf: .upcomingMovies, items: responses.3),
+                BuiltInHomeCatalog(shelf: .trendingSeries, items: responses.4),
+                BuiltInHomeCatalog(shelf: .topRatedSeries, items: responses.6),
+                BuiltInHomeCatalog(shelf: .airingToday, items: responses.7),
             ], excluding: rankedMovies + rankedSeries)
 
             movieCatalog = shelves.first(where: { $0.title == "Trending Now" })?.items ?? []
@@ -204,15 +204,67 @@ final class LiveMetadataStore {
 
         do {
             let response = try await client.details(provider: provider, id: identifier, type: item.metadataType)
-            return Self.item(
+            let providerItem = Self.item(
                 from: response.item,
                 progress: item.progress,
                 positionSeconds: item.positionSeconds,
                 durationSeconds: item.durationSeconds
             )
+            let resolvedItem = providerItem.mergingSourceIdentifiers(from: item)
+
+            guard provider != .tmdb,
+                  !resolvedItem.hasIMDbIdentifier
+            else { return resolvedItem }
+
+            do {
+                guard let fallbackItem = try await exactTMDBFallback(for: item, client: client) else {
+                    return resolvedItem
+                }
+                return resolvedItem.mergingSourceIdentifiers(from: fallbackItem)
+            } catch {
+                return resolvedItem
+            }
         } catch {
             return item
         }
+    }
+
+    /// Older hosted TVDB records may not contain remote IDs even though the
+    /// configured TMDB fallback can supply the IMDb identity expected by most
+    /// Stremio stream add-ons. Resolve only an exact title/year match so source
+    /// lookup never crosses from one production or remake to another.
+    private func exactTMDBFallback(
+        for item: MediaItem,
+        client: SupabaseMetadataClient
+    ) async throws -> MediaItem? {
+        guard item.year.count == 4, Int(item.year) != nil else { return nil }
+        let tmdbOnly = MetadataRoute(primary: .tmdb, fallbackEnabled: false)
+        let search = try await client.search(
+            query: item.title,
+            type: item.metadataType,
+            routing: tmdbOnly
+        )
+        let matches = search.results.filter { record in
+            guard record.provider == MetadataProviderIdentifier.tmdb.rawValue,
+                  Self.normalizedTitle(record.title) == Self.normalizedTitle(item.title)
+            else { return false }
+
+            return Self.releaseYear(record) == item.year
+        }
+        let identifiers = Set(matches.map(\.providerID))
+        guard identifiers.count == 1, let identifier = identifiers.first else { return nil }
+
+        let response = try await client.details(
+            provider: .tmdb,
+            id: identifier,
+            type: item.metadataType
+        )
+        let fallbackItem = Self.item(from: response.item)
+        guard Self.normalizedTitle(fallbackItem.title) == Self.normalizedTitle(item.title),
+              fallbackItem.year == item.year,
+              fallbackItem.hasIMDbIdentifier
+        else { return nil }
+        return fallbackItem
     }
 
     func genreCatalog(for genre: MetadataGenre, type: MediaType) async -> [MediaItem] {
@@ -410,7 +462,7 @@ final class LiveMetadataStore {
         return catalogs.compactMap { catalog in
             let uniqueItems = catalog.items.filter { seen.insert($0.id).inserted }
             guard !uniqueItems.isEmpty else { return nil }
-            return BuiltInHomeCatalog(title: catalog.title, kind: catalog.kind, category: catalog.category, items: uniqueItems)
+            return BuiltInHomeCatalog(shelf: catalog.shelf, items: uniqueItems)
         }
     }
 
@@ -738,12 +790,13 @@ final class LiveMetadataStore {
 }
 
 struct BuiltInHomeCatalog: Identifiable, Sendable {
-    let title: String
-    let kind: MediaItem.Kind
-    let category: MetadataCatalogCategory
+    let shelf: BuiltInHomeShelf
     let items: [MediaItem]
 
-    var id: String { title }
+    var id: String { shelf.id }
+    var title: String { shelf.title }
+    var kind: MediaItem.Kind { shelf.kind }
+    var category: MetadataCatalogCategory { shelf.category }
 }
 
 /// A native anime shelf is kept separate from Home's movie/series catalog

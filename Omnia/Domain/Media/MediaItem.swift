@@ -161,6 +161,12 @@ struct MediaItem: Identifiable, Hashable, Sendable {
         }
     }
 
+    var hasIMDbIdentifier: Bool {
+        ["imdb", "imdb_id"].contains { key in
+            externalIDs[key]?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        }
+    }
+
     /// Most add-ons call anime a series, but anime-focused manifests expose a
     /// separate `anime` type. Ask both when the title has an anime identity.
     var streamMediaTypes: [String] {

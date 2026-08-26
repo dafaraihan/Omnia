@@ -387,6 +387,25 @@
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = NO;
+				"GCC_PREPROCESSOR_DEFINITIONS[sdk=macosx*]" = (
+					"$(inherited)",
+					"OMNIA_LOCAL_TORRENT=1",
+					TORRENT_LINKING_SHARED,
+					BOOST_ASIO_ENABLE_CANCELIO,
+					BOOST_ASIO_NO_DEPRECATED,
+					BOOST_SYSTEM_USE_UTF8,
+					"TORRENT_ABI_VERSION=2",
+					"TORRENT_USE_I2P=0",
+					TORRENT_DISABLE_LOGGING,
+					TORRENT_USE_OPENSSL,
+					TORRENT_USE_LIBCRYPTO,
+					TORRENT_SSL_PEERS,
+					OPENSSL_NO_SSL2,
+					OPENSSL_NO_SSL3,
+					OPENSSL_NO_TLS1,
+					OPENSSL_NO_TLS1_1,
+					OPENSSL_NO_DTLS1,
+				);
 				"HEADER_SEARCH_PATHS[sdk=macosx*]" = (
 					"$(inherited)",
 					/opt/homebrew/include,
@@ -416,6 +435,9 @@
 				"OTHER_LDFLAGS[sdk=macosx*]" = (
 					"$(inherited)",
 					"-lmpv",
+					"-ltorrent-rasterbar",
+					"-lssl",
+					"-lcrypto",
 					"-framework",
 					OpenGL,
 				);
@@ -454,21 +476,21 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
-				GENERATE_INFOPLIST_FILE = NO;
 				"GCC_PREPROCESSOR_DEFINITIONS[sdk=macosx*]" = (
 					"$(inherited)",
 					"OMNIA_LOCAL_TORRENT=1",
-					"TORRENT_LINKING_SHARED",
-					"BOOST_ASIO_ENABLE_CANCELIO",
-					"BOOST_ASIO_NO_DEPRECATED",
-					"TORRENT_NO_DEPRECATE",
+					TORRENT_LINKING_SHARED,
+					BOOST_ASIO_ENABLE_CANCELIO,
+					BOOST_ASIO_NO_DEPRECATED,
+					TORRENT_NO_DEPRECATE,
 					"TORRENT_USE_I2P=0",
-					"TORRENT_DISABLE_LOGGING",
-					"TORRENT_USE_OPENSSL",
-					"TORRENT_USE_LIBCRYPTO",
-					"TORRENT_SSL_PEERS",
-					"OPENSSL_NO_SSL2",
+					TORRENT_DISABLE_LOGGING,
+					TORRENT_USE_OPENSSL,
+					TORRENT_USE_LIBCRYPTO,
+					TORRENT_SSL_PEERS,
+					OPENSSL_NO_SSL2,
 				);
+				GENERATE_INFOPLIST_FILE = NO;
 				"HEADER_SEARCH_PATHS[sdk=macosx*]" = (
 					"$(inherited)",
 					"$(OMNIA_NATIVE_PLAYBACK_ROOT)/Headers",

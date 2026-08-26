@@ -18,6 +18,7 @@ struct PlaybackSourceSheet: View {
     @State private var candidates: [AddonStreamCandidate] = []
     @State private var resolution: PlaybackSourceResolution?
     @State private var isResolving = true
+    @State private var retryingAddonIDs: Set<String> = []
     @State private var selectedAddonID: String?
     @State private var resolvingCandidateID: String?
     @State private var resolverFailures: [String: String] = [:]
@@ -40,17 +41,40 @@ struct PlaybackSourceSheet: View {
                     ProgressView("Finding sources…")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if candidates.isEmpty {
-                    ContentUnavailableView(
-                        "No Sources Found",
-                        systemImage: "play.slash",
-                        description: Text(emptyStateDescription)
-                    )
+                    VStack(spacing: 0) {
+                        ContentUnavailableView(
+                            "No Sources Found",
+                            systemImage: "play.slash",
+                            description: Text(emptyStateDescription)
+                        )
+                        .frame(maxWidth: .infinity)
+
+                        if !addonStatusResults.isEmpty {
+                            List {
+                                Section("Add-on Status") {
+                                    ForEach(addonStatusResults) { result in
+                                        addonStatusRow(result)
+                                    }
+                                }
+                            }
+                            .listStyle(.inset)
+                            .frame(minHeight: 180)
+                        }
+                    }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     VStack(spacing: 0) {
                         sourceFilters
                         Divider()
                         List {
+                            if !addonStatusResults.isEmpty {
+                                Section("Add-on Status") {
+                                    ForEach(addonStatusResults) { result in
+                                        addonStatusRow(result)
+                                    }
+                                }
+                            }
+
                             if !sourceSections.direct.isEmpty {
                                 Section {
                                     ForEach(sourceSections.direct) { candidate in
@@ -178,6 +202,56 @@ struct PlaybackSourceSheet: View {
 
     private var sourceSections: PlaybackSourceSections {
         PlaybackSourceSections(candidates: filteredCandidates)
+    }
+
+    private var addonStatusResults: [AddonSourceResolution] {
+        resolution?.addonResults.filter { $0.state != .loaded } ?? []
+    }
+
+    private func addonStatusRow(_ result: AddonSourceResolution) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: result.state == .failed ? "wifi.exclamationmark" : "tray")
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(result.addonName)
+                    .font(.body.weight(.semibold))
+                Text(
+                    result.state == .failed
+                        ? "The add-on response could not be read."
+                        : "The add-on returned no sources for these identifiers."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 12)
+            Button("Retry") {
+                retryAddon(result.addonID)
+            }
+            .disabled(retryingAddonIDs.contains(result.addonID))
+            .accessibilityLabel("Retry \(result.addonName)")
+        }
+    }
+
+    private func retryAddon(_ addonID: String) {
+        guard let resolution,
+              !retryingAddonIDs.contains(addonID),
+              let addon = enabledStreamAddons.first(where: { $0.id == addonID })
+        else { return }
+
+        retryingAddonIDs.insert(addonID)
+        Task {
+            let result = await PlaybackSourceResolver.resolve(
+                addon: addon,
+                mediaTypes: item.streamMediaTypes,
+                identifiers: resolution.attemptedIdentifiers
+            )
+            guard !Task.isCancelled else { return }
+            let updated = resolution.replacingAddonResult(result)
+            self.resolution = updated
+            candidates = updated.candidates
+            retryingAddonIDs.remove(addonID)
+        }
     }
 
     private var enabledStreamAddons: [InstalledAddon] {

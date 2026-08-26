@@ -3,6 +3,12 @@ import XCTest
 @testable import Omnia
 
 final class LocalTorrentPlaybackTests: XCTestCase {
+    #if os(macOS)
+    func testMacBuildIncludesReviewedLocalTorrentEngine() {
+        XCTAssertTrue(OMLocalTorrentEngine.isAvailable)
+    }
+    #endif
+
     func testLocalPlaybackCoordinatorAllowsOnlyOnePreparationUntilRelease() async throws {
         let coordinator = LocalPlaybackJobCoordinator()
         let firstLease = try await coordinator.acquire()

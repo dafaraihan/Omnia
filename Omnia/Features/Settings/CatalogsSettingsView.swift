@@ -2,6 +2,7 @@ import SwiftUI
 
 struct CatalogsSettingsView: View {
     @Environment(OmniaStore.self) private var store
+    @AppStorage(HomeShelfPreferences.storageKey) private var disabledHomeShelfIDs = ""
 
     private var catalogAddons: [InstalledAddon] {
         store.installedAddons.filter { !$0.manifest.catalogs.isEmpty }
@@ -9,8 +10,23 @@ struct CatalogsSettingsView: View {
 
     var body: some View {
         Form {
-            Section("Built-in") {
-                LabeledContent("TMDB + TVDB", value: "Default")
+            Section {
+                ForEach(BuiltInHomeShelf.allCases) { shelf in
+                    Toggle(isOn: homeShelfBinding(for: shelf)) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(shelf.title)
+                            Text("TMDB \(shelf.kind.rawValue.lowercased()) shelf")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .accessibilityLabel(shelf.title)
+                    .accessibilityHint("Show or hide this TMDB shelf on Home")
+                }
+            } header: {
+                Text("Homepage Shelves")
+            } footer: {
+                Text("Choose which built-in TMDB rows appear on Home. Changes apply immediately.")
             }
 
             if catalogAddons.isEmpty {
@@ -51,5 +67,16 @@ struct CatalogsSettingsView: View {
             }
         }
         .navigationTitle("Catalogs")
+    }
+
+    private func homeShelfBinding(for shelf: BuiltInHomeShelf) -> Binding<Bool> {
+        Binding(
+            get: { HomeShelfPreferences(rawValue: disabledHomeShelfIDs).isEnabled(shelf) },
+            set: { isEnabled in
+                var preferences = HomeShelfPreferences(rawValue: disabledHomeShelfIDs)
+                preferences.setEnabled(isEnabled, for: shelf)
+                disabledHomeShelfIDs = preferences.rawValue
+            }
+        )
     }
 }

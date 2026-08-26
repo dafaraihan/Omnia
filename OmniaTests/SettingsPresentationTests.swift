@@ -60,6 +60,26 @@ final class SettingsPresentationTests: XCTestCase {
         XCTAssertFalse(providerIDs.contains("publicmetadb"))
     }
 
+    func testHomeShelfPreferencesPersistIndividualBuiltInCatalogChoices() {
+        var preferences = HomeShelfPreferences(rawValue: "")
+        preferences.setEnabled(false, for: .popularMovies)
+        preferences.setEnabled(false, for: .airingToday)
+
+        let restored = HomeShelfPreferences(rawValue: preferences.rawValue)
+
+        XCTAssertFalse(restored.isEnabled(.popularMovies))
+        XCTAssertFalse(restored.isEnabled(.airingToday))
+        XCTAssertTrue(restored.isEnabled(.trendingMovies))
+        XCTAssertEqual(BuiltInHomeShelf.allCases.count, 8)
+    }
+
+    func testHomeShelfPreferencesIgnoreUnknownPersistedIdentifiers() {
+        let preferences = HomeShelfPreferences(rawValue: "popular-movies\nunknown-future-row")
+
+        XCTAssertFalse(preferences.isEnabled(.popularMovies))
+        XCTAssertEqual(preferences.rawValue, "popular-movies")
+    }
+
     #if os(macOS)
     func testMacSettingsLayoutCapsWideContentAtReadableWidth() {
         XCTAssertEqual(MacSettingsLayout.contentWidth(for: 1_800), 680)

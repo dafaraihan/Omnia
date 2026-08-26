@@ -119,6 +119,25 @@ final class StremioAddonClientTests: XCTestCase {
         XCTAssertEqual(descriptor.trackers.map(\.absoluteString), ["https://tracker.example/announce"])
     }
 
+    func testValidEmptyStreamResponseIsNotOverwrittenByLaterFallbackFailure() async throws {
+        let transport = SequencedTransport(results: [
+            .success(Data("{\"streams\":[]}".utf8)),
+            .failure(FixtureTransportError.unavailable),
+        ])
+        let addon = streamAddon()
+        defer { addon.removeSecureManifestURL() }
+
+        let candidates = try await StremioAddonClient.fetchStreamCandidates(
+            from: addon,
+            mediaTypes: ["movie"],
+            identifiers: ["tt1234567", "provider-fallback"],
+            timeout: .seconds10,
+            transport: transport
+        )
+
+        XCTAssertTrue(candidates.isEmpty)
+    }
+
     private func validManifestData(name: String = "Example") -> Data {
         let object: [String: Any] = [
             "id": "org.example.addon",
@@ -150,6 +169,23 @@ final class StremioAddonClientTests: XCTestCase {
             isEnabled: true,
             addedAt: Date(timeIntervalSince1970: 1)
         )
+    }
+}
+
+private enum FixtureTransportError: Error {
+    case unavailable
+}
+
+private actor SequencedTransport: HTTPTransporting {
+    private var results: [Result<Data, FixtureTransportError>]
+
+    init(results: [Result<Data, FixtureTransportError>]) {
+        self.results = results
+    }
+
+    func data(for policy: HTTPRequestPolicy) async throws -> Data {
+        guard !results.isEmpty else { throw FixtureTransportError.unavailable }
+        return try results.removeFirst().get()
     }
 }
 

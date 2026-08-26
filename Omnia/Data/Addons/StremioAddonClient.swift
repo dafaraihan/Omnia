@@ -72,6 +72,7 @@ enum StremioAddonClient {
 
         var candidates: [AddonStreamCandidate] = []
         var mostRecentError: Error?
+        var receivedValidResponse = false
 
         for identifier in identifiers {
             for mediaType in mediaTypes where addon.manifest.supports(resource: "stream", type: mediaType, identifier: identifier) {
@@ -86,6 +87,7 @@ enum StremioAddonClient {
                         acceptedContentTypes: ["application/json"]
                     ))
                     guard let result = try? JSONDecoder().decode(AddonStreamResponse.self, from: data) else { continue }
+                    receivedValidResponse = true
                     candidates += result.streams.enumerated().map { position, stream in
                         AddonStreamCandidate(
                             stream: stream,
@@ -102,7 +104,7 @@ enum StremioAddonClient {
             }
         }
 
-        if candidates.isEmpty, let mostRecentError { throw mostRecentError }
+        if candidates.isEmpty, !receivedValidResponse, let mostRecentError { throw mostRecentError }
         var seen = Set<String>()
         return candidates.filter { seen.insert($0.deduplicationKey).inserted }
     }

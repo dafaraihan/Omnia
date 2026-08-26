@@ -4,7 +4,7 @@ import Observation
 @MainActor
 @Observable
 final class AddonRegistry {
-    static let defaultStorageKey = "installed-addons"
+    nonisolated static let defaultStorageKey = "installed-addons"
 
     private let defaults: UserDefaults?
     private let storageKey: String

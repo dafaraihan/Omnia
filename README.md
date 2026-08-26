@@ -12,14 +12,14 @@ Omnia helps people discover titles, inspect metadata, save media to a local libr
 - provide reviewed mobile peer-to-peer transport; or
 - trust add-on manifests, responses, resolvers, or stream URLs by default.
 
-Torrent identifiers remain untrusted data. On an eligible macOS Release build, explicit peer consent lets Omnia validate a bounded descriptor, download the selected file or one complete single-root BDMV tree into an excluded-from-backup cache, stop peer activity at cancellation or completion, and hand only validated completed local media to libmpv. Multi-file disc mode requires the entire non-padding torrent layout to stay under one BDMV root and within the configured item, file-count, free-space, and cache limits. No remote resolver is used. Debug and mobile builds keep the native peer engine unavailable.
+Torrent identifiers remain untrusted data. On an eligible macOS build, explicit peer consent lets Omnia validate a bounded descriptor, download the selected file or one complete single-root BDMV tree into an excluded-from-backup cache, stop peer activity at cancellation or completion, and hand only validated completed local media to libmpv. Multi-file disc mode requires the entire non-padding torrent layout to stay under one BDMV root and within the configured item, file-count, free-space, and cache limits. No remote resolver is used. macOS Debug uses the documented Homebrew development fallback; mobile builds keep the native peer engine unavailable, while Release remains gated on reviewed pinned artifacts.
 
 On macOS, an HTTPS source identified as an ISO can be explicitly prepared as an unencrypted Blu-ray disc. Omnia first requires an exact positive size, reserves space under the same bounded excluded-from-backup cache, follows only same-origin HTTPS redirects, writes a complete local image, and then gives libmpv a typed `bd://` request. Extensionless HTTPS sources expose the same operation as an explicit secondary action and never enter it through autoplay. DVD and encrypted Blu-ray inputs remain unsupported. The mobile disc/resolver phase is paused pending its separate product, security, dependency, storage, and layout review.
 
 ## Requirements
 
 - Xcode for Apple-platform development and SwiftUI previews.
-- Homebrew libmpv for ordinary macOS Debug builds: `brew install mpv`.
+- Homebrew libmpv and libtorrent-rasterbar for ordinary macOS Debug builds: `brew install mpv libtorrent-rasterbar`.
 - CMake, Meson/Ninja, and the platform toolchain for the pinned macOS native playback artifact workflow documented in [NativeDependencies](NativeDependencies/README.md). Release builds reject live Homebrew inputs and require a separately reviewed universal artifact root.
 - The Supabase CLI and Docker for the local Supabase stack.
 - Deno for checking and testing the metadata Edge Function.

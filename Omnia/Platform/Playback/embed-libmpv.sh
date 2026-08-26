@@ -1,6 +1,6 @@
 #!/bin/bash
-# Bundles the locally installed libmpv runtime and every Homebrew dependency it
-# loads. Xcode runs this before signing Omnia, so the copied libraries receive
+# Bundles the locally installed development playback runtimes and every
+# Homebrew dependency they load. Xcode runs this before signing Omnia, so the copied libraries receive
 # the same development/distribution signature as the app instead of tripping
 # macOS library validation at the first playback attempt.
 set -euo pipefail
@@ -19,10 +19,23 @@ if [[ -z "${MPV_LIBRARY:-}" ]]; then
     exit 1
 fi
 
+for CANDIDATE in /opt/homebrew/opt/libtorrent-rasterbar/lib/libtorrent-rasterbar.dylib /usr/local/opt/libtorrent-rasterbar/lib/libtorrent-rasterbar.dylib; do
+    if [[ -f "$CANDIDATE" ]]; then
+        TORRENT_LIBRARY="$(otool -D "$CANDIDATE" | awk 'NR == 2 { print $1 }')"
+        break
+    fi
+done
+
+if [[ -z "${TORRENT_LIBRARY:-}" ]]; then
+    echo "error: libtorrent-rasterbar was not found. Install it with Homebrew: brew install libtorrent-rasterbar"
+    exit 1
+fi
+
 APP_ROOT="${TARGET_BUILD_DIR}/${WRAPPER_NAME}"
 FRAMEWORKS_DIR="${APP_ROOT}/Contents/Frameworks"
 MACOS_DIR="${APP_ROOT}/Contents/MacOS"
 mkdir -p "$FRAMEWORKS_DIR"
+mkdir -p "$MACOS_DIR"
 
 copy_library() {
     local source="$1"
@@ -31,6 +44,10 @@ copy_library() {
 }
 
 copy_library "$MPV_LIBRARY"
+# Homebrew exposes both full-version and compatibility symlinks. Keep only
+# the compatibility install name that the linked executable requests.
+find "$FRAMEWORKS_DIR" -maxdepth 1 -type f -name 'libtorrent-rasterbar*.dylib' -delete
+copy_library "$TORRENT_LIBRARY"
 
 # Resolve the full dynamic-library closure. Homebrew libraries deliberately
 # keep absolute install names, so bundle every non-system dependency first.

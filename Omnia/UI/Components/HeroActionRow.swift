@@ -5,6 +5,15 @@
 
 import SwiftUI
 
+/// Resolves visual feedback from states already owned by SwiftUI's Button.
+/// Interactive controls must not add a zero-distance drag recognizer merely
+/// to observe presses because that recognizer competes with clicks in shelves.
+enum ButtonInteractionPresentation {
+    static func isActive(isHovered: Bool, isPressed: Bool) -> Bool {
+        isHovered || isPressed
+    }
+}
+
 /// The shared primary and library actions used by Omnia's cinematic heroes.
 /// Keeping this component shared prevents Home and title detail from drifting
 /// into subtly different button sizes or spacing.

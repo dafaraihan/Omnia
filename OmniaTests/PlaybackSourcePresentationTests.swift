@@ -3,6 +3,75 @@ import XCTest
 
 @MainActor
 final class PlaybackSourcePresentationTests: XCTestCase {
+    func testSourceResolutionKeepsSuccessfulRowsWhenAnotherAddonFails() {
+        let direct = fixture("mediafusion", .nativeHTTPS(URL(string: "https://media.example/play")!))
+        let torrent = fixture("torrentio", localTorrentDelivery())
+
+        let resolution = PlaybackSourceResolution(
+            addonResults: [
+                AddonSourceResolution(
+                    addonID: "mediafusion",
+                    addonName: "MediaFusion",
+                    candidates: [direct],
+                    state: .loaded
+                ),
+                AddonSourceResolution(
+                    addonID: "broken",
+                    addonName: "Unavailable Add-on",
+                    candidates: [],
+                    state: .failed
+                ),
+                AddonSourceResolution(
+                    addonID: "torrentio",
+                    addonName: "Torrentio",
+                    candidates: [torrent],
+                    state: .loaded
+                ),
+            ],
+            attemptedIdentifiers: ["tt123:1:1"]
+        )
+
+        XCTAssertEqual(resolution.candidates.map(\.id), ["mediafusion", "torrentio"])
+        XCTAssertEqual(resolution.failedAddonResults.map(\.addonID), ["broken"])
+        XCTAssertEqual(resolution.enabledAddonCount, 3)
+    }
+
+    func testRetryReplacementPreservesAddonOrderAndOtherCandidates() {
+        let torrent = fixture("torrentio", localTorrentDelivery())
+        let mediafusion = fixture(
+            "mediafusion",
+            .nativeHTTPS(URL(string: "https://media.example/retry")!)
+        )
+        let initial = PlaybackSourceResolution(
+            addonResults: [
+                AddonSourceResolution(
+                    addonID: "mediafusion",
+                    addonName: "MediaFusion",
+                    candidates: [],
+                    state: .failed
+                ),
+                AddonSourceResolution(
+                    addonID: "torrentio",
+                    addonName: "Torrentio",
+                    candidates: [torrent],
+                    state: .loaded
+                ),
+            ],
+            attemptedIdentifiers: ["tt123:1:1"]
+        )
+
+        let retried = initial.replacingAddonResult(AddonSourceResolution(
+            addonID: "mediafusion",
+            addonName: "MediaFusion",
+            candidates: [mediafusion],
+            state: .loaded
+        ))
+
+        XCTAssertEqual(retried.addonResults.map(\.addonID), ["mediafusion", "torrentio"])
+        XCTAssertEqual(retried.candidates.map(\.id), ["mediafusion", "torrentio"])
+        XCTAssertTrue(retried.failedAddonResults.isEmpty)
+    }
+
     func testEveryCandidateAppearsInExactlyOneSection() {
         let candidates = [
             fixture("direct", .nativeHTTPS(URL(string: "https://media.example/play")!)),

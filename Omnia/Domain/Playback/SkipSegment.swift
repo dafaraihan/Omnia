@@ -13,7 +13,7 @@ struct SkipSegment: Codable, Equatable, Sendable {
     let confidence: Double?
 }
 
-struct IntroSegmentKey: Codable, Hashable, Sendable {
+nonisolated struct IntroSegmentKey: Codable, Hashable, Sendable {
     let imdbID: String
     let season: Int
     let episode: Int

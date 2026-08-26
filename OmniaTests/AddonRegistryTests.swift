@@ -31,6 +31,15 @@ final class AddonRegistryTests: XCTestCase {
         XCTAssertEqual(registry.addons[0].manifest.name, "Replacement")
     }
 
+    func testConfirmedRemovalDeletesTheInstalledAddon() {
+        let addon = makeAddon(id: "remove-me")
+        let registry = AddonRegistry(addons: [addon])
+
+        registry.remove(id: addon.id)
+
+        XCTAssertTrue(registry.addons.isEmpty)
+    }
+
     private func makeAddon(id: String, name: String? = nil) -> InstalledAddon {
         InstalledAddon(
             manifest: StremioAddonManifest(
