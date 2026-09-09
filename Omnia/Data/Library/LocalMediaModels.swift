@@ -14,6 +14,7 @@ final class LocalMediaRecord {
     var resumeSeasonNumber: Int?
     var resumeEpisodeNumber: Int?
     var resumeEpisodeStillURL: URL?
+    var watchStateData: Data?
     var savedAt: Date?
     var lastPlayedAt: Date?
 
@@ -35,6 +36,21 @@ struct LocalMediaSnapshot: Equatable, Sendable {
     let isInWatchlist: Bool
     let savedAt: Date?
     let lastPlayedAt: Date?
+    let watchState: LocalMediaWatchState
+
+    init(
+        item: MediaItem,
+        isInWatchlist: Bool,
+        savedAt: Date?,
+        lastPlayedAt: Date?,
+        watchState: LocalMediaWatchState = .empty
+    ) {
+        self.item = item
+        self.isInWatchlist = isInWatchlist
+        self.savedAt = savedAt
+        self.lastPlayedAt = lastPlayedAt
+        self.watchState = watchState
+    }
 
     var mediaID: String { item.id }
     var progress: Double? { item.progress }

@@ -56,7 +56,7 @@ struct NativePlaybackNoticesView: View {
                 }
             }
         }
-        .navigationTitle("Native Playback Notices")
+        .omniaNavigationTitle("Native Playback Notices")
         .task {
             if case .loading = state {
                 load()
@@ -108,6 +108,6 @@ private struct NativePlaybackNoticeDetailView: View {
             }
             .padding()
         }
-        .navigationTitle(notice.name)
+        .omniaNavigationTitle(notice.name)
     }
 }

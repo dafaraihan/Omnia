@@ -7,7 +7,7 @@ import Foundation
 import Security
 
 enum KeychainStore {
-    static func save(_ value: String, account: String, service: String = "PrimeDeca.Omnia") throws {
+    nonisolated static func save(_ value: String, account: String, service: String = "PrimeDeca.Omnia") throws {
         let data = Data(value.utf8)
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
@@ -29,7 +29,7 @@ enum KeychainStore {
         guard status == errSecSuccess else { throw KeychainError.unhandled(status) }
     }
 
-    static func value(account: String, service: String = "PrimeDeca.Omnia") throws -> String? {
+    nonisolated static func value(account: String, service: String = "PrimeDeca.Omnia") throws -> String? {
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: service,
@@ -46,7 +46,7 @@ enum KeychainStore {
         return value
     }
 
-    static func delete(account: String, service: String = "PrimeDeca.Omnia") throws {
+    nonisolated static func delete(account: String, service: String = "PrimeDeca.Omnia") throws {
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: service,

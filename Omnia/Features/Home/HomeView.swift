@@ -13,11 +13,14 @@ struct HomeView: View {
     @State private var upcomingResult: UpcomingResult?
     @State private var isLoadingUpcoming = false
     @State private var heroIndex = 0
+    @State private var sourcePlaybackItem: MediaItem?
     @AppStorage("home-show-continue-watching") private var showsContinueWatching = true
     @AppStorage(HomeShelfPreferences.storageKey) private var disabledHomeShelfIDs = ""
 
     private var continuing: [MediaItem] {
-        let values = store.library.filter { $0.progress != nil }
+        let values = store.localMediaSnapshots
+            .filter { $0.progress != nil }
+            .map(\.item)
         return settings.preferences.continueWatchingLimit.value.map { Array(values.prefix($0)) } ?? values
     }
     /// The pager is deliberately drawn from the live discovery response, not
@@ -95,15 +98,6 @@ struct HomeView: View {
                         rankedShelf(title: "Top 10 Series", items: Array(metadata.topSeries.prefix(10)), type: .series)
                         }
 
-                        if !metadata.movieGenres.isEmpty {
-                            VStack(alignment: .leading, spacing: 12) {
-                                SectionHeaderLink(title: "Browse by Genre") {
-                                    GenreDirectoryView(title: "Browse by Genre", genres: metadata.movieGenres, type: .movie)
-                                }
-                                GenreBrowseRow(genres: metadata.movieGenres, type: .movie)
-                            }
-                        }
-
                         ForEach(visibleHomeCatalogs) { catalog in
                             shelf(title: catalog.title, items: Array(catalog.items.prefix(16)), type: catalog.kind == .movie ? .movie : .series, category: catalog.category)
                         }
@@ -112,10 +106,18 @@ struct HomeView: View {
                 .padding(.horizontal, horizontalInset)
                 .padding(.top, 22)
                 .padding(.bottom, 56)
-                .background(pageBackground)
+                .background {
+                    if let featured = displayFeatured {
+                        HeroAccentBackground(item: featured)
+                    } else {
+                        pageBackground
+                    }
+                }
             }
         }
-        .background(pageBackground)
+        .background {
+            screenBackground
+        }
         #if os(macOS)
         // Home's first section owns the area behind the stable transparent
         // toolbar; shelves below remain an opaque content surface.
@@ -124,7 +126,18 @@ struct HomeView: View {
         #if os(iOS)
         .toolbarBackground(.hidden, for: .navigationBar)
         #endif
+        .omniaNavigationTitle("Home", screen: .home)
         .navigationDestination(for: MediaItem.self) { MediaDetailView(item: $0) }
+        .omniaGlassModal(isPresented: showsSourcePicker) {
+            if let sourcePlaybackItem {
+                PlaybackSourceSheet(
+                    item: sourcePlaybackItem,
+                    episode: sourcePlaybackItem.resumeEpisode,
+                    resumeAt: sourcePlaybackItem.positionSeconds,
+                    onClose: { self.sourcePlaybackItem = nil }
+                )
+            }
+        }
         .task(id: featured?.id) {
             guard let featured else {
                 resolvedFeatured = nil
@@ -154,7 +167,7 @@ struct HomeView: View {
 
     private func hero(_ featured: MediaItem) -> some View {
         ZStack(alignment: .bottomLeading) {
-            FeaturedBackdrop(item: featured, artworkAlignment: .topTrailing)
+            HeroArtworkCanvas(item: featured, source: .home, artworkAlignment: .topTrailing)
                 .id(featured.id)
                 .transition(.opacity)
 
@@ -213,7 +226,11 @@ struct HomeView: View {
                         NavigationLink(value: featured) {
                             HeroPrimaryActionLabel(title: "View Details")
                         }
+                        #if os(macOS)
+                        .omniaCapsuleGlassButton()
+                        #else
                         .buttonStyle(.plain)
+                        #endif
                     }
                 }
                 // AsyncImage keeps state while SwiftUI reuses a view tree.
@@ -326,7 +343,9 @@ struct HomeView: View {
                 itemSpan: continueWatchingCardSpan,
                 accessibilityLabel: "Continue Watching"
             ) { item in
-                ContinueWatchingCard(item: item)
+                ContinueWatchingCard(item: item) {
+                    sourcePlaybackItem = item
+                }
             }
         }
     }
@@ -334,11 +353,6 @@ struct HomeView: View {
     private func upcomingShelf(_ result: UpcomingResult) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             SectionHeader(title: "Upcoming")
-            if result.isStale {
-                Label("Some series could not be refreshed. Showing available local results.", systemImage: "wifi.exclamationmark")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
             ShelfScrollView(
                 items: result.items,
                 itemSpan: continueWatchingCardSpan,
@@ -353,6 +367,15 @@ struct HomeView: View {
         let preferences = settings.preferences
         let savedIDs = store.localMediaSnapshots.filter(\.isInWatchlist).map(\.mediaID).joined(separator: "|")
         return "\(preferences.showUpcoming)-\(preferences.upcomingLookAhead.rawValue)-\(preferences.upcomingItemLimit.rawValue)-\(savedIDs)"
+    }
+
+    private var showsSourcePicker: Binding<Bool> {
+        Binding(
+            get: { sourcePlaybackItem != nil },
+            set: { isPresented in
+                if !isPresented { sourcePlaybackItem = nil }
+            }
+        )
     }
 
     private func loadUpcoming() async {
@@ -419,6 +442,19 @@ struct HomeView: View {
         Color(uiColor: .systemBackground)
         #else
         Color(nsColor: .windowBackgroundColor)
+        #endif
+    }
+
+    @ViewBuilder
+    private var screenBackground: some View {
+        #if os(macOS)
+        Color.clear
+        #else
+        if let featured = displayFeatured {
+            HeroAccentBackground(item: featured)
+        } else {
+            pageBackground
+        }
         #endif
     }
     private var heroHeight: CGFloat {
@@ -495,33 +531,31 @@ private struct UpcomingEpisodeCard: View {
                 .clipShape(.rect(cornerRadius: 16, style: .continuous))
 
                 Text(item.series.title).font(.headline).lineLimit(1)
-                Text("S\(item.episode.seasonNumber) E\(item.episode.episodeNumber) · \(item.episode.title)")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
             }
             .frame(width: 304, alignment: .leading)
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(item.series.title), season \(item.episode.seasonNumber), episode \(item.episode.episodeNumber), \(item.episode.title)")
         .accessibilityValue(item.airDate.formatted(date: .long, time: .omitted))
+        .mediaContextMenu(for: item.series, placement: .browse)
     }
 }
 
 /// A resume card deliberately uses backdrop/still artwork rather than a title
 /// logo. The card's bottom metadata remains readable over changing artwork,
 /// while title and release year live below it as in established TV clients.
-private struct ContinueWatchingCard: View {
+struct ContinueWatchingCard: View {
     let item: MediaItem
+    let requestPlayback: () -> Void
 
+    @Environment(OmniaStore.self) private var store
     @Environment(SettingsPreferencesStore.self) private var settings
-    @State private var showsSourceSheet = false
 
     var body: some View {
         Group {
             if settings.preferences.directContinueWatchingPlayback {
                 Button {
-                    showsSourceSheet = true
+                    requestPlayback()
                 } label: {
                     cardLabel
                 }
@@ -533,15 +567,17 @@ private struct ContinueWatchingCard: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Continue watching \(item.title)")
-        .accessibilityValue([episodeCode, item.progressText].compactMap { $0 }.joined(separator: ", "))
+        .accessibilityValue(resumePresentation?.continueWatchingMetadataText ?? "In progress")
         .accessibilityHint(
             settings.preferences.directContinueWatchingPlayback
                 ? "Opens available sources and resumes playback in Omnia"
                 : "Opens title details"
         )
-        .sheet(isPresented: $showsSourceSheet) {
-            PlaybackSourceSheet(item: item, episode: item.resumeEpisode)
+        #if os(macOS)
+        .accessibilityAction(named: "Remove Watch Progress") {
+            store.removeFromContinueWatching(item)
         }
+        #endif
     }
 
     private var cardLabel: some View {
@@ -554,18 +590,17 @@ private struct ContinueWatchingCard: View {
                     endPoint: .bottom
                 )
 
-                VStack(spacing: 8) {
-                    ResumeProgressBar(progress: item.progress ?? 0)
-                    HStack(spacing: 7) {
-                        if let episodeCode { Text(episodeCode) }
-                        if episodeCode != nil { Text("•") }
-                        Text(item.progressText ?? "In progress")
+                if let resumePresentation {
+                    VStack(spacing: 9) {
+                        Text(resumePresentation.continueWatchingMetadataText)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                        ResumeProgressBar(progress: resumePresentation.progress)
                     }
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 10)
                 }
-                .padding(14)
             }
             .frame(width: cardWidth, height: cardHeight)
             .clipShape(.rect(cornerRadius: 16, style: .continuous))
@@ -585,6 +620,7 @@ private struct ContinueWatchingCard: View {
             }
             .frame(width: cardWidth, alignment: .leading)
         }
+        .mediaContextMenu(for: item, placement: .continueWatching)
     }
 
     @ViewBuilder
@@ -607,12 +643,8 @@ private struct ContinueWatchingCard: View {
         .clipped()
     }
 
-    private var episodeCode: String? {
-        guard item.kind == .series,
-              let season = item.resumeSeasonNumber,
-              let episode = item.resumeEpisodeNumber
-        else { return nil }
-        return "S\(season)E\(episode)"
+    private var resumePresentation: ResumeProgressPresentation? {
+        ResumeProgressPresentation(item: item)
     }
 
     private var cardWidth: CGFloat {
@@ -629,25 +661,6 @@ private struct ContinueWatchingCard: View {
         #else
         172
         #endif
-    }
-}
-
-private struct ResumeProgressBar: View {
-    let progress: Double
-
-    var body: some View {
-        GeometryReader { geometry in
-            Capsule()
-                .fill(.white.opacity(0.28))
-                .overlay(alignment: .leading) {
-                    Capsule()
-                        .fill(.white.opacity(0.9))
-                        .frame(width: geometry.size.width * min(max(progress, 0), 1))
-                }
-        }
-        .frame(height: 7)
-        .accessibilityLabel("Playback progress")
-        .accessibilityValue("\(Int(min(max(progress, 0), 1) * 100)) percent")
     }
 }
 

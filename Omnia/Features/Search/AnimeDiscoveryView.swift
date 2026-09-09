@@ -26,7 +26,7 @@ struct AnimeDiscoveryView: View {
                 animeBrowse
             }
         }
-        .navigationTitle("Anime")
+        .omniaNavigationTitle("Anime")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
@@ -74,10 +74,6 @@ struct AnimeDiscoveryView: View {
                     )
                     .frame(maxWidth: .infinity, minHeight: 280)
                 } else {
-                    SectionHeaderLink(title: "Browse Anime by Genre") {
-                        AnimeGenreDirectoryView()
-                    }
-
                     ForEach(metadata.animeCatalogs) { catalog in
                         AnimeCatalogShelf(catalog: catalog)
                     }
@@ -97,7 +93,7 @@ struct AnimeDiscoveryView: View {
         } else {
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: MediaBrowseMetrics.posterWidth), spacing: MediaBrowseMetrics.gridSpacing)],
+                    columns: MediaBrowseMetrics.posterGridColumns,
                     alignment: .leading,
                     spacing: MediaBrowseMetrics.gridRowSpacing
                 ) {
@@ -136,27 +132,11 @@ private struct AnimeCatalogShelf: View {
     }
 }
 
-/// A regular List keeps genre selection in the operating system's familiar
-/// navigation pattern instead of inventing a second card language for Anime.
-private struct AnimeGenreDirectoryView: View {
-    var body: some View {
-        List(AnimeGenre.allCases) { genre in
-            NavigationLink {
-                PagedAnimeCatalogView(title: genre.title, category: .popular, genre: genre.title)
-            } label: {
-                Label(genre.title, systemImage: genre.symbol)
-            }
-        }
-        .navigationTitle("Anime Genres")
-    }
-}
-
 private struct PagedAnimeCatalogView: View {
     @Environment(LiveMetadataStore.self) private var metadata
 
     let title: String
     let category: MetadataCatalogCategory
-    var genre: String?
 
     @State private var items: [MediaItem] = []
     @State private var nextPage = 1
@@ -166,7 +146,7 @@ private struct PagedAnimeCatalogView: View {
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: MediaBrowseMetrics.posterWidth), spacing: MediaBrowseMetrics.gridSpacing)],
+                columns: MediaBrowseMetrics.posterGridColumns,
                 alignment: .leading,
                 spacing: MediaBrowseMetrics.gridRowSpacing
             ) {
@@ -194,9 +174,9 @@ private struct PagedAnimeCatalogView: View {
                 ContentUnavailableView("No Anime Available", systemImage: "sparkles.tv")
             }
         }
-        .navigationTitle(title)
+        .omniaNavigationTitle(title)
         .navigationDestination(for: MediaItem.self) { MediaDetailView(item: $0) }
-        .task(id: "\(category.rawValue):\(genre ?? "")") {
+        .task(id: category.rawValue) {
             items = []
             nextPage = 1
             hasReachedEnd = false
@@ -207,7 +187,7 @@ private struct PagedAnimeCatalogView: View {
     private func loadNextPage() async {
         guard !isLoading, !hasReachedEnd else { return }
         isLoading = true
-        let fetched = await metadata.animeCatalogPage(category: category, genre: genre, page: nextPage)
+        let fetched = await metadata.animeCatalogPage(category: category, genre: nil, page: nextPage)
         let existing = Set(items.map(\.id))
         let unique = fetched.filter { !existing.contains($0.id) }
         if unique.isEmpty {
@@ -219,30 +199,6 @@ private struct PagedAnimeCatalogView: View {
         isLoading = false
     }
 
-}
-
-private enum AnimeGenre: String, CaseIterable, Identifiable {
-    case action, adventure, comedy, drama, fantasy, horror, mystery, romance
-    case sciFi = "Sci-Fi"
-    case sports
-
-    var id: String { rawValue }
-    var title: String { rawValue }
-
-    var symbol: String {
-        switch self {
-        case .action: "bolt.fill"
-        case .adventure: "map.fill"
-        case .comedy: "theatermasks.fill"
-        case .drama: "theatermasks"
-        case .fantasy: "wand.and.stars"
-        case .horror: "moon.stars.fill"
-        case .mystery: "questionmark.folder.fill"
-        case .romance: "heart.fill"
-        case .sciFi: "sparkles"
-        case .sports: "sportscourt.fill"
-        }
-    }
 }
 
 #Preview {

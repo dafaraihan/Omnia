@@ -15,7 +15,7 @@ struct AddonsSettingsView: View {
     var body: some View {
         @Bindable var store = store
 
-        Form {
+        OmniaSettingsForm {
             Section {
                 Picker("Request timeout", selection: settings.binding(\.addonTimeout)) {
                     ForEach(AddonTimeout.allCases, id: \.self) { timeout in
@@ -26,8 +26,35 @@ struct AddonsSettingsView: View {
                 Text("Omnia cancels an add-on request when this limit is reached.")
             }
 
+            if !store.installedAddonRestoreIssues.isEmpty {
+                Section {
+                    ForEach(store.installedAddonRestoreIssues) { issue in
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: "exclamationmark.key.horizontal.fill")
+                                .imageScale(.large)
+                                .foregroundStyle(.orange)
+                                .accessibilityHidden(true)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(issue.addonName)
+                                    .font(.headline)
+                                Text("Install this add-on again to repair its secure configuration.")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                } header: {
+                    Text("Needs Attention")
+                } footer: {
+                    Text("Other installed add-ons remain available. Omnia never displays or reconstructs the missing private address.")
+                }
+            }
+
             Section("Installed Add-ons") {
-                if store.installedAddons.isEmpty {
+                if store.installedAddonsAreLoading {
+                    ProgressView("Loading Add-ons…")
+                } else if store.installedAddons.isEmpty {
                     ContentUnavailableView(
                         "No Add-ons",
                         systemImage: "puzzlepiece.extension",
@@ -89,10 +116,20 @@ struct AddonsSettingsView: View {
                 Section { Text(statusMessage).foregroundStyle(.secondary) }
             }
         }
-        .navigationTitle("Add-ons")
+        .omniaNavigationTitle("Add-ons")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
+                #if os(macOS)
+                Button {
+                    showsAddSheet = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .accessibilityLabel("Add Add-on")
+                .help("Add Add-on")
+                #else
                 Button("Add Add-on", systemImage: "plus") { showsAddSheet = true }
+                #endif
             }
             #if os(iOS)
             ToolbarItem(placement: .secondaryAction) { EditButton() }
@@ -201,9 +238,16 @@ private struct AddonSettingsRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "puzzlepiece.extension.fill")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
+            Group {
+                #if os(macOS)
+                MacSettingsSymbolImage(systemName: "puzzlepiece.extension.fill")
+                    .imageScale(.large)
+                #else
+                Image(systemName: "puzzlepiece.extension.fill")
+                    .imageScale(.large)
+                    .foregroundStyle(.tint)
+                #endif
+            }
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
                 Text(addon.manifest.name).font(.headline)
@@ -243,17 +287,101 @@ private struct AddManifestView: View {
     }
 
     var body: some View {
+        #if os(macOS)
+        macSheet
+        #else
+        mobileSheet
+        #endif
+    }
+
+    #if os(macOS)
+    private var macSheet: some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 20) {
+                Text("Add Add-on")
+                    .font(.title3.weight(.semibold))
+
+                VStack(alignment: .leading, spacing: 7) {
+                    Text("Manifest URL")
+                        .font(.headline)
+
+                    TextField(
+                        "Manifest URL",
+                        text: $address,
+                        prompt: Text("https://example.com/manifest.json")
+                    )
+                    .labelsHidden()
+                    .textContentType(.URL)
+                    .textFieldStyle(.roundedBorder)
+                    .controlSize(.large)
+
+                    Text("HTTPS is required. Add only sources you trust.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if isInstalling {
+                    ProgressView("Validating manifest…")
+                        .controlSize(.small)
+                }
+
+                if let errorMessage {
+                    Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                        .font(.callout)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(24)
+
+            Divider()
+
+            HStack(spacing: 10) {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button(action: install) {
+                    Text("Add")
+                        .fontWeight(.semibold)
+                        .padding(.horizontal, 16)
+                        .frame(minHeight: 36)
+                        .contentShape(Capsule())
+                }
+                    .keyboardShortcut(.defaultAction)
+                    .omniaCapsuleGlassButton()
+                    .disabled(manifestURL == nil || isInstalling)
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 16)
+        }
+        .frame(width: 500)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+    #endif
+
+    #if os(iOS)
+    private var mobileSheet: some View {
         NavigationStack {
-            Form {
+            OmniaSettingsForm {
                 Section {
-                    TextField("https://example.com/manifest.json", text: $address)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Manifest URL")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        TextField(
+                            "Manifest URL",
+                            text: $address,
+                            prompt: Text("https://example.com/manifest.json")
+                        )
+                        .labelsHidden()
                         .textContentType(.URL)
                         #if os(iOS)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         #endif
+                    }
                 } header: {
-                    Text("Manifest URL")
+                    Text("Add-on Address")
                 } footer: {
                     Text("HTTPS is required. Add only sources you trust.")
                 }
@@ -263,7 +391,7 @@ private struct AddManifestView: View {
                         .foregroundStyle(.red)
                 }
             }
-            .navigationTitle("Add Add-on")
+            .omniaNavigationTitle("Add Add-on")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
@@ -271,8 +399,8 @@ private struct AddManifestView: View {
                 }
             }
         }
-        .frame(minWidth: 420, minHeight: 240)
     }
+    #endif
 
     private func install() {
         guard let manifestURL else { return }

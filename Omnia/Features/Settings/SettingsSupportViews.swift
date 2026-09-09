@@ -99,18 +99,175 @@ extension SettingsPreferencesStore {
     }
 }
 
-#if os(macOS)
-enum MacSettingsLayout {
-    static let maximumContentWidth: CGFloat = 680
-    static let minimumOuterMargin: CGFloat = 24
+/// Settings use wide grouped cards on macOS so rows follow the detail column
+/// instead of inheriting SwiftUI Form's centered readable-width cap. Mobile
+/// platforms retain Form and their existing layout.
+struct OmniaSettingsForm<Content: View>: View {
+    private let content: Content
 
-    static func contentWidth(for availableWidth: CGFloat) -> CGFloat {
-        max(
-            0,
-            min(
-                maximumContentWidth,
-                availableWidth - (minimumOuterMargin * 2)
-            )
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        #if os(macOS)
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 20) {
+                Group(sections: content) { sections in
+                    ForEach(sections) { section in
+                        VStack(alignment: .leading, spacing: 8) {
+                            section.header
+                                .font(.caption.weight(.semibold))
+                                .textCase(.uppercase)
+                                .foregroundStyle(.secondary)
+
+                            Group(subviews: section.content) { rows in
+                                VStack(spacing: 0) {
+                                    ForEach(rows) { row in
+                                        MacSettingsInteractiveRow {
+                                            row
+                                                .frame(maxWidth: .infinity, alignment: .leading)
+                                                .padding(.horizontal, 12)
+                                                .padding(.vertical, 9)
+                                                .focusEffectDisabled()
+                                        }
+
+                                        if row.id != rows.last?.id {
+                                            Divider()
+                                                .padding(.leading, 12)
+                                        }
+                                    }
+                                }
+                                .background {
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .fill(Color.primary.opacity(0.065))
+                                }
+                                .clipShape(.rect(cornerRadius: 12, style: .continuous))
+                            }
+
+                            section.footer
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.bottom, MacSettingsLayout.minimumOuterMargin)
+        }
+        .scrollIndicators(.automatic)
+        .tint(.blue)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        #else
+        Form {
+            content
+        }
+        #endif
+    }
+}
+
+#if os(macOS)
+enum MacSettingsContainerStyle: Equatable {
+    case groupedCards
+}
+
+enum MacSettingsSymbolTreatment: Equatable {
+    case whiteMonochrome
+    case blueMonochrome
+
+    var color: Color {
+        switch self {
+        case .whiteMonochrome: .white
+        case .blueMonochrome: .blue
+        }
+    }
+}
+
+enum MacSettingsInteractionTreatment: Equatable {
+    case neutralGray
+}
+
+enum MacSettingsPresentation {
+    static let containerStyle: MacSettingsContainerStyle = .groupedCards
+    static let hoverTreatment: MacSettingsInteractionTreatment = .neutralGray
+    static let pressedTreatment: MacSettingsInteractionTreatment = .neutralGray
+
+    static func symbolTreatment(isHovered: Bool, isPressed: Bool) -> MacSettingsSymbolTreatment {
+        isHovered || isPressed ? .blueMonochrome : .whiteMonochrome
+    }
+}
+
+private struct MacSettingsSymbolTreatmentKey: EnvironmentKey {
+    static let defaultValue: MacSettingsSymbolTreatment = .whiteMonochrome
+}
+
+extension EnvironmentValues {
+    var macSettingsSymbolTreatment: MacSettingsSymbolTreatment {
+        get { self[MacSettingsSymbolTreatmentKey.self] }
+        set { self[MacSettingsSymbolTreatmentKey.self] = newValue }
+    }
+}
+
+struct MacSettingsSymbolImage: View {
+    let systemName: String
+    @Environment(\.macSettingsSymbolTreatment) private var treatment
+
+    var body: some View {
+        Image(systemName: systemName)
+            .symbolRenderingMode(.monochrome)
+            .foregroundStyle(treatment.color)
+    }
+}
+
+private struct MacSettingsInteractiveRow<Content: View>: View {
+    private let content: Content
+    @State private var isHovered = false
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        let treatment = MacSettingsPresentation.symbolTreatment(
+            isHovered: isHovered,
+            isPressed: false
+        )
+        content
+            .environment(\.macSettingsSymbolTreatment, treatment)
+            .labelStyle(MacSettingsLabelStyle(treatment: treatment))
+            .onHover { isHovered = $0 }
+    }
+}
+
+private struct MacSettingsLabelStyle: LabelStyle {
+    let treatment: MacSettingsSymbolTreatment
+
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 7) {
+            configuration.icon
+                .symbolRenderingMode(.monochrome)
+                .foregroundStyle(treatment.color)
+            configuration.title
+        }
+    }
+}
+
+enum MacSettingsLayout {
+    struct Presentation: Equatable {
+        let leadingOffset: CGFloat
+        let contentWidth: CGFloat
+        let rowWidth: CGFloat
+    }
+
+    static let minimumOuterMargin: CGFloat = 24
+    static let leadingOffset: CGFloat = minimumOuterMargin
+
+    static func presentation(for availableWidth: CGFloat) -> Presentation {
+        let width = max(0, availableWidth - (minimumOuterMargin * 2))
+        return Presentation(
+            leadingOffset: leadingOffset,
+            contentWidth: width,
+            rowWidth: width
         )
     }
 }
@@ -124,11 +281,12 @@ struct MacSettingsContentContainer<Content: View>: View {
 
     var body: some View {
         GeometryReader { geometry in
+            let presentation = MacSettingsLayout.presentation(for: geometry.size.width)
             content
-                .formStyle(.grouped)
-                .frame(width: MacSettingsLayout.contentWidth(for: geometry.size.width))
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .frame(width: presentation.contentWidth)
+                .padding(.horizontal, MacSettingsLayout.minimumOuterMargin)
                 .padding(.top, MacSettingsLayout.minimumOuterMargin)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
     }
 }

@@ -26,77 +26,171 @@ enum LibrarySortOrder: String, CaseIterable, Identifiable {
 struct LibraryView: View {
     @Environment(OmniaStore.self) private var store
     @State private var selectedKind: MediaItem.Kind?
+    @State private var sourcePlaybackItem: MediaItem?
     @AppStorage("library-sort") private var savedSortOrder = LibrarySortOrder.recentAdded.rawValue
 
-    private var items: [MediaItem] {
-        let filtered = selectedKind.map { kind in store.library.filter { $0.kind == kind } } ?? store.library
-        return switch LibrarySortOrder(rawValue: savedSortOrder) ?? .recentAdded {
-        case .recentAdded:
-            filtered
-        case .title:
-            filtered.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
-        case .releaseYear:
-            filtered.sorted { $0.year > $1.year }
-        case .inProgress:
-            filtered.sorted { lhs, rhs in
-                switch (lhs.progress, rhs.progress) {
-                case (.some, .none): true
-                case (.none, .some): false
-                default: lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
+    private var sections: [LibrarySection] {
+        LibraryCollectionPresentation.sections(
+            snapshots: store.localMediaSnapshots,
+            kind: selectedKind,
+            sort: sortOrder
+        )
+    }
+
+    private var sortOrder: LibrarySortOrder {
+        LibrarySortOrder(rawValue: savedSortOrder) ?? .recentAdded
+    }
+
+    var body: some View {
+        ScrollView {
+            if sections.allSatisfy(\.items.isEmpty) {
+                ContentUnavailableView(
+                    "Your Library Is Empty",
+                    systemImage: "rectangle.stack",
+                    description: Text("Add a title, start watching, or mark something as watched to see it here.")
+                )
+                .frame(maxWidth: .infinity, minHeight: 360)
+            } else {
+                LazyVStack(alignment: .leading, spacing: 34) {
+                    ForEach(sections) { section in
+                        if !section.items.isEmpty {
+                            libraryShelf(section)
+                        }
+                    }
+                }
+                .padding(.horizontal, MediaBrowseMetrics.pageInset)
+                .padding(.vertical, 24)
+            }
+        }
+        .omniaNavigationTitle("Library", screen: .library)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                libraryFilterMenu
+            }
+        }
+        .navigationDestination(for: MediaItem.self) { MediaDetailView(item: $0) }
+        .omniaGlassModal(isPresented: showsSourcePicker) {
+            if let sourcePlaybackItem {
+                PlaybackSourceSheet(
+                    item: sourcePlaybackItem,
+                    episode: sourcePlaybackItem.resumeEpisode,
+                    resumeAt: sourcePlaybackItem.positionSeconds,
+                    onClose: { self.sourcePlaybackItem = nil }
+                )
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func libraryShelf(_ section: LibrarySection) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionHeaderLink(title: section.kind.title) {
+                LibrarySectionGridView(kind: section.kind, items: section.items)
+            }
+
+            switch section.kind {
+            case .continueWatching:
+                ShelfScrollView(
+                    items: section.items,
+                    itemSpan: 320,
+                    accessibilityLabel: section.kind.title
+                ) { item in
+                    ContinueWatchingCard(item: item) {
+                        sourcePlaybackItem = item
+                    }
+                }
+            case .myList, .rewatch:
+                ShelfScrollView(
+                    items: section.items,
+                    itemSpan: MediaBrowseMetrics.shelfItemSpan,
+                    accessibilityLabel: section.kind.title
+                ) { item in
+                    MediaPoster(item: item)
                 }
             }
         }
     }
 
-    #if os(iOS)
-    private let columns = [
-        GridItem(.flexible(minimum: 0), spacing: 16),
-        GridItem(.flexible(minimum: 0), spacing: 16)
-    ]
-    #else
-    private let columns = [GridItem(.adaptive(minimum: 140, maximum: 190), spacing: 16)]
-    #endif
+    private var libraryFilterMenu: some View {
+        Menu {
+            Picker("Kind", selection: $selectedKind) {
+                Text("All Media").tag(MediaItem.Kind?.none)
+                ForEach(MediaItem.Kind.allCases, id: \.self) { kind in
+                    Text(kind.rawValue).tag(Optional(kind))
+                }
+            }
+
+            Picker("Sort", selection: $savedSortOrder) {
+                ForEach(LibrarySortOrder.allCases) { order in
+                    Text(order.title).tag(order.rawValue)
+                }
+            }
+        } label: {
+            Label {
+                Text("Filter and Sort")
+            } icon: {
+                Image(systemName: "line.3.horizontal.decrease.circle")
+                    .symbolRenderingMode(.monochrome)
+                    .foregroundStyle(.white)
+            }
+        }
+        .tint(.white)
+        .help("Filter and sort every Library shelf")
+    }
+
+    private var showsSourcePicker: Binding<Bool> {
+        Binding(
+            get: { sourcePlaybackItem != nil },
+            set: { if !$0 { sourcePlaybackItem = nil } }
+        )
+    }
+}
+
+private struct LibrarySectionGridView: View {
+    let kind: LibrarySectionKind
+    let items: [MediaItem]
+    @State private var sourcePlaybackItem: MediaItem?
 
     var body: some View {
-        ScrollView {
-            if items.isEmpty {
-                ContentUnavailableView(
-                    "Your Library Is Empty",
-                    systemImage: "rectangle.stack",
-                    description: Text("Save a title from Discover or Search to keep it here.")
-                )
-                .frame(maxWidth: .infinity, minHeight: 360)
-            } else {
-                LazyVGrid(columns: columns, alignment: .leading, spacing: 24) {
+        GeometryReader { proxy in
+            let layout = kind == .continueWatching
+                ? MediaBrowseMetrics.landscapeGridLayout(containerWidth: proxy.size.width)
+                : MediaBrowseMetrics.posterGridLayout(containerWidth: proxy.size.width)
+            ScrollView {
+                LazyVGrid(columns: layout.columns, alignment: .leading, spacing: 18) {
                     ForEach(items) { item in
-                        MediaPoster(item: item, fillsAvailableWidth: true)
-                    }
-                }
-                .padding()
-            }
-        }
-        .navigationTitle("Library")
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Menu {
-                    Picker("Kind", selection: $selectedKind) {
-                        Text("All Media").tag(MediaItem.Kind?.none)
-                        ForEach(MediaItem.Kind.allCases, id: \.self) { kind in
-                            Text(kind.rawValue).tag(Optional(kind))
+                        if kind == .continueWatching {
+                            ContinueWatchingCard(item: item) {
+                                sourcePlaybackItem = item
+                            }
+                        } else {
+                            MediaPoster(item: item, fillsAvailableWidth: true)
                         }
                     }
-
-                    Picker("Sort", selection: $savedSortOrder) {
-                        ForEach(LibrarySortOrder.allCases) { order in
-                            Text(order.title).tag(order.rawValue)
-                        }
-                    }
-                } label: {
-                    Label("Filter", systemImage: "line.3.horizontal.decrease.circle")
                 }
+                .padding(.horizontal, MediaBrowseMetrics.pageInset)
+                .padding(.vertical, 24)
             }
         }
+        .omniaNavigationTitle(kind.title)
         .navigationDestination(for: MediaItem.self) { MediaDetailView(item: $0) }
+        .omniaGlassModal(isPresented: showsSourcePicker) {
+            if let sourcePlaybackItem {
+                PlaybackSourceSheet(
+                    item: sourcePlaybackItem,
+                    episode: sourcePlaybackItem.resumeEpisode,
+                    resumeAt: sourcePlaybackItem.positionSeconds,
+                    onClose: { self.sourcePlaybackItem = nil }
+                )
+            }
+        }
+    }
+
+    private var showsSourcePicker: Binding<Bool> {
+        Binding(
+            get: { sourcePlaybackItem != nil },
+            set: { if !$0 { sourcePlaybackItem = nil } }
+        )
     }
 }
 
@@ -104,4 +198,5 @@ struct LibraryView: View {
     NavigationStack { LibraryView() }
         .environment(OmniaStore.preview)
         .environment(LiveMetadataStore.preview)
+        .environment(SettingsPreferencesStore())
 }

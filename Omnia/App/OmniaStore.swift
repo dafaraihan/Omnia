@@ -9,7 +9,6 @@ import SwiftUI
 @Observable
 @MainActor
 final class OmniaStore {
-    private static let addonsStorageKey = "installed-addons"
     private static let disabledCatalogsStorageKey = "disabled-addon-catalogs"
     private static let appearanceStorageKey = "app-appearance"
     private static let playbackCompletionThresholdKey = "playback-completion-threshold"
@@ -18,8 +17,12 @@ final class OmniaStore {
     private(set) var library: [MediaItem]
     private(set) var localMediaSnapshots: [LocalMediaSnapshot]
     private(set) var localMediaPersistenceFailed = false
+    @ObservationIgnored private var playbackPersistenceTask: Task<Void, Never>?
     private let localMediaStore: LocalMediaStore?
+    private let addonPersistence: InstalledAddonPersistence?
     var installedAddons: [InstalledAddon]
+    private(set) var installedAddonsAreLoading: Bool
+    private(set) var installedAddonRestoreIssues: [InstalledAddonRestoreIssue]
     private(set) var disabledAddonCatalogIDs: Set<String>
     var appearance: AppAppearance {
         didSet { saveAppearance() }
@@ -34,25 +37,21 @@ final class OmniaStore {
         installedAddons: [InstalledAddon]? = nil,
         disabledAddonCatalogIDs: Set<String>? = nil,
         appearance: AppAppearance? = nil,
-        metadataRouting: MetadataRoutingPreferences? = nil
+        metadataRouting: MetadataRoutingPreferences? = nil,
+        installedAddonRestoreIssues: [InstalledAddonRestoreIssue] = []
     ) {
-        let restoresPersistedAddons = installedAddons == nil
         self.library = library ?? []
         self.localMediaSnapshots = (library ?? []).map {
             LocalMediaSnapshot(item: $0, isInWatchlist: true, savedAt: nil, lastPlayedAt: nil)
         }
         self.localMediaStore = library == nil ? try? LocalMediaStore.live() : nil
-        self.installedAddons = installedAddons ?? Self.loadAddons()
+        self.addonPersistence = installedAddons == nil ? InstalledAddonPersistence() : nil
+        self.installedAddons = installedAddons ?? []
+        self.installedAddonsAreLoading = installedAddons == nil
+        self.installedAddonRestoreIssues = installedAddonRestoreIssues
         self.disabledAddonCatalogIDs = disabledAddonCatalogIDs ?? Self.loadDisabledCatalogIDs()
         self.appearance = appearance ?? Self.loadAppearance()
         self.metadataRouting = metadataRouting ?? Self.loadMetadataRouting()
-
-        // Successful legacy decoding migrates confidential manifest endpoints
-        // into Keychain through InstalledAddon, then this rewrite removes the
-        // old URL field from UserDefaults immediately.
-        if restoresPersistedAddons, !self.installedAddons.isEmpty {
-            saveAddons()
-        }
     }
 
     static let preview = OmniaStore(
@@ -63,6 +62,7 @@ final class OmniaStore {
     func add(_ addon: InstalledAddon) {
         installedAddons.removeAll { $0.id == addon.id }
         installedAddons.append(addon)
+        installedAddonRestoreIssues.removeAll { $0.addonID == addon.id }
         saveAddons()
     }
 
@@ -72,10 +72,17 @@ final class OmniaStore {
     }
 
     func removeAddon(id: String) {
-        installedAddons.first(where: { $0.id == id })?.removeSecureManifestURL()
+        let removedAddon = installedAddons.first(where: { $0.id == id })
         installedAddons.removeAll { $0.id == id }
         disabledAddonCatalogIDs = disabledAddonCatalogIDs.filter { !$0.hasPrefix("\(id)::") }
-        saveAddons()
+        if let removedAddon, let addonPersistence {
+            let remainingAddons = installedAddons
+            Task {
+                await addonPersistence.remove(removedAddon, remainingAddons: remainingAddons)
+            }
+        } else {
+            saveAddons()
+        }
         saveDisabledCatalogIDs()
     }
 
@@ -132,19 +139,43 @@ final class OmniaStore {
     }
 
     func toggleSaved(_ item: MediaItem) {
+        setSaved(item, isIncluded: !isSaved(item))
+    }
+
+    func setSaved(_ item: MediaItem, isIncluded: Bool) {
         guard let localMediaStore else {
-            if let index = library.firstIndex(where: { $0.id == item.id }) {
-                library.remove(at: index)
+            if isIncluded {
+                if !library.contains(where: { $0.id == item.id }) {
+                    library.insert(item, at: 0)
+                }
             } else {
-                library.insert(item, at: 0)
+                library.removeAll { $0.id == item.id }
+            }
+
+            let snapshotIndex = localMediaSnapshots.firstIndex { $0.mediaID == item.id }
+            let existing = snapshotIndex.map { localMediaSnapshots[$0] }
+            let updated = LocalMediaSnapshot(
+                item: existing?.item ?? item,
+                isInWatchlist: isIncluded,
+                savedAt: isIncluded ? (existing?.savedAt ?? .now) : nil,
+                lastPlayedAt: existing?.lastPlayedAt,
+                watchState: existing?.watchState ?? .empty
+            )
+            if let snapshotIndex {
+                if !isIncluded, updated.progress == nil, updated.watchState.isEmpty {
+                    localMediaSnapshots.remove(at: snapshotIndex)
+                } else {
+                    localMediaSnapshots[snapshotIndex] = updated
+                }
+            } else if isIncluded {
+                localMediaSnapshots.insert(updated, at: 0)
             }
             return
         }
 
-        let includesItem = !isSaved(item)
         Task {
             do {
-                try await localMediaStore.setWatchlist(item, isIncluded: includesItem, at: .now)
+                try await localMediaStore.setWatchlist(item, isIncluded: isIncluded, at: .now)
                 await refreshLocalMedia()
             } catch {
                 localMediaPersistenceFailed = true
@@ -170,7 +201,20 @@ final class OmniaStore {
             return
         }
 
-        Task {
+        // Update the observable snapshot immediately so the current card and
+        // detail action cannot lag behind the player. Disk writes are chained
+        // in arrival order so a slower earlier tick can never overwrite a
+        // newer resume point.
+        recordPlaybackInMemory(
+            for: item,
+            episode: episode,
+            positionSeconds: positionSeconds,
+            durationSeconds: durationSeconds
+        )
+        let previousWrite = playbackPersistenceTask
+        playbackPersistenceTask = Task { [weak self] in
+            await previousWrite?.value
+            guard let self else { return }
             do {
                 try await localMediaStore.recordPlayback(
                     for: item,
@@ -187,6 +231,51 @@ final class OmniaStore {
         }
     }
 
+    func removeFromContinueWatching(_ item: MediaItem) {
+        guard let localMediaStore else {
+            removeFromContinueWatchingInMemory(item)
+            return
+        }
+
+        Task {
+            do {
+                try await localMediaStore.clearProgress(for: item.id)
+                await refreshLocalMedia()
+            } catch {
+                localMediaPersistenceFailed = true
+            }
+        }
+    }
+
+    func watchState(for item: MediaItem) -> LocalMediaWatchState {
+        localMediaSnapshots.first(where: { $0.mediaID == item.id })?.watchState ?? .empty
+    }
+
+    func applyWatchCommand(
+        _ command: LocalMediaWatchCommand,
+        to item: MediaItem,
+        episodes: [MediaEpisode]
+    ) {
+        guard let localMediaStore else {
+            applyWatchCommandInMemory(command, to: item, episodes: episodes)
+            return
+        }
+
+        Task {
+            do {
+                try await localMediaStore.applyWatchCommand(
+                    command,
+                    to: item,
+                    episodes: episodes,
+                    at: .now
+                )
+                await refreshLocalMedia()
+            } catch {
+                localMediaPersistenceFailed = true
+            }
+        }
+    }
+
     func prepareLocalMedia() async {
         guard let localMediaStore else { return }
         do {
@@ -194,6 +283,20 @@ final class OmniaStore {
             await refreshLocalMedia()
         } catch {
             localMediaPersistenceFailed = true
+        }
+    }
+
+    func prepareInstalledAddons() async {
+        guard let addonPersistence, installedAddonsAreLoading else { return }
+        let result = await addonPersistence.load()
+        installedAddons = result.addons
+        installedAddonRestoreIssues = result.issues
+        installedAddonsAreLoading = false
+
+        // Successful legacy decoding migrates confidential manifest endpoints
+        // into Keychain. Re-encoding removes the old URL field from defaults.
+        if !result.addons.isEmpty, result.issues.isEmpty {
+            await addonPersistence.save(result.addons)
         }
     }
 
@@ -241,7 +344,8 @@ final class OmniaStore {
             updated.resumeSeasonNumber = episode.seasonNumber
             updated.resumeEpisodeNumber = episode.episodeNumber
             updated.resumeEpisodeStillURL = episode.stillURL
-        } else if let existing = library.first(where: { $0.id == item.id }) {
+        } else if let existing = localMediaSnapshots.first(where: { $0.mediaID == item.id })?.item
+            ?? library.first(where: { $0.id == item.id }) {
             // A subsequent time tick receives the title again, not a fresh
             // episode object. Retain the known episode context until playback
             // of another episode replaces it.
@@ -260,10 +364,167 @@ final class OmniaStore {
             updated.resumeEpisodeStillURL = nil
         }
 
-        if let index = library.firstIndex(where: { $0.id == item.id }) {
-            library[index] = updated
-        } else if !completed {
-            library.insert(updated, at: 0)
+        let snapshotIndex = localMediaSnapshots.firstIndex { $0.mediaID == item.id }
+        let existingSnapshot = snapshotIndex.map { localMediaSnapshots[$0] }
+        let isInWatchlist = existingSnapshot?.isInWatchlist
+            ?? library.contains(where: { $0.id == item.id })
+        let snapshot = LocalMediaSnapshot(
+            item: updated,
+            isInWatchlist: isInWatchlist,
+            savedAt: existingSnapshot?.savedAt,
+            lastPlayedAt: completed ? nil : .now,
+            watchState: existingSnapshot?.watchState ?? .empty
+        )
+        if let snapshotIndex {
+            if completed, !isInWatchlist, snapshot.watchState.isEmpty {
+                localMediaSnapshots.remove(at: snapshotIndex)
+            } else {
+                localMediaSnapshots[snapshotIndex] = snapshot
+            }
+        } else if !completed || isInWatchlist {
+            localMediaSnapshots.insert(snapshot, at: 0)
+        }
+
+        if isInWatchlist {
+            if let index = library.firstIndex(where: { $0.id == item.id }) {
+                library[index] = updated
+            } else {
+                library.insert(updated, at: 0)
+            }
+        } else {
+            library.removeAll { $0.id == item.id }
+        }
+    }
+
+    private func removeFromContinueWatchingInMemory(_ item: MediaItem) {
+        let snapshotIndex = localMediaSnapshots.firstIndex { $0.mediaID == item.id }
+        let snapshot = snapshotIndex.map { localMediaSnapshots[$0] }
+        let libraryIndex = library.firstIndex { $0.id == item.id }
+        guard var cleared = snapshot?.item ?? libraryIndex.map({ library[$0] }) else { return }
+        cleared.progress = nil
+        cleared.positionSeconds = nil
+        cleared.durationSeconds = nil
+        cleared.resumeEpisodeID = nil
+        cleared.resumeSeasonNumber = nil
+        cleared.resumeEpisodeNumber = nil
+        cleared.resumeEpisodeStillURL = nil
+        if let snapshotIndex, let snapshot {
+            if !snapshot.isInWatchlist, snapshot.watchState.isEmpty {
+                localMediaSnapshots.remove(at: snapshotIndex)
+            } else {
+                localMediaSnapshots[snapshotIndex] = LocalMediaSnapshot(
+                item: cleared,
+                isInWatchlist: snapshot.isInWatchlist,
+                savedAt: snapshot.savedAt,
+                lastPlayedAt: nil,
+                watchState: snapshot.watchState
+            )
+            }
+        }
+
+        if let libraryIndex {
+            if snapshot?.isInWatchlist == true {
+                library[libraryIndex] = cleared
+            } else {
+                library.remove(at: libraryIndex)
+            }
+        }
+    }
+
+    private func applyWatchCommandInMemory(
+        _ command: LocalMediaWatchCommand,
+        to item: MediaItem,
+        episodes: [MediaEpisode]
+    ) {
+        let snapshotIndex = localMediaSnapshots.firstIndex { $0.mediaID == item.id }
+        let existingSnapshot = snapshotIndex.map { localMediaSnapshots[$0] }
+        var updatedItem = existingSnapshot?.item
+            ?? library.first(where: { $0.id == item.id })
+            ?? item
+        var state = existingSnapshot?.watchState ?? .empty
+        let orderedEpisodes = episodes.sorted {
+            ($0.seasonNumber, $0.episodeNumber, $0.id)
+                < ($1.seasonNumber, $1.episodeNumber, $1.id)
+        }
+
+        func matches(_ lhs: MediaEpisode, _ rhs: MediaEpisode) -> Bool {
+            lhs.id == rhs.id
+                || (lhs.seasonNumber == rhs.seasonNumber && lhs.episodeNumber == rhs.episodeNumber)
+        }
+
+        func setResumeTarget(_ episode: MediaEpisode?) {
+            guard let episode else {
+                updatedItem.progress = nil
+                updatedItem.positionSeconds = nil
+                updatedItem.durationSeconds = nil
+                updatedItem.resumeEpisodeID = nil
+                updatedItem.resumeSeasonNumber = nil
+                updatedItem.resumeEpisodeNumber = nil
+                updatedItem.resumeEpisodeStillURL = nil
+                return
+            }
+            updatedItem.progress = 0
+            updatedItem.positionSeconds = 0
+            updatedItem.durationSeconds = episode.runtimeMinutes.map { Double($0 * 60) }
+            updatedItem.resumeEpisodeID = episode.id
+            updatedItem.resumeSeasonNumber = episode.seasonNumber
+            updatedItem.resumeEpisodeNumber = episode.episodeNumber
+            updatedItem.resumeEpisodeStillURL = episode.stillURL
+        }
+
+        switch command {
+        case let .markMovie(watched):
+            state.movieWatched = watched
+            setResumeTarget(nil)
+        case let .markEpisode(episode, watched):
+            state.setWatched(watched, for: episode)
+            if watched,
+               let index = orderedEpisodes.firstIndex(where: { matches($0, episode) }),
+               orderedEpisodes.indices.contains(index + 1) {
+                setResumeTarget(orderedEpisodes[index + 1])
+            } else {
+                setResumeTarget(watched ? nil : episode)
+            }
+        case let .markSeason(current, watched):
+            let seasonEpisodes = orderedEpisodes.filter { $0.seasonNumber == current.seasonNumber }
+            seasonEpisodes.forEach { state.setWatched(watched, for: $0) }
+            setResumeTarget(
+                watched
+                    ? orderedEpisodes.first { $0.seasonNumber > current.seasonNumber }
+                    : seasonEpisodes.first
+            )
+        case let .markThrough(current, watched):
+            guard let index = orderedEpisodes.firstIndex(where: { matches($0, current) }) else { return }
+            orderedEpisodes.prefix(through: index).forEach { state.setWatched(watched, for: $0) }
+            setResumeTarget(
+                watched && orderedEpisodes.indices.contains(index + 1)
+                    ? orderedEpisodes[index + 1]
+                    : orderedEpisodes.first
+            )
+        case let .revertToPrevious(current):
+            guard let index = orderedEpisodes.firstIndex(where: { matches($0, current) }), index > 0 else { return }
+            let previous = orderedEpisodes[index - 1]
+            state.setWatched(false, for: previous)
+            setResumeTarget(previous)
+        }
+
+        let isInWatchlist = existingSnapshot?.isInWatchlist
+            ?? library.contains(where: { $0.id == item.id })
+        let updatedSnapshot = LocalMediaSnapshot(
+            item: updatedItem,
+            isInWatchlist: isInWatchlist,
+            savedAt: existingSnapshot?.savedAt,
+            lastPlayedAt: updatedItem.progress == nil ? nil : .now,
+            watchState: state
+        )
+        if let snapshotIndex {
+            localMediaSnapshots[snapshotIndex] = updatedSnapshot
+        } else {
+            localMediaSnapshots.insert(updatedSnapshot, at: 0)
+        }
+
+        if let libraryIndex = library.firstIndex(where: { $0.id == item.id }) {
+            library[libraryIndex] = updatedItem
         }
     }
 
@@ -272,16 +533,11 @@ final class OmniaStore {
         do {
             let snapshots = try await localMediaStore.snapshot()
             localMediaSnapshots = snapshots
-            library = snapshots.map(\.item)
+            library = snapshots.filter(\.isInWatchlist).map(\.item)
             localMediaPersistenceFailed = false
         } catch {
             localMediaPersistenceFailed = true
         }
-    }
-
-    private static func loadAddons() -> [InstalledAddon] {
-        guard let data = UserDefaults.standard.data(forKey: addonsStorageKey) else { return [] }
-        return (try? JSONDecoder().decode([InstalledAddon].self, from: data)) ?? []
     }
 
     private static func loadDisabledCatalogIDs() -> Set<String> {
@@ -312,8 +568,11 @@ final class OmniaStore {
     }
 
     private func saveAddons() {
-        guard let data = try? JSONEncoder().encode(installedAddons) else { return }
-        UserDefaults.standard.set(data, forKey: Self.addonsStorageKey)
+        guard let addonPersistence else { return }
+        let addons = installedAddons
+        Task {
+            await addonPersistence.save(addons)
+        }
     }
 
     private func saveDisabledCatalogIDs() {

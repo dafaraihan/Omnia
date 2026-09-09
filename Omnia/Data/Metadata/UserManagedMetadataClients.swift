@@ -200,7 +200,7 @@ final class MDBListMetadataClient: MDBListRatingServing {
             MDBListMetadataError.notFound
         case .unsuccessfulStatus(429):
             MDBListMetadataError.rateLimited
-        case .unsuccessfulStatus, .transportFailure:
+        case .unsuccessfulStatus, .timedOut, .transportFailure:
             MDBListMetadataError.temporarilyUnavailable
         case .responseTooLarge:
             MDBListMetadataError.responseTooLarge

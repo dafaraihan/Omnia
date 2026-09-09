@@ -11,6 +11,12 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+typedef NS_ENUM(NSInteger, OMMpvVideoAspectMode) {
+    OMMpvVideoAspectModeOriginal,
+    OMMpvVideoAspectModeStretch,
+    OMMpvVideoAspectModeFill,
+};
+
 /// Immutable representation of one embedded media track reported by mpv.
 @interface OMMpvTrack : NSObject
 
@@ -54,6 +60,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, readonly) double volume;
 @property (nonatomic, readonly) double playbackRate;
 @property (nonatomic, readonly) BOOL hasRenderedVideoFrame;
+@property (nonatomic, readonly) BOOL pictureInPictureActive;
+@property (nonatomic, readonly) BOOL pictureInPicturePossible;
 @property (nonatomic, readonly) NSArray<OMMpvTrack *> *audioTracks;
 @property (nonatomic, readonly) NSArray<OMMpvTrack *> *subtitleTracks;
 @property (nonatomic, copy, nullable) void (^stateChangeHandler)(OMMpvPlaybackSnapshot *snapshot);
@@ -75,6 +83,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)seekTo:(double)seconds;
 - (void)setVolume:(double)volume;
 - (void)setPlaybackRate:(double)playbackRate;
+- (void)setVideoAspectMode:(OMMpvVideoAspectMode)mode;
 - (void)setPreferredAudioLanguages:(NSArray<NSString *> *)languages;
 - (void)setPreferredSubtitleLanguages:(NSArray<NSString *> *)languages;
 - (void)setSubtitlesDisabled:(BOOL)disabled;
@@ -83,6 +92,10 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)selectSubtitleTrackWithID:(nullable NSNumber *)trackID NS_SWIFT_NAME(selectSubtitleTrack(id:));
 - (void)cycleSubtitles;
 - (void)cycleAudioTrack;
+- (void)attachVideoViewToHost:(NSView *)hostView;
+- (void)enterPictureInPicture;
+- (void)exitPictureInPicture;
+- (void)togglePictureInPicture;
 - (void)stop;
 
 @end

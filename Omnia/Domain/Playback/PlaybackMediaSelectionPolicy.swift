@@ -22,8 +22,9 @@ struct PlaybackMediaSelectionPolicy: Equatable, Sendable {
             fallback: normalized.subtitleFallbackLanguage,
             systemLanguages: systemLanguages
         )
-        var disablesSubtitles = normalized.preferredSubtitleLanguage == .none
-            && normalized.subtitleFallbackLanguage == .none
+        var disablesSubtitles = !normalized.subtitlesEnabled
+            || (normalized.preferredSubtitleLanguage == .none
+                && normalized.subtitleFallbackLanguage == .none)
 
         if isAnime {
             switch normalized.animeAudioPreference {
@@ -31,7 +32,7 @@ struct PlaybackMediaSelectionPolicy: Equatable, Sendable {
                 break
             case .sub:
                 audio = unique(["ja"] + (audio ?? systemLanguages))
-                if disablesSubtitles {
+                if disablesSubtitles, normalized.subtitlesEnabled {
                     subtitles = unique(systemLanguages)
                     disablesSubtitles = false
                 }

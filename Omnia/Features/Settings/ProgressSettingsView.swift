@@ -18,7 +18,7 @@ struct ProgressSettingsView: View {
     }
 
     var body: some View {
-        Form {
+        OmniaSettingsForm {
             Section("Storage") {
                 LabeledContent("Progress", value: "On this device")
                 LabeledContent("Watchlist", value: "On this device")
@@ -65,7 +65,7 @@ struct ProgressSettingsView: View {
             }
             if let statusMessage { Text(statusMessage).foregroundStyle(.secondary) }
         }
-        .navigationTitle("Progress")
+        .omniaNavigationTitle("Progress")
         .confirmationDialog(
             destructiveAction?.title ?? "Remove local data?",
             isPresented: Binding(get: { destructiveAction != nil }, set: { if !$0 { destructiveAction = nil } }),

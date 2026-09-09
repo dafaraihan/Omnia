@@ -48,6 +48,21 @@ final class PlaybackMediaSelectionPolicyTests: XCTestCase {
         XCTAssertEqual(policy.subtitleLanguages, [])
     }
 
+    func testDurableSubtitleToggleOverridesLanguagePreferences() {
+        var preferences = SettingsPreferences.default
+        preferences.preferredSubtitleLanguage = .language("en")
+        preferences.subtitlesEnabled = false
+
+        let policy = PlaybackMediaSelectionPolicy.resolve(
+            preferences: preferences,
+            isAnime: false,
+            systemLanguages: ["id"]
+        )
+
+        XCTAssertTrue(policy.disablesSubtitles)
+        XCTAssertEqual(policy.subtitleLanguages, [])
+    }
+
     func testAnimeSubAndDubPoliciesAreDeterministic() {
         var preferences = SettingsPreferences.default
         preferences.preferredAudioLanguage = .language("id")

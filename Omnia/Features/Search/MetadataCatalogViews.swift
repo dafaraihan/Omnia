@@ -15,7 +15,7 @@ struct MetadataCatalogView: View {
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: MediaBrowseMetrics.posterWidth), spacing: MediaBrowseMetrics.gridSpacing)],
+                columns: MediaBrowseMetrics.posterGridColumns,
                 alignment: .leading,
                 spacing: MediaBrowseMetrics.gridRowSpacing
             ) {
@@ -26,7 +26,7 @@ struct MetadataCatalogView: View {
             .padding(.horizontal, MediaBrowseMetrics.pageInset)
             .padding(.vertical, 24)
         }
-        .navigationTitle(title)
+        .omniaNavigationTitle(title)
         .navigationDestination(for: MediaItem.self) { MediaDetailView(item: $0) }
     }
 
@@ -52,7 +52,7 @@ struct PagedMetadataCatalogView: View {
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: MediaBrowseMetrics.posterWidth), spacing: MediaBrowseMetrics.gridSpacing)],
+                columns: MediaBrowseMetrics.posterGridColumns,
                 alignment: .leading,
                 spacing: MediaBrowseMetrics.gridRowSpacing
             ) {
@@ -87,7 +87,7 @@ struct PagedMetadataCatalogView: View {
                 )
             }
         }
-        .navigationTitle(title)
+        .omniaNavigationTitle(title)
         .navigationDestination(for: MediaItem.self) { MediaDetailView(item: $0) }
         .task(id: requestKey) {
             items = []
@@ -147,7 +147,7 @@ struct GenreBrowseRow: View {
     var body: some View {
         ShelfScrollView(
             items: CuratedGenre.allCases,
-            itemSpan: genreCardWidth + 16,
+            itemSpan: MediaBrowseMetrics.genreCardWidth + MediaBrowseMetrics.shelfSpacing,
             accessibilityLabel: "Browse by Genre"
         ) { genre in
             GenreArtworkCard(
@@ -158,13 +158,6 @@ struct GenreBrowseRow: View {
         }
     }
 
-    private var genreCardWidth: CGFloat {
-        #if os(iOS)
-        164
-        #else
-        220
-        #endif
-    }
 }
 
 private struct GenreArtworkCard: View {
@@ -196,29 +189,14 @@ private struct GenreArtworkCard: View {
                 }
                 .padding(14)
             }
-            .frame(width: cardWidth, height: cardHeight)
-            .clipShape(.rect(cornerRadius: 16, style: .continuous))
-            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .frame(width: MediaBrowseMetrics.genreCardWidth, height: MediaBrowseMetrics.genreCardHeight)
+            .clipShape(.rect(cornerRadius: MediaBrowseMetrics.genreCornerRadius, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: MediaBrowseMetrics.genreCornerRadius, style: .continuous))
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Browse \(genre.title)")
     }
 
-    private var cardWidth: CGFloat {
-        #if os(iOS)
-        164
-        #else
-        220
-        #endif
-    }
-
-    private var cardHeight: CGFloat {
-        #if os(iOS)
-        246
-        #else
-        330
-        #endif
-    }
 }
 
 struct GenreDirectoryView: View {
@@ -227,28 +205,110 @@ struct GenreDirectoryView: View {
     let type: MediaType
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 150), spacing: 14)],
-                alignment: .leading,
-                spacing: 14
-            ) {
-                ForEach(CuratedGenre.allCases) { genre in
-                    GenreDirectoryCard(genre: genre, providerGenre: genre.match(in: genres), type: type)
+        GeometryReader { proxy in
+            let layout = MediaBrowseMetrics.genreGridLayout(containerWidth: proxy.size.width)
+
+            ScrollView(.vertical, showsIndicators: false) {
+                LazyVGrid(
+                    columns: layout.columns,
+                    alignment: .leading,
+                    spacing: MediaBrowseMetrics.genreGridSpacing
+                ) {
+                    ForEach(CuratedGenre.allCases) { genre in
+                        GenreDirectoryCard(
+                            genre: genre,
+                            providerGenre: genre.match(in: genres),
+                            type: type,
+                            cardWidth: layout.itemWidth
+                        )
+                    }
                 }
+                .padding(.horizontal, MediaBrowseMetrics.pageInset)
+                .padding(.vertical, 24)
             }
-            .padding(.horizontal, horizontalInset)
-            .padding(.vertical, 24)
         }
-        .navigationTitle(title)
+        .omniaNavigationTitle(title)
     }
 
-    private var horizontalInset: CGFloat {
-        #if os(iOS)
-        20
-        #else
-        32
-        #endif
+}
+
+/// Search opens into the same native navigation destinations as the rest of
+/// the app. Anime is a browse category here rather than a peer sidebar tab.
+struct SearchBrowseDirectoryView: View {
+    let genres: [MetadataGenre]
+
+    var body: some View {
+        GeometryReader { proxy in
+            let layout = MediaBrowseMetrics.genreGridLayout(containerWidth: proxy.size.width)
+
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Browse by Genre")
+                        .font(.title2.weight(.bold))
+
+                    LazyVGrid(
+                        columns: layout.columns,
+                        alignment: .leading,
+                        spacing: MediaBrowseMetrics.genreGridSpacing
+                    ) {
+                        ForEach(CuratedGenre.allCases) { genre in
+                            GenreDirectoryCard(
+                                genre: genre,
+                                providerGenre: genre.match(in: genres),
+                                type: .movie,
+                                cardWidth: layout.itemWidth
+                            )
+                        }
+
+                        AnimeSearchDirectoryCard(cardWidth: layout.itemWidth)
+                    }
+                }
+                .padding(.horizontal, MediaBrowseMetrics.pageInset)
+                .padding(.vertical, 24)
+            }
+        }
+    }
+}
+
+private struct AnimeSearchDirectoryCard: View {
+    let cardWidth: CGFloat
+
+    var body: some View {
+        NavigationLink {
+            AnimeDiscoveryView()
+        } label: {
+            ZStack(alignment: .bottomLeading) {
+                LinearGradient(
+                    colors: [.indigo, .purple, .pink],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+
+                Image(systemName: "sparkles.tv.fill")
+                    .font(.system(size: 54, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.42))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                LinearGradient(
+                    colors: [.clear, .black.opacity(0.72)],
+                    startPoint: .center,
+                    endPoint: .bottom
+                )
+
+                Text("Anime")
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(.white)
+                    .padding(14)
+            }
+            .frame(
+                width: cardWidth,
+                height: cardWidth * 1.5
+            )
+            .clipShape(RoundedRectangle(cornerRadius: MediaBrowseMetrics.genreCornerRadius, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: MediaBrowseMetrics.genreCornerRadius, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Browse Anime")
     }
 }
 
@@ -256,6 +316,7 @@ private struct GenreDirectoryCard: View {
     let genre: CuratedGenre
     let providerGenre: MetadataGenre?
     let type: MediaType
+    let cardWidth: CGFloat
 
     var body: some View {
         NavigationLink {
@@ -279,9 +340,12 @@ private struct GenreDirectoryCard: View {
                     .foregroundStyle(.white)
                     .padding(14)
             }
-            .aspectRatio(0.72, contentMode: .fit)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .frame(
+                width: cardWidth,
+                height: cardWidth * 1.5
+            )
+            .clipShape(RoundedRectangle(cornerRadius: MediaBrowseMetrics.genreCornerRadius, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: MediaBrowseMetrics.genreCornerRadius, style: .continuous))
         }
         .buttonStyle(.plain)
     }

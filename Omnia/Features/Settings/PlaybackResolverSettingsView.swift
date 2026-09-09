@@ -11,7 +11,7 @@ struct PlaybackResolverSettingsView: View {
     }
 
     var body: some View {
-        Form {
+        OmniaSettingsForm {
             Section {
                 LabeledContent("Resolver", value: "On this Mac")
                 LabeledContent(
@@ -84,7 +84,7 @@ struct PlaybackResolverSettingsView: View {
                 }
             }
         }
-        .navigationTitle("Local Playback Resolver")
+        .omniaNavigationTitle("Local Playback Resolver")
         .confirmationDialog(
             confirmationTitle,
             isPresented: confirmationPresentation,

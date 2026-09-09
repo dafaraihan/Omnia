@@ -65,6 +65,7 @@ nonisolated enum HTTPTransportError: Error, Equatable, LocalizedError {
     case unsuccessfulStatus(Int)
     case unsupportedContentType
     case responseTooLarge
+    case timedOut
     case cancelled
     case transportFailure
 
@@ -84,6 +85,8 @@ nonisolated enum HTTPTransportError: Error, Equatable, LocalizedError {
             "The server returned an unsupported content type."
         case .responseTooLarge:
             "The server response is too large."
+        case .timedOut:
+            "The server took too long to respond."
         case .cancelled:
             "The request was cancelled."
         case .transportFailure:
@@ -158,6 +161,9 @@ actor HTTPTransport: HTTPTransporting {
         } catch is CancellationError {
             throw HTTPTransportError.cancelled
         } catch {
+            if (error as? URLError)?.code == .timedOut {
+                throw HTTPTransportError.timedOut
+            }
             if Task.isCancelled || (error as? URLError)?.code == .cancelled {
                 throw HTTPTransportError.cancelled
             }

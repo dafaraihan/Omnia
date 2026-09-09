@@ -17,6 +17,7 @@ struct MediaDetailView: View {
     @State private var creditSection: CreditSection = .cast
     @State private var selectedSeasonNumber = 1
     @State private var selectedEpisode: MediaEpisode?
+    @State private var selectedResumePosition: Double?
     @State private var ratingsLoader = MDBListRatingsLoader()
     @State private var showsMDBListSettings = false
 
@@ -29,13 +30,14 @@ struct MediaDetailView: View {
                 detailInformation
             }
         }
-        .background(pageBackground)
+        .background(screenBackground)
         #if os(macOS)
         // Match Home: the scroll container, not merely its first child,
         // owns the top safe area. The detail hero can therefore meet the
         // stable transparent toolbar instead of leaving a black band.
         .ignoresSafeArea(edges: .top)
         #endif
+        .omniaNavigationTitle(displayItem.title, screen: .mediaDetail)
         #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)
         #endif
@@ -62,11 +64,20 @@ struct MediaDetailView: View {
                 settings.recordMDBListRatingProviders(presentation.discoveredProviderIDs)
             }
         }
-        .sheet(isPresented: $showsSourceSelector) {
-            PlaybackSourceSheet(item: displayItem, episode: selectedEpisode)
+        .omniaGlassModal(isPresented: $showsSourceSelector) {
+            PlaybackSourceSheet(
+                item: displayItem,
+                episode: selectedEpisode,
+                resumeAt: selectedResumePosition,
+                onClose: { showsSourceSelector = false }
+            )
         }
-        .sheet(isPresented: $showsSynopsis) {
-            SynopsisSheet(title: displayItem.title, synopsis: displayItem.overview)
+        .omniaGlassModal(isPresented: $showsSynopsis) {
+            SynopsisSheet(
+                title: displayItem.title,
+                synopsis: displayItem.overview,
+                onClose: { showsSynopsis = false }
+            )
         }
         .sheet(isPresented: $showsMDBListSettings) {
             MDBListSettingsSheet()
@@ -78,7 +89,7 @@ struct MediaDetailView: View {
 
     private var detailHero: some View {
         ZStack(alignment: .bottomLeading) {
-            FeaturedBackdrop(item: displayItem, artworkAlignment: .topTrailing)
+            HeroArtworkCanvas(item: displayItem, source: .detail, artworkAlignment: .topTrailing)
 
             VStack(alignment: .leading, spacing: 0) {
                 Spacer(minLength: 0)
@@ -191,8 +202,10 @@ struct MediaDetailView: View {
                     EpisodeShelf(
                         seasons: details.seasons,
                         selectedSeasonNumber: $selectedSeasonNumber,
+                        resumeProgress: resumeProgressPresentation,
                         selectEpisode: { episode in
                             selectedEpisode = episode
+                            selectedResumePosition = nil
                             showsSourceSelector = true
                         }
                     )
@@ -227,22 +240,68 @@ struct MediaDetailView: View {
         .padding(.horizontal, horizontalInset)
         .padding(.top, 32)
         .padding(.bottom, 72)
-        .background(pageBackground)
+        .background {
+            if HeroBackdropPresentation.usesArtworkAccentBelowHero {
+                HeroAccentBackground(item: displayItem)
+            } else {
+                pageBackground
+            }
+        }
     }
 
     private var actions: some View {
         HeroActionRow(
             width: CinematicHeroLayout.logoWidth,
             isSaved: store.isSaved(displayItem),
-            libraryAction: { store.toggleSaved(displayItem) }
+            libraryAction: { store.toggleSaved(displayItem) },
+            watchAction: heroWatchAction
         ) {
             Button {
+                selectedEpisode = playbackIntent.episode
+                selectedResumePosition = playbackIntent.resumeAt
                 showsSourceSelector = true
             } label: {
-                HeroPrimaryActionLabel(title: playbackActionTitle)
+                HeroPrimaryActionLabel(
+                    title: playbackActionTitle,
+                    resumeProgress: playbackActionTitle == "Resume" ? resumeProgressPresentation : nil
+                )
             }
+            #if os(macOS)
+            .omniaCapsuleGlassButton()
+            #else
             .buttonStyle(.plain)
+            #endif
         }
+    }
+
+    private var detailEpisodes: [MediaEpisode] {
+        displayItem.details?.seasons.flatMap(\.episodes) ?? []
+    }
+
+    private var currentDetailEpisode: MediaEpisode? {
+        selectedEpisode
+            ?? displayItem.resumeEpisode
+            ?? detailEpisodes.first(where: { $0.seasonNumber == selectedSeasonNumber })
+            ?? detailEpisodes.first
+    }
+
+    private var heroWatchAction: HeroWatchAction? {
+        guard let action = MediaDetailWatchActionPresentation.action(
+            kind: displayItem.kind,
+            currentEpisode: currentDetailEpisode,
+            watchState: store.watchState(for: displayItem)
+        ) else { return nil }
+        return HeroWatchAction(
+            systemImage: action.systemImage,
+            accessibilityLabel: action.accessibilityLabel,
+            perform: {
+                store.applyWatchCommand(
+                    action.command,
+                    to: displayItem,
+                    episodes: detailEpisodes
+                )
+            }
+        )
     }
 
     private var currentRatingsState: MDBListRatingsLoadState {
@@ -327,11 +386,24 @@ struct MediaDetailView: View {
     }
 
     private var playbackActionTitle: String {
-        guard let saved = store.library.first(where: { $0.id == displayItem.id }),
-              let position = saved.positionSeconds,
-              position > 0
-        else { return "Play" }
-        return saved.progress == nil ? "Rewatch" : "Resume"
+        playbackIntent.title
+    }
+
+    private var playbackIntent: MediaDetailPlaybackIntent {
+        MediaDetailPlaybackIntent(
+            displayItem: displayItem,
+            persistedItem: persistedPlaybackItem,
+            episodes: detailEpisodes
+        )
+    }
+
+    private var persistedPlaybackItem: MediaItem? {
+        store.localMediaSnapshots.first(where: { $0.mediaID == displayItem.id })?.item
+            ?? store.library.first(where: { $0.id == displayItem.id })
+    }
+
+    private var resumeProgressPresentation: ResumeProgressPresentation? {
+        persistedPlaybackItem.flatMap(ResumeProgressPresentation.init(item:))
     }
 
     private var horizontalInset: CGFloat {
@@ -355,6 +427,15 @@ struct MediaDetailView: View {
         Color(uiColor: .systemBackground)
         #else
         Color(nsColor: .windowBackgroundColor)
+        #endif
+    }
+
+    @ViewBuilder
+    private var screenBackground: some View {
+        #if os(macOS)
+        Color.clear
+        #else
+        pageBackground
         #endif
     }
 
@@ -520,6 +601,7 @@ private enum CreditSection: String, CaseIterable, Identifiable {
 private struct EpisodeShelf: View {
     let seasons: [MediaSeason]
     @Binding var selectedSeasonNumber: Int
+    let resumeProgress: ResumeProgressPresentation?
     let selectEpisode: (MediaEpisode) -> Void
     @State private var showsSeasonChoices = false
 
@@ -587,7 +669,12 @@ private struct EpisodeShelf: View {
                     itemSpan: episodeCardSpan,
                     accessibilityLabel: selectedSeason.title
                 ) { episode in
-                    EpisodeCard(episode: episode) { selectEpisode(episode) }
+                    EpisodeCard(
+                        episode: episode,
+                        resumeProgress: resumeProgress?.matches(episode) == true ? resumeProgress : nil
+                    ) {
+                        selectEpisode(episode)
+                    }
                 }
             }
         }
@@ -596,6 +683,7 @@ private struct EpisodeShelf: View {
 
 private struct EpisodeCard: View {
     let episode: MediaEpisode
+    let resumeProgress: ResumeProgressPresentation?
     let action: () -> Void
     @State private var isHovered = false
 
@@ -624,6 +712,19 @@ private struct EpisodeCard: View {
                     startPoint: .center,
                     endPoint: .bottom
                 )
+            }
+            .overlay(alignment: .bottom) {
+                if let resumeProgress {
+                    VStack(spacing: 7) {
+                        Text(resumeProgress.remainingText)
+                            .font(.caption.weight(.semibold))
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                        ResumeProgressBar(progress: resumeProgress.progress)
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 9)
+                }
             }
             .overlay {
                 Image(systemName: "play.fill")
@@ -896,22 +997,41 @@ private struct CreditCard: View {
 private struct SynopsisSheet: View {
     let title: String
     let synopsis: String
+    var onClose: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        NavigationStack {
+        VStack(spacing: 0) {
+            HStack {
+                Text(title)
+                    .font(.headline)
+                Spacer()
+                Button("Done") { closePresentation() }
+            }
+            .padding(.horizontal, 20)
+            .frame(height: 52)
+
+            Divider()
+
             ScrollView {
                 Text(synopsis)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(24)
             }
-            .navigationTitle(title)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
         }
+        #if os(macOS)
+        .frame(width: 560, height: 340)
+        .omniaModalGlass(in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        #else
         .presentationDetents([.medium, .large])
+        #endif
+    }
+
+    private func closePresentation() {
+        if let onClose {
+            onClose()
+        } else {
+            dismiss()
+        }
     }
 }

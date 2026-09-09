@@ -175,11 +175,14 @@ struct SettingsPreferences: Codable, Equatable, Sendable {
     var audioFallbackLanguage: PreferredLanguage
     var preferredSubtitleLanguage: PreferredLanguage
     var subtitleFallbackLanguage: PreferredLanguage
+    var subtitlesEnabled: Bool
+    var playbackSubtitleStyle: PlaybackSubtitleStyle
     var sdhPreference: SDHPreference
     var animeAudioPreference: AnimeAudioPreference
     var subtitleAppearance: SubtitleAppearanceMode
     var customSubtitleAppearance: SubtitleAppearance
     var mdblistRatings: MDBListRatingPreferences
+    var showMediaCardLabels: Bool
 
     private enum CodingKeys: String, CodingKey {
         case addonTimeout, continueWatchingLimit, watchlistMode, showUpcoming
@@ -189,8 +192,9 @@ struct SettingsPreferences: Codable, Equatable, Sendable {
         case directContinueWatchingPlayback, compatibleFormatsOnly
         case preferredAudioLanguage, audioFallbackLanguage
         case preferredSubtitleLanguage, subtitleFallbackLanguage
+        case subtitlesEnabled, playbackSubtitleStyle
         case sdhPreference, animeAudioPreference, subtitleAppearance
-        case customSubtitleAppearance, mdblistRatings
+        case customSubtitleAppearance, mdblistRatings, showMediaCardLabels
     }
 
     init(
@@ -213,11 +217,14 @@ struct SettingsPreferences: Codable, Equatable, Sendable {
         audioFallbackLanguage: PreferredLanguage,
         preferredSubtitleLanguage: PreferredLanguage,
         subtitleFallbackLanguage: PreferredLanguage,
+        subtitlesEnabled: Bool,
+        playbackSubtitleStyle: PlaybackSubtitleStyle,
         sdhPreference: SDHPreference,
         animeAudioPreference: AnimeAudioPreference,
         subtitleAppearance: SubtitleAppearanceMode,
         customSubtitleAppearance: SubtitleAppearance,
-        mdblistRatings: MDBListRatingPreferences
+        mdblistRatings: MDBListRatingPreferences,
+        showMediaCardLabels: Bool
     ) {
         self.addonTimeout = addonTimeout
         self.continueWatchingLimit = continueWatchingLimit
@@ -238,11 +245,14 @@ struct SettingsPreferences: Codable, Equatable, Sendable {
         self.audioFallbackLanguage = audioFallbackLanguage
         self.preferredSubtitleLanguage = preferredSubtitleLanguage
         self.subtitleFallbackLanguage = subtitleFallbackLanguage
+        self.subtitlesEnabled = subtitlesEnabled
+        self.playbackSubtitleStyle = playbackSubtitleStyle
         self.sdhPreference = sdhPreference
         self.animeAudioPreference = animeAudioPreference
         self.subtitleAppearance = subtitleAppearance
         self.customSubtitleAppearance = customSubtitleAppearance
         self.mdblistRatings = mdblistRatings
+        self.showMediaCardLabels = showMediaCardLabels
     }
 
     init(from decoder: Decoder) throws {
@@ -266,6 +276,11 @@ struct SettingsPreferences: Codable, Equatable, Sendable {
         audioFallbackLanguage = try container.decode(PreferredLanguage.self, forKey: .audioFallbackLanguage)
         preferredSubtitleLanguage = try container.decode(PreferredLanguage.self, forKey: .preferredSubtitleLanguage)
         subtitleFallbackLanguage = try container.decode(PreferredLanguage.self, forKey: .subtitleFallbackLanguage)
+        subtitlesEnabled = try container.decodeIfPresent(Bool.self, forKey: .subtitlesEnabled) ?? true
+        playbackSubtitleStyle = try container.decodeIfPresent(
+            PlaybackSubtitleStyle.self,
+            forKey: .playbackSubtitleStyle
+        ) ?? .default
         sdhPreference = try container.decode(SDHPreference.self, forKey: .sdhPreference)
         animeAudioPreference = try container.decode(AnimeAudioPreference.self, forKey: .animeAudioPreference)
         subtitleAppearance = try container.decode(SubtitleAppearanceMode.self, forKey: .subtitleAppearance)
@@ -277,6 +292,10 @@ struct SettingsPreferences: Codable, Equatable, Sendable {
             MDBListRatingPreferences.self,
             forKey: .mdblistRatings
         ) ?? .default
+        showMediaCardLabels = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .showMediaCardLabels
+        ) ?? true
     }
 
     static let `default` = SettingsPreferences(
@@ -299,11 +318,14 @@ struct SettingsPreferences: Codable, Equatable, Sendable {
         audioFallbackLanguage: .none,
         preferredSubtitleLanguage: .followSystem,
         subtitleFallbackLanguage: .none,
+        subtitlesEnabled: true,
+        playbackSubtitleStyle: .default,
         sdhPreference: .followSystem,
         animeAudioPreference: .followPreferred,
         subtitleAppearance: .followSystem,
         customSubtitleAppearance: .default,
-        mdblistRatings: .default
+        mdblistRatings: .default,
+        showMediaCardLabels: true
     )
 
     var normalized: SettingsPreferences {
@@ -321,6 +343,7 @@ struct SettingsPreferences: Codable, Equatable, Sendable {
             value.subtitleFallbackLanguage = .none
         }
         value.customSubtitleAppearance = value.customSubtitleAppearance.normalized
+        value.playbackSubtitleStyle = value.playbackSubtitleStyle.normalized
         value.mdblistRatings = value.mdblistRatings.normalized
         return value
     }

@@ -3,6 +3,41 @@ import XCTest
 
 @MainActor
 final class PlaybackSourcePresentationTests: XCTestCase {
+    func testResolverReportsCredentialRejectionWithoutExposingEndpoint() async {
+        let addon = InstalledAddon(
+            manifest: StremioAddonManifest(
+                id: "credentialed-addon",
+                version: "1.0.0",
+                name: "Credentialed Add-on",
+                description: "Fixture",
+                resources: [.name("stream")],
+                types: ["movie"],
+                catalogs: [],
+                addonCatalogs: nil,
+                idPrefixes: ["tt"],
+                behaviorHints: nil
+            ),
+            manifestURL: URL(string: "https://token.example/secret/manifest.json")!,
+            isEnabled: true,
+            addedAt: Date(timeIntervalSince1970: 1)
+        )
+        defer { addon.removeSecureManifestURL() }
+
+        let result = await PlaybackSourceResolver.resolve(
+            addon: addon,
+            mediaTypes: ["movie"],
+            identifiers: ["tt1234567"],
+            timeout: .seconds5,
+            transport: FailingSourceTransport(error: .unsuccessfulStatus(401))
+        )
+
+        XCTAssertEqual(result.state, .failed)
+        XCTAssertEqual(result.failure, .credentialRejected)
+        XCTAssertEqual(result.statusDescription, "The add-on rejected its configured credentials.")
+        XCTAssertFalse(result.statusDescription.contains("token.example"))
+        XCTAssertFalse(result.statusDescription.contains("secret"))
+    }
+
     func testSourceResolutionKeepsSuccessfulRowsWhenAnotherAddonFails() {
         let direct = fixture("mediafusion", .nativeHTTPS(URL(string: "https://media.example/play")!))
         let torrent = fixture("torrentio", localTorrentDelivery())
@@ -217,5 +252,17 @@ final class PlaybackSourcePresentationTests: XCTestCase {
             displayName: "Movie.mkv",
             expectedByteCount: nil
         ))
+    }
+}
+
+private actor FailingSourceTransport: HTTPTransporting {
+    let error: HTTPTransportError
+
+    init(error: HTTPTransportError) {
+        self.error = error
+    }
+
+    func data(for policy: HTTPRequestPolicy) async throws -> Data {
+        throw error
     }
 }

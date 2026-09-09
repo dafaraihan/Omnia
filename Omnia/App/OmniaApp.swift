@@ -6,6 +6,9 @@
 //
 
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
 
 @main
 struct OmniaApp: App {
@@ -20,12 +23,10 @@ struct OmniaApp: App {
         WindowGroup {
             rootContent
         }
-        // Apple documents hiddenTitleBar as hiding both the title and the
-        // backing material of the titlebar. This lets hero artwork own the
-        // top edge while keeping the native traffic-light and toolbar
-        // controls available above the content.
-        .windowStyle(.hiddenTitleBar)
-        .windowToolbarStyle(.unified(showsTitle: false))
+        // WindowChrome keeps the titlebar transparent and extends content
+        // beneath it. Retaining the standard window style lets SwiftUI render
+        // navigation titles as native toolbar titles instead of custom pills.
+        .windowToolbarStyle(.unified(showsTitle: true))
         .commands {
             OmniaCommands(playback: playback)
         }
@@ -43,7 +44,9 @@ struct OmniaApp: App {
             .environment(metadata)
             .environment(playback)
             .environment(settings)
+            .environment(\.showsMediaCardLabels, settings.preferences.showMediaCardLabels)
             .task {
+                await store.prepareInstalledAddons()
                 await store.prepareLocalMedia()
                 await account.restoreSession()
                 metadata.configure(metadataRouting: store.metadataRouting)
@@ -60,6 +63,11 @@ struct OmniaApp: App {
                     account.handle(callback: url)
                 }
             }
+            #if os(macOS)
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+                playback.flushProgress()
+            }
+            #endif
     }
 }
 

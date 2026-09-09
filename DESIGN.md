@@ -40,17 +40,17 @@ This is the canonical product, flow, screen, and UI-element specification for Om
 
 ## Information Architecture and Primary Flow
 
-**Current.** `OmniaRootView` uses a sidebar-adaptable tab view. Home, Anime, Search, Library, Discover, and Settings each own a navigation stack. The iOS family presents playback full screen; macOS overlays playback across the window and hides browsing toolbar chrome.
+**Current.** `OmniaRootView` uses a sidebar-adaptable tab view. Home, Search, Library, Discover, and Settings each own a navigation stack. Anime is a Search browse destination rather than a peer tab. The iOS family presents playback full screen; macOS overlays playback across the window and hides browsing toolbar chrome.
 
 ```mermaid
 flowchart LR
     Root[Top-level navigation] --> Home
-    Root --> Anime
     Root --> Search
     Root --> Library
     Root --> Discover
     Root --> Settings
     Home --> Detail[Title Detail]
+    Search --> Anime
     Anime --> Detail
     Search --> Detail
     Library --> Detail
@@ -78,7 +78,7 @@ Each contract maps a verified SwiftUI screen where one exists. Purpose statement
 ### Anime — `AnimeDiscoveryView`
 
 - **Purpose:** **Requirement:** anime-specific browse and search using the configured metadata route.
-- **Entry and exit:** **Current:** opens from the Anime tab. Shelf headings and genres push paged catalogs; posters push detail; system back returns through the stack.
+- **Entry and exit:** **Current:** opens from the Anime category on Search. Shelf headings and genres push paged catalogs; posters push detail; system back returns through the stack.
 - **Primary action:** **Current:** open an anime title. The source menu explains the active primary and fallback providers without becoming a competing browsing control.
 - **Loading, empty, error:** **Current:** browse and pagination show progress; unavailable discovery and exhausted empty catalogs use explicit unavailable views; search begins at two characters and distinguishes searching from no results. **Intended:** show provider-specific failure and retry without removing cached shelves.
 - **Platform interaction:** **Current:** search uses the system search field; shelves become adaptive poster grids on pushed catalog pages; shared native controls provide platform pointer and keyboard behavior.
@@ -87,9 +87,9 @@ Each contract maps a verified SwiftUI screen where one exists. Purpose statement
 ### Search — `SearchView`
 
 - **Purpose:** **Requirement:** find titles across built-in metadata and searchable enabled add-on catalogs.
-- **Entry and exit:** **Current:** opens from Search; selecting a result pushes detail; clearing the query returns to top-title discovery.
+- **Entry and exit:** **Current:** opens from Search; its empty state presents genre cards including Anime, selecting a genre or result pushes its destination, and clearing the query returns to the genre directory.
 - **Primary action:** **Current:** enter a query and open a matching title. Library titles appear as system search suggestions.
-- **Loading, empty, error:** **Current:** a query shorter than two characters shows top discovery; a 250 ms debounce precedes concurrent built-in/add-on search; searching and no-result states are explicit. **Current gap:** provider failure can be indistinguishable from no results. **Intended:** preserve partial results and distinguish no match, offline, and provider failure with retry.
+- **Loading, empty, error:** **Current:** a query shorter than two characters shows the genre directory; a 250 ms debounce precedes concurrent built-in/add-on search; searching and no-result states are explicit. **Current gap:** provider failure can be indistinguishable from no results. **Intended:** preserve partial results and distinguish no match, offline, and provider failure with retry.
 - **Platform interaction:** **Current:** system search presentation, adaptive grids, and native back navigation are used. **Requirement:** preserve platform keyboard submission/clearing behavior and do not replace the search field with hero chrome.
 - **Accessibility:** **Current:** results are title-labeled links in grid order. **Requirement:** communicate search scope, partial-source status, and updated result count through concise announcements. **Current gap:** these explicit announcements are not implemented.
 
@@ -115,7 +115,7 @@ Each contract maps a verified SwiftUI screen where one exists. Purpose statement
 
 - **Purpose:** **Requirement:** turn a lightweight result into a complete title identity and the decision point for save, play/resume, season/episode, synopsis, people, video, collection, and recommendation actions.
 - **Entry and exit:** **Current:** pushed from any media card. iOS shows an explicit overlay Back control; macOS uses native navigation chrome. Synopsis and source selection are sheets; related titles push another detail page.
-- **Primary action:** **Current:** Play, Resume, or Rewatch; for a series, selecting an episode opens source selection. Add/remove My List is secondary.
+- **Primary action:** **Current:** Play, Resume, or Rewatch; for a series, selecting an episode opens source selection. One circular watched-state action matches the existing circular Add/remove My List action in the hero identity column: `eye` means Mark as Watched and `eye.slash` means Mark as Unwatched.
 - **Loading, empty, error:** **Current:** the selected lightweight item renders immediately while provider, add-on, and optional rating data resolve; missing sections are omitted and missing backdrop leaves the semantic page background visible. MDBList ratings have compact nonblocking loading, authentication/settings, rate-limit, transient Retry, valid-empty, and cancellation states; stale title results are rejected. **Current gap:** non-rating enrichment failure has no visible error or retry. **Intended:** retain the base detail, show section-level failure only where useful, and never replace the whole page with a spinner.
 - **Platform interaction:** **Current:** artwork meets the top edge; iOS hides the navigation bar, while macOS keeps the transparent window toolbar. Long synopsis opens a sheet. External trailer selection opens YouTube explicitly.
 - **Accessibility:** **Current:** Back, synopsis, available title logo, metadata, rating values, episode rows, scores, and video links have names/hints; decorative artwork and approved rating marks are hidden. Rating labels speak the full provider, semantic rating/score role, value, and percent scale where applicable. **Requirement:** the text title remains available to assistive technology whether a provider logo is displayed, loading, or absent. **Current gap:** the logo-absent hero reserves an accessibility-hidden empty canvas without a separate semantic title.
@@ -132,11 +132,11 @@ Each contract maps a verified SwiftUI screen where one exists. Purpose statement
 ### Playback — `PlaybackExperienceView`
 
 - **Purpose:** **Requirement:** play the selected approved HTTPS source, completed validated local cache file, or typed completed unencrypted Blu-ray cache input; expose transport and embedded track choices; and report progress to the local library.
-- **Entry and exit:** **Current:** begins after source selection. Close stops playback and returns to browsing; iOS dismissal also stops; macOS playback covers the root window and owns full-screen state.
-- **Primary action:** **Current:** Play/Pause, Seek, Close, Volume, backward/forward 10 seconds, Rate, and Position operate in both player paths; Subtitle, Audio, and Full Screen operate in the macOS libmpv path. **Current gap:** the iPhone/iPad chrome still renders Subtitle, Audio, and Full Screen affordances, but the AVPlayer branch does not implement track selection or a full-screen toggle for them.
+- **Entry and exit:** **Current:** begins after source selection. Close stops playback and returns to browsing; iOS dismissal also stops. macOS playback covers the root window, enters and exits the native exclusive full-screen Space without ending playback, and can move the active libmpv video surface into a floating Picture in Picture panel before returning it inline.
+- **Primary action:** **Current:** Play/Pause, Seek, Close, Volume, backward/forward 10 seconds, Rate, and Position operate in both player paths. Subtitle and Audio selection, live subtitle font/size/scale/position/shadow/background styling, explicit full-screen entry/exit, and Picture in Picture operate in the macOS libmpv path. **Current gap:** the iPhone/iPad chrome still renders Subtitle, Audio, and Full Screen affordances, but the AVPlayer branch does not implement track selection or a full-screen toggle for them.
 - **Loading, empty, error:** **Current:** absence of a player shows Playback Unavailable; a player error shows Playback Failed with its message. **Current gap:** there is no dedicated buffering/reconnecting state. **Intended:** distinguish startup, buffering, recoverable network interruption, and terminal failure while keeping Close available.
-- **Platform interaction:** **Current:** video is edge-to-edge on black. Controls appear together, fade after inactivity, reappear on tap or macOS hover, and use native player engines behind one experience. **Intended:** prefer deeper system playback commands wherever compatible; expose Picture in Picture only after implementation exists.
-- **Accessibility:** **Current:** controls and sliders are labeled; time uses stable numeric formatting; macOS track menus use readable names; scrubbing prevents the scheduled hide. **Requirement:** do not auto-hide while accessibility focus is active, announce playback errors, and honor captions preferences, Reduce Motion, and Dim Flashing Lights behavior where applicable. **Current gap:** those explicit accessibility-focus and preference adaptations are not implemented.
+- **Platform interaction:** **Current:** video is edge-to-edge on black. The macOS libmpv chrome follows a low-obstruction Apple TV hierarchy using native SF Symbols, system sliders, circular Liquid Glass buttons, and a Liquid Glass options panel; Audio, Subtitles, and Speed align with title metadata above the timeline. Controls fade after inactivity, reappear on tap or macOS hover, and remain visible while scrubbing or an options panel is open.
+- **Accessibility:** **Current:** controls and sliders are labeled; time uses stable elapsed and negative-remaining formatting; macOS track and subtitle-style panels use readable names and hierarchical navigation; scrubbing and open panels prevent the scheduled hide. **Requirement:** do not auto-hide while accessibility focus is active, announce playback errors, and honor captions preferences, Reduce Motion, and Dim Flashing Lights behavior where applicable. **Current gap:** those explicit accessibility-focus and preference adaptations are not implemented.
 
 ### Settings — `SettingsView`
 
@@ -144,7 +144,7 @@ Each contract maps a verified SwiftUI screen where one exists. Purpose statement
 - **Entry and exit:** **Current:** the searchable native root is ordered Account; Media (Add-ons, Catalogs, Metadata, Progress, Upcoming); Playback (Video Player, Subtitle); App (Appearance); About. Every category and nested submenu uses typed value navigation inside the Settings tab's existing navigation stack, keeping the system navigation bar, Back command, and platform navigation behavior. Add Add-on remains a genuine sheet with Cancel/Add.
 - **Primary action:** **Current:** open the relevant category, then change values with native forms, pickers, toggles, menus, links, secure fields, and buttons. The MDBList provider page always exposes native toggles for all known and discovered external rating sources; newly discovered sources default on, disabled choices persist, and the aggregate score is an untoggleable “Always shown” row. Sign Out, provider credential removal, resolver-token removal, reviewed Progress replacement, add-on removal, local-data clearing, and subtitle reset require an explicit native confirmation before mutation.
 - **Loading, empty, error:** **Current:** the root and static About catalog are local and immediate. Account authentication, provider testing, manifest validation/import, local-data import/export, and resolver credential operations show contextual working, unavailable, partial-success, or redacted error/status states. Add-ons, add-on catalogs, and impossible provider routes have native empty/unavailable presentations. **Intended:** every unavailable future setting remains disabled or labeled, never presented as functioning.
-- **Platform interaction:** **Current:** Settings uses system `Form`/`Section` composition and a single exhaustive typed destination map. On macOS, the root and every pushed form appear in a centered, top-aligned grouped pane capped at 680 points with at least 24 points of outer spacing; iPhone and iPad retain platform-native full-width forms. Add-ons support native edit reordering plus bounded earlier/later commands; metadata fallback priority supports native list movement plus bounded earlier/later menu commands. No child screen creates a navigation stack or hides system Back; the Add Add-on modal owns its nested stack and cancellation/confirmation toolbar actions.
+- **Platform interaction:** **Current:** Settings uses `Section` composition and a single exhaustive typed destination map. On macOS, the root and every pushed page use wide, left-aligned grouped cards with 24 points of outer spacing, blue monochrome SF Symbols, and neutral-gray hover and pressed states; iPhone and iPad retain platform-native forms. Add-ons support native edit reordering plus bounded earlier/later commands; metadata fallback priority supports native list movement plus bounded earlier/later menu commands. No child screen creates a navigation stack; pushed macOS pages use native toolbar controls ordered Back then page title, while Add-ons keeps its add action at the trailing edge. The Add Add-on modal owns its nested stack and cancellation/confirmation toolbar actions.
 - **Accessibility:** **Current:** root rows expose a text title and state summary; provider marks are decorative; add-on and metadata order rows expose named directional accessibility actions in addition to visible/context-menu controls; status and disabled explanations use text rather than color alone. The static About hierarchy documents runtime metadata, playback, add-on, cloud/authentication, Apple, and open-source resources with HTTPS attribution, license, terms, and privacy links. **Requirement:** complete device verification for VoiceOver, Dynamic Type, Full Keyboard Access, pointer input, contrast/transparency settings, and every supported size class before release.
 
 ## Reusable UI Element Contracts
@@ -187,11 +187,12 @@ Every type in the first column is **Current** and verified in source. The third 
 
 - **Requirement:** a source row leads with a human-readable source name, then add-on, format/quality, and technical detail. Delivery state uses text plus a system symbol. Unsupported rows remain readable but noninteractive.
 - **Requirement:** resolving is a state of the chosen row, not a global replacement for already loaded sources. External handoff always reads as leaving Omnia.
-- **Current:** playback chrome is a single coordinated layer; Close and transport controls appear and disappear together, with Play/Pause centered and the timeline spanning the surface. Track, rate, and full-screen controls are secondary; track selection and full-screen actions are currently macOS-only as specified in the Playback contract.
+- **Current:** playback chrome is a single coordinated layer; Close, Picture in Picture, full-screen, volume, transport, metadata, options, and timeline appear and disappear together. Play/Pause remains centered; Audio, Subtitles, and Speed are circular secondary controls aligned with title metadata; the timeline spans below them. The macOS options panel owns hierarchical track, rate, and live subtitle font, size, scale, position, shadow, and background controls.
 - **Intended:** adapt playback control density to compact width instead of compressing every control into one line; retain system-supported media keys, keyboard commands, and accessible actions.
 
 ### Materials, Color, Typography, and Symbols
 
+- **Current:** interactive macOS hero, toolbar, and playback controls use native clear Liquid Glass and SF Symbols. They lift and darken on hover/press, while the playback timeline remains static. Playback option panels and the source selector use one continuous regular Liquid Glass surface; their rows do not lift or carry resting pills and darken only during hover/press.
 - **Requirement:** use semantic foreground, background, accent, and system material values so contrast follows appearance, Increase Contrast, and Reduce Transparency. When transparency is reduced, provide an opaque semantic fallback with the same hierarchy.
 - **Requirement:** use San Francisco through system text styles. Weight and scale establish hierarchy; custom point sizes are exceptions that require Dynamic Type and viewing-distance validation. Keep long text at readable measure and never truncate critical state or action labels.
 - **Requirement:** use SF Symbols by name through system APIs, match symbol weight to adjacent text, and verify availability against the deployment target. A symbol supplements a visible or accessibility label; color is never its only meaning.

@@ -13,12 +13,14 @@ struct LocalMediaBackupRecord: Codable, Equatable, Sendable {
     let isInWatchlist: Bool
     let savedAt: Date?
     let lastPlayedAt: Date?
+    let watchState: LocalMediaWatchState?
 
     init(snapshot: LocalMediaSnapshot) throws {
         media = SavedMediaItem(snapshot.item)
         isInWatchlist = snapshot.isInWatchlist
         savedAt = snapshot.savedAt
         lastPlayedAt = snapshot.lastPlayedAt
+        watchState = snapshot.watchState.isEmpty ? nil : snapshot.watchState
         try validate()
     }
 
@@ -27,7 +29,8 @@ struct LocalMediaBackupRecord: Codable, Equatable, Sendable {
             item: media.mediaItem,
             isInWatchlist: isInWatchlist,
             savedAt: savedAt,
-            lastPlayedAt: lastPlayedAt
+            lastPlayedAt: lastPlayedAt,
+            watchState: watchState ?? .empty
         )
     }
 
@@ -40,7 +43,7 @@ struct LocalMediaBackupRecord: Codable, Equatable, Sendable {
               textValues.allSatisfy({ $0.utf8.count <= 4_096 }),
               item.externalIDs.count <= 100,
               item.externalIDs.allSatisfy({ $0.key.utf8.count <= 4_096 && $0.value.utf8.count <= 4_096 }),
-              isInWatchlist || item.progress != nil,
+              isInWatchlist || item.progress != nil || watchState?.isEmpty == false,
               displayURLs.allSatisfy(Self.isSafeDisplayURL)
         else { throw LocalMediaBackupError.invalidRecord }
     }

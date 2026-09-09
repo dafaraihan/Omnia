@@ -12,7 +12,10 @@ struct SubtitleAppearanceSettingsView: View {
     }
 
     var body: some View {
-        Form {
+        #if os(macOS)
+        macSettings
+        #else
+        OmniaSettingsForm {
             Section("Preview") {
                 ZStack {
                     LinearGradient(colors: [.blue.opacity(0.7), .black], startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -50,7 +53,7 @@ struct SubtitleAppearanceSettingsView: View {
                 Button("Reset to Defaults", role: .destructive) { showsResetConfirmation = true }
             }
         }
-        .navigationTitle("Subtitle")
+        .omniaNavigationTitle("Subtitle")
         .confirmationDialog("Reset subtitle appearance?", isPresented: $showsResetConfirmation, titleVisibility: .visible) {
             Button("Reset", role: .destructive) {
                 settings.update {
@@ -62,7 +65,140 @@ struct SubtitleAppearanceSettingsView: View {
         } message: {
             Text("This restores Follow System and resets all custom values.")
         }
+        #endif
     }
+
+    #if os(macOS)
+    private var macSettings: some View {
+        OmniaSettingsForm {
+            Section("Live Preview") {
+                MacSubtitlePlaybackPreview(style: settings.preferences.playbackSubtitleStyle)
+            }
+
+            Section("Language") {
+                Toggle("Subtitles Enabled", isOn: settings.binding(\.subtitlesEnabled))
+                SubtitleSettingsLanguagePicker(
+                    "Preferred subtitles",
+                    selection: settings.binding(\.preferredSubtitleLanguage),
+                    includesNone: true
+                )
+                SubtitleSettingsLanguagePicker(
+                    "Subtitle fallback",
+                    selection: settings.binding(\.subtitleFallbackLanguage),
+                    includesNone: true
+                )
+                Toggle("Prefer SDH Captions", isOn: Binding(
+                    get: { settings.preferences.sdhPreference == .prefer },
+                    set: { enabled in
+                        settings.update { $0.sdhPreference = enabled ? .prefer : .followSystem }
+                    }
+                ))
+            }
+
+            Section("Font") {
+                DisclosureGroup(previewFontTitle) {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 4) {
+                            ForEach(MacSubtitleFontCatalog.availableDisplayNames, id: \.self) { displayName in
+                                Button {
+                                    settings.update {
+                                        $0.playbackSubtitleStyle.fontName = displayName == "System"
+                                            ? PlaybackSubtitleStyle.default.fontName
+                                            : displayName
+                                    }
+                                } label: {
+                                    HStack {
+                                        Image(systemName: "checkmark")
+                                            .opacity(displayName == previewFontTitle ? 1 : 0)
+                                            .frame(width: 18)
+                                        Text(displayName)
+                                            .font(displayName == "System" ? .body : .custom(displayName, size: 15))
+                                        Spacer()
+                                    }
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .padding(.vertical, 4)
+                            }
+                        }
+                    }
+                    .frame(height: 190)
+                }
+            }
+
+            Section("Style") {
+                Picker("Background", selection: styleBinding(\.background)) {
+                    ForEach(PlaybackSubtitleBackground.allCases) { background in
+                        Text(background.settingsTitle).tag(background)
+                    }
+                }
+                SubtitleDoubleSlider(
+                    title: "Size",
+                    value: styleBinding(\.fontSize),
+                    range: 14 ... 72,
+                    valueLabel: { "\(Int($0.rounded())) pt" }
+                )
+                SubtitleDoubleSlider(
+                    title: "Scale",
+                    value: styleBinding(\.scale),
+                    range: 0.5 ... 2,
+                    valueLabel: { "\(Int(($0 * 100).rounded()))%" }
+                )
+                SubtitleDoubleSlider(
+                    title: "Position",
+                    value: styleBinding(\.position),
+                    range: 0 ... 100,
+                    valueLabel: { "\(Int($0.rounded()))" }
+                )
+                SubtitleDoubleSlider(
+                    title: "Shadow Opacity",
+                    value: styleBinding(\.shadowOpacity),
+                    range: 0 ... 1,
+                    valueLabel: { "\(Int(($0 * 100).rounded()))%" }
+                )
+                SubtitleDoubleSlider(
+                    title: "Shadow Blur",
+                    value: styleBinding(\.shadowBlurRadius),
+                    range: 0 ... 20,
+                    valueLabel: { "\(Int($0.rounded()))" }
+                )
+            }
+
+            Section {
+                Button("Reset to Defaults", role: .destructive) { showsResetConfirmation = true }
+            }
+        }
+        .omniaNavigationTitle("Subtitle")
+        .confirmationDialog("Reset subtitle preferences?", isPresented: $showsResetConfirmation, titleVisibility: .visible) {
+            Button("Reset", role: .destructive) {
+                settings.update {
+                    $0.subtitlesEnabled = true
+                    $0.preferredSubtitleLanguage = .followSystem
+                    $0.subtitleFallbackLanguage = .none
+                    $0.sdhPreference = .followSystem
+                    $0.playbackSubtitleStyle = .default
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+    }
+
+    private var previewFontTitle: String {
+        let name = settings.preferences.playbackSubtitleStyle.fontName
+        return name == PlaybackSubtitleStyle.default.fontName ? "System" : name
+    }
+
+    private func styleBinding<Value>(
+        _ keyPath: WritableKeyPath<PlaybackSubtitleStyle, Value>
+    ) -> Binding<Value> {
+        Binding(
+            get: { settings.preferences.playbackSubtitleStyle[keyPath: keyPath] },
+            set: { value in
+                settings.update { $0.playbackSubtitleStyle[keyPath: keyPath] = value }
+            }
+        )
+    }
+    #endif
 
     @ViewBuilder
     private var customControls: some View {
@@ -151,6 +287,58 @@ private struct SettingsIntSlider: View {
         }
     }
 }
+
+#if os(macOS)
+private struct SubtitleDoubleSlider: View {
+    let title: String
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let valueLabel: (Double) -> String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            LabeledContent(title, value: valueLabel(value))
+            Slider(value: $value, in: range)
+                .accessibilityValue(valueLabel(value))
+        }
+    }
+}
+
+private struct SubtitleSettingsLanguagePicker: View {
+    let title: String
+    @Binding var selection: PreferredLanguage
+    let includesNone: Bool
+
+    init(_ title: String, selection: Binding<PreferredLanguage>, includesNone: Bool) {
+        self.title = title
+        _selection = selection
+        self.includesNone = includesNone
+    }
+
+    var body: some View {
+        Picker(title, selection: $selection) {
+            Text("Follow System").tag(PreferredLanguage.followSystem)
+            if includesNone {
+                Text("Off / No preference").tag(PreferredLanguage.none)
+            }
+            Text("English").tag(PreferredLanguage.language("en"))
+            Text("Indonesian").tag(PreferredLanguage.language("id"))
+            Text("Japanese").tag(PreferredLanguage.language("ja"))
+            Text("Spanish").tag(PreferredLanguage.language("es"))
+        }
+    }
+}
+
+private extension PlaybackSubtitleBackground {
+    var settingsTitle: String {
+        switch self {
+        case .none: "None"
+        case .translucent: "Translucent"
+        case .solid: "Solid"
+        }
+    }
+}
+#endif
 
 private extension SubtitleAppearanceMode {
     var title: String {

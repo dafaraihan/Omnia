@@ -81,13 +81,37 @@ final class SettingsPresentationTests: XCTestCase {
     }
 
     #if os(macOS)
-    func testMacSettingsLayoutCapsWideContentAtReadableWidth() {
-        XCTAssertEqual(MacSettingsLayout.contentWidth(for: 1_800), 680)
+    @MainActor
+    func testMacSettingsLayoutExpandsRowsAcrossTheUsableDetailWidth() {
+        let layout = MacSettingsLayout.presentation(for: 1_800)
+
+        XCTAssertEqual(layout.leadingOffset, 24)
+        XCTAssertEqual(layout.contentWidth, 1_752)
+        XCTAssertEqual(layout.rowWidth, 1_752)
     }
 
     func testMacSettingsLayoutPreservesMarginsInNarrowWindow() {
-        XCTAssertEqual(MacSettingsLayout.contentWidth(for: 600), 552)
-        XCTAssertEqual(MacSettingsLayout.contentWidth(for: 40), 0)
+        XCTAssertEqual(MacSettingsLayout.presentation(for: 600).rowWidth, 552)
+        XCTAssertEqual(MacSettingsLayout.presentation(for: 40).rowWidth, 0)
+    }
+
+    @MainActor
+    func testMacSettingsUsesWideGroupedCardsAndNativeInteractionColors() {
+        XCTAssertEqual(MacSettingsPresentation.containerStyle, .groupedCards)
+        XCTAssertEqual(
+            MacSettingsPresentation.symbolTreatment(isHovered: false, isPressed: false),
+            .whiteMonochrome
+        )
+        XCTAssertEqual(
+            MacSettingsPresentation.symbolTreatment(isHovered: true, isPressed: false),
+            .blueMonochrome
+        )
+        XCTAssertEqual(
+            MacSettingsPresentation.symbolTreatment(isHovered: false, isPressed: true),
+            .blueMonochrome
+        )
+        XCTAssertEqual(MacSettingsPresentation.hoverTreatment, .neutralGray)
+        XCTAssertEqual(MacSettingsPresentation.pressedTreatment, .neutralGray)
     }
     #endif
 }

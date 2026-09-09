@@ -12,51 +12,43 @@ struct SearchView: View {
     @State private var addonResults: [MediaItem] = []
     @State private var isSearchingAddons = false
 
-    private var results: [MediaItem] {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.count >= 2 ? unique(metadata.searchResults + addonResults) : topSearchCards
+    private var trimmedQuery: String {
+        query.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Search opens into provider discovery—not a user's private library—so
-    /// the empty query is immediately useful even for a first-launch account.
-    private var topSearchCards: [MediaItem] {
-        let candidates = metadata.topMovies
-            + metadata.topSeries
-            + metadata.movieCatalog
-            + metadata.seriesCatalog
-        var seen = Set<String>()
-        return candidates.filter { seen.insert($0.id).inserted }.prefix(40).map { $0 }
+    private var results: [MediaItem] {
+        unique(metadata.searchResults + addonResults)
     }
 
     var body: some View {
         Group {
-            if metadata.isSearching || isSearchingAddons {
+            if trimmedQuery.count < 2 {
+                SearchBrowseDirectoryView(genres: metadata.movieGenres)
+            } else if metadata.isSearching || isSearchingAddons {
                 ContentUnavailableView("Searching Omnia", systemImage: "magnifyingglass")
-            } else if results.isEmpty, query.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2 {
-                ContentUnavailableView.search(text: query)
             } else if results.isEmpty {
-                ContentUnavailableView(
-                    "Explore Top Titles",
-                    systemImage: "magnifyingglass",
-                    description: Text("Discovery cards will appear here as Omnia loads metadata.")
-                )
+                ContentUnavailableView.search(text: query)
             } else {
-                ScrollView(.vertical, showsIndicators: false) {
-                    LazyVGrid(
-                        columns: [GridItem(.adaptive(minimum: minimumCardWidth), spacing: 18)],
-                        alignment: .leading,
-                        spacing: 26
-                    ) {
-                        ForEach(results) { item in
-                            MediaPoster(item: item, fillsAvailableWidth: true)
+                GeometryReader { proxy in
+                    let layout = MediaBrowseMetrics.posterGridLayout(containerWidth: proxy.size.width)
+
+                    ScrollView(.vertical, showsIndicators: false) {
+                        LazyVGrid(
+                            columns: layout.columns,
+                            alignment: .leading,
+                            spacing: 18
+                        ) {
+                            ForEach(results) { item in
+                                MediaPoster(item: item, fillsAvailableWidth: true)
+                            }
                         }
+                        .padding(.horizontal, MediaBrowseMetrics.pageInset)
+                        .padding(.vertical, 24)
                     }
-                    .padding(.horizontal, horizontalInset)
-                    .padding(.vertical, 24)
                 }
             }
         }
-        .navigationTitle("Search")
+        .omniaNavigationTitle("Search", screen: .search)
         .searchable(text: $query, prompt: "Titles, people, or genres")
         .task(id: query) {
             let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -87,22 +79,6 @@ struct SearchView: View {
             }
         }
         .navigationDestination(for: MediaItem.self) { MediaDetailView(item: $0) }
-    }
-
-    private var minimumCardWidth: CGFloat {
-        #if os(iOS)
-        132
-        #else
-        154
-        #endif
-    }
-
-    private var horizontalInset: CGFloat {
-        #if os(iOS)
-        20
-        #else
-        32
-        #endif
     }
 
     private func unique(_ items: [MediaItem]) -> [MediaItem] {

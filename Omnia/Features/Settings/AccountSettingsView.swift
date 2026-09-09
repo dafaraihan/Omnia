@@ -9,7 +9,7 @@ struct AccountSettingsView: View {
     }
 
     var body: some View {
-        Form {
+        OmniaSettingsForm {
             if let user = account.user {
                 Section("Signed In") {
                     LabeledContent("Account", value: user.email ?? user.id.uuidString)
@@ -53,7 +53,7 @@ struct AccountSettingsView: View {
                 }
             }
         }
-        .navigationTitle("Account")
+        .omniaNavigationTitle("Account")
         .confirmationDialog(
             "Sign Out of Omnia?",
             isPresented: confirmationPresentation,
@@ -81,6 +81,9 @@ struct AccountSettingsView: View {
 
 private struct AccountProviderMark: View {
     let provider: OmniaAccount.Provider
+    #if os(macOS)
+    @Environment(\.macSettingsSymbolTreatment) private var symbolTreatment
+    #endif
 
     var body: some View {
         Group {
@@ -101,7 +104,11 @@ private struct AccountProviderMark: View {
                     .scaledToFit()
             }
         }
+        #if os(macOS)
+        .foregroundStyle(symbolTreatment.color)
+        #else
         .foregroundStyle(.primary)
+        #endif
         .frame(width: 24, height: 24)
         .accessibilityHidden(true)
     }

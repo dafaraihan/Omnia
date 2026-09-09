@@ -2,9 +2,10 @@ import SwiftUI
 
 struct AppearanceSettingsView: View {
     @Environment(OmniaStore.self) private var store
+    @Environment(SettingsPreferencesStore.self) private var settings
 
     var body: some View {
-        Form {
+        OmniaSettingsForm {
             Section {
                 Picker(
                     "Appearance",
@@ -21,7 +22,18 @@ struct AppearanceSettingsView: View {
             } footer: {
                 Text("Match System follows the appearance selected for this device.")
             }
+
+            Section {
+                Toggle(
+                    "Show Details Under Posters",
+                    isOn: settings.binding(\.showMediaCardLabels)
+                )
+            } header: {
+                Text("Media Cards")
+            } footer: {
+                Text("Shows each title, release year, and primary genre below standard posters.")
+            }
         }
-        .navigationTitle("Appearance")
+        .omniaNavigationTitle("Appearance")
     }
 }

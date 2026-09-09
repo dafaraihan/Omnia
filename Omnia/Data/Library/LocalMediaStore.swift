@@ -22,6 +22,13 @@ protocol LocalMediaStoring: Sendable {
         at date: Date
     ) async throws
     func clearProgress() async throws
+    func clearProgress(for mediaID: String) async throws
+    func applyWatchCommand(
+        _ command: LocalMediaWatchCommand,
+        to item: MediaItem,
+        episodes: [MediaEpisode],
+        at date: Date
+    ) async throws
 }
 
 @ModelActor
@@ -67,7 +74,9 @@ actor LocalMediaStore: LocalMediaStoring {
         record.isInWatchlist = isIncluded
         record.savedAt = isIncluded ? (record.savedAt ?? date) : nil
         if existing == nil { modelContext.insert(record) }
-        if !record.isInWatchlist, record.progress == nil {
+        if !record.isInWatchlist,
+           record.progress == nil,
+           try decodedWatchState(from: record).isEmpty {
             modelContext.delete(record)
         }
         try saveOrRollback()
@@ -111,7 +120,10 @@ actor LocalMediaStore: LocalMediaStoring {
         }
 
         if existing == nil, !completed { modelContext.insert(record) }
-        if !record.isInWatchlist, record.progress == nil, existing != nil {
+        if !record.isInWatchlist,
+           record.progress == nil,
+           try decodedWatchState(from: record).isEmpty,
+           existing != nil {
             modelContext.delete(record)
         }
         try saveOrRollback()
@@ -120,8 +132,101 @@ actor LocalMediaStore: LocalMediaStoring {
     func clearProgress() throws {
         for record in try records() {
             clearProgress(on: record)
-            if !record.isInWatchlist { modelContext.delete(record) }
+            if !record.isInWatchlist, try decodedWatchState(from: record).isEmpty {
+                modelContext.delete(record)
+            }
         }
+        try saveOrRollback()
+    }
+
+    func clearProgress(for mediaID: String) throws {
+        guard !mediaID.isEmpty, mediaID.count <= 512 else {
+            throw LocalMediaStoreError.corruptStoredMedia
+        }
+        guard let record = try record(id: mediaID) else { return }
+        clearProgress(on: record)
+        if !record.isInWatchlist, try decodedWatchState(from: record).isEmpty {
+            modelContext.delete(record)
+        }
+        try saveOrRollback()
+    }
+
+    func applyWatchCommand(
+        _ command: LocalMediaWatchCommand,
+        to item: MediaItem,
+        episodes: [MediaEpisode],
+        at date: Date
+    ) throws {
+        guard !item.id.isEmpty, item.id.count <= 512 else {
+            throw LocalMediaStoreError.corruptStoredMedia
+        }
+
+        let existing = try record(id: item.id)
+        let record = try existing ?? makeRecord(for: item)
+        var watchState = try decodedWatchState(from: record)
+        let orderedEpisodes = episodes.sorted {
+            ($0.seasonNumber, $0.episodeNumber, $0.id)
+                < ($1.seasonNumber, $1.episodeNumber, $1.id)
+        }
+
+        switch command {
+        case let .markMovie(watched):
+            guard item.kind == .movie else { throw LocalMediaStoreError.invalidPlaybackState }
+            watchState.movieWatched = watched
+            clearProgress(on: record)
+
+        case let .markEpisode(episode, watched):
+            guard item.kind == .series else { throw LocalMediaStoreError.invalidPlaybackState }
+            watchState.setWatched(watched, for: episode)
+            if watched {
+                setResumeTarget(after: episode, in: orderedEpisodes, on: record, at: date)
+            } else {
+                setResumeTarget(episode, on: record, at: date)
+            }
+
+        case let .markSeason(current, watched):
+            guard item.kind == .series else { throw LocalMediaStoreError.invalidPlaybackState }
+            let seasonEpisodes = orderedEpisodes.filter { $0.seasonNumber == current.seasonNumber }
+            guard !seasonEpisodes.isEmpty else { throw LocalMediaStoreError.invalidPlaybackState }
+            seasonEpisodes.forEach { watchState.setWatched(watched, for: $0) }
+            if watched {
+                setResumeTarget(
+                    orderedEpisodes.first { $0.seasonNumber > current.seasonNumber },
+                    on: record,
+                    at: date
+                )
+            } else {
+                setResumeTarget(seasonEpisodes.first, on: record, at: date)
+            }
+
+        case let .markThrough(current, watched):
+            guard item.kind == .series,
+                  let currentIndex = orderedEpisodes.firstIndex(where: { matches($0, current) })
+            else { throw LocalMediaStoreError.invalidPlaybackState }
+            let affected = Array(orderedEpisodes.prefix(through: currentIndex))
+            affected.forEach { watchState.setWatched(watched, for: $0) }
+            if watched {
+                let target = orderedEpisodes.indices.contains(currentIndex + 1)
+                    ? orderedEpisodes[currentIndex + 1]
+                    : nil
+                setResumeTarget(target, on: record, at: date)
+            } else {
+                setResumeTarget(affected.first, on: record, at: date)
+            }
+
+        case let .revertToPrevious(current):
+            guard item.kind == .series,
+                  let currentIndex = orderedEpisodes.firstIndex(where: { matches($0, current) }),
+                  currentIndex > orderedEpisodes.startIndex
+            else { throw LocalMediaStoreError.invalidPlaybackState }
+            let previous = orderedEpisodes[currentIndex - 1]
+            watchState.setWatched(false, for: previous)
+            setResumeTarget(previous, on: record, at: date)
+        }
+
+        record.mediaData = try encodedBaseItem(item)
+        record.watchStateData = try JSONEncoder().encode(watchState)
+        if existing == nil { modelContext.insert(record) }
         try saveOrRollback()
     }
 
@@ -219,6 +324,9 @@ actor LocalMediaStore: LocalMediaStoring {
         record.resumeSeasonNumber = snapshot.item.resumeSeasonNumber
         record.resumeEpisodeNumber = snapshot.item.resumeEpisodeNumber
         record.resumeEpisodeStillURL = snapshot.item.resumeEpisodeStillURL
+        record.watchStateData = snapshot.watchState.isEmpty
+            ? nil
+            : try JSONEncoder().encode(snapshot.watchState)
         if existing == nil { modelContext.insert(record) }
     }
 
@@ -226,7 +334,9 @@ actor LocalMediaStore: LocalMediaStoring {
         for record in try records() {
             record.isInWatchlist = false
             record.savedAt = nil
-            if record.progress == nil { modelContext.delete(record) }
+            if record.progress == nil, try decodedWatchState(from: record).isEmpty {
+                modelContext.delete(record)
+            }
         }
         try saveOrRollback()
     }
@@ -264,7 +374,8 @@ actor LocalMediaStore: LocalMediaStoring {
             item: item,
             isInWatchlist: record.isInWatchlist,
             savedAt: record.savedAt,
-            lastPlayedAt: record.lastPlayedAt
+            lastPlayedAt: record.lastPlayedAt,
+            watchState: try decodedWatchState(from: record)
         )
     }
 
@@ -283,6 +394,54 @@ actor LocalMediaStore: LocalMediaStoring {
         record.resumeEpisodeNumber = nil
         record.resumeEpisodeStillURL = nil
         record.lastPlayedAt = nil
+    }
+
+    private func decodedWatchState(from record: LocalMediaRecord) throws -> LocalMediaWatchState {
+        guard let data = record.watchStateData else { return .empty }
+        do {
+            return try JSONDecoder().decode(LocalMediaWatchState.self, from: data)
+        } catch {
+            throw LocalMediaStoreError.corruptStoredMedia
+        }
+    }
+
+    private func matches(_ lhs: MediaEpisode, _ rhs: MediaEpisode) -> Bool {
+        lhs.id == rhs.id
+            || (lhs.seasonNumber == rhs.seasonNumber && lhs.episodeNumber == rhs.episodeNumber)
+    }
+
+    private func setResumeTarget(
+        after episode: MediaEpisode,
+        in episodes: [MediaEpisode],
+        on record: LocalMediaRecord,
+        at date: Date
+    ) {
+        guard let index = episodes.firstIndex(where: { matches($0, episode) }),
+              episodes.indices.contains(index + 1)
+        else {
+            clearProgress(on: record)
+            return
+        }
+        setResumeTarget(episodes[index + 1], on: record, at: date)
+    }
+
+    private func setResumeTarget(
+        _ episode: MediaEpisode?,
+        on record: LocalMediaRecord,
+        at date: Date
+    ) {
+        guard let episode else {
+            clearProgress(on: record)
+            return
+        }
+        record.progress = 0
+        record.positionSeconds = 0
+        record.durationSeconds = episode.runtimeMinutes.map { Double($0 * 60) }
+        record.resumeEpisodeID = episode.id
+        record.resumeSeasonNumber = episode.seasonNumber
+        record.resumeEpisodeNumber = episode.episodeNumber
+        record.resumeEpisodeStillURL = episode.stillURL
+        record.lastPlayedAt = date
     }
 
     private func saveOrRollback() throws {

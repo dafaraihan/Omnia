@@ -33,7 +33,7 @@ struct ArtworkView: View {
                     .padding(12)
             }
         }
-        .clipShape(.rect(cornerRadius: 14, style: .continuous))
+        .clipShape(.rect(cornerRadius: MediaBrowseMetrics.posterCornerRadius, style: .continuous))
         .accessibilityLabel("Artwork for \(item.title)")
     }
 

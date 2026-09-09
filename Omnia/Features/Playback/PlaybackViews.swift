@@ -8,13 +8,14 @@ import SwiftUI
 struct PlaybackSourceSheet: View {
     let item: MediaItem
     var episode: MediaEpisode? = nil
+    var resumeAt: Double? = nil
+    var onClose: (() -> Void)? = nil
 
     @Environment(OmniaStore.self) private var store
     @Environment(LiveMetadataStore.self) private var metadata
     @Environment(PlaybackSession.self) private var playback
     @Environment(SettingsPreferencesStore.self) private var settings
     @Environment(\.dismiss) private var dismiss
-    @AppStorage("resume-playback") private var resumePlayback = true
     @State private var candidates: [AddonStreamCandidate] = []
     @State private var resolution: PlaybackSourceResolution?
     @State private var isResolving = true
@@ -35,7 +36,18 @@ struct PlaybackSourceSheet: View {
     #endif
 
     var body: some View {
-        NavigationStack {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Choose Source")
+                    .font(.headline)
+                Spacer()
+                Button("Cancel") { closePresentation() }
+            }
+            .padding(.horizontal, 20)
+            .frame(height: 52)
+
+            Divider()
+
             Group {
                 if isResolving {
                     ProgressView("Finding sources…")
@@ -57,7 +69,9 @@ struct PlaybackSourceSheet: View {
                                     }
                                 }
                             }
-                            .listStyle(.inset)
+                            .listStyle(.plain)
+                            .scrollContentBackground(.hidden)
+                            .background(.clear)
                             .frame(minHeight: 180)
                         }
                     }
@@ -128,14 +142,10 @@ struct PlaybackSourceSheet: View {
                                     .foregroundStyle(.secondary)
                             }
                         }
-                        .listStyle(.inset)
+                        .listStyle(.plain)
+                        .scrollContentBackground(.hidden)
+                        .background(.clear)
                     }
-                }
-            }
-            .navigationTitle("Choose Source")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
                 }
             }
             .task(id: "\(item.id)::\(episode?.id ?? "title")") {
@@ -145,7 +155,8 @@ struct PlaybackSourceSheet: View {
                 let result = await PlaybackSourceResolver.resolve(
                     for: lookupItem,
                     episode: episode,
-                    addons: store.installedAddons
+                    addons: store.installedAddons,
+                    timeout: settings.preferences.addonTimeout
                 )
                 resolution = result
                 candidates = result.candidates
@@ -186,7 +197,10 @@ struct PlaybackSourceSheet: View {
         // macOS sheet. Without an explicit content size AppKit may collapse
         // the list to zero points, leaving only the navigation title and
         // Cancel button even when the resolver returned source rows.
-        .frame(minWidth: 620, minHeight: 480)
+        .frame(width: 700, height: 560)
+        .omniaModalGlass(in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        #else
+        .presentationDetents([.medium, .large])
         #endif
     }
 
@@ -216,11 +230,7 @@ struct PlaybackSourceSheet: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(result.addonName)
                     .font(.body.weight(.semibold))
-                Text(
-                    result.state == .failed
-                        ? "The add-on response could not be read."
-                        : "The add-on returned no sources for these identifiers."
-                )
+                Text(result.statusDescription)
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
@@ -244,7 +254,9 @@ struct PlaybackSourceSheet: View {
             let result = await PlaybackSourceResolver.resolve(
                 addon: addon,
                 mediaTypes: item.streamMediaTypes,
-                identifiers: resolution.attemptedIdentifiers
+                identifiers: resolution.attemptedIdentifiers,
+                timeout: settings.preferences.addonTimeout,
+                transport: HTTPTransport()
             )
             guard !Task.isCancelled else { return }
             let updated = resolution.replacingAddonResult(result)
@@ -306,9 +318,12 @@ struct PlaybackSourceSheet: View {
             .lineLimit(1)
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
-            .glassEffect(isSelected ? .regular.tint(.accentColor).interactive() : .regular.interactive(), in: Capsule())
         }
+        #if os(macOS)
+        .omniaRoundedGlassButton(cornerRadius: 14, role: .control)
+        #else
         .buttonStyle(.plain)
+        #endif
         .accessibilityLabel("\(title), \(count) sources")
     }
 
@@ -342,7 +357,7 @@ struct PlaybackSourceSheet: View {
                         showsDisclosure: false
                     )
                 }
-                .buttonStyle(.plain)
+                .omniaMenuRowButton()
                 .disabled(
                     rowState.isPrimaryActionDisabled(
                         isLocalPreparationActive: isLocalPreparationActive
@@ -396,6 +411,9 @@ struct PlaybackSourceSheet: View {
             )
         }
         .buttonStyle(.plain)
+        #if os(macOS)
+        .omniaMenuRowButton()
+        #endif
         .disabled(isLocalPreparationActive || !localTorrentIsAvailable)
         .accessibilityHint("Downloads the selected torrent file locally, then starts native playback")
     }
@@ -879,13 +897,24 @@ struct PlaybackSourceSheet: View {
     private func beginPlayback(_ input: PlaybackInput, candidate: AddonStreamCandidate? = nil) {
         let item = item
         let episode = episode
-        let resumeAt = resumePlayback ? item.positionSeconds : nil
-        dismiss()
+        let resumeAt = resumeAt
+        closePresentation()
 
         Task { @MainActor in
             await Task.yield()
             try? await Task.sleep(for: .milliseconds(180))
             guard !Task.isCancelled else { return }
+            playback.setSubtitlePreferencesHandler { update in
+                settings.update {
+                    $0.playbackSubtitleStyle = update.style
+                    if let isEnabled = update.isEnabled {
+                        $0.subtitlesEnabled = isEnabled
+                    }
+                    if let preferredLanguage = update.preferredLanguage {
+                        $0.preferredSubtitleLanguage = preferredLanguage
+                    }
+                }
+            }
             playback.start(
                 item: item,
                 episode: episode,
@@ -909,6 +938,14 @@ struct PlaybackSourceSheet: View {
                     retention: settings.preferences.sourceSelectionRetention
                 )
             }
+        }
+    }
+
+    private func closePresentation() {
+        if let onClose {
+            onClose()
+        } else {
+            dismiss()
         }
     }
 
@@ -957,6 +994,44 @@ struct PlaybackSourceSheet: View {
 
 }
 
+struct PlaybackTimelinePresentation: Equatable {
+    let elapsedText: String
+    let remainingText: String
+
+    init(positionSeconds: Double, durationSeconds: Double?) {
+        let duration = durationSeconds.flatMap { value in
+            value.isFinite && value > 0 ? value : nil
+        } ?? 0
+        let position = min(max(positionSeconds.isFinite ? positionSeconds : 0, 0), duration)
+        elapsedText = Self.timeText(position)
+        remainingText = "−\(Self.timeText(max(duration - position, 0)))"
+    }
+
+    private static func timeText(_ value: Double) -> String {
+        let total = Int(value.rounded(.down))
+        let hours = total / 3_600
+        let minutes = (total % 3_600) / 60
+        let seconds = total % 60
+        return hours > 0
+            ? String(format: "%d:%02d:%02d", hours, minutes, seconds)
+            : String(format: "%d:%02d", minutes, seconds)
+    }
+}
+
+struct PlaybackChromeMetadata: Equatable {
+    let title: String
+    let context: String
+
+    init(item: MediaItem?, episode: MediaEpisode?) {
+        title = item?.title ?? "Now Playing"
+        if let episode {
+            context = "\(episode.title) · S\(episode.seasonNumber), E\(episode.episodeNumber)"
+        } else {
+            context = item?.year ?? ""
+        }
+    }
+}
+
 struct PlaybackExperienceView: View {
     @Environment(PlaybackSession.self) private var playback
     @Environment(SettingsPreferencesStore.self) private var settings
@@ -998,13 +1073,23 @@ struct PlaybackExperienceView: View {
             revealChrome()
         }
         .overlay {
-            PlaybackChrome(isScrubbing: $isScrubbing) {
-                playback.stop()
-            }
+            PlaybackChrome(
+                isScrubbing: $isScrubbing,
+                close: { playback.stop() },
+                showsSkipIntro: visibleSkipSegment != nil,
+                skipIntro: {
+                    guard let visibleSkipSegment else { return }
+                    playback.seek(to: visibleSkipSegment.endSeconds)
+                    self.visibleSkipSegment = nil
+                },
+                upNextTitle: upNextTitle,
+                showUpNext: { showsNextSourceSheet = true }
+            )
             .opacity(showsChrome ? 1 : 0)
             .allowsHitTesting(showsChrome)
             .animation(.easeInOut(duration: 0.2), value: showsChrome)
         }
+        #if !os(macOS)
         .overlay(alignment: .bottomTrailing) {
             VStack(alignment: .trailing, spacing: 10) {
                 if let visibleSkipSegment {
@@ -1026,6 +1111,7 @@ struct PlaybackExperienceView: View {
             }
             .padding(28)
         }
+        #endif
         .onAppear { revealChrome() }
         .onDisappear { chromeHideTask?.cancel() }
         .task(id: playbackAutomationKey) {
@@ -1033,12 +1119,39 @@ struct PlaybackExperienceView: View {
             await loadIntroSegments()
         }
         .onChange(of: playback.positionSeconds) { _, _ in updateAutomation() }
-        .sheet(isPresented: $showsNextSourceSheet) {
+        .onChange(of: isScrubbing) { _, isInteracting in
+            if isInteracting {
+                chromeHideTask?.cancel()
+                showsChrome = true
+            } else {
+                hideChrome(after: 3.2)
+            }
+        }
+        .omniaGlassModal(isPresented: $showsNextSourceSheet) {
             if let item = playback.mediaItem, let nextEpisode = playback.nextEpisode {
-                PlaybackSourceSheet(item: item, episode: nextEpisode)
+                PlaybackSourceSheet(
+                    item: item,
+                    episode: nextEpisode,
+                    onClose: { showsNextSourceSheet = false }
+                )
             }
         }
         #if os(macOS)
+        .background {
+            MacPlaybackKeyboardMonitor { action in
+                switch action {
+                case .seekBackward10:
+                    playback.seek(by: -10)
+                    revealChrome()
+                case .seekForward10:
+                    playback.seek(by: 10)
+                    revealChrome()
+                case .close:
+                    playback.stop()
+                }
+            }
+            .frame(width: 0, height: 0)
+        }
         .onHover { isHovering in
             isHovering ? revealChrome() : hideChrome(after: 2.2)
         }
@@ -1056,6 +1169,11 @@ struct PlaybackExperienceView: View {
 
     private var playbackAutomationKey: String {
         "\(playback.mediaItem?.id ?? "none"):\(playback.episode?.id ?? "title"):\(settings.preferences.showSkipIntro):\(settings.preferences.autoSkipIntro):\(settings.preferences.autoplayNextEpisode):\(settings.preferences.upNextLeadTime.rawValue)"
+    }
+
+    private var upNextTitle: String? {
+        guard showsUpNext, let nextEpisode = playback.nextEpisode else { return nil }
+        return "Up Next: S\(nextEpisode.seasonNumber) E\(nextEpisode.episodeNumber)"
     }
 
     private func configureAutomation() {
@@ -1145,8 +1263,23 @@ struct PlaybackExperienceView: View {
 private struct PlaybackChrome: View {
     @Binding var isScrubbing: Bool
     let close: () -> Void
+    let showsSkipIntro: Bool
+    let skipIntro: () -> Void
+    let upNextTitle: String?
+    let showUpNext: () -> Void
 
     var body: some View {
+        #if os(macOS)
+        MacPlaybackChrome(
+            isInteracting: $isScrubbing,
+            close: close,
+            showsSkipIntro: showsSkipIntro,
+            skipIntro: skipIntro,
+            upNextTitle: upNextTitle,
+            showUpNext: showUpNext
+        )
+            .ignoresSafeArea()
+        #else
         VStack(spacing: 0) {
             HStack {
                 Button(action: close) {
@@ -1170,6 +1303,7 @@ private struct PlaybackChrome: View {
                 .padding(.bottom, 28)
         }
         .ignoresSafeArea()
+        #endif
     }
 }
 

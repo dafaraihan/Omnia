@@ -104,6 +104,16 @@ final class HTTPTransportTests: XCTestCase {
         }
     }
 
+    func testReportsTimeoutSeparatelyFromOtherConnectionFailures() async {
+        StubURLProtocol.handler = { _ in
+            throw URLError(.timedOut)
+        }
+
+        await assertThrows(.timedOut) {
+            try await makeTransport().data(for: makePolicy())
+        }
+    }
+
     func testLocalizedErrorDoesNotRevealRequestURL() {
         let message = HTTPTransportError.originRejected.errorDescription ?? ""
 

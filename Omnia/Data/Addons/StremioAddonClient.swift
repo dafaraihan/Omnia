@@ -83,10 +83,18 @@ enum StremioAddonClient {
                         url: endpoint,
                         allowedOrigin: origin,
                         timeout: TimeInterval(timeout.rawValue),
-                        maximumResponseBytes: 2_097_152,
+                        // Aggregator add-ons can legitimately return several
+                        // hundred richly-described streams. Keep the response
+                        // bounded, but allow the payload size observed from
+                        // compatible Stremio clients and AIOStreams.
+                        maximumResponseBytes: 8_388_608,
                         acceptedContentTypes: ["application/json"]
                     ))
-                    guard let result = try? JSONDecoder().decode(AddonStreamResponse.self, from: data) else { continue }
+                    guard let result = try? JSONDecoder().decode(AddonStreamResponse.self, from: data),
+                          !result.streams.isEmpty || result.discardedEntryCount == 0 else {
+                        mostRecentError = AddonClientError.invalidResponse
+                        continue
+                    }
                     receivedValidResponse = true
                     candidates += result.streams.enumerated().map { position, stream in
                         AddonStreamCandidate(
@@ -314,6 +322,16 @@ private extension StremioAddonManifest {
 
 struct AddonStreamResponse: Decodable {
     let streams: [AddonStream]
+    let discardedEntryCount: Int
+
+    private enum CodingKeys: String, CodingKey { case streams }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let decoded = try container.decode([LossyDecodable<AddonStream>].self, forKey: .streams)
+        streams = decoded.compactMap(\.value)
+        discardedEntryCount = decoded.count - streams.count
+    }
 }
 
 struct AddonCatalogResponse: Decodable {
@@ -374,8 +392,23 @@ struct AddonStream: Decodable {
     let behaviorHints: AddonStreamBehaviorHints?
 
     enum CodingKeys: String, CodingKey {
-        case name, title, description, url, ytId, infoHash, fileIdx, sources, behaviorHints
+        case name, title, description, url, ytId, infoHash, fileIdx, mapIdx, sources, behaviorHints
         case externalURL = "externalUrl"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = container.decodeLossy(String.self, forKey: .name)
+        title = container.decodeLossy(String.self, forKey: .title)
+        description = container.decodeLossy(String.self, forKey: .description)
+        url = container.decodeLossy(String.self, forKey: .url)
+        ytId = container.decodeLossy(String.self, forKey: .ytId)
+        infoHash = container.decodeLossy(String.self, forKey: .infoHash)
+        fileIdx = container.decodeLossy(Int.self, forKey: .fileIdx)
+            ?? container.decodeLossy(Int.self, forKey: .mapIdx)
+        externalURL = container.decodeLossy(String.self, forKey: .externalURL)
+        sources = container.decodeLossy([String].self, forKey: .sources)
+        behaviorHints = container.decodeLossy(AddonStreamBehaviorHints.self, forKey: .behaviorHints)
     }
 }
 
@@ -385,6 +418,19 @@ struct AddonStreamBehaviorHints: Decodable {
     let filename: String?
     let videoSize: Int64?
     let proxyHeaders: AddonProxyHeaders?
+
+    private enum CodingKeys: String, CodingKey {
+        case notWebReady, bingeGroup, filename, videoSize, proxyHeaders
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        notWebReady = container.decodeLossy(Bool.self, forKey: .notWebReady)
+        bingeGroup = container.decodeLossy(String.self, forKey: .bingeGroup)
+        filename = container.decodeLossy(String.self, forKey: .filename)
+        videoSize = container.decodeLossy(Int64.self, forKey: .videoSize)
+        proxyHeaders = container.decodeLossy(AddonProxyHeaders.self, forKey: .proxyHeaders)
+    }
 
     var requiresProxyHeaders: Bool { proxyHeaders != nil }
 
@@ -409,6 +455,28 @@ struct AddonStreamBehaviorHints: Decodable {
 struct AddonProxyHeaders: Decodable {
     let request: [String: String]?
     let response: [String: String]?
+
+    private enum CodingKeys: String, CodingKey { case request, response }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        request = container.decodeLossy([String: String].self, forKey: .request)
+        response = container.decodeLossy([String: String].self, forKey: .response)
+    }
+}
+
+private struct LossyDecodable<Value: Decodable>: Decodable {
+    let value: Value?
+
+    init(from decoder: Decoder) throws {
+        value = try? Value(from: decoder)
+    }
+}
+
+private extension KeyedDecodingContainer {
+    func decodeLossy<Value: Decodable>(_ type: Value.Type, forKey key: Key) -> Value? {
+        try? decodeIfPresent(type, forKey: key)
+    }
 }
 
 private extension CharacterSet {

@@ -9,7 +9,7 @@ struct CatalogsSettingsView: View {
     }
 
     var body: some View {
-        Form {
+        OmniaSettingsForm {
             Section {
                 ForEach(BuiltInHomeShelf.allCases) { shelf in
                     Toggle(isOn: homeShelfBinding(for: shelf)) {
@@ -21,12 +21,12 @@ struct CatalogsSettingsView: View {
                         }
                     }
                     .accessibilityLabel(shelf.title)
-                    .accessibilityHint("Show or hide this TMDB shelf on Home")
+                    .accessibilityHint("Show or hide this TMDB shelf in Home and Discover")
                 }
             } header: {
-                Text("Homepage Shelves")
+                Text("Built-in Discovery Shelves")
             } footer: {
-                Text("Choose which built-in TMDB rows appear on Home. Changes apply immediately.")
+                Text("Choose which built-in TMDB rows appear on Home and Discover. Changes apply immediately.")
             }
 
             if catalogAddons.isEmpty {
@@ -66,7 +66,7 @@ struct CatalogsSettingsView: View {
                 }
             }
         }
-        .navigationTitle("Catalogs")
+        .omniaNavigationTitle("Catalogs")
     }
 
     private func homeShelfBinding(for shelf: BuiltInHomeShelf) -> Binding<Bool> {

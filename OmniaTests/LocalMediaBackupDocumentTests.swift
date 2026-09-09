@@ -69,6 +69,33 @@ final class LocalMediaBackupDocumentTests: XCTestCase {
         )
     }
 
+    func testWatchStateSurvivesBackupRoundTrip() throws {
+        let episode = MediaEpisode(
+            id: "s1e1",
+            seasonNumber: 1,
+            episodeNumber: 1,
+            title: "Pilot",
+            overview: "",
+            runtimeMinutes: 42,
+            stillURL: nil,
+            airDate: nil
+        )
+        var watchState = LocalMediaWatchState(movieWatched: nil)
+        watchState.setWatched(true, for: episode)
+        let snapshot = LocalMediaSnapshot(
+            item: makeItem(id: "series"),
+            isInWatchlist: true,
+            savedAt: nil,
+            lastPlayedAt: nil,
+            watchState: watchState
+        )
+
+        let encoded = try LocalMediaBackupDocument(snapshots: [snapshot]).encoded()
+        let decoded = try LocalMediaBackupDocument.decode(encoded)
+
+        XCTAssertEqual(decoded.records.first?.snapshot.watchState.isWatched(episode), true)
+    }
+
     private func makeItem(id: String) -> MediaItem {
         MediaItem(
             id: id,

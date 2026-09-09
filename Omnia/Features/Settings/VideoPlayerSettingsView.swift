@@ -9,7 +9,7 @@ struct VideoPlayerSettingsView: View {
     }
 
     var body: some View {
-        Form {
+        OmniaSettingsForm {
             Section {
                 Toggle("Show Skip Intro", isOn: settings.binding(\.showSkipIntro))
                 Toggle("Skip automatically", isOn: settings.binding(\.autoSkipIntro))
@@ -67,7 +67,9 @@ struct VideoPlayerSettingsView: View {
                     .disabled(!settings.preferences.rememberLastSelection)
                 Toggle("Play Continue Watching Directly", isOn: settings.binding(\.directContinueWatchingPlayback))
                 Toggle("Show Only Compatible Formats", isOn: settings.binding(\.compatibleFormatsOnly))
-                NavigationLink(value: SettingsRoute.playbackResolver) {
+                NavigationLink {
+                    SettingsDestinationView(route: .playbackResolver)
+                } label: {
                     LabeledContent("Local Playback Resolver", value: resolverSummary)
                 }
             }
@@ -93,10 +95,12 @@ struct VideoPlayerSettingsView: View {
                         }
                     }
                 ))
-                NavigationLink("Subtitle", value: SettingsRoute.subtitle)
+                NavigationLink("Subtitle") {
+                    SettingsDestinationView(route: .subtitle)
+                }
             }
         }
-        .navigationTitle("Video Player")
+        .omniaNavigationTitle("Video Player")
     }
 
     private var resolverSummary: String {

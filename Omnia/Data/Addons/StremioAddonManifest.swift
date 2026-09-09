@@ -152,7 +152,6 @@ struct InstalledAddon: Identifiable, Codable, Hashable, Sendable {
         self.isEnabled = isEnabled
         self.addedAt = addedAt
         manifestURLKeychainAccount = Self.keychainAccount(for: manifest.id)
-        try? KeychainStore.save(manifestURL.absoluteString, account: manifestURLKeychainAccount)
     }
 
     init(from decoder: Decoder) throws {
@@ -196,7 +195,7 @@ struct InstalledAddon: Identifiable, Codable, Hashable, Sendable {
         try container.encode(addedAt, forKey: .addedAt)
     }
 
-    func removeSecureManifestURL() {
+    nonisolated func removeSecureManifestURL() {
         try? KeychainStore.delete(account: manifestURLKeychainAccount)
     }
 

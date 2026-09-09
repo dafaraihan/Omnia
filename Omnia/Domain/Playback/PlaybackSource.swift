@@ -232,12 +232,124 @@ struct AddonSourceResolution: Identifiable, Equatable, Sendable {
         case failed
     }
 
+    enum Failure: Equatable, Sendable {
+        case credentialRejected
+        case endpointNotFound
+        case rateLimited
+        case serverUnavailable
+        case requestTimedOut
+        case connectionFailed
+        case redirectRejected
+        case unsupportedResponse
+        case responseTooLarge
+        case invalidPayload
+        case secureConnectionRequired
+        case cancelled
+
+        init(error: Error) {
+            if let transportError = error as? HTTPTransportError {
+                self = switch transportError {
+                case .httpsRequired, .originRejected:
+                    .secureConnectionRequired
+                case .redirectRejected:
+                    .redirectRejected
+                case .invalidResponse:
+                    .invalidPayload
+                case let .unsuccessfulStatus(status) where [401, 403].contains(status):
+                    .credentialRejected
+                case .unsuccessfulStatus(404):
+                    .endpointNotFound
+                case .unsuccessfulStatus(429):
+                    .rateLimited
+                case let .unsuccessfulStatus(status) where status >= 500:
+                    .serverUnavailable
+                case .unsuccessfulStatus:
+                    .unsupportedResponse
+                case .unsupportedContentType:
+                    .unsupportedResponse
+                case .responseTooLarge:
+                    .responseTooLarge
+                case .timedOut:
+                    .requestTimedOut
+                case .cancelled:
+                    .cancelled
+                case .transportFailure:
+                    .connectionFailed
+                }
+                return
+            }
+
+            if let clientError = error as? StremioAddonClient.AddonClientError {
+                self = switch clientError {
+                case .requiresHTTPS:
+                    .secureConnectionRequired
+                case .invalidResponse, .invalidManifest:
+                    .invalidPayload
+                }
+                return
+            }
+
+            self = .connectionFailed
+        }
+
+        var description: String {
+            switch self {
+            case .credentialRejected:
+                "The add-on rejected its configured credentials."
+            case .endpointNotFound:
+                "The add-on does not provide this stream endpoint."
+            case .rateLimited:
+                "The add-on is temporarily rate limiting requests."
+            case .serverUnavailable:
+                "The add-on server is temporarily unavailable."
+            case .requestTimedOut:
+                "The add-on took too long to respond."
+            case .connectionFailed:
+                "Omnia could not reach the add-on server."
+            case .redirectRejected:
+                "The add-on redirected to an untrusted server."
+            case .unsupportedResponse:
+                "The add-on returned an unsupported response."
+            case .responseTooLarge:
+                "The add-on response exceeded Omnia’s safety limit."
+            case .invalidPayload:
+                "The add-on returned stream data Omnia could not read."
+            case .secureConnectionRequired:
+                "The add-on request did not meet Omnia’s secure connection policy."
+            case .cancelled:
+                "The add-on request was cancelled."
+            }
+        }
+    }
+
     let addonID: String
     let addonName: String
     let candidates: [AddonStreamCandidate]
     let state: State
+    let failure: Failure?
+
+    init(
+        addonID: String,
+        addonName: String,
+        candidates: [AddonStreamCandidate],
+        state: State,
+        failure: Failure? = nil
+    ) {
+        self.addonID = addonID
+        self.addonName = addonName
+        self.candidates = candidates
+        self.state = state
+        self.failure = failure
+    }
 
     var id: String { addonID }
+
+    var statusDescription: String {
+        if let failure { return failure.description }
+        return state == .empty
+            ? "The add-on returned no sources for these identifiers."
+            : "Sources loaded."
+    }
 }
 
 struct PlaybackSourceResolution: Sendable {
@@ -296,11 +408,29 @@ enum PlaybackSourceResolver {
         mediaTypes: [String],
         identifiers: [String]
     ) async -> AddonSourceResolution {
+        await resolve(
+            addon: addon,
+            mediaTypes: mediaTypes,
+            identifiers: identifiers,
+            timeout: .seconds20,
+            transport: HTTPTransport()
+        )
+    }
+
+    static func resolve(
+        addon: InstalledAddon,
+        mediaTypes: [String],
+        identifiers: [String],
+        timeout: AddonTimeout,
+        transport: any HTTPTransporting
+    ) async -> AddonSourceResolution {
         do {
             let candidates = try await StremioAddonClient.fetchStreamCandidates(
                 from: addon,
                 mediaTypes: mediaTypes,
-                identifiers: identifiers
+                identifiers: identifiers,
+                timeout: timeout,
+                transport: transport
             )
             return AddonSourceResolution(
                 addonID: addon.id,
@@ -313,7 +443,8 @@ enum PlaybackSourceResolver {
                 addonID: addon.id,
                 addonName: addon.manifest.name,
                 candidates: [],
-                state: .failed
+                state: .failed,
+                failure: .init(error: error)
             )
         }
     }
@@ -321,7 +452,8 @@ enum PlaybackSourceResolver {
     static func resolve(
         for item: MediaItem,
         episode: MediaEpisode? = nil,
-        addons: [InstalledAddon]
+        addons: [InstalledAddon],
+        timeout: AddonTimeout = .seconds20
     ) async -> PlaybackSourceResolution {
         let identifiers = item.streamIdentifierCandidates(for: episode)
         let mediaTypes = item.streamMediaTypes
@@ -349,7 +481,9 @@ enum PlaybackSourceResolver {
                     let result = await resolve(
                         addon: addon,
                         mediaTypes: mediaTypes,
-                        identifiers: identifiers
+                        identifiers: identifiers,
+                        timeout: timeout,
+                        transport: HTTPTransport()
                     )
                     return (position, result)
                 }

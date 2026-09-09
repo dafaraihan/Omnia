@@ -56,7 +56,7 @@ final class StremioAddonClientTests: XCTestCase {
         XCTAssertEqual(candidates.count, 1)
         XCTAssertEqual(policy?.url.absoluteString, "https://addon.example/stream/movie/tt1234567.json")
         XCTAssertEqual(policy?.timeout, 10)
-        XCTAssertEqual(policy?.maximumResponseBytes, 2_097_152)
+        XCTAssertEqual(policy?.maximumResponseBytes, 8_388_608)
     }
 
     func testNotWebReadyDirectHTTPSRemainsAPlayerCandidate() async throws {
@@ -119,6 +119,59 @@ final class StremioAddonClientTests: XCTestCase {
         XCTAssertEqual(descriptor.trackers.map(\.absoluteString), ["https://tracker.example/announce"])
     }
 
+    func testMalformedStreamEntryDoesNotHideValidSiblingSources() async throws {
+        let data = Data(
+            """
+            {"streams":[
+              {"url":"https://media.example/video.m3u8","name":"Direct"},
+              42,
+              {"infoHash":"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB","name":"Torrent"}
+            ]}
+            """.utf8
+        )
+        let transport = RecordingTransport(data: data)
+        let addon = streamAddon()
+        defer { addon.removeSecureManifestURL() }
+
+        let candidates = try await StremioAddonClient.fetchStreamCandidates(
+            from: addon,
+            mediaTypes: ["movie"],
+            identifiers: ["tt1234567"],
+            timeout: .seconds10,
+            transport: transport
+        )
+
+        XCTAssertEqual(candidates.map(\.displayName), ["Direct", "Torrent"])
+    }
+
+    func testLegacyMapIndexSelectsTheDeclaredTorrentFile() async throws {
+        let data = Data(
+            """
+            {"streams":[{
+              "infoHash":"CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+              "mapIdx":4,
+              "name":"Legacy torrent"
+            }]}
+            """.utf8
+        )
+        let transport = RecordingTransport(data: data)
+        let addon = streamAddon()
+        defer { addon.removeSecureManifestURL() }
+
+        let candidates = try await StremioAddonClient.fetchStreamCandidates(
+            from: addon,
+            mediaTypes: ["movie"],
+            identifiers: ["tt1234567"],
+            timeout: .seconds10,
+            transport: transport
+        )
+
+        guard case let .localTorrent(descriptor) = try XCTUnwrap(candidates.first).delivery else {
+            return XCTFail("Expected a local torrent descriptor")
+        }
+        XCTAssertEqual(descriptor.fileIndex, 4)
+    }
+
     func testValidEmptyStreamResponseIsNotOverwrittenByLaterFallbackFailure() async throws {
         let transport = SequencedTransport(results: [
             .success(Data("{\"streams\":[]}".utf8)),
@@ -136,6 +189,28 @@ final class StremioAddonClientTests: XCTestCase {
         )
 
         XCTAssertTrue(candidates.isEmpty)
+    }
+
+    func testMalformedStreamResponseThrowsInsteadOfReportingNoSources() async {
+        let transport = RecordingTransport(data: Data("{\"streamz\":[]}".utf8))
+        let addon = streamAddon()
+        defer { addon.removeSecureManifestURL() }
+
+        do {
+            _ = try await StremioAddonClient.fetchStreamCandidates(
+                from: addon,
+                mediaTypes: ["movie"],
+                identifiers: ["tt1234567"],
+                timeout: .seconds10,
+                transport: transport
+            )
+            XCTFail("Expected an invalid response error")
+        } catch {
+            XCTAssertEqual(
+                error as? StremioAddonClient.AddonClientError,
+                .invalidResponse
+            )
+        }
     }
 
     private func validManifestData(name: String = "Example") -> Data {

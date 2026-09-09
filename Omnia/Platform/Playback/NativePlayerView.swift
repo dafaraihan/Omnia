@@ -15,7 +15,10 @@ struct NativePlayerView: NSViewRepresentable {
     let player: OMMpvPlayerController
 
     func makeNSView(context: Context) -> NSView {
-        let view = player.videoView
+        let view = NSView()
+        view.wantsLayer = true
+        view.layer?.backgroundColor = NSColor.black.cgColor
+        player.attachVideoView(toHost: view)
         DispatchQueue.main.async {
             player.startIfNeeded()
         }
@@ -23,6 +26,7 @@ struct NativePlayerView: NSViewRepresentable {
     }
 
     func updateNSView(_ view: NSView, context: Context) {
+        player.attachVideoView(toHost: view)
         player.startIfNeeded()
     }
 }

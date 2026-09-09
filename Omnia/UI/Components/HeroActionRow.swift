@@ -14,6 +14,13 @@ enum ButtonInteractionPresentation {
     }
 }
 
+struct HeroWatchAction {
+    let systemImage: String
+    let accessibilityLabel: String
+    let perform: () -> Void
+    var isEnabled = true
+}
+
 /// The shared primary and library actions used by Omnia's cinematic heroes.
 /// Keeping this component shared prevents Home and title detail from drifting
 /// into subtly different button sizes or spacing.
@@ -21,46 +28,92 @@ struct HeroActionRow<Primary: View>: View {
     let width: CGFloat
     let isSaved: Bool
     let libraryAction: () -> Void
+    let watchAction: HeroWatchAction?
     private let primary: Primary
 
     init(
         width: CGFloat,
         isSaved: Bool,
         libraryAction: @escaping () -> Void,
+        watchAction: HeroWatchAction? = nil,
         @ViewBuilder primary: () -> Primary
     ) {
         self.width = width
         self.isSaved = isSaved
         self.libraryAction = libraryAction
+        self.watchAction = watchAction
         self.primary = primary()
     }
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 primary
+                if let watchAction {
+                    watchButton(action: watchAction)
+                }
                 libraryButton
             }
 
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .center, spacing: 10) {
                 primary
-                libraryButton
+                HStack(spacing: 10) {
+                    if let watchAction {
+                        watchButton(action: watchAction)
+                    }
+                    libraryButton
+                }
             }
         }
         // The action group belongs to the same leading identity column as the
         // transparent logo, metadata, and synopsis.
-        .frame(width: width, alignment: .leading)
+        .frame(width: width, alignment: watchAction == nil ? .leading : .center)
+    }
+
+    private func watchButton(action: HeroWatchAction) -> some View {
+        Button(action: action.perform) {
+            Image(systemName: action.systemImage)
+                .font(.body.weight(.semibold))
+                #if os(macOS)
+                .foregroundStyle(.white)
+                #else
+                .foregroundStyle(actionForeground)
+                #endif
+                .frame(width: 46, height: 46)
+                .contentShape(Circle())
+                #if !os(macOS)
+                .background(actionBackground, in: Circle())
+                #endif
+        }
+        #if os(macOS)
+        .omniaCircularGlassButton()
+        #else
+        .buttonStyle(.plain)
+        #endif
+        .disabled(!action.isEnabled)
+        .accessibilityLabel(action.accessibilityLabel)
     }
 
     private var libraryButton: some View {
         Button(action: libraryAction) {
             Image(systemName: isSaved ? "checkmark" : "plus")
                 .font(.body.weight(.semibold))
+                #if os(macOS)
+                .foregroundStyle(.white)
+                #else
                 .foregroundStyle(actionForeground)
+                #endif
                 .frame(width: 46, height: 46)
+                .contentShape(Circle())
+                #if !os(macOS)
                 .background(actionBackground, in: Circle())
+                #endif
         }
+        #if os(macOS)
+        .omniaCircularGlassButton()
+        #else
         .buttonStyle(.plain)
+        #endif
         .accessibilityLabel(isSaved ? "In My List" : "Add to My List")
     }
 
@@ -74,15 +127,36 @@ struct HeroActionRow<Primary: View>: View {
 /// The identically styled primary pill used in every cinematic hero.
 struct HeroPrimaryActionLabel: View {
     let title: String
+    var resumeProgress: ResumeProgressPresentation?
 
     var body: some View {
-        Label(title, systemImage: "play.fill")
-            .font(.body.weight(.semibold))
+        HStack(spacing: 8) {
+            Label(title, systemImage: "play.fill")
+                .font(.body.weight(.semibold))
+                .fixedSize()
+
+            if let resumeProgress {
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text(resumeProgress.heroMetadataText)
+                        .font(.caption.weight(.semibold))
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                    ResumeProgressBar(progress: resumeProgress.progress)
+                }
+                .frame(width: 56)
+            }
+        }
+            #if os(macOS)
+            .foregroundStyle(.white)
+            #else
             .foregroundStyle(.black)
-            .padding(.horizontal, 18)
+            #endif
+            .padding(.horizontal, 14)
             // A stable, longer primary hit target makes Play, Resume, and
             // Rewatch feel like the same deliberate playback action.
-            .frame(minWidth: 176, minHeight: 46)
+            .frame(width: 176, height: 46)
+            .contentShape(Capsule())
+            #if !os(macOS)
             .background(.white, in: Capsule())
+            #endif
     }
 }

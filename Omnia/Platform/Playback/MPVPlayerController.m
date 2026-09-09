@@ -136,7 +136,7 @@ static void OMMpvRequestRedraw(void *context) {
     });
 }
 
-@interface OMMpvPlayerController () {
+@interface OMMpvPlayerController () <NSWindowDelegate> {
     mpv_handle *_mpv;
     mpv_render_context *_renderContext;
     NSURL *_URL;
@@ -147,17 +147,26 @@ static void OMMpvRequestRedraw(void *context) {
     BOOL _paused;
     double _volume;
     double _playbackRate;
+    OMMpvVideoAspectMode _videoAspectMode;
     double _pendingPosition;
     NSArray<NSString *> *_preferredAudioLanguages;
     NSArray<NSString *> *_preferredSubtitleLanguages;
     BOOL _subtitlesDisabled;
     NSDictionary<NSString *, id> *_subtitleStyle;
     BOOL _tracksLoading;
+    BOOL _fileLoaded;
+    __weak NSView *_inlineVideoHost;
+    NSPanel *_pictureInPicturePanel;
+    BOOL _pictureInPictureActive;
 }
 @property (nonatomic, readwrite) OMMpvOpenGLView *videoView;
 @property (nonatomic, readwrite, nullable) NSString *errorMessage;
 - (void)drainEvents;
 - (void)emitSnapshot;
+- (void)embedVideoViewInHost:(NSView *)hostView;
+- (NSPanel *)makePictureInPicturePanel;
+- (void)applySubtitleStyleProperties;
+- (void)applyPendingSeekIfReady;
 @end
 
 static void OMMpvWakeup(void *context) {
@@ -185,6 +194,7 @@ static void OMMpvWakeup(void *context) {
     _blurayDeviceURL = [blurayDeviceURL copy];
     _volume = 100;
     _playbackRate = 1;
+    _videoAspectMode = OMMpvVideoAspectModeOriginal;
     _tracksLoading = YES;
     _videoView = [[OMMpvOpenGLView alloc] initWithFrame:NSZeroRect];
     return self;
@@ -228,6 +238,16 @@ static void OMMpvWakeup(void *context) {
     mpv_set_option_string(_mpv, "vo", "libmpv");
     mpv_set_option_string(_mpv, "hwdec", "auto-safe");
     mpv_set_option_string(_mpv, "video-sync", "display-resample");
+    mpv_set_option_string(
+        _mpv,
+        "keepaspect",
+        _videoAspectMode == OMMpvVideoAspectModeStretch ? "no" : "yes"
+    );
+    mpv_set_option_string(
+        _mpv,
+        "panscan",
+        _videoAspectMode == OMMpvVideoAspectModeFill ? "1" : "0"
+    );
     if (_blurayDeviceURL) {
         // The Swift boundary accepts only a completed, cache-owned ISO or
         // BDMV directory. Loading the longest title avoids disc menus and
@@ -303,12 +323,11 @@ static void OMMpvWakeup(void *context) {
         return;
     }
     [self emitSnapshot];
-    if (_pendingPosition > 0) [self seekTo:_pendingPosition];
     [self play];
 }
 
 - (BOOL)isPaused { return _mpv ? [self flagForProperty:"pause"] : _paused; }
-- (double)position { return _mpv ? [self doubleForProperty:"time-pos"] : _pendingPosition; }
+- (double)position { return (_mpv && _fileLoaded) ? [self doubleForProperty:"time-pos"] : _pendingPosition; }
 - (double)duration { return _mpv ? [self doubleForProperty:"duration"] : 0; }
 - (double)volume { return _mpv ? [self doubleForProperty:"volume"] : _volume; }
 - (double)playbackRate { return _mpv ? [self doubleForProperty:"speed"] : _playbackRate; }
@@ -316,6 +335,10 @@ static void OMMpvWakeup(void *context) {
     if (!_videoView.didRenderFrame || !_mpv) return NO;
     int64_t videoWidth = 0;
     return mpv_get_property(_mpv, "video-params/w", MPV_FORMAT_INT64, &videoWidth) >= 0 && videoWidth > 0;
+}
+- (BOOL)pictureInPictureActive { return _pictureInPictureActive; }
+- (BOOL)pictureInPicturePossible {
+    return !_stopped && _inlineVideoHost != nil && _videoView != nil;
 }
 - (NSArray<OMMpvTrack *> *)audioTracks { return [self tracksOfType:@"audio"]; }
 - (NSArray<OMMpvTrack *> *)subtitleTracks { return [self tracksOfType:@"sub"]; }
@@ -328,10 +351,16 @@ static void OMMpvWakeup(void *context) {
 
 - (void)seekTo:(double)seconds {
     _pendingPosition = MAX(0, seconds);
-    if (!_mpv) return;
+    [self applyPendingSeekIfReady];
+}
+
+- (void)applyPendingSeekIfReady {
+    if (!_mpv || !_fileLoaded || _pendingPosition <= 0) return;
     NSString *position = [NSString stringWithFormat:@"%.3f", _pendingPosition];
     const char *command[] = { "seek", position.UTF8String, "absolute", NULL };
-    mpv_command(_mpv, command);
+    if (mpv_command(_mpv, command) >= 0) {
+        _pendingPosition = 0;
+    }
 }
 
 - (void)setVolume:(double)volume {
@@ -342,6 +371,25 @@ static void OMMpvWakeup(void *context) {
 - (void)setPlaybackRate:(double)playbackRate {
     _playbackRate = MIN(MAX(playbackRate, 0.25), 4);
     [self setDouble:_playbackRate forProperty:"speed"];
+}
+
+- (void)setVideoAspectMode:(OMMpvVideoAspectMode)mode {
+    _videoAspectMode = mode;
+    switch (mode) {
+        case OMMpvVideoAspectModeStretch:
+            [self setFlag:NO forProperty:"keepaspect"];
+            [self setDouble:0 forProperty:"panscan"];
+            break;
+        case OMMpvVideoAspectModeFill:
+            [self setFlag:YES forProperty:"keepaspect"];
+            [self setDouble:1 forProperty:"panscan"];
+            break;
+        case OMMpvVideoAspectModeOriginal:
+        default:
+            [self setFlag:YES forProperty:"keepaspect"];
+            [self setDouble:0 forProperty:"panscan"];
+            break;
+    }
 }
 
 - (void)setPreferredAudioLanguages:(NSArray<NSString *> *)languages {
@@ -360,8 +408,13 @@ static void OMMpvWakeup(void *context) {
 }
 
 - (void)setSubtitleStyle:(NSDictionary<NSString *, id> *)style {
-    if (_didStart) return;
-    _subtitleStyle = [style copy];
+    NSMutableDictionary<NSString *, id> *mergedStyle = [_subtitleStyle mutableCopy]
+        ?: [NSMutableDictionary dictionary];
+    [mergedStyle addEntriesFromDictionary:style];
+    _subtitleStyle = [mergedStyle copy];
+    if (_didStart && _mpv) {
+        [self applySubtitleStyleProperties];
+    }
 }
 
 - (void)selectAudioTrackWithID:(NSInteger)trackID {
@@ -392,7 +445,98 @@ static void OMMpvWakeup(void *context) {
     mpv_command(_mpv, command);
 }
 
+- (void)attachVideoViewToHost:(NSView *)hostView {
+    _inlineVideoHost = hostView;
+    if (!_pictureInPictureActive) {
+        [self embedVideoViewInHost:hostView];
+    }
+}
+
+- (void)enterPictureInPicture {
+    if (!self.pictureInPicturePossible || _pictureInPictureActive) return;
+
+    NSPanel *panel = _pictureInPicturePanel ?: [self makePictureInPicturePanel];
+    _pictureInPicturePanel = panel;
+    [self embedVideoViewInHost:panel.contentView];
+    _pictureInPictureActive = YES;
+    [panel orderFront:nil];
+}
+
+- (void)exitPictureInPicture {
+    if (!_pictureInPictureActive) return;
+
+    if (_inlineVideoHost) {
+        [self embedVideoViewInHost:_inlineVideoHost];
+    }
+    [_pictureInPicturePanel orderOut:nil];
+    _pictureInPictureActive = NO;
+}
+
+- (void)togglePictureInPicture {
+    _pictureInPictureActive ? [self exitPictureInPicture] : [self enterPictureInPicture];
+}
+
+- (BOOL)windowShouldClose:(NSWindow *)sender {
+    if (sender == _pictureInPicturePanel) {
+        [self exitPictureInPicture];
+        return NO;
+    }
+    return YES;
+}
+
+- (void)embedVideoViewInHost:(NSView *)hostView {
+    if (_videoView.superview == hostView) {
+        _videoView.frame = hostView.bounds;
+        return;
+    }
+
+    [_videoView removeFromSuperview];
+    _videoView.translatesAutoresizingMaskIntoConstraints = YES;
+    _videoView.frame = hostView.bounds;
+    _videoView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    [hostView addSubview:_videoView];
+    _videoView.needsDisplay = YES;
+}
+
+- (NSPanel *)makePictureInPicturePanel {
+    NSSize contentSize = NSMakeSize(480, 270);
+    NSScreen *screen = _inlineVideoHost.window.screen ?: NSScreen.mainScreen;
+    NSRect visibleFrame = screen.visibleFrame;
+    NSRect contentRect = NSMakeRect(
+        NSMaxX(visibleFrame) - contentSize.width - 24,
+        NSMinY(visibleFrame) + 24,
+        contentSize.width,
+        contentSize.height
+    );
+    NSPanel *panel = [[NSPanel alloc]
+        initWithContentRect:contentRect
+        styleMask:NSWindowStyleMaskTitled
+            | NSWindowStyleMaskClosable
+            | NSWindowStyleMaskResizable
+            | NSWindowStyleMaskFullSizeContentView
+            | NSWindowStyleMaskNonactivatingPanel
+        backing:NSBackingStoreBuffered
+        defer:NO
+    ];
+    panel.title = @"Picture in Picture";
+    panel.titleVisibility = NSWindowTitleHidden;
+    panel.titlebarAppearsTransparent = YES;
+    panel.movableByWindowBackground = YES;
+    panel.releasedWhenClosed = NO;
+    panel.hidesOnDeactivate = NO;
+    panel.level = NSFloatingWindowLevel;
+    panel.collectionBehavior = NSWindowCollectionBehaviorCanJoinAllSpaces
+        | NSWindowCollectionBehaviorFullScreenAuxiliary;
+    panel.contentAspectRatio = NSMakeSize(16, 9);
+    panel.minSize = NSMakeSize(320, 180);
+    panel.backgroundColor = NSColor.blackColor;
+    panel.delegate = self;
+    return panel;
+}
+
 - (void)stop {
+    [self exitPictureInPicture];
+    _inlineVideoHost = nil;
     _stopped = YES;
     [self destroyPlayer];
 }
@@ -408,6 +552,7 @@ static void OMMpvWakeup(void *context) {
     if (_subtitleStyle.count == 0) return;
 
     NSDictionary<NSString *, NSString *> *stringOptions = @{
+        @"font": @"sub-font",
         @"textColor": @"sub-color",
         @"outlineColor": @"sub-outline-color",
         @"backgroundColor": @"sub-back-color",
@@ -416,15 +561,17 @@ static void OMMpvWakeup(void *context) {
     };
     [stringOptions enumerateKeysAndObjectsUsingBlock:^(NSString *key, NSString *option, BOOL *stop) {
         NSString *value = self->_subtitleStyle[key];
-        if ([value isKindOfClass:NSString.class] && value.length <= 32) {
+        if ([value isKindOfClass:NSString.class] && value.length <= 128) {
             mpv_set_option_string(self->_mpv, option.UTF8String, value.UTF8String);
         }
     }];
 
     NSDictionary<NSString *, NSString *> *numberOptions = @{
+        @"fontSize": @"sub-font-size",
         @"scale": @"sub-scale",
         @"outlineSize": @"sub-outline-size",
         @"shadowOffset": @"sub-shadow-offset",
+        @"shadowBlur": @"sub-blur",
         @"position": @"sub-pos",
         @"margin": @"sub-margin-x",
     };
@@ -439,9 +586,84 @@ static void OMMpvWakeup(void *context) {
     NSNumber *italic = _subtitleStyle[@"italic"];
     mpv_set_option_string(_mpv, "sub-bold", bold.boolValue ? "yes" : "no");
     mpv_set_option_string(_mpv, "sub-italic", italic.boolValue ? "yes" : "no");
+    NSNumber *shadowOpacity = _subtitleStyle[@"shadowOpacity"];
+    NSString *background = _subtitleStyle[@"background"];
+    if (shadowOpacity || background) {
+        double alphaFraction = [background isEqualToString:@"solid"]
+            ? 0.9
+            : ([background isEqualToString:@"translucent"]
+                ? 0.55
+                : MIN(MAX(shadowOpacity.doubleValue, 0), 1));
+        NSString *color = [NSString stringWithFormat:@"#%02X000000", (int)llround(alphaFraction * 255)];
+        mpv_set_option_string(_mpv, "sub-back-color", color.UTF8String);
+        mpv_set_option_string(
+            _mpv,
+            "sub-border-style",
+            [background isEqualToString:@"none"] ? "outline-and-shadow" : "background-box"
+        );
+        mpv_set_option_string(_mpv, "sub-shadow-offset", shadowOpacity.doubleValue > 0 ? "2" : "0");
+    }
     // Preserve authored ASS positioning while allowing the user's explicit
     // visual preference to override the style layer.
     mpv_set_option_string(_mpv, "sub-ass-override", "style");
+}
+
+- (void)applySubtitleStyleProperties {
+    if (!_mpv || _subtitleStyle.count == 0) return;
+
+    NSDictionary<NSString *, NSString *> *stringProperties = @{
+        @"font": @"sub-font",
+        @"textColor": @"sub-color",
+        @"outlineColor": @"sub-outline-color",
+        @"backgroundColor": @"sub-back-color",
+        @"edgeStyle": @"sub-border-style",
+        @"alignment": @"sub-align-x",
+    };
+    [stringProperties enumerateKeysAndObjectsUsingBlock:^(NSString *key, NSString *property, BOOL *stop) {
+        NSString *value = self->_subtitleStyle[key];
+        if ([value isKindOfClass:NSString.class] && value.length <= 128) {
+            mpv_set_property_string(self->_mpv, property.UTF8String, value.UTF8String);
+        }
+    }];
+
+    NSDictionary<NSString *, NSString *> *numberProperties = @{
+        @"fontSize": @"sub-font-size",
+        @"scale": @"sub-scale",
+        @"outlineSize": @"sub-outline-size",
+        @"shadowOffset": @"sub-shadow-offset",
+        @"shadowBlur": @"sub-blur",
+        @"position": @"sub-pos",
+        @"margin": @"sub-margin-x",
+    };
+    [numberProperties enumerateKeysAndObjectsUsingBlock:^(NSString *key, NSString *property, BOOL *stop) {
+        NSNumber *value = self->_subtitleStyle[key];
+        if ([value isKindOfClass:NSNumber.class] && isfinite(value.doubleValue)) {
+            mpv_set_property_string(self->_mpv, property.UTF8String, value.stringValue.UTF8String);
+        }
+    }];
+
+    NSNumber *bold = _subtitleStyle[@"bold"];
+    NSNumber *italic = _subtitleStyle[@"italic"];
+    if (bold) mpv_set_property_string(_mpv, "sub-bold", bold.boolValue ? "yes" : "no");
+    if (italic) mpv_set_property_string(_mpv, "sub-italic", italic.boolValue ? "yes" : "no");
+    NSNumber *shadowOpacity = _subtitleStyle[@"shadowOpacity"];
+    NSString *background = _subtitleStyle[@"background"];
+    if (shadowOpacity || background) {
+        double alphaFraction = [background isEqualToString:@"solid"]
+            ? 0.9
+            : ([background isEqualToString:@"translucent"]
+                ? 0.55
+                : MIN(MAX(shadowOpacity.doubleValue, 0), 1));
+        NSString *color = [NSString stringWithFormat:@"#%02X000000", (int)llround(alphaFraction * 255)];
+        mpv_set_property_string(_mpv, "sub-back-color", color.UTF8String);
+        mpv_set_property_string(
+            _mpv,
+            "sub-border-style",
+            [background isEqualToString:@"none"] ? "outline-and-shadow" : "background-box"
+        );
+        mpv_set_property_string(_mpv, "sub-shadow-offset", shadowOpacity.doubleValue > 0 ? "2" : "0");
+    }
+    mpv_set_property_string(_mpv, "sub-ass-override", "style");
 }
 
 - (void)drainEvents {
@@ -454,13 +676,16 @@ static void OMMpvWakeup(void *context) {
 
         switch (event->event_id) {
         case MPV_EVENT_START_FILE:
+            _fileLoaded = NO;
             _tracksLoading = YES;
             self.errorMessage = nil;
             shouldEmitSnapshot = YES;
             break;
         case MPV_EVENT_FILE_LOADED:
+            _fileLoaded = YES;
             _tracksLoading = NO;
             self.errorMessage = nil;
+            [self applyPendingSeekIfReady];
             shouldEmitSnapshot = YES;
             break;
         case MPV_EVENT_PROPERTY_CHANGE:

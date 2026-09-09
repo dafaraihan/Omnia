@@ -42,11 +42,14 @@ final class SettingsPreferencesTests: XCTestCase {
         XCTAssertEqual(value.audioFallbackLanguage, .none)
         XCTAssertEqual(value.preferredSubtitleLanguage, .followSystem)
         XCTAssertEqual(value.subtitleFallbackLanguage, .none)
+        XCTAssertTrue(value.subtitlesEnabled)
+        XCTAssertEqual(value.playbackSubtitleStyle, .default)
         XCTAssertEqual(value.sdhPreference, .followSystem)
         XCTAssertEqual(value.animeAudioPreference, .followPreferred)
         XCTAssertEqual(value.subtitleAppearance, .followSystem)
         XCTAssertEqual(value.customSubtitleAppearance, .default)
         XCTAssertEqual(value.mdblistRatings, .default)
+        XCTAssertTrue(value.showMediaCardLabels)
     }
 
     func testNormalizationDisablesDependentPreferences() {
@@ -69,6 +72,17 @@ final class SettingsPreferencesTests: XCTestCase {
             $0.upcomingLookAhead = .days14
             $0.showSkipIntro = false
             $0.autoSkipIntro = true
+            $0.showMediaCardLabels = false
+            $0.subtitlesEnabled = false
+            $0.playbackSubtitleStyle = PlaybackSubtitleStyle(
+                fontName: "Avenir Next",
+                fontSize: 51,
+                scale: 1.25,
+                position: 84,
+                shadowOpacity: 0.4,
+                shadowBlurRadius: 5,
+                background: .translucent
+            )
         }
 
         store = nil
@@ -78,6 +92,10 @@ final class SettingsPreferencesTests: XCTestCase {
         XCTAssertEqual(restored.preferences.upcomingLookAhead, .days14)
         XCTAssertFalse(restored.preferences.showSkipIntro)
         XCTAssertFalse(restored.preferences.autoSkipIntro)
+        XCTAssertFalse(restored.preferences.showMediaCardLabels)
+        XCTAssertFalse(restored.preferences.subtitlesEnabled)
+        XCTAssertEqual(restored.preferences.playbackSubtitleStyle.fontName, "Avenir Next")
+        XCTAssertEqual(restored.preferences.playbackSubtitleStyle.background, .translucent)
     }
 
     func testStoreRecoversFromCorruptPayload() {
@@ -113,6 +131,34 @@ final class SettingsPreferencesTests: XCTestCase {
         )
 
         XCTAssertEqual(decoded.mdblistRatings, .default)
+    }
+
+    func testDecodingPreviousPayloadDefaultsPosterLabelsToVisible() throws {
+        let current = try JSONEncoder().encode(SettingsPreferences.default)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: current) as? [String: Any])
+        object.removeValue(forKey: "showMediaCardLabels")
+
+        let decoded = try JSONDecoder().decode(
+            SettingsPreferences.self,
+            from: JSONSerialization.data(withJSONObject: object)
+        )
+
+        XCTAssertTrue(decoded.showMediaCardLabels)
+    }
+
+    func testDecodingPreviousPayloadDefaultsDurablePlaybackSubtitlePreferences() throws {
+        let current = try JSONEncoder().encode(SettingsPreferences.default)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: current) as? [String: Any])
+        object.removeValue(forKey: "subtitlesEnabled")
+        object.removeValue(forKey: "playbackSubtitleStyle")
+
+        let decoded = try JSONDecoder().decode(
+            SettingsPreferences.self,
+            from: JSONSerialization.data(withJSONObject: object)
+        )
+
+        XCTAssertTrue(decoded.subtitlesEnabled)
+        XCTAssertEqual(decoded.playbackSubtitleStyle, .default)
     }
 
     func testMDBListRatingNormalizationCanonicalizesAliasesAndRemovesInvalidIDs() {

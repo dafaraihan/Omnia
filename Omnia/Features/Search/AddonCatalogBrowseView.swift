@@ -37,7 +37,11 @@ struct AddonCatalogBrowseView: View {
                     ContentUnavailableView("No Titles Found", systemImage: "film")
                         .frame(maxWidth: .infinity, minHeight: 220)
                 } else {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: minimumCardWidth), spacing: 18)], alignment: .leading, spacing: 26) {
+                    LazyVGrid(
+                        columns: MediaBrowseMetrics.posterGridColumns,
+                        alignment: .leading,
+                        spacing: MediaBrowseMetrics.gridRowSpacing
+                    ) {
                         ForEach(items) { item in
                             MediaPoster(item: item, fillsAvailableWidth: true)
                         }
@@ -64,10 +68,10 @@ struct AddonCatalogBrowseView: View {
                     }
                 }
             }
-            .padding(.horizontal, horizontalInset)
+            .padding(.horizontal, MediaBrowseMetrics.pageInset)
             .padding(.vertical, 24)
         }
-        .navigationTitle(title)
+        .omniaNavigationTitle(title)
         .searchable(text: $search, prompt: supportsSearch ? "Search \(title)" : "")
         .onChange(of: search) { _, _ in
             guard supportsSearch else { return }
@@ -137,21 +141,6 @@ struct AddonCatalogBrowseView: View {
         isLoading = false
     }
 
-    private var minimumCardWidth: CGFloat {
-        #if os(iOS)
-        132
-        #else
-        154
-        #endif
-    }
-
-    private var horizontalInset: CGFloat {
-        #if os(iOS)
-        20
-        #else
-        32
-        #endif
-    }
 }
 
 private extension String {

@@ -352,7 +352,7 @@ enum AboutCatalog {
 
 struct AboutSettingsView: View {
     var body: some View {
-        Form {
+        OmniaSettingsForm {
             Section("Omnia") {
                 LabeledContent("Version", value: bundleValue(for: "CFBundleShortVersionString"))
                 LabeledContent("Build", value: bundleValue(for: "CFBundleVersion"))
@@ -361,13 +361,15 @@ struct AboutSettingsView: View {
 
             Section("Resources and Technologies") {
                 ForEach(AboutSection.allCases) { section in
-                    NavigationLink(value: SettingsRoute.aboutSection(section)) {
+                    NavigationLink {
+                        SettingsDestinationView(route: .aboutSection(section))
+                    } label: {
                         Label(section.title, systemImage: section.systemImage)
                     }
                 }
             }
         }
-        .navigationTitle("About Omnia")
+        .omniaNavigationTitle("About Omnia")
     }
 
     private func bundleValue(for key: String) -> String {
@@ -383,7 +385,7 @@ struct AboutSectionSettingsView: View {
     let section: AboutSection
 
     var body: some View {
-        Form {
+        OmniaSettingsForm {
             if section == .licenses {
                 Section("Bundled with Omnia") {
                     NavigationLink {
@@ -417,6 +419,6 @@ struct AboutSectionSettingsView: View {
                 }
             }
         }
-        .navigationTitle(section.title)
+        .omniaNavigationTitle(section.title)
     }
 }

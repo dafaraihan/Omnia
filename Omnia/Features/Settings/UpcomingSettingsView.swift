@@ -4,7 +4,7 @@ struct UpcomingSettingsView: View {
     @Environment(SettingsPreferencesStore.self) private var settings
 
     var body: some View {
-        Form {
+        OmniaSettingsForm {
             Section {
                 Toggle("Show on Home", isOn: settings.binding(\.showUpcoming))
             } footer: {
@@ -32,6 +32,6 @@ struct UpcomingSettingsView: View {
                 }
             }
         }
-        .navigationTitle("Upcoming")
+        .omniaNavigationTitle("Upcoming")
     }
 }

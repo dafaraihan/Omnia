@@ -2,14 +2,16 @@ import SwiftUI
 
 struct MetadataSettingsView: View {
     var body: some View {
-        Form {
+        OmniaSettingsForm {
             ForEach(MetadataContentClass.allCases) { contentClass in
                 MetadataRouteSection(contentClass: contentClass)
             }
 
             Section("Providers") {
                 ForEach(MetadataProvider.supported) { provider in
-                    NavigationLink(value: SettingsRoute.metadataProvider(provider.id)) {
+                    NavigationLink {
+                        SettingsDestinationView(route: .metadataProvider(provider.id))
+                    } label: {
                         HStack(spacing: 12) {
                             MetadataProviderMark(providerID: provider.id)
                             VStack(alignment: .leading, spacing: 2) {
@@ -23,7 +25,7 @@ struct MetadataSettingsView: View {
                 }
             }
         }
-        .navigationTitle("Metadata")
+        .omniaNavigationTitle("Metadata")
     }
 }
 
@@ -145,6 +147,9 @@ private struct MetadataFallbackRow: View {
 
 private struct MetadataProviderMark: View {
     let providerID: String
+    #if os(macOS)
+    @Environment(\.macSettingsSymbolTreatment) private var symbolTreatment
+    #endif
 
     private var assetName: String? {
         switch providerID {
@@ -169,7 +174,11 @@ private struct MetadataProviderMark: View {
                     .scaledToFit()
             }
         }
+        #if os(macOS)
+        .foregroundStyle(symbolTreatment.color)
+        #else
         .foregroundStyle(.primary)
+        #endif
         .frame(width: 24, height: 24)
         .accessibilityHidden(true)
     }
@@ -194,7 +203,7 @@ struct MetadataProviderDetailView: View {
     }
 
     var body: some View {
-        Form {
+        OmniaSettingsForm {
             Section("About") {
                 Text(provider.summary)
             }
@@ -209,8 +218,18 @@ struct MetadataProviderDetailView: View {
                     Text(credential.guidance)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    SecureField(credential.entryTitle, text: $credentialInput)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(credential.entryTitle)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        SecureField(
+                            credential.entryTitle,
+                            text: $credentialInput,
+                            prompt: Text("Enter credential")
+                        )
+                        .labelsHidden()
                         .textContentType(.password)
+                    }
 
                     if hasStoredCredential {
                         Label("Stored securely in this device's Keychain", systemImage: "checkmark.shield")
@@ -275,7 +294,7 @@ struct MetadataProviderDetailView: View {
                 }
             }
         }
-        .navigationTitle(provider.name)
+        .omniaNavigationTitle(provider.name)
         .onAppear { loadStoredCredentialState() }
         .confirmationDialog(
             "Remove \(provider.name) Credential?",

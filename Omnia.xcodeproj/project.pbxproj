@@ -386,7 +386,6 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
-				GENERATE_INFOPLIST_FILE = NO;
 				"GCC_PREPROCESSOR_DEFINITIONS[sdk=macosx*]" = (
 					"$(inherited)",
 					"OMNIA_LOCAL_TORRENT=1",
@@ -406,6 +405,7 @@
 					OPENSSL_NO_TLS1_1,
 					OPENSSL_NO_DTLS1,
 				);
+				GENERATE_INFOPLIST_FILE = NO;
 				"HEADER_SEARCH_PATHS[sdk=macosx*]" = (
 					"$(inherited)",
 					/opt/homebrew/include,

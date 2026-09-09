@@ -2,11 +2,98 @@ import XCTest
 @testable import Omnia
 
 final class AppDestinationTests: XCTestCase {
-    func testMacDestinationsRetainSettingsInMainNavigation() {
-        XCTAssertTrue(AppDestination.visibleDestinations(for: .mac).contains(.settings))
+    func testMacPrimaryNavigationMovesAnimeUnderSearch() {
+        XCTAssertEqual(
+            AppDestination.visibleDestinations(for: .mac),
+            [.home, .library, .discover, .search, .settings]
+        )
     }
 
-    func testMobileDestinationsRetainSettingsTab() {
-        XCTAssertTrue(AppDestination.visibleDestinations(for: .mobile).contains(.settings))
+    func testMobilePrimaryNavigationMovesAnimeUnderSearch() {
+        XCTAssertEqual(
+            AppDestination.visibleDestinations(for: .mobile),
+            [.home, .library, .discover, .search, .settings]
+        )
     }
+
+    func testSidebarUsesOutlinedSFSymbols() {
+        XCTAssertEqual(AppDestination.home.symbolName, "house")
+        XCTAssertEqual(AppDestination.library.symbolName, "rectangle.stack")
+        XCTAssertEqual(AppDestination.discover.symbolName, "bag")
+        XCTAssertEqual(AppDestination.search.symbolName, "magnifyingglass")
+        XCTAssertEqual(AppDestination.settings.symbolName, "gearshape")
+    }
+
+    func testMacSidebarSeparatesNeutralSelectionFromAppleBlueSymbol() {
+        XCTAssertEqual(MacSidebarPresentation.selectionTint, .neutralGray)
+        XCTAssertEqual(
+            MacSidebarPresentation.rowTreatment(
+                for: .home,
+                selection: .home,
+                isHovered: false
+            ),
+            .neutralGray
+        )
+        XCTAssertEqual(
+            MacSidebarPresentation.rowTreatment(
+                for: .library,
+                selection: .home,
+                isHovered: true
+            ),
+            .neutralGray
+        )
+        XCTAssertEqual(
+            MacSidebarPresentation.rowTreatment(
+                for: .library,
+                selection: .home,
+                isHovered: false
+            ),
+            .clear
+        )
+        XCTAssertEqual(
+            MacSidebarPresentation.symbolTreatment(for: .home, selection: .home),
+            .appleBlue
+        )
+        XCTAssertEqual(
+            MacSidebarPresentation.symbolTreatment(for: .library, selection: .home),
+            .secondary
+        )
+    }
+
+    func testMacSidebarHoverAndSelectionUseTheSameBackgroundBounds() {
+        let selected = MacSidebarPresentation.backgroundOutset(
+            for: .home,
+            selection: .home,
+            isHovered: false
+        )
+        let hovered = MacSidebarPresentation.backgroundOutset(
+            for: .library,
+            selection: .home,
+            isHovered: true
+        )
+
+        XCTAssertEqual(selected, hovered)
+        XCTAssertEqual(selected, CGSize(width: 7, height: 4))
+    }
+
+    #if os(macOS)
+    @MainActor
+    func testChangingPrimaryDestinationRebuildsItsNavigationStack() {
+        let navigation = MacPrimaryNavigationState(selection: .library)
+
+        navigation.select(.discover)
+
+        XCTAssertEqual(navigation.selection, .discover)
+        XCTAssertEqual(navigation.stackIdentity, .discover)
+    }
+
+    @MainActor
+    func testSelectingCurrentPrimaryDestinationDoesNotRebuildItsNavigationStack() {
+        let navigation = MacPrimaryNavigationState(selection: .library)
+
+        navigation.select(.library)
+
+        XCTAssertEqual(navigation.stackIdentity, .library)
+    }
+    #endif
 }
