@@ -638,7 +638,6 @@ struct ContinueWatchingCard: View {
                 Text(cardPresentation.secondaryText)
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
             }
             .frame(width: cardWidth, alignment: .leading)
         }
