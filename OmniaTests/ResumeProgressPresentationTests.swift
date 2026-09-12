@@ -232,6 +232,51 @@ final class ResumeProgressPresentationTests: XCTestCase {
         XCTAssertNil(ResumeProgressPresentation(item: rewatchItem))
     }
 
+    func testSeriesContinueWatchingCardShowsTitleYearAndExactEpisode() {
+        var item = item(
+            id: "reacher",
+            kind: .series,
+            progress: 0.5,
+            resumeSeasonNumber: 4,
+            resumeEpisodeNumber: 1
+        )
+        item.resumeEpisodeTitle = "In the Name of the Mother"
+
+        let presentation = ContinueWatchingCardPresentation(item: item)
+
+        XCTAssertEqual(presentation.primaryText, "Title · 2026")
+        XCTAssertEqual(presentation.secondaryText, "S4 E1 · In the Name of the Mother")
+        XCTAssertEqual(
+            presentation.accessibilityValue,
+            "2026, season 4, episode 1, In the Name of the Mother"
+        )
+    }
+
+    func testSeriesContinueWatchingCardOmitsMissingOrBlankEpisodeTitle() {
+        var item = item(
+            id: "series",
+            kind: .series,
+            progress: 0.5,
+            resumeSeasonNumber: 4,
+            resumeEpisodeNumber: 1
+        )
+
+        XCTAssertEqual(ContinueWatchingCardPresentation(item: item).secondaryText, "S4 E1")
+
+        item.resumeEpisodeTitle = "  \n "
+        XCTAssertEqual(ContinueWatchingCardPresentation(item: item).secondaryText, "S4 E1")
+    }
+
+    func testMovieContinueWatchingCardKeepsCurrentTwoLines() {
+        let presentation = ContinueWatchingCardPresentation(
+            item: item(id: "movie", kind: .movie, progress: 0.5)
+        )
+
+        XCTAssertEqual(presentation.primaryText, "Title")
+        XCTAssertEqual(presentation.secondaryText, "2026")
+        XCTAssertEqual(presentation.accessibilityValue, "2026")
+    }
+
     private func item(
         id: String,
         kind: MediaItem.Kind,

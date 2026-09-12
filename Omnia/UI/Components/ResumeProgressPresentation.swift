@@ -109,6 +109,38 @@ nonisolated struct ResumeProgressPresentation: Equatable {
     }
 }
 
+nonisolated struct ContinueWatchingCardPresentation: Equatable {
+    let primaryText: String
+    let secondaryText: String
+    let accessibilityValue: String
+
+    init(item: MediaItem) {
+        guard item.kind == .series,
+              let season = item.resumeSeasonNumber,
+              let episode = item.resumeEpisodeNumber else {
+            primaryText = item.title
+            secondaryText = item.year
+            accessibilityValue = item.year
+            return
+        }
+
+        primaryText = "\(item.title) · \(item.year)"
+        let identifier = "S\(season) E\(episode)"
+        let trimmedEpisodeTitle = item.resumeEpisodeTitle?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let episodeTitle = trimmedEpisodeTitle.flatMap { $0.isEmpty ? nil : $0 }
+        secondaryText = episodeTitle.map { "\(identifier) · \($0)" } ?? identifier
+        accessibilityValue = [
+            item.year,
+            "season \(season)",
+            "episode \(episode)",
+            episodeTitle
+        ]
+        .compactMap { $0 }
+        .joined(separator: ", ")
+    }
+}
+
 struct ResumeProgressBar: View {
     let progress: Double
 

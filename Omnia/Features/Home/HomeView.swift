@@ -588,7 +588,7 @@ struct ContinueWatchingCard: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Continue watching \(item.title)")
-        .accessibilityValue(resumePresentation?.continueWatchingMetadataText ?? "In progress")
+        .accessibilityValue(cardPresentation.accessibilityValue)
         .accessibilityHint(
             settings.preferences.directContinueWatchingPlayback
                 ? "Opens available sources and resumes playback in Omnia"
@@ -631,13 +631,14 @@ struct ContinueWatchingCard: View {
             }
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(item.title)
+                Text(cardPresentation.primaryText)
                     .font(.headline)
                     .foregroundStyle(.primary)
                     .lineLimit(1)
-                Text(item.year)
+                Text(cardPresentation.secondaryText)
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
             .frame(width: cardWidth, alignment: .leading)
         }
@@ -666,6 +667,10 @@ struct ContinueWatchingCard: View {
 
     private var resumePresentation: ResumeProgressPresentation? {
         ResumeProgressPresentation(item: item)
+    }
+
+    private var cardPresentation: ContinueWatchingCardPresentation {
+        ContinueWatchingCardPresentation(item: item)
     }
 
     private var cardWidth: CGFloat {
