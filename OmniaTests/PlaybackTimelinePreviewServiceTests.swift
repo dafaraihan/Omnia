@@ -103,6 +103,29 @@ final class PlaybackTimelinePreviewServiceTests: XCTestCase {
         XCTAssertEqual(imageRequestCount, 1)
     }
 
+    func testLocalFallbackDoesNotCollideWithStoryboardCacheKey() async throws {
+        let descriptor = makeStoryboard(sourceID: "fallback")
+        let storyboard = PreviewStoryboardLoaderStub(
+            hlsDescriptor: nil,
+            imageFailureCount: 1
+        )
+        let local = PreviewLocalGeneratorStub()
+        let service = PlaybackTimelinePreviewService(
+            source: makeSource(id: "fallback", descriptor: .storyboard(descriptor)),
+            configuration: .init(isLowPowerModeEnabled: false),
+            storyboardLoader: storyboard,
+            localGenerator: local
+        )
+
+        _ = await service.frame(at: 0.5)
+        _ = await service.frame(at: 0.5)
+
+        let storyboardRequestCount = await storyboard.imageRequestCount
+        let localRequestCount = await local.imageRequestCount
+        XCTAssertEqual(storyboardRequestCount, 2)
+        XCTAssertEqual(localRequestCount, 1)
+    }
+
     func testUnavailableHLSDescriptorIsResolvedOnlyOnce() async throws {
         let storyboard = PreviewStoryboardLoaderStub(hlsDescriptor: nil)
         let local = PreviewLocalGeneratorStub()
@@ -192,11 +215,16 @@ private actor PreviewGenerationGate {
 
 private actor PreviewStoryboardLoaderStub: PlaybackStoryboardLoading {
     let hlsDescriptor: PlaybackStoryboardDescriptor?
+    private var imageFailureCount: Int
     private(set) var hlsRequestCount = 0
     private(set) var imageRequestCount = 0
 
-    init(hlsDescriptor: PlaybackStoryboardDescriptor?) {
+    init(
+        hlsDescriptor: PlaybackStoryboardDescriptor?,
+        imageFailureCount: Int = 0
+    ) {
         self.hlsDescriptor = hlsDescriptor
+        self.imageFailureCount = imageFailureCount
     }
 
     func hlsStoryboard(for source: PlaybackSource) async throws -> PlaybackStoryboardDescriptor? {
@@ -210,8 +238,16 @@ private actor PreviewStoryboardLoaderStub: PlaybackStoryboardLoading {
         source: PlaybackSource
     ) async throws -> PlaybackTimelinePreviewImage {
         imageRequestCount += 1
+        if imageFailureCount > 0 {
+            imageFailureCount -= 1
+            throw PreviewStoryboardLoaderError.injectedFailure
+        }
         return makePreviewImage()
     }
+}
+
+private enum PreviewStoryboardLoaderError: Error {
+    case injectedFailure
 }
 
 private actor PreviewLocalGeneratorStub: PlaybackLocalFrameGenerating {

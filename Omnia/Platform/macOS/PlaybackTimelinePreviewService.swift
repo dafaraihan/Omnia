@@ -24,8 +24,24 @@ nonisolated struct PlaybackTimelinePreviewFrame: @unchecked Sendable {
 }
 
 nonisolated struct PlaybackTimelinePreviewCacheKey: Hashable, Sendable {
+    enum Storage: Hashable, Sendable {
+        case storyboard
+        case local
+    }
+
     let sourceID: String
     let timestampBucket: Int
+    let storage: Storage
+
+    init(
+        sourceID: String,
+        timestampBucket: Int,
+        storage: Storage = .local
+    ) {
+        self.sourceID = sourceID
+        self.timestampBucket = timestampBucket
+        self.storage = storage
+    }
 }
 
 nonisolated struct DefaultPlaybackStoryboardLoader: PlaybackStoryboardLoading {
@@ -339,7 +355,8 @@ actor PlaybackTimelinePreviewService {
         }
         return PlaybackTimelinePreviewCacheKey(
             sourceID: sourceID,
-            timestampBucket: Int((tile.startTime * 1_000).rounded(.down))
+            timestampBucket: Int((tile.startTime * 1_000).rounded(.down)),
+            storage: .storyboard
         )
     }
 
