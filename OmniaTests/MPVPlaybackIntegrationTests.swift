@@ -113,6 +113,51 @@ final class MPVPlaybackIntegrationTests: XCTestCase {
     }
 
     @MainActor
+    func testThumbnailGeneratorReturnsBoundedFrameWithoutPlayerView() throws {
+        let fixtureURL = try XCTUnwrap(
+            Bundle(for: Self.self).url(forResource: "multi-track", withExtension: "mkv")
+        )
+        let generator = OMMpvThumbnailGenerator(url: fixtureURL, requestHeaders: [:])
+        defer { generator.stop() }
+        var result: Result<NSImage, Error>?
+
+        generator.requestFrame(at: 0.5, maximumSize: NSSize(width: 320, height: 180)) { image, error in
+            if let image {
+                result = .success(image)
+            } else {
+                result = .failure(error ?? NSError(domain: "OmniaTests", code: 1))
+            }
+        }
+        waitUntil { result != nil }
+
+        let image = try XCTUnwrap(try result?.get())
+        XCTAssertLessThanOrEqual(image.size.width, 320)
+        XCTAssertLessThanOrEqual(image.size.height, 180)
+    }
+
+    @MainActor
+    func testThumbnailGeneratorCancelsSupersededRequest() throws {
+        let fixtureURL = try XCTUnwrap(
+            Bundle(for: Self.self).url(forResource: "multi-track", withExtension: "mkv")
+        )
+        let generator = OMMpvThumbnailGenerator(url: fixtureURL, requestHeaders: [:])
+        defer { generator.stop() }
+        var firstError: Error?
+        var secondImage: NSImage?
+
+        _ = generator.requestFrame(at: 0.1, maximumSize: NSSize(width: 320, height: 180)) { _, error in
+            firstError = error
+        }
+        _ = generator.requestFrame(at: 0.8, maximumSize: NSSize(width: 320, height: 180)) { image, _ in
+            secondImage = image
+        }
+        waitUntil { firstError != nil && secondImage != nil }
+
+        XCTAssertEqual((firstError as NSError?)?.domain, "OMMpvThumbnailErrorDomain")
+        XCTAssertNotNil(secondImage)
+    }
+
+    @MainActor
     func testSeekRequestedBeforePlayerReadinessIsAppliedAfterFileLoads() throws {
         let fixtureURL = try XCTUnwrap(
             Bundle(for: Self.self).url(forResource: "multi-track", withExtension: "mkv")
