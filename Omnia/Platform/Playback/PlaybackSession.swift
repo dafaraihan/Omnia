@@ -146,6 +146,49 @@ nonisolated struct PlaybackTrackSelectionGate: Equatable {
     }
 }
 
+#if os(macOS)
+nonisolated struct PlaybackTimelinePreviewResultKey: Equatable {
+    let sourceID: String
+
+    func matches(sourceID: String?) -> Bool {
+        self.sourceID == sourceID
+    }
+}
+
+@MainActor
+final class PlaybackTimelinePreviewRequestScheduler {
+    typealias Sleep = @Sendable (Duration) async throws -> Void
+
+    private let sleep: Sleep
+    private var task: Task<Void, Never>?
+
+    init(sleep: @escaping Sleep = { try await Task.sleep(for: $0) }) {
+        self.sleep = sleep
+    }
+
+    func schedule(
+        after delay: Duration,
+        operation: @escaping @MainActor () async -> Void
+    ) {
+        task?.cancel()
+        task = Task {
+            do {
+                try await sleep(delay)
+                try Task.checkCancellation()
+                await operation()
+            } catch {
+                return
+            }
+        }
+    }
+
+    func cancel() {
+        task?.cancel()
+        task = nil
+    }
+}
+#endif
+
 nonisolated enum PlaybackInput: Sendable {
     case stream(PlaybackSource)
     #if os(macOS)
@@ -234,6 +277,10 @@ final class PlaybackSession {
     private(set) var isFullScreenActive = false
     private(set) var isPictureInPictureActive = false
     private(set) var isPictureInPictureAvailable = false
+    #if os(macOS)
+    private(set) var timelinePreviewTimestamp: Double?
+    private(set) var timelinePreviewImage: NSImage?
+    #endif
     var isPresentingPlayer = false
 
     @ObservationIgnored private var progressHandler: (@MainActor (Double, Double?) -> Void)?
@@ -246,6 +293,8 @@ final class PlaybackSession {
     @ObservationIgnored private let outputVolumeController: MacOutputVolumeControlling
     @ObservationIgnored private var trackSelectionGate = PlaybackTrackSelectionGate()
     @ObservationIgnored private var pendingSubtitlePreference: (id: Int?, tracks: [PlaybackTrack])?
+    @ObservationIgnored private var timelinePreviewService: PlaybackTimelinePreviewService?
+    @ObservationIgnored private let timelinePreviewScheduler = PlaybackTimelinePreviewRequestScheduler()
     #endif
     @ObservationIgnored private var lastPersistedPosition: Double = 0
     @ObservationIgnored private var sourceSelectionID: UUID?
@@ -425,6 +474,46 @@ final class PlaybackSession {
         player?.seek(to: seconds)
         #else
         player?.seek(to: CMTime(seconds: max(seconds, 0), preferredTimescale: 600))
+        #endif
+    }
+
+    func requestTimelinePreview(at timestamp: Double) {
+        #if os(macOS)
+        guard let source, let durationSeconds, durationSeconds > 0 else { return }
+        let clamped = min(max(timestamp, 0), durationSeconds)
+        timelinePreviewTimestamp = clamped
+        if timelinePreviewService == nil {
+            timelinePreviewService = PlaybackTimelinePreviewService(
+                source: source,
+                configuration: .init(
+                    isLowPowerModeEnabled: ProcessInfo.processInfo.isLowPowerModeEnabled
+                )
+            )
+        }
+        let resultKey = PlaybackTimelinePreviewResultKey(sourceID: source.id)
+        let configuration = PlaybackTimelinePreviewConfiguration(
+            isLowPowerModeEnabled: ProcessInfo.processInfo.isLowPowerModeEnabled
+        )
+        let service = timelinePreviewService
+        timelinePreviewScheduler.schedule(after: configuration.debounce) { [weak self] in
+            guard let frame = await service?.frame(at: clamped),
+                  !Task.isCancelled,
+                  resultKey.matches(sourceID: self?.source?.id) else { return }
+            self?.timelinePreviewImage = frame.image
+        }
+        #endif
+    }
+
+    func endTimelinePreview() {
+        #if os(macOS)
+        timelinePreviewScheduler.cancel()
+        timelinePreviewTimestamp = nil
+        timelinePreviewImage = nil
+        let service = timelinePreviewService
+        timelinePreviewService = nil
+        Task {
+            await service?.stop()
+        }
         #endif
     }
 
@@ -612,6 +701,7 @@ final class PlaybackSession {
 
     func stop(persisting: Bool = true) {
         sourceSelectionID = nil
+        endTimelinePreview()
         if persisting { flushProgress() }
         #if os(macOS)
         if isFullScreenActive {

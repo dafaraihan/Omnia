@@ -170,6 +170,18 @@ struct MacPlaybackChromeInsets {
     }
 }
 
+nonisolated enum MacPlaybackTimelinePreviewLayout {
+    static func clampedCenter(
+        pointerX: CGFloat,
+        bubbleWidth: CGFloat,
+        availableWidth: CGFloat
+    ) -> CGFloat {
+        guard availableWidth > 0 else { return 0 }
+        let half = min(max(bubbleWidth, 0) / 2, availableWidth / 2)
+        return min(max(pointerX, half), availableWidth - half)
+    }
+}
+
 enum MacSubtitlePreviewControl: Equatable {
     case close
     case pictureInPicture
@@ -393,6 +405,7 @@ private extension View {
 
 struct MacPlaybackChrome: View {
     @Environment(PlaybackSession.self) private var playback
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var isInteracting: Bool
     let close: () -> Void
     let showsSkipIntro: Bool
@@ -403,6 +416,7 @@ struct MacPlaybackChrome: View {
     @State private var activePanel: MacPlaybackPanel?
     @State private var subtitlePage: MacSubtitlePanelPage = .overview
     @State private var volumeDragValue: Double?
+    @State private var timelinePointerX: CGFloat?
 
     private var duration: Double { playback.durationSeconds ?? 0 }
     private var position: Double { min(max(playback.positionSeconds, 0), duration) }
@@ -462,6 +476,7 @@ struct MacPlaybackChrome: View {
             }
         }
         .onDisappear {
+            playback.endTimelinePreview()
             isInteracting = false
         }
     }
@@ -641,22 +656,62 @@ struct MacPlaybackChrome: View {
                 Text(timeline.elapsedText)
                     .frame(minWidth: 46, alignment: .leading)
 
-                Slider(
-                    value: Binding(
-                        get: { duration > 0 ? position : 0 },
-                        set: { playback.seek(to: $0) }
-                    ),
-                    in: 0 ... max(duration, 0.001),
-                    onEditingChanged: { isEditing in
-                        isInteracting = MacPlaybackInteractionPresentation.keepsChromeVisible(
-                            isEditingControl: isEditing,
-                            hasPresentedPanel: activePanel != nil
-                        )
+                GeometryReader { geometry in
+                    Slider(
+                        value: Binding(
+                            get: { duration > 0 ? position : 0 },
+                            set: { playback.seek(to: $0) }
+                        ),
+                        in: 0 ... max(duration, 0.001),
+                        onEditingChanged: { isEditing in
+                            isInteracting = MacPlaybackInteractionPresentation.keepsChromeVisible(
+                                isEditingControl: isEditing,
+                                hasPresentedPanel: activePanel != nil
+                            )
+                        }
+                    )
+                    .tint(.white)
+                    .accessibilityLabel("Playback position")
+                    .disabled(duration <= 0)
+                    .onContinuousHover { phase in
+                        switch phase {
+                        case let .active(location):
+                            guard let timestamp = PlaybackTimelinePreviewPosition.timestamp(
+                                x: location.x,
+                                width: geometry.size.width,
+                                duration: duration
+                            ) else { return }
+                            timelinePointerX = location.x
+                            isInteracting = true
+                            playback.requestTimelinePreview(at: timestamp)
+                        case .ended:
+                            timelinePointerX = nil
+                            isInteracting = activePanel != nil
+                            playback.endTimelinePreview()
+                        }
                     }
-                )
-                .tint(.white)
-                .accessibilityLabel("Playback position")
-                .disabled(duration <= 0)
+
+                    if let pointerX = timelinePointerX,
+                       let timestamp = playback.timelinePreviewTimestamp {
+                        timelinePreviewBubble(
+                            timestamp: timestamp,
+                            image: playback.timelinePreviewImage
+                        )
+                        .frame(width: 192)
+                        .position(
+                            x: MacPlaybackTimelinePreviewLayout.clampedCenter(
+                                pointerX: pointerX,
+                                bubbleWidth: 192,
+                                availableWidth: geometry.size.width
+                            ),
+                            y: -72
+                        )
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                        .transition(reduceMotion ? .identity : .opacity)
+                    }
+                }
+                .frame(height: 20)
 
                 Text(timeline.remainingText)
                     .frame(minWidth: 54, alignment: .trailing)
@@ -667,6 +722,31 @@ struct MacPlaybackChrome: View {
             .frame(height: 44)
             .omniaLiquidGlass(in: Capsule(), role: .playbackTimeline)
         }
+    }
+
+    private func timelinePreviewBubble(timestamp: Double, image: NSImage?) -> some View {
+        VStack(spacing: 6) {
+            Group {
+                if let image {
+                    Image(nsImage: image)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    Color.black.opacity(0.32)
+                }
+            }
+            .frame(width: 176, height: 99)
+            .clipped()
+            .clipShape(.rect(cornerRadius: 9, style: .continuous))
+
+            Text(PlaybackTimelinePresentation.timeText(timestamp))
+                .font(.caption.monospacedDigit().weight(.semibold))
+        }
+        .padding(8)
+        .omniaLiquidGlass(
+            in: RoundedRectangle(cornerRadius: 14, style: .continuous),
+            role: .playbackTimeline
+        )
     }
 
     @ViewBuilder

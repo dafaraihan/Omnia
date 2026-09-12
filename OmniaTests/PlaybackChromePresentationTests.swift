@@ -186,6 +186,33 @@ final class PlaybackChromePresentationTests: XCTestCase {
         XCTAssertTrue(OmniaLiquidGlassSurfaceRole.control.liftsOnHover)
     }
 
+    func testTimelinePreviewCenterClampsBubbleInsideAvailableWidth() {
+        XCTAssertEqual(
+            MacPlaybackTimelinePreviewLayout.clampedCenter(
+                pointerX: 5,
+                bubbleWidth: 192,
+                availableWidth: 600
+            ),
+            96
+        )
+        XCTAssertEqual(
+            MacPlaybackTimelinePreviewLayout.clampedCenter(
+                pointerX: 300,
+                bubbleWidth: 192,
+                availableWidth: 600
+            ),
+            300
+        )
+        XCTAssertEqual(
+            MacPlaybackTimelinePreviewLayout.clampedCenter(
+                pointerX: 595,
+                bubbleWidth: 192,
+                availableWidth: 600
+            ),
+            504
+        )
+    }
+
     func testOnlyInteractiveControlsAndMenuRowsDarken() {
         XCTAssertTrue(OmniaLiquidGlassSurfaceRole.control.darkensWhenActive)
         XCTAssertTrue(OmniaLiquidGlassSurfaceRole.menuRow.darkensWhenActive)

@@ -20,6 +20,31 @@ final class PlaybackSessionTests: XCTestCase {
         XCTAssertTrue(gate.finishAudio(20))
     }
 
+    func testTimelinePreviewResultMatchesOnlyItsSource() {
+        XCTAssertTrue(PlaybackTimelinePreviewResultKey(sourceID: "a").matches(sourceID: "a"))
+        XCTAssertFalse(PlaybackTimelinePreviewResultKey(sourceID: "a").matches(sourceID: "b"))
+    }
+
+    @MainActor
+    func testTimelinePreviewSchedulerPublishesOnlyLatestRequestAfterDebounce() async {
+        let sleeper = TimelinePreviewSleeperStub()
+        let scheduler = PlaybackTimelinePreviewRequestScheduler { duration in
+            try await sleeper.sleep(for: duration)
+        }
+        var published: [Int] = []
+
+        scheduler.schedule(after: .milliseconds(250)) { published.append(1) }
+        await sleeper.waitForRequestCount(1)
+        scheduler.schedule(after: .milliseconds(250)) { published.append(2) }
+        await sleeper.waitForRequestCount(2)
+        await sleeper.releaseAll()
+        await Task.yield()
+
+        let durations = await sleeper.requestedDurations
+        XCTAssertEqual(published, [2])
+        XCTAssertEqual(durations, [.milliseconds(250), .milliseconds(250)])
+    }
+
     @MainActor
     func testExplicitEpisodeSelectionSupersedesPendingNextEpisodeLookup() {
         let playback = PlaybackSession()
@@ -192,6 +217,35 @@ final class PlaybackSessionTests: XCTestCase {
         )
     }
     #endif
+}
+
+private actor TimelinePreviewSleeperStub {
+    private(set) var requestedDurations: [Duration] = []
+    private var sleepContinuations: [CheckedContinuation<Void, Never>] = []
+    private var countContinuations: [(Int, CheckedContinuation<Void, Never>)] = []
+
+    func sleep(for duration: Duration) async throws {
+        requestedDurations.append(duration)
+        resumeSatisfiedCountWaiters()
+        await withCheckedContinuation { sleepContinuations.append($0) }
+        try Task.checkCancellation()
+    }
+
+    func waitForRequestCount(_ count: Int) async {
+        if requestedDurations.count >= count { return }
+        await withCheckedContinuation { countContinuations.append((count, $0)) }
+    }
+
+    func releaseAll() {
+        sleepContinuations.forEach { $0.resume() }
+        sleepContinuations.removeAll()
+    }
+
+    private func resumeSatisfiedCountWaiters() {
+        let ready = countContinuations.filter { requestedDurations.count >= $0.0 }
+        countContinuations.removeAll { requestedDurations.count >= $0.0 }
+        ready.forEach { $0.1.resume() }
+    }
 }
 
 #if os(macOS)

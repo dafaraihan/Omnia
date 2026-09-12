@@ -1045,7 +1045,7 @@ struct PlaybackTimelinePresentation: Equatable {
         remainingText = "−\(Self.timeText(max(duration - position, 0)))"
     }
 
-    private static func timeText(_ value: Double) -> String {
+    static func timeText(_ value: Double) -> String {
         let total = Int(value.rounded(.down))
         let hours = total / 3_600
         let minutes = (total % 3_600) / 60
