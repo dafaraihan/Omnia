@@ -40,6 +40,7 @@ nonisolated struct MediaItem: Identifiable, Hashable, Sendable {
     var resumeEpisodeID: String?
     var resumeSeasonNumber: Int?
     var resumeEpisodeNumber: Int?
+    var resumeEpisodeTitle: String?
     var resumeEpisodeStillURL: URL?
 
     init(
@@ -65,6 +66,7 @@ nonisolated struct MediaItem: Identifiable, Hashable, Sendable {
         resumeEpisodeID: String? = nil,
         resumeSeasonNumber: Int? = nil,
         resumeEpisodeNumber: Int? = nil,
+        resumeEpisodeTitle: String? = nil,
         resumeEpisodeStillURL: URL? = nil
     ) {
         self.id = id
@@ -89,6 +91,7 @@ nonisolated struct MediaItem: Identifiable, Hashable, Sendable {
         self.resumeEpisodeID = resumeEpisodeID
         self.resumeSeasonNumber = resumeSeasonNumber
         self.resumeEpisodeNumber = resumeEpisodeNumber
+        self.resumeEpisodeTitle = resumeEpisodeTitle
         self.resumeEpisodeStillURL = resumeEpisodeStillURL
     }
 
@@ -218,6 +221,7 @@ nonisolated struct MediaItem: Identifiable, Hashable, Sendable {
             resumeEpisodeID: resumeEpisodeID,
             resumeSeasonNumber: resumeSeasonNumber,
             resumeEpisodeNumber: resumeEpisodeNumber,
+            resumeEpisodeTitle: resumeEpisodeTitle,
             resumeEpisodeStillURL: resumeEpisodeStillURL
         )
     }

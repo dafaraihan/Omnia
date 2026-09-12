@@ -13,6 +13,7 @@ nonisolated final class LocalMediaRecord {
     var resumeEpisodeID: String?
     var resumeSeasonNumber: Int?
     var resumeEpisodeNumber: Int?
+    var resumeEpisodeTitle: String?
     var resumeEpisodeStillURL: URL?
     var watchStateData: Data?
     var savedAt: Date?
@@ -81,6 +82,7 @@ nonisolated struct SavedMediaItem: Codable, Equatable, Sendable {
     let resumeEpisodeID: String?
     let resumeSeasonNumber: Int?
     let resumeEpisodeNumber: Int?
+    let resumeEpisodeTitle: String?
     let resumeEpisodeStillURL: URL?
 
     init(_ item: MediaItem) {
@@ -104,6 +106,7 @@ nonisolated struct SavedMediaItem: Codable, Equatable, Sendable {
         resumeEpisodeID = item.resumeEpisodeID
         resumeSeasonNumber = item.resumeSeasonNumber
         resumeEpisodeNumber = item.resumeEpisodeNumber
+        resumeEpisodeTitle = item.resumeEpisodeTitle
         resumeEpisodeStillURL = item.resumeEpisodeStillURL
     }
 
@@ -130,6 +133,7 @@ nonisolated struct SavedMediaItem: Codable, Equatable, Sendable {
             resumeEpisodeID: resumeEpisodeID,
             resumeSeasonNumber: resumeSeasonNumber,
             resumeEpisodeNumber: resumeEpisodeNumber,
+            resumeEpisodeTitle: resumeEpisodeTitle,
             resumeEpisodeStillURL: resumeEpisodeStillURL
         )
     }

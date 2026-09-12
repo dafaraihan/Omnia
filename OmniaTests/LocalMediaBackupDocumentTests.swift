@@ -96,6 +96,56 @@ final class LocalMediaBackupDocumentTests: XCTestCase {
         XCTAssertEqual(decoded.records.first?.snapshot.watchState.isWatched(episode), true)
     }
 
+    func testBackupRoundTripPreservesResumeEpisodeTitle() throws {
+        let item = MediaItem(
+            id: "series",
+            title: "Reacher",
+            year: "2022",
+            kind: .series,
+            overview: "",
+            genres: [],
+            symbol: "tv",
+            artworkColors: [.blue],
+            progress: 0.5,
+            resumeEpisodeID: "series:4:1",
+            resumeSeasonNumber: 4,
+            resumeEpisodeNumber: 1,
+            resumeEpisodeTitle: "In the Name of the Mother"
+        )
+        let snapshot = LocalMediaSnapshot(
+            item: item,
+            isInWatchlist: false,
+            savedAt: nil,
+            lastPlayedAt: Date(timeIntervalSince1970: 10)
+        )
+
+        let encoded = try LocalMediaBackupDocument(snapshots: [snapshot]).encoded()
+        let decoded = try LocalMediaBackupDocument.decode(encoded)
+
+        XCTAssertEqual(decoded.records.first?.snapshot.item.resumeEpisodeTitle, "In the Name of the Mother")
+    }
+
+    func testVersionOneBackupWithoutResumeEpisodeTitleStillDecodes() throws {
+        let snapshot = LocalMediaSnapshot(
+            item: makeItem(id: "legacy"),
+            isInWatchlist: true,
+            savedAt: nil,
+            lastPlayedAt: nil
+        )
+        let encoded = try LocalMediaBackupDocument(snapshots: [snapshot]).encoded()
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        var records = try XCTUnwrap(object["records"] as? [[String: Any]])
+        var media = try XCTUnwrap(records[0]["media"] as? [String: Any])
+        media.removeValue(forKey: "resumeEpisodeTitle")
+        records[0]["media"] = media
+        object["records"] = records
+
+        let legacyData = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        let decoded = try LocalMediaBackupDocument.decode(legacyData)
+
+        XCTAssertNil(decoded.records[0].snapshot.item.resumeEpisodeTitle)
+    }
+
     private func makeItem(id: String) -> MediaItem {
         MediaItem(
             id: id,

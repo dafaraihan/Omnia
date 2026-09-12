@@ -126,6 +126,36 @@ final class LocalMediaStoreTests: XCTestCase {
         XCTAssertEqual(seriesSnapshot.item.resumeEpisodeID, "episode-2")
         XCTAssertEqual(seriesSnapshot.item.resumeSeasonNumber, 1)
         XCTAssertEqual(seriesSnapshot.item.resumeEpisodeNumber, 2)
+        XCTAssertEqual(seriesSnapshot.item.resumeEpisodeTitle, "Second")
+    }
+
+    func testClearingCompletedEpisodeRemovesPersistedEpisodeTitle() async throws {
+        let store = try LocalMediaStore.inMemory()
+        let series = makeItem(id: "series-complete", title: "Series", kind: .series)
+        let episode = MediaEpisode(
+            id: "episode-8",
+            seasonNumber: 3,
+            episodeNumber: 8,
+            title: "Finale",
+            overview: "",
+            runtimeMinutes: 42,
+            stillURL: nil,
+            airDate: nil
+        )
+
+        try await store.setWatchlist(series, isIncluded: true, at: .distantPast)
+        try await store.recordPlayback(
+            for: series,
+            episode: episode,
+            positionSeconds: 42,
+            durationSeconds: 42,
+            completionThreshold: 0.95,
+            at: .now
+        )
+
+        let snapshots = try await store.snapshot()
+        let snapshot = try XCTUnwrap(snapshots.first)
+        XCTAssertNil(snapshot.item.resumeEpisodeTitle)
     }
 
     func testInvalidWriteRollsBackExistingRecord() async throws {

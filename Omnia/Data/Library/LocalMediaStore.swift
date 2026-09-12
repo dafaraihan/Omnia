@@ -115,6 +115,7 @@ actor LocalMediaStore: LocalMediaStoring {
                 record.resumeEpisodeID = episode.id
                 record.resumeSeasonNumber = episode.seasonNumber
                 record.resumeEpisodeNumber = episode.episodeNumber
+                record.resumeEpisodeTitle = episode.title
                 record.resumeEpisodeStillURL = episode.stillURL
             }
         }
@@ -298,6 +299,7 @@ actor LocalMediaStore: LocalMediaStoring {
             record.resumeEpisodeID = item.resumeEpisodeID
             record.resumeSeasonNumber = item.resumeSeasonNumber
             record.resumeEpisodeNumber = item.resumeEpisodeNumber
+            record.resumeEpisodeTitle = item.resumeEpisodeTitle
             record.resumeEpisodeStillURL = item.resumeEpisodeStillURL
             record.lastPlayedAt = item.progress == nil ? nil : date.addingTimeInterval(Double(index))
             if existing == nil { modelContext.insert(record) }
@@ -323,6 +325,7 @@ actor LocalMediaStore: LocalMediaStoring {
         record.resumeEpisodeID = snapshot.item.resumeEpisodeID
         record.resumeSeasonNumber = snapshot.item.resumeSeasonNumber
         record.resumeEpisodeNumber = snapshot.item.resumeEpisodeNumber
+        record.resumeEpisodeTitle = snapshot.item.resumeEpisodeTitle
         record.resumeEpisodeStillURL = snapshot.item.resumeEpisodeStillURL
         record.watchStateData = snapshot.watchState.isEmpty
             ? nil
@@ -357,6 +360,7 @@ actor LocalMediaStore: LocalMediaStoring {
         base.resumeEpisodeID = nil
         base.resumeSeasonNumber = nil
         base.resumeEpisodeNumber = nil
+        base.resumeEpisodeTitle = nil
         base.resumeEpisodeStillURL = nil
         return try JSONEncoder().encode(SavedMediaItem(base))
     }
@@ -369,6 +373,7 @@ actor LocalMediaStore: LocalMediaStoring {
         item.resumeEpisodeID = record.resumeEpisodeID
         item.resumeSeasonNumber = record.resumeSeasonNumber
         item.resumeEpisodeNumber = record.resumeEpisodeNumber
+        item.resumeEpisodeTitle = record.resumeEpisodeTitle
         item.resumeEpisodeStillURL = record.resumeEpisodeStillURL
         return LocalMediaSnapshot(
             item: item,
@@ -392,6 +397,7 @@ actor LocalMediaStore: LocalMediaStoring {
         record.resumeEpisodeID = nil
         record.resumeSeasonNumber = nil
         record.resumeEpisodeNumber = nil
+        record.resumeEpisodeTitle = nil
         record.resumeEpisodeStillURL = nil
         record.lastPlayedAt = nil
     }
@@ -440,6 +446,7 @@ actor LocalMediaStore: LocalMediaStoring {
         record.resumeEpisodeID = episode.id
         record.resumeSeasonNumber = episode.seasonNumber
         record.resumeEpisodeNumber = episode.episodeNumber
+        record.resumeEpisodeTitle = episode.title
         record.resumeEpisodeStillURL = episode.stillURL
         record.lastPlayedAt = date
     }

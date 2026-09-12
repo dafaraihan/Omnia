@@ -36,7 +36,9 @@ nonisolated struct LocalMediaBackupRecord: Codable, Equatable, Sendable {
 
     func validate() throws {
         let item = media.mediaItem
-        let textValues = [item.id, item.title, item.year, item.overview, item.symbol] + item.genres
+        let textValues = [item.id, item.title, item.year, item.overview, item.symbol]
+            + item.genres
+            + [item.resumeEpisodeTitle].compactMap { $0 }
         let displayURLs = [item.artworkURL, item.backdropURL, item.logoURL, item.resumeEpisodeStillURL]
             .compactMap { $0 }
         guard !item.id.isEmpty,

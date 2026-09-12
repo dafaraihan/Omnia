@@ -343,6 +343,7 @@ final class OmniaStore {
             updated.resumeEpisodeID = episode.id
             updated.resumeSeasonNumber = episode.seasonNumber
             updated.resumeEpisodeNumber = episode.episodeNumber
+            updated.resumeEpisodeTitle = episode.title
             updated.resumeEpisodeStillURL = episode.stillURL
         } else if let existing = localMediaSnapshots.first(where: { $0.mediaID == item.id })?.item
             ?? library.first(where: { $0.id == item.id }) {
@@ -352,6 +353,7 @@ final class OmniaStore {
             updated.resumeEpisodeID = existing.resumeEpisodeID
             updated.resumeSeasonNumber = existing.resumeSeasonNumber
             updated.resumeEpisodeNumber = existing.resumeEpisodeNumber
+            updated.resumeEpisodeTitle = existing.resumeEpisodeTitle
             updated.resumeEpisodeStillURL = existing.resumeEpisodeStillURL
         }
         updated.positionSeconds = position
@@ -361,6 +363,7 @@ final class OmniaStore {
             updated.resumeEpisodeID = nil
             updated.resumeSeasonNumber = nil
             updated.resumeEpisodeNumber = nil
+            updated.resumeEpisodeTitle = nil
             updated.resumeEpisodeStillURL = nil
         }
 
@@ -407,6 +410,7 @@ final class OmniaStore {
         cleared.resumeEpisodeID = nil
         cleared.resumeSeasonNumber = nil
         cleared.resumeEpisodeNumber = nil
+        cleared.resumeEpisodeTitle = nil
         cleared.resumeEpisodeStillURL = nil
         if let snapshotIndex, let snapshot {
             if !snapshot.isInWatchlist, snapshot.watchState.isEmpty {
@@ -460,6 +464,7 @@ final class OmniaStore {
                 updatedItem.resumeEpisodeID = nil
                 updatedItem.resumeSeasonNumber = nil
                 updatedItem.resumeEpisodeNumber = nil
+                updatedItem.resumeEpisodeTitle = nil
                 updatedItem.resumeEpisodeStillURL = nil
                 return
             }
@@ -469,6 +474,7 @@ final class OmniaStore {
             updatedItem.resumeEpisodeID = episode.id
             updatedItem.resumeSeasonNumber = episode.seasonNumber
             updatedItem.resumeEpisodeNumber = episode.episodeNumber
+            updatedItem.resumeEpisodeTitle = episode.title
             updatedItem.resumeEpisodeStillURL = episode.stillURL
         }
 
