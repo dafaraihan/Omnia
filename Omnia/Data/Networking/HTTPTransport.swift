@@ -10,19 +10,33 @@ nonisolated struct HTTPRequestPolicy: Sendable {
     let timeout: TimeInterval
     var maximumResponseBytes: Int
     let acceptedContentTypes: Set<String>
+    let requestHeaders: [String: String]
 
     init(
         url: URL,
         allowedOrigin: NormalizedOrigin,
         timeout: TimeInterval,
         maximumResponseBytes: Int,
-        acceptedContentTypes: Set<String>
+        acceptedContentTypes: Set<String>,
+        requestHeaders: [String: String] = [:]
     ) {
         self.url = url
         self.allowedOrigin = allowedOrigin
         self.timeout = min(max(timeout, 1), 120)
         self.maximumResponseBytes = min(max(maximumResponseBytes, 1), 10 * 1_024 * 1_024)
         self.acceptedContentTypes = Set(acceptedContentTypes.map { $0.lowercased() })
+        let forbidden = Set(["host", "connection", "content-length", "range"])
+        self.requestHeaders = requestHeaders.reduce(into: [:]) { result, entry in
+            let name = entry.key.trimmingCharacters(in: .whitespacesAndNewlines)
+            let value = entry.value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty,
+                  name.utf8.count <= 256,
+                  value.utf8.count <= 8_192,
+                  !forbidden.contains(name.lowercased()),
+                  !name.contains(where: \.isNewline),
+                  !value.contains(where: \.isNewline) else { return }
+            result[name] = value
+        }
     }
 }
 
@@ -127,6 +141,9 @@ actor HTTPTransport: HTTPTransporting {
         request.httpMethod = "GET"
         request.timeoutInterval = policy.timeout
         request.cachePolicy = .reloadIgnoringLocalCacheData
+        for (name, value) in policy.requestHeaders {
+            request.setValue(value, forHTTPHeaderField: name)
+        }
 
         do {
             let (bytes, response) = try await session.bytes(for: request)

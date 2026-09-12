@@ -28,6 +28,31 @@ final class HTTPTransportTests: XCTestCase {
         XCTAssertEqual(String(decoding: data, as: UTF8.self), "{\"segments\":[]}")
     }
 
+    func testPolicyKeepsBoundedSafeHeadersAndDropsUnsafeOnes() throws {
+        let url = try XCTUnwrap(URL(string: "https://media.example/master.m3u8"))
+        let origin = try XCTUnwrap(NormalizedOrigin(url: url))
+        let policy = HTTPRequestPolicy(
+            url: url,
+            allowedOrigin: origin,
+            timeout: 5,
+            maximumResponseBytes: 1_024,
+            acceptedContentTypes: ["application/vnd.apple.mpegurl"],
+            requestHeaders: [
+                "Authorization": "Bearer token",
+                "User-Agent": "Omnia",
+                "Host": "attacker.example",
+                "Range": "bytes=0-10",
+                "X-Bad": "one\r\ntwo",
+            ]
+        )
+
+        XCTAssertEqual(policy.requestHeaders["Authorization"], "Bearer token")
+        XCTAssertEqual(policy.requestHeaders["User-Agent"], "Omnia")
+        XCTAssertNil(policy.requestHeaders["Host"])
+        XCTAssertNil(policy.requestHeaders["Range"])
+        XCTAssertNil(policy.requestHeaders["X-Bad"])
+    }
+
     func testRejectsNonHTTPSRequestBeforeLoading() async {
         let transport = makeTransport()
         let policy = HTTPRequestPolicy(
