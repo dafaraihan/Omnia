@@ -10,6 +10,7 @@ import SwiftUI
 struct OmniaRootView: View {
     @Environment(OmniaStore.self) private var store
     @Environment(PlaybackSession.self) private var playback
+    @Environment(SettingsPreferencesStore.self) private var settings
     #if os(macOS)
     @State private var navigation = MacPrimaryNavigationState()
     @State private var hoveredSidebarDestination: AppDestination?
@@ -62,6 +63,14 @@ struct OmniaRootView: View {
             for: .windowToolbar
         )
         .background(WindowChrome(isPlaybackPresented: isFullWindowPlayback))
+        .onChange(of: settings.preferences.navigationStyle) { _, navigationStyle in
+            switch navigationStyle {
+            case .sidebar:
+                navigation.setSearchPresented(false)
+            case .topBar:
+                navigation.activateTopBar()
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { _ in
             playback.handleFullScreenEnter()
         }
@@ -75,10 +84,14 @@ struct OmniaRootView: View {
     private var rootContent: some View {
         #if os(macOS)
         ZStack {
-            WindowHeroBackdrop(state: windowHeroState)
+            if navigation.selection.allowsWindowHeroBackdrop && !navigation.isSearchPresented {
+                WindowHeroBackdrop(state: windowHeroState)
+            } else {
+                Color(nsColor: .windowBackgroundColor)
+                    .ignoresSafeArea()
+            }
             navigationTabs
         }
-        .coordinateSpace(name: HeroBackdropPresentation.windowCoordinateSpace)
         .environment(\.reportWindowHeroBackdrop) { source, owner, item, frame in
             if let item {
                 windowHeroState.report(item, frame: frame, from: source, owner: owner)
@@ -94,19 +107,15 @@ struct OmniaRootView: View {
         #endif
     }
 
+    @ViewBuilder
     private var navigationTabs: some View {
         #if os(macOS)
-        NavigationSplitView {
-            macSidebar
-                .navigationSplitViewColumnWidth(min: 170, ideal: 220, max: 300)
-        } detail: {
-            macDestinationContent
+        switch settings.preferences.navigationStyle {
+        case .sidebar:
+            macSidebarNavigation
+        case .topBar:
+            macTopBarNavigation
         }
-        // Keep the platform sidebar so macOS owns its Liquid Glass surface,
-        // resizing, keyboard behavior, and the single native toolbar toggle.
-        .navigationSplitViewStyle(.balanced)
-        .tint(.gray)
-        .accentColor(.gray)
         #else
         TabView(selection: $selection) {
             Tab("Home", systemImage: AppDestination.home.symbolName, value: .home) {
@@ -136,6 +145,56 @@ struct OmniaRootView: View {
     }
 
     #if os(macOS)
+    private var macSidebarNavigation: some View {
+        NavigationSplitView {
+            macSidebar
+                .navigationSplitViewColumnWidth(min: 170, ideal: 220, max: 300)
+        } detail: {
+            macNavigationStack(for: navigation.selection)
+        }
+        // Keep the platform sidebar so macOS owns its Liquid Glass surface,
+        // resizing, keyboard behavior, and the single native toolbar toggle.
+        .navigationSplitViewStyle(.balanced)
+        .tint(.gray)
+        .accentColor(.gray)
+    }
+
+    private var macTopBarNavigation: some View {
+        TabView(selection: macTopBarSelection) {
+            ForEach(AppDestination.macTopBarDestinations, id: \.self) { destination in
+                if destination == .search {
+                    Tab(
+                        destination.title,
+                        systemImage: destination.symbolName,
+                        value: destination
+                    ) {
+                        Color.clear
+                    }
+                } else {
+                    Tab(
+                        destination.title,
+                        systemImage: destination.symbolName,
+                        value: destination
+                    ) {
+                        macNavigationStack(for: destination)
+                    }
+                }
+            }
+        }
+        .tabViewStyle(.tabBarOnly)
+        .tint(store.accentColor)
+        .popover(
+            isPresented: macSearchPresentation,
+            attachmentAnchor: .point(.top),
+            arrowEdge: .top
+        ) {
+            NavigationStack {
+                SearchView(presentation: .popover)
+            }
+            .tint(store.accentColor)
+        }
+    }
+
     private var macSidebar: some View {
         List(selection: macSelection) {
             ForEach(macSidebarDestinations, id: \.self) { destination in
@@ -180,22 +239,22 @@ struct OmniaRootView: View {
         .scrollContentBackground(.hidden)
     }
 
-    private var macDestinationContent: some View {
-        Group {
-            switch navigation.selection {
+    private func macNavigationStack(for destination: AppDestination) -> some View {
+        NavigationStack {
+            switch destination {
             case .home:
-                NavigationStack { HomeView() }
+                HomeView()
             case .library:
-                NavigationStack { LibraryView() }
+                LibraryView()
             case .discover:
-                NavigationStack { DiscoverView() }
+                DiscoverView()
             case .search:
-                NavigationStack { SearchView() }
+                SearchView()
             case .settings:
-                NavigationStack { SettingsView() }
+                SettingsView()
             }
         }
-        .id(navigation.stackIdentity)
+        .id(destination)
         // Sidebar row colors are local to the leading column. Destination
         // controls and native context-menu selection retain Apple system blue.
         .tint(store.accentColor)
@@ -229,6 +288,20 @@ struct OmniaRootView: View {
         Binding(
             get: { navigation.selection },
             set: { navigation.select($0) }
+        )
+    }
+
+    private var macTopBarSelection: Binding<AppDestination> {
+        Binding(
+            get: { navigation.selection },
+            set: { navigation.selectFromTopBar($0) }
+        )
+    }
+
+    private var macSearchPresentation: Binding<Bool> {
+        Binding(
+            get: { navigation.isSearchPresented },
+            set: { navigation.setSearchPresented($0) }
         )
     }
 

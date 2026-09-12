@@ -50,6 +50,7 @@ final class SettingsPreferencesTests: XCTestCase {
         XCTAssertEqual(value.customSubtitleAppearance, .default)
         XCTAssertEqual(value.mdblistRatings, .default)
         XCTAssertTrue(value.showMediaCardLabels)
+        XCTAssertEqual(value.navigationStyle, .sidebar)
     }
 
     func testNormalizationDisablesDependentPreferences() {
@@ -73,6 +74,7 @@ final class SettingsPreferencesTests: XCTestCase {
             $0.showSkipIntro = false
             $0.autoSkipIntro = true
             $0.showMediaCardLabels = false
+            $0.navigationStyle = .topBar
             $0.subtitlesEnabled = false
             $0.playbackSubtitleStyle = PlaybackSubtitleStyle(
                 fontName: "Avenir Next",
@@ -93,6 +95,7 @@ final class SettingsPreferencesTests: XCTestCase {
         XCTAssertFalse(restored.preferences.showSkipIntro)
         XCTAssertFalse(restored.preferences.autoSkipIntro)
         XCTAssertFalse(restored.preferences.showMediaCardLabels)
+        XCTAssertEqual(restored.preferences.navigationStyle, .topBar)
         XCTAssertFalse(restored.preferences.subtitlesEnabled)
         XCTAssertEqual(restored.preferences.playbackSubtitleStyle.fontName, "Avenir Next")
         XCTAssertEqual(restored.preferences.playbackSubtitleStyle.background, .translucent)
@@ -144,6 +147,19 @@ final class SettingsPreferencesTests: XCTestCase {
         )
 
         XCTAssertTrue(decoded.showMediaCardLabels)
+    }
+
+    func testDecodingPreviousPayloadDefaultsNavigationStyleToSidebar() throws {
+        let current = try JSONEncoder().encode(SettingsPreferences.default)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: current) as? [String: Any])
+        object.removeValue(forKey: "navigationStyle")
+
+        let decoded = try JSONDecoder().decode(
+            SettingsPreferences.self,
+            from: JSONSerialization.data(withJSONObject: object)
+        )
+
+        XCTAssertEqual(decoded.navigationStyle, .sidebar)
     }
 
     func testDecodingPreviousPayloadDefaultsDurablePlaybackSubtitlePreferences() throws {

@@ -53,13 +53,10 @@ final class HeroBackdropState {
     ) -> WindowHeroPresentation {
         // Metadata enrichment must not discard or replace artwork that is
         // already visible. A missing initial backdrop can still be filled in.
-        let artworkItem: MediaItem
         if let current, current.item.backdropURL != nil, representsSameDetail(current.item, item) {
-            artworkItem = current.item
-        } else {
-            artworkItem = item
+            return WindowHeroPresentation(item: current.item, frame: frame)
         }
-        return WindowHeroPresentation(item: artworkItem, frame: frame)
+        return WindowHeroPresentation(item: item, frame: frame)
     }
 
     private func representsSameDetail(_ current: MediaItem, _ incoming: MediaItem) -> Bool {
@@ -186,7 +183,7 @@ struct HeroArtworkCanvas: View {
         }
         #if os(macOS)
         .onGeometryChange(for: CGRect.self) { proxy in
-            proxy.frame(in: .named(HeroBackdropPresentation.windowCoordinateSpace))
+            proxy.frame(in: .global)
         } action: { frame in
             measuredFrame = frame
             report(item: item, frame: frame)
@@ -218,17 +215,17 @@ struct HeroArtworkCanvas: View {
 
 #if os(macOS)
 enum WindowHeroBackdropLayout {
-    static func artworkFrame(windowWidth: CGFloat, measuredHeroFrame: CGRect) -> CGRect {
+    static func artworkFrame(windowWidth: CGFloat, measuredHeroFrame: CGRect, backdropGlobalFrame: CGRect) -> CGRect {
         CGRect(
             x: 0,
-            y: measuredHeroFrame.minY,
+            y: measuredHeroFrame.minY - backdropGlobalFrame.minY,
             width: windowWidth,
             height: measuredHeroFrame.height
         )
     }
 
-    static func accentFrame(windowSize: CGSize, measuredHeroFrame: CGRect) -> CGRect {
-        let originY = measuredHeroFrame.maxY
+    static func accentFrame(windowSize: CGSize, measuredHeroFrame: CGRect, backdropGlobalFrame: CGRect) -> CGRect {
+        let originY = measuredHeroFrame.maxY - backdropGlobalFrame.minY
         return CGRect(
             x: 0,
             y: originY,
@@ -247,13 +244,16 @@ struct WindowHeroBackdrop: View {
                 Color(nsColor: .windowBackgroundColor)
 
                 if let presentation = state.presentation {
+                    let globalFrame = proxy.frame(in: .global)
                     let artworkFrame = WindowHeroBackdropLayout.artworkFrame(
                         windowWidth: proxy.size.width,
-                        measuredHeroFrame: presentation.frame
+                        measuredHeroFrame: presentation.frame,
+                        backdropGlobalFrame: globalFrame
                     )
                     let accentFrame = WindowHeroBackdropLayout.accentFrame(
                         windowSize: proxy.size,
-                        measuredHeroFrame: presentation.frame
+                        measuredHeroFrame: presentation.frame,
+                        backdropGlobalFrame: globalFrame
                     )
 
                     HeroAccentBackground(item: presentation.item)

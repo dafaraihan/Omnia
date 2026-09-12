@@ -1,5 +1,8 @@
 import XCTest
 @testable import Omnia
+#if os(macOS)
+import AppKit
+#endif
 
 final class SettingsPresentationTests: XCTestCase {
     func testFilteringPreservesApprovedSectionAndRouteOrder() {
@@ -96,7 +99,7 @@ final class SettingsPresentationTests: XCTestCase {
     }
 
     @MainActor
-    func testMacSettingsUsesWideGroupedCardsAndNativeInteractionColors() {
+    func testMacSettingsUsesWideGroupedCardsAndNeutralInteractionColors() {
         XCTAssertEqual(MacSettingsPresentation.containerStyle, .groupedCards)
         XCTAssertEqual(
             MacSettingsPresentation.symbolTreatment(isHovered: false, isPressed: false),
@@ -104,14 +107,50 @@ final class SettingsPresentationTests: XCTestCase {
         )
         XCTAssertEqual(
             MacSettingsPresentation.symbolTreatment(isHovered: true, isPressed: false),
-            .blueMonochrome
+            .whiteMonochrome
         )
         XCTAssertEqual(
             MacSettingsPresentation.symbolTreatment(isHovered: false, isPressed: true),
-            .blueMonochrome
+            .whiteMonochrome
         )
         XCTAssertEqual(MacSettingsPresentation.hoverTreatment, .neutralGray)
         XCTAssertEqual(MacSettingsPresentation.pressedTreatment, .neutralGray)
+    }
+
+    @MainActor
+    func testMacSettingsUsesTheSameNativeToolbarSearchInBothNavigationStyles() {
+        XCTAssertEqual(
+            MacSettingsPresentation.searchPlacement(for: .sidebar),
+            .toolbar
+        )
+        XCTAssertEqual(
+            MacSettingsPresentation.searchPlacement(for: .topBar),
+            .toolbar
+        )
+    }
+
+    @MainActor
+    func testMacSettingsToolbarSearchBoundsUnexpectedExpansion() {
+        XCTAssertEqual(MacSettingsPresentation.searchWidth(proposedWidth: 240), 240)
+        XCTAssertEqual(MacSettingsPresentation.searchWidth(proposedWidth: 900), 320)
+    }
+
+    @MainActor
+    func testMacSettingsLimitsTheNativeSearchItemWithoutReplacingIt() {
+        let searchItem = NSSearchToolbarItem(
+            itemIdentifier: NSToolbarItem.Identifier("settings-search")
+        )
+        let nativeSearchField = searchItem.searchField
+
+        MacSettingsPresentation.limitWidth(of: searchItem, to: 320)
+
+        XCTAssertTrue(searchItem.searchField === nativeSearchField)
+        XCTAssertEqual(searchItem.preferredWidthForSearchField, 320)
+        let widthConstraint = searchItem.searchField.constraints.first(where: {
+            $0.identifier == "Omnia.SettingsSearch.MaximumWidth"
+        })
+        XCTAssertEqual(widthConstraint?.relation, .lessThanOrEqual)
+        XCTAssertEqual(widthConstraint?.constant, 320)
     }
     #endif
 }

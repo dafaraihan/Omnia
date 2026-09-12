@@ -10,40 +10,50 @@ struct SettingsView: View {
     #endif
 
     var body: some View {
+        rootSettingsContent
+            .omniaNavigationTitle("Settings", screen: .settings)
+        #if os(macOS)
+            .searchable(text: $searchText, placement: MacSettingsPresentation.searchPlacement(for: settings.preferences.navigationStyle), prompt: "Search Settings")
+
+            .background {
+                MacSettingsSearchToolbarWidthLimiter(
+                    maximumWidth: MacSettingsPresentation.searchWidth(
+                        proposedWidth: .greatestFiniteMagnitude
+                    )
+                )
+            }
+        #else
+            .searchable(text: $searchText, prompt: "Search Settings")
+        #endif
+    }
+
+    private var rootSettingsContent: some View {
         settingsContent {
-            VStack(alignment: .leading, spacing: 12) {
-                OmniaSettingsForm {
-                    ForEach(SettingsRoute.filteredRootGroups(query: searchText)) { group in
-                        Section(group.section.title) {
-                            ForEach(group.routes, id: \.self) { route in
-                                NavigationLink {
-                                    SettingsDestinationView(route: route)
-                                } label: {
-                                    SettingsRouteLabel(route: route, summary: summary(for: route))
-                                }
-                                #if os(macOS)
-                                .buttonStyle(MacSettingsNavigationButtonStyle(isHovered: hoveredRoute == route))
-                                .focusEffectDisabled()
-                                .onHover { isHovered in
-                                    if isHovered {
-                                        hoveredRoute = route
-                                    } else if hoveredRoute == route {
-                                        hoveredRoute = nil
-                                    }
-                                }
-                                #endif
+            OmniaSettingsForm {
+                ForEach(SettingsRoute.filteredRootGroups(query: searchText)) { group in
+                    Section(group.section.title) {
+                        ForEach(group.routes, id: \.self) { route in
+                            NavigationLink {
+                                SettingsDestinationView(route: route)
+                            } label: {
+                                SettingsRouteLabel(route: route, summary: summary(for: route))
                             }
+                            #if os(macOS)
+                            .buttonStyle(MacSettingsNavigationButtonStyle(isHovered: hoveredRoute == route))
+                            .focusEffectDisabled()
+                            .onHover { isHovered in
+                                if isHovered {
+                                    hoveredRoute = route
+                                } else if hoveredRoute == route {
+                                    hoveredRoute = nil
+                                }
+                            }
+                            #endif
                         }
                     }
                 }
             }
         }
-        .omniaNavigationTitle("Settings", screen: .settings)
-        #if os(macOS)
-        .searchable(text: $searchText, placement: .toolbar, prompt: "Search Settings")
-        #else
-        .searchable(text: $searchText, prompt: "Search Settings")
-        #endif
     }
 
     @ViewBuilder
@@ -179,6 +189,111 @@ private struct SettingsRouteLabel: View {
 }
 
 #if os(macOS)
+private struct MacSettingsSearchToolbarWidthLimiter: NSViewRepresentable {
+    let maximumWidth: CGFloat
+
+    func makeNSView(context: Context) -> SearchToolbarConfigurationView {
+        let view = SearchToolbarConfigurationView()
+        view.maximumWidth = maximumWidth
+        return view
+    }
+
+    func updateNSView(_ nsView: SearchToolbarConfigurationView, context: Context) {
+        nsView.maximumWidth = maximumWidth
+        nsView.configureAfterToolbarUpdate()
+    }
+
+    final class SearchToolbarConfigurationView: NSView {
+        var maximumWidth: CGFloat = 320
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            configureAfterToolbarUpdate()
+        }
+
+        func configureAfterToolbarUpdate() {
+            if !configureSearchToolbarItem() {
+                retryConfigure(attempts: 5)
+            }
+        }
+
+        private func retryConfigure(attempts: Int) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+                guard let self = self else { return }
+                if !self.configureSearchToolbarItem() && attempts > 0 {
+                    self.retryConfigure(attempts: attempts - 1)
+                }
+            }
+        }
+
+        @discardableResult
+        private func configureSearchToolbarItem() -> Bool {
+            guard let toolbar = window?.toolbar else { return false }
+            var foundSearchField: NSSearchField?
+            var searchItemIndex: Int?
+            
+            for (index, item) in toolbar.items.enumerated() {
+                if let searchItem = item as? NSSearchToolbarItem, searchItem.searchField.placeholderString == "Search Settings" {
+                    foundSearchField = searchItem.searchField
+                    searchItem.preferredWidthForSearchField = maximumWidth
+                    searchItemIndex = index
+                    break
+                }
+                
+                if let searchField = findSearchField(in: item.view) {
+                    foundSearchField = searchField
+                    searchItemIndex = index
+                    break
+                }
+            }
+            
+            guard let searchField = foundSearchField else { return false }
+
+            let identifier = "Omnia.SettingsSearch.MaximumWidth"
+            if let constraint = searchField.constraints.first(where: {
+                $0.identifier == identifier
+            }) {
+                constraint.constant = maximumWidth
+            } else {
+                let constraint = searchField.widthAnchor.constraint(
+                    lessThanOrEqualToConstant: maximumWidth
+                )
+                constraint.identifier = identifier
+                constraint.isActive = true
+            }
+
+            if let index = searchItemIndex {
+                let needsSpace: Bool
+                if index == 0 {
+                    needsSpace = true
+                } else {
+                    let prevItem = toolbar.items[index - 1]
+                    needsSpace = (prevItem.itemIdentifier != .flexibleSpace)
+                }
+                
+                if needsSpace {
+                    toolbar.insertItem(withItemIdentifier: .flexibleSpace, at: index)
+                }
+            }
+            return true
+        }
+        
+        private func findSearchField(in view: NSView?) -> NSSearchField? {
+            guard let view = view else { return nil }
+            if let searchField = view as? NSSearchField, searchField.placeholderString == "Search Settings" {
+                return searchField
+            }
+            for subview in view.subviews {
+                if let found = findSearchField(in: subview) {
+                    return found
+                }
+            }
+            return nil
+        }
+    }
+}
+
+
 private struct MacSettingsNavigationButtonStyle: ButtonStyle {
     let isHovered: Bool
 

@@ -181,6 +181,10 @@ actor PlaybackTimelinePreviewService {
     private struct GeneratedFrame: @unchecked Sendable {
         let frame: PlaybackTimelinePreviewFrame
         let cacheKey: PlaybackTimelinePreviewCacheKey
+    }
+
+    private struct GenerationOutcome: @unchecked Sendable {
+        let generatedFrame: GeneratedFrame?
         let resolvedHLSStoryboard: PlaybackStoryboardDescriptor?
         let didResolveHLSStoryboard: Bool
     }
@@ -189,7 +193,7 @@ actor PlaybackTimelinePreviewService {
     private let storyboardLoader: any PlaybackStoryboardLoading
     private let localGenerator: any PlaybackLocalFrameGenerating
     private var cache: PlaybackTimelinePreviewCache<PlaybackTimelinePreviewCacheKey, PlaybackTimelinePreviewFrame>
-    private var inFlight: Task<GeneratedFrame?, Never>?
+    private var inFlight: Task<GenerationOutcome?, Never>?
     private var requestGeneration: UInt64 = 0
     private var didResolveHLSStoryboard = false
     private var resolvedHLSStoryboard: PlaybackStoryboardDescriptor?
@@ -230,7 +234,7 @@ actor PlaybackTimelinePreviewService {
 
         let hlsWasResolved = didResolveHLSStoryboard
         let knownHLSStoryboard = resolvedHLSStoryboard
-        let task = Task<GeneratedFrame?, Never> { [source, storyboardLoader, localGenerator] in
+        let task = Task<GenerationOutcome?, Never> { [source, storyboardLoader, localGenerator] in
             if let explicitStoryboard,
                let loaded = await Self.storyboardImage(
                    at: timestamp,
@@ -238,7 +242,7 @@ actor PlaybackTimelinePreviewService {
                    source: source,
                    loader: storyboardLoader
                ) {
-                return Self.generatedFrame(
+                return Self.generationOutcome(
                     source: source,
                     timestamp: timestamp,
                     loaded: loaded,
@@ -272,7 +276,7 @@ actor PlaybackTimelinePreviewService {
                    source: source,
                    loader: storyboardLoader
                ) {
-                return Self.generatedFrame(
+                return Self.generationOutcome(
                     source: source,
                     timestamp: timestamp,
                     loaded: loaded,
@@ -290,7 +294,7 @@ actor PlaybackTimelinePreviewService {
             do {
                 let loaded = try await localGenerator.image(at: timestamp, source: source)
                 guard !Task.isCancelled else { return nil }
-                return Self.generatedFrame(
+                return Self.generationOutcome(
                     source: source,
                     timestamp: timestamp,
                     loaded: loaded,
@@ -299,22 +303,28 @@ actor PlaybackTimelinePreviewService {
                     didResolveHLSStoryboard: didResolveHLS
                 )
             } catch {
-                return nil
+                guard !Task.isCancelled else { return nil }
+                return GenerationOutcome(
+                    generatedFrame: nil,
+                    resolvedHLSStoryboard: hlsStoryboard,
+                    didResolveHLSStoryboard: didResolveHLS
+                )
             }
         }
         inFlight = task
 
-        guard let generated = await task.value,
+        guard let outcome = await task.value,
               !Task.isCancelled,
               !stopped,
               generation == requestGeneration else {
             return nil
         }
         inFlight = nil
-        if generated.didResolveHLSStoryboard {
+        if outcome.didResolveHLSStoryboard {
             didResolveHLSStoryboard = true
-            resolvedHLSStoryboard = generated.resolvedHLSStoryboard
+            resolvedHLSStoryboard = outcome.resolvedHLSStoryboard
         }
+        guard let generated = outcome.generatedFrame else { return nil }
         cache.insert(
             generated.frame,
             for: generated.cacheKey,
@@ -388,22 +398,24 @@ actor PlaybackTimelinePreviewService {
         }
     }
 
-    private nonisolated static func generatedFrame(
+    private nonisolated static func generationOutcome(
         source: PlaybackSource,
         timestamp: Double,
         loaded: PlaybackTimelinePreviewImage,
         cacheKey: PlaybackTimelinePreviewCacheKey,
         resolvedHLSStoryboard: PlaybackStoryboardDescriptor?,
         didResolveHLSStoryboard: Bool
-    ) -> GeneratedFrame {
-        GeneratedFrame(
-            frame: PlaybackTimelinePreviewFrame(
-                sourceID: source.id,
-                timestamp: timestamp,
-                image: loaded.image,
-                byteCount: loaded.byteCount
+    ) -> GenerationOutcome {
+        GenerationOutcome(
+            generatedFrame: GeneratedFrame(
+                frame: PlaybackTimelinePreviewFrame(
+                    sourceID: source.id,
+                    timestamp: timestamp,
+                    image: loaded.image,
+                    byteCount: loaded.byteCount
+                ),
+                cacheKey: cacheKey
             ),
-            cacheKey: cacheKey,
             resolvedHLSStoryboard: resolvedHLSStoryboard,
             didResolveHLSStoryboard: didResolveHLSStoryboard
         )

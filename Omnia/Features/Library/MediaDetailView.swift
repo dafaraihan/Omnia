@@ -92,6 +92,8 @@ struct MediaDetailView: View {
     private var detailHero: some View {
         ZStack(alignment: .bottomLeading) {
             HeroArtworkCanvas(item: displayItem, source: .detail, artworkAlignment: .topTrailing)
+                .id(displayItem.id)
+                .frame(minHeight: detailHeroHeight, maxHeight: detailHeroHeight)
 
             VStack(alignment: .leading, spacing: 0) {
                 Spacer(minLength: 0)
@@ -103,6 +105,7 @@ struct MediaDetailView: View {
             .padding(.leading, CinematicHeroLayout.horizontalInset)
             .padding(.bottom, 34)
         }
+        .frame(maxWidth: .infinity, minHeight: detailHeroHeight, maxHeight: detailHeroHeight)
         #if os(iOS)
         .overlay(alignment: .topLeading) {
             Button {
@@ -120,7 +123,6 @@ struct MediaDetailView: View {
             .accessibilityLabel("Back")
         }
         #endif
-        .frame(maxWidth: .infinity, minHeight: detailHeroHeight, maxHeight: detailHeroHeight)
         // The hero owns the top safe area on every platform. On macOS the
         // compact system Back control floats above this artwork; it must not
         // create a separate black titlebar band.

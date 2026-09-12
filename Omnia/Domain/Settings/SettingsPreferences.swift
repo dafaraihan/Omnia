@@ -125,6 +125,13 @@ enum SubtitleAppearanceMode: String, Codable, CaseIterable, Sendable {
     case custom
 }
 
+enum MacNavigationStyle: String, Codable, CaseIterable, Identifiable, Sendable {
+    case sidebar
+    case topBar
+
+    var id: Self { self }
+}
+
 nonisolated struct MDBListRatingPreferences: Codable, Equatable, Sendable {
     var discoveredProviderIDs: Set<String>
     var disabledProviderIDs: Set<String>
@@ -183,6 +190,7 @@ struct SettingsPreferences: Codable, Equatable, Sendable {
     var customSubtitleAppearance: SubtitleAppearance
     var mdblistRatings: MDBListRatingPreferences
     var showMediaCardLabels: Bool
+    var navigationStyle: MacNavigationStyle
 
     private enum CodingKeys: String, CodingKey {
         case addonTimeout, continueWatchingLimit, watchlistMode, showUpcoming
@@ -194,7 +202,7 @@ struct SettingsPreferences: Codable, Equatable, Sendable {
         case preferredSubtitleLanguage, subtitleFallbackLanguage
         case subtitlesEnabled, playbackSubtitleStyle
         case sdhPreference, animeAudioPreference, subtitleAppearance
-        case customSubtitleAppearance, mdblistRatings, showMediaCardLabels
+        case customSubtitleAppearance, mdblistRatings, showMediaCardLabels, navigationStyle
     }
 
     init(
@@ -224,7 +232,8 @@ struct SettingsPreferences: Codable, Equatable, Sendable {
         subtitleAppearance: SubtitleAppearanceMode,
         customSubtitleAppearance: SubtitleAppearance,
         mdblistRatings: MDBListRatingPreferences,
-        showMediaCardLabels: Bool
+        showMediaCardLabels: Bool,
+        navigationStyle: MacNavigationStyle
     ) {
         self.addonTimeout = addonTimeout
         self.continueWatchingLimit = continueWatchingLimit
@@ -253,6 +262,7 @@ struct SettingsPreferences: Codable, Equatable, Sendable {
         self.customSubtitleAppearance = customSubtitleAppearance
         self.mdblistRatings = mdblistRatings
         self.showMediaCardLabels = showMediaCardLabels
+        self.navigationStyle = navigationStyle
     }
 
     init(from decoder: Decoder) throws {
@@ -296,6 +306,10 @@ struct SettingsPreferences: Codable, Equatable, Sendable {
             Bool.self,
             forKey: .showMediaCardLabels
         ) ?? true
+        navigationStyle = try container.decodeIfPresent(
+            MacNavigationStyle.self,
+            forKey: .navigationStyle
+        ) ?? .sidebar
     }
 
     static let `default` = SettingsPreferences(
@@ -325,7 +339,8 @@ struct SettingsPreferences: Codable, Equatable, Sendable {
         subtitleAppearance: .followSystem,
         customSubtitleAppearance: .default,
         mdblistRatings: .default,
-        showMediaCardLabels: true
+        showMediaCardLabels: true,
+        navigationStyle: .sidebar
     )
 
     var normalized: SettingsPreferences {

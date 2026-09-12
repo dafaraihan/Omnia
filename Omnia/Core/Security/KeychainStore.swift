@@ -14,7 +14,6 @@ enum KeychainStore {
             kSecAttrService: service,
             kSecAttrAccount: account
         ]
-        SecItemDelete(query as CFDictionary)
         // Provider credentials are personal secrets. Keep them out of
         // UserDefaults, the app bundle, and cloud sync. iOS and iPadOS use a
         // device-only protection class, so an encrypted device backup cannot
@@ -24,6 +23,13 @@ enum KeychainStore {
         #if !os(macOS)
         attributes[kSecAttrAccessible] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         #endif
+
+        let updateStatus = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        if updateStatus == errSecSuccess { return }
+        guard updateStatus == errSecItemNotFound else {
+            throw KeychainError.unhandled(updateStatus)
+        }
+
         let addQuery = query.merging(attributes) { _, latest in latest }
         let status = SecItemAdd(addQuery as CFDictionary, nil)
         guard status == errSecSuccess else { throw KeychainError.unhandled(status) }

@@ -173,13 +173,9 @@ enum MacSettingsContainerStyle: Equatable {
 
 enum MacSettingsSymbolTreatment: Equatable {
     case whiteMonochrome
-    case blueMonochrome
 
     var color: Color {
-        switch self {
-        case .whiteMonochrome: .white
-        case .blueMonochrome: .blue
-        }
+        .white
     }
 }
 
@@ -193,7 +189,15 @@ enum MacSettingsPresentation {
     static let pressedTreatment: MacSettingsInteractionTreatment = .neutralGray
 
     static func symbolTreatment(isHovered: Bool, isPressed: Bool) -> MacSettingsSymbolTreatment {
-        isHovered || isPressed ? .blueMonochrome : .whiteMonochrome
+        .whiteMonochrome
+    }
+
+    static func searchPlacement(for navigationStyle: MacNavigationStyle) -> SearchFieldPlacement {
+        .toolbar
+    }
+
+    static func searchWidth(proposedWidth: CGFloat) -> CGFloat {
+        min(max(0, proposedWidth), 320)
     }
 }
 

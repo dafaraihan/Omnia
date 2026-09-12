@@ -145,6 +145,27 @@ final class PlaybackTimelinePreviewServiceTests: XCTestCase {
         XCTAssertEqual(localRequestCount, 2)
     }
 
+    func testUnavailableHLSDescriptorRemainsResolvedWhenLocalGenerationFails() async throws {
+        let storyboard = PreviewStoryboardLoaderStub(hlsDescriptor: nil)
+        let local = PreviewLocalGeneratorStub(imageFailureCount: 2)
+        let service = PlaybackTimelinePreviewService(
+            source: makeSource(id: "no-preview", descriptor: nil),
+            configuration: .init(isLowPowerModeEnabled: false),
+            storyboardLoader: storyboard,
+            localGenerator: local
+        )
+
+        let firstFrame = await service.frame(at: 1)
+        let secondFrame = await service.frame(at: 2)
+
+        let hlsRequestCount = await storyboard.hlsRequestCount
+        let localRequestCount = await local.imageRequestCount
+        XCTAssertNil(firstFrame)
+        XCTAssertNil(secondFrame)
+        XCTAssertEqual(hlsRequestCount, 1)
+        XCTAssertEqual(localRequestCount, 2)
+    }
+
     func testCacheKeyIncludesSourceIdentity() {
         XCTAssertNotEqual(
             PlaybackTimelinePreviewCacheKey(sourceID: "a", timestampBucket: 10),
@@ -252,11 +273,16 @@ private enum PreviewStoryboardLoaderError: Error {
 
 private actor PreviewLocalGeneratorStub: PlaybackLocalFrameGenerating {
     private let gate: PreviewGenerationGate?
+    private var imageFailureCount: Int
     private(set) var imageRequestCount = 0
     private(set) var stopCount = 0
 
-    init(gate: PreviewGenerationGate? = nil) {
+    init(
+        gate: PreviewGenerationGate? = nil,
+        imageFailureCount: Int = 0
+    ) {
         self.gate = gate
+        self.imageFailureCount = imageFailureCount
     }
 
     func image(at timestamp: Double, source: PlaybackSource) async throws -> PlaybackTimelinePreviewImage {
@@ -265,6 +291,10 @@ private actor PreviewLocalGeneratorStub: PlaybackLocalFrameGenerating {
             await gate.suspend()
         }
         try Task.checkCancellation()
+        if imageFailureCount > 0 {
+            imageFailureCount -= 1
+            throw PreviewStoryboardLoaderError.injectedFailure
+        }
         return makePreviewImage()
     }
 

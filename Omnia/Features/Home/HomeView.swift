@@ -169,6 +169,7 @@ struct HomeView: View {
             HeroArtworkCanvas(item: featured, source: .home, artworkAlignment: .topTrailing)
                 .id(featured.id)
                 .transition(.opacity)
+                .frame(height: heroHeight)
 
             // FeaturedBackdrop correctly opts out of hit-testing so it can be
             // reused behind detail content. Give Home a separate clear link
@@ -242,6 +243,7 @@ struct HomeView: View {
             .padding(.leading, CinematicHeroLayout.horizontalInset)
                 .padding(.bottom, 38)
         }
+        .frame(height: heroHeight)
         .overlay {
             if heroCandidates.count > 1 {
                 HStack {
@@ -271,7 +273,6 @@ struct HomeView: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .frame(height: heroHeight)
         .clipped()
         .animation(.easeInOut(duration: 0.45), value: featured.id)
         .accessibilityElement(children: .combine)

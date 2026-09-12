@@ -96,10 +96,6 @@ struct PlaybackSourceSheet: View {
                                     ForEach(sourceSections.direct) { candidate in
                                         playbackButton(candidate)
                                     }
-                                } header: {
-                                    Text("Direct HTTPS Sources")
-                                } footer: {
-                                    Text("Omnia opens streams with libmpv on macOS. Blu-ray ISO sources are downloaded into the bounded resolver cache only after you choose Prepare Disc; extensionless HTTPS sources also offer that explicit action.")
                                 }
                             }
 
@@ -122,8 +118,6 @@ struct PlaybackSourceSheet: View {
                                     }
                                 } header: {
                                     Text("External Pages")
-                                } footer: {
-                                    Text("These add-on results are webpages, not media streams. Omnia shows them for completeness but does not open or resolve them locally.")
                                 }
                             }
 
@@ -135,13 +129,6 @@ struct PlaybackSourceSheet: View {
                                 } header: {
                                     Text("Unavailable Sources")
                                 }
-                            }
-
-                            Section("Source Handling") {
-                                Label("Direct HTTPS streams play in Omnia", systemImage: "play.rectangle")
-                                Text("Torrent-backed streams and explicitly selected Blu-ray images use the shared local resolver cache on macOS. Mobile support remains disabled pending its separate review.")
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
                             }
                         }
                         .listStyle(.plain)
