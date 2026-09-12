@@ -15,28 +15,14 @@ final class MPVPlaybackIntegrationTests: XCTestCase {
         let fixtureURL = try XCTUnwrap(
             Bundle(for: Self.self).url(forResource: "multi-track", withExtension: "mkv")
         )
-        let player = OMMpvPlayerController(url: fixtureURL, requestHeaders: [:])
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 480, height: 270),
-            styleMask: [.titled],
-            backing: .buffered,
-            defer: false
-        )
-        window.alphaValue = 0
-        window.contentView = player.videoView
-        window.orderFrontRegardless()
-        defer {
-            player.stateChangeHandler = nil
-            player.stop()
-            Self.retainedPlayers.append(player)
-            Self.retainedWindows.append(window)
-        }
+        let graph = makeStartedPlayer(url: fixtureURL)
+        defer { retainAndStop(graph) }
+        let player = graph.player
 
         var snapshots: [OMMpvPlaybackSnapshot] = []
         player.stateChangeHandler = { snapshot in
             snapshots.append(snapshot)
         }
-        player.startIfNeeded()
         waitUntil {
             player.errorMessage != nil
                 || (
@@ -52,30 +38,78 @@ final class MPVPlaybackIntegrationTests: XCTestCase {
         XCTAssertEqual(player.audioTracks.count, 2)
         XCTAssertEqual(player.subtitleTracks.count, 1)
         XCTAssertTrue(snapshots.contains { $0.audioTracks.count == 2 })
+        waitUntil { player.position > 0.15 }
+        let positionBeforeSelection = player.position
+        XCTAssertFalse(player.isPaused)
 
         let secondAudio = try XCTUnwrap(player.audioTracks.last)
-        player.selectAudioTrack(id: secondAudio.trackID)
-        waitUntil {
-            snapshots.contains {
-                $0.audioTracks.contains { $0.trackID == secondAudio.trackID && $0.isSelected }
-            }
+        var audioReplies: [(UInt64, Bool, String?)] = []
+        let audioRequestID = player.selectAudioTrack(id: secondAudio.trackID) { id, succeeded, message in
+            audioReplies.append((id, succeeded, message))
         }
+        waitUntil {
+            audioReplies.contains { $0.0 == audioRequestID }
+                && player.audioTracks.contains { $0.trackID == secondAudio.trackID && $0.isSelected }
+                && player.position > positionBeforeSelection
+        }
+        XCTAssertEqual(audioReplies.last?.0, audioRequestID)
+        XCTAssertEqual(audioReplies.last?.1, true)
+        XCTAssertNil(audioReplies.last?.2)
+        XCTAssertFalse(player.isPaused)
         XCTAssertTrue(player.audioTracks.contains { $0.trackID == secondAudio.trackID && $0.isSelected })
 
         let subtitle = try XCTUnwrap(player.subtitleTracks.first)
-        player.selectSubtitleTrack(id: NSNumber(value: subtitle.trackID))
-        waitUntil {
-            snapshots.contains {
-                $0.subtitleTracks.contains { $0.trackID == subtitle.trackID && $0.isSelected }
-            }
+        var subtitleReplies: [(UInt64, Bool, String?)] = []
+        let subtitleRequestID = player.selectSubtitleTrack(id: NSNumber(value: subtitle.trackID)) {
+            id,
+            succeeded,
+            message in
+            subtitleReplies.append((id, succeeded, message))
         }
+        waitUntil {
+            subtitleReplies.contains { $0.0 == subtitleRequestID }
+                && player.subtitleTracks.contains { $0.trackID == subtitle.trackID && $0.isSelected }
+        }
+        XCTAssertEqual(subtitleReplies.last?.1, true)
+        XCTAssertNil(subtitleReplies.last?.2)
+        XCTAssertFalse(player.isPaused)
         XCTAssertTrue(player.subtitleTracks.contains { $0.trackID == subtitle.trackID && $0.isSelected })
 
-        player.selectSubtitleTrack(id: nil)
-        waitUntil {
-            snapshots.last.map { !$0.subtitleTracks.contains(where: \.isSelected) } == true
+        let disableRequestID = player.selectSubtitleTrack(id: nil) { id, succeeded, message in
+            subtitleReplies.append((id, succeeded, message))
         }
+        waitUntil {
+            subtitleReplies.contains { $0.0 == disableRequestID && $0.1 }
+                && !player.subtitleTracks.contains(where: \.isSelected)
+        }
+        XCTAssertFalse(player.isPaused)
         XCTAssertFalse(player.subtitleTracks.contains(where: \.isSelected))
+    }
+
+    @MainActor
+    func testLatestAsynchronousAudioSelectionWins() throws {
+        let fixtureURL = try XCTUnwrap(
+            Bundle(for: Self.self).url(forResource: "multi-track", withExtension: "mkv")
+        )
+        let graph = makeStartedPlayer(url: fixtureURL)
+        defer { retainAndStop(graph) }
+        let player = graph.player
+        waitUntil { player.audioTracks.count == 2 && player.position > 0.1 }
+
+        let first = try XCTUnwrap(player.audioTracks.first)
+        let second = try XCTUnwrap(player.audioTracks.last)
+        var latestReply: (UInt64, Bool)?
+        _ = player.selectAudioTrack(id: second.trackID) { _, _, _ in }
+        let latestID = player.selectAudioTrack(id: first.trackID) { id, succeeded, _ in
+            latestReply = (id, succeeded)
+        }
+
+        waitUntil {
+            latestReply?.0 == latestID
+                && latestReply?.1 == true
+                && player.audioTracks.contains { $0.trackID == first.trackID && $0.isSelected }
+        }
+        XCTAssertFalse(player.isPaused)
     }
 
     @MainActor
@@ -166,4 +200,34 @@ final class MPVPlaybackIntegrationTests: XCTestCase {
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         }
     }
+
+    @MainActor
+    private func makeStartedPlayer(url: URL) -> PlayerGraph {
+        let player = OMMpvPlayerController(url: url, requestHeaders: [:])
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 480, height: 270),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        window.alphaValue = 0
+        window.contentView = player.videoView
+        window.orderFrontRegardless()
+        player.startIfNeeded()
+        player.play()
+        return PlayerGraph(player: player, window: window)
+    }
+
+    @MainActor
+    private func retainAndStop(_ graph: PlayerGraph) {
+        graph.player.stateChangeHandler = nil
+        graph.player.stop()
+        Self.retainedPlayers.append(graph.player)
+        Self.retainedWindows.append(graph.window)
+    }
+}
+
+private struct PlayerGraph {
+    let player: OMMpvPlayerController
+    let window: NSWindow
 }

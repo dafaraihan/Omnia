@@ -129,6 +129,19 @@ static void *OMOpenGLProcedureAddress(void *context, const char *name) {
 
 @end
 
+typedef NS_ENUM(NSInteger, OMMpvTrackSelectionKind) {
+    OMMpvTrackSelectionKindAudio,
+    OMMpvTrackSelectionKindSubtitle,
+};
+
+@interface OMMpvPendingTrackSelection : NSObject
+@property (nonatomic) OMMpvTrackSelectionKind kind;
+@property (nonatomic, copy, nullable) OMMpvTrackSelectionCompletion completion;
+@end
+
+@implementation OMMpvPendingTrackSelection
+@end
+
 static void OMMpvRequestRedraw(void *context) {
     OMMpvOpenGLView *view = (__bridge OMMpvOpenGLView *)context;
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -158,6 +171,10 @@ static void OMMpvRequestRedraw(void *context) {
     __weak NSView *_inlineVideoHost;
     NSPanel *_pictureInPicturePanel;
     BOOL _pictureInPictureActive;
+    uint64_t _nextTrackSelectionRequestID;
+    uint64_t _latestAudioTrackSelectionRequestID;
+    uint64_t _latestSubtitleTrackSelectionRequestID;
+    NSMutableDictionary<NSNumber *, OMMpvPendingTrackSelection *> *_pendingTrackSelections;
 }
 @property (nonatomic, readwrite) OMMpvOpenGLView *videoView;
 @property (nonatomic, readwrite, nullable) NSString *errorMessage;
@@ -167,6 +184,10 @@ static void OMMpvRequestRedraw(void *context) {
 - (NSPanel *)makePictureInPicturePanel;
 - (void)applySubtitleStyleProperties;
 - (void)applyPendingSeekIfReady;
+- (uint64_t)nextTrackSelectionRequestID;
+- (void)abortTrackSelectionRequest:(uint64_t)requestID;
+- (void)finishTrackSelectionRequest:(uint64_t)requestID status:(int)status;
+- (void)finishTrackSelectionForEvent:(mpv_event *)event;
 @end
 
 static void OMMpvWakeup(void *context) {
@@ -196,6 +217,8 @@ static void OMMpvWakeup(void *context) {
     _playbackRate = 1;
     _videoAspectMode = OMMpvVideoAspectModeOriginal;
     _tracksLoading = YES;
+    _nextTrackSelectionRequestID = 100;
+    _pendingTrackSelections = [NSMutableDictionary dictionary];
     _videoView = [[OMMpvOpenGLView alloc] initWithFrame:NSZeroRect];
     return self;
 }
@@ -417,20 +440,132 @@ static void OMMpvWakeup(void *context) {
     }
 }
 
-- (void)selectAudioTrackWithID:(NSInteger)trackID {
-    if (!_mpv) return;
+- (uint64_t)selectAudioTrackWithID:(NSInteger)trackID
+                        completion:(OMMpvTrackSelectionCompletion)completion {
+    if (!_mpv || _stopped) {
+        if (completion) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                completion(0, NO, @"Audio track selection is unavailable.");
+            });
+        }
+        return 0;
+    }
+
+    [self abortTrackSelectionRequest:_latestAudioTrackSelectionRequestID];
+    uint64_t requestID = [self nextTrackSelectionRequestID];
+    OMMpvPendingTrackSelection *pending = [OMMpvPendingTrackSelection new];
+    pending.kind = OMMpvTrackSelectionKindAudio;
+    pending.completion = completion;
+    _pendingTrackSelections[@(requestID)] = pending;
+    _latestAudioTrackSelectionRequestID = requestID;
+
     int64_t value = (int64_t)trackID;
-    mpv_set_property(_mpv, "aid", MPV_FORMAT_INT64, &value);
+    int status = mpv_set_property_async(_mpv, requestID, "aid", MPV_FORMAT_INT64, &value);
+    if (status < 0) {
+        [self finishTrackSelectionRequest:requestID status:status];
+    }
+    return requestID;
 }
 
-- (void)selectSubtitleTrackWithID:(NSNumber *)trackID {
-    if (!_mpv) return;
-    if (!trackID) {
-        mpv_set_property_string(_mpv, "sid", "no");
-        return;
+- (uint64_t)selectSubtitleTrackWithID:(NSNumber *)trackID
+                           completion:(OMMpvTrackSelectionCompletion)completion {
+    if (!_mpv || _stopped) {
+        if (completion) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                completion(0, NO, @"Subtitle track selection is unavailable.");
+            });
+        }
+        return 0;
     }
-    int64_t value = trackID.longLongValue;
-    mpv_set_property(_mpv, "sid", MPV_FORMAT_INT64, &value);
+
+    [self abortTrackSelectionRequest:_latestSubtitleTrackSelectionRequestID];
+    uint64_t requestID = [self nextTrackSelectionRequestID];
+    OMMpvPendingTrackSelection *pending = [OMMpvPendingTrackSelection new];
+    pending.kind = OMMpvTrackSelectionKindSubtitle;
+    pending.completion = completion;
+    _pendingTrackSelections[@(requestID)] = pending;
+    _latestSubtitleTrackSelectionRequestID = requestID;
+
+    int status;
+    if (!trackID) {
+        const char *disabled = "no";
+        status = mpv_set_property_async(_mpv, requestID, "sid", MPV_FORMAT_STRING, &disabled);
+    } else {
+        int64_t value = trackID.longLongValue;
+        status = mpv_set_property_async(_mpv, requestID, "sid", MPV_FORMAT_INT64, &value);
+    }
+    if (status < 0) {
+        [self finishTrackSelectionRequest:requestID status:status];
+    }
+    return requestID;
+}
+
+- (uint64_t)nextTrackSelectionRequestID {
+    do {
+        _nextTrackSelectionRequestID += 1;
+        if (_nextTrackSelectionRequestID == 0) {
+            _nextTrackSelectionRequestID = 100;
+        }
+    } while (_pendingTrackSelections[@(_nextTrackSelectionRequestID)] != nil);
+    return _nextTrackSelectionRequestID;
+}
+
+- (void)abortTrackSelectionRequest:(uint64_t)requestID {
+    if (requestID == 0) return;
+    OMMpvPendingTrackSelection *pending = _pendingTrackSelections[@(requestID)];
+    if (!pending) return;
+
+    if (_mpv) mpv_abort_async_command(_mpv, requestID);
+    [_pendingTrackSelections removeObjectForKey:@(requestID)];
+    OMMpvTrackSelectionCompletion completion = pending.completion;
+    if (completion) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            completion(requestID, NO, nil);
+        });
+    }
+}
+
+- (void)finishTrackSelectionRequest:(uint64_t)requestID status:(int)status {
+    OMMpvPendingTrackSelection *pending = _pendingTrackSelections[@(requestID)];
+    if (!pending) return;
+    [_pendingTrackSelections removeObjectForKey:@(requestID)];
+
+    uint64_t latestRequestID = pending.kind == OMMpvTrackSelectionKindAudio
+        ? _latestAudioTrackSelectionRequestID
+        : _latestSubtitleTrackSelectionRequestID;
+    if (requestID != latestRequestID) return;
+
+    if (pending.kind == OMMpvTrackSelectionKindAudio) {
+        _latestAudioTrackSelectionRequestID = 0;
+    } else {
+        _latestSubtitleTrackSelectionRequestID = 0;
+    }
+
+    BOOL succeeded = status >= 0;
+    NSString *message = nil;
+    if (!succeeded) {
+        message = pending.kind == OMMpvTrackSelectionKindAudio
+            ? @"The selected audio track could not be activated."
+            : @"The selected subtitle track could not be activated.";
+        self.errorMessage = message;
+    } else if (
+        [self.errorMessage isEqualToString:@"The selected audio track could not be activated."]
+        || [self.errorMessage isEqualToString:@"The selected subtitle track could not be activated."]
+    ) {
+        self.errorMessage = nil;
+    }
+
+    OMMpvTrackSelectionCompletion completion = pending.completion;
+    if (completion) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            completion(requestID, succeeded, message);
+        });
+    }
+}
+
+- (void)finishTrackSelectionForEvent:(mpv_event *)event {
+    if (!event) return;
+    [self finishTrackSelectionRequest:event->reply_userdata status:event->error];
 }
 
 - (void)cycleSubtitles {
@@ -538,6 +673,9 @@ static void OMMpvWakeup(void *context) {
     [self exitPictureInPicture];
     _inlineVideoHost = nil;
     _stopped = YES;
+    for (NSNumber *requestID in _pendingTrackSelections.allKeys) {
+        [self abortTrackSelectionRequest:requestID.unsignedLongLongValue];
+    }
     [self destroyPlayer];
 }
 
@@ -689,6 +827,10 @@ static void OMMpvWakeup(void *context) {
             shouldEmitSnapshot = YES;
             break;
         case MPV_EVENT_PROPERTY_CHANGE:
+            shouldEmitSnapshot = YES;
+            break;
+        case MPV_EVENT_SET_PROPERTY_REPLY:
+            [self finishTrackSelectionForEvent:event];
             shouldEmitSnapshot = YES;
             break;
         case MPV_EVENT_END_FILE: {

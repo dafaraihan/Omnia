@@ -17,6 +17,12 @@ typedef NS_ENUM(NSInteger, OMMpvVideoAspectMode) {
     OMMpvVideoAspectModeFill,
 };
 
+typedef void (^OMMpvTrackSelectionCompletion)(
+    uint64_t requestID,
+    BOOL succeeded,
+    NSString * _Nullable errorMessage
+);
+
 /// Immutable representation of one embedded media track reported by mpv.
 @interface OMMpvTrack : NSObject
 
@@ -88,8 +94,12 @@ typedef NS_ENUM(NSInteger, OMMpvVideoAspectMode) {
 - (void)setPreferredSubtitleLanguages:(NSArray<NSString *> *)languages;
 - (void)setSubtitlesDisabled:(BOOL)disabled;
 - (void)setSubtitleStyle:(NSDictionary<NSString *, id> *)style;
-- (void)selectAudioTrackWithID:(NSInteger)trackID NS_SWIFT_NAME(selectAudioTrack(id:));
-- (void)selectSubtitleTrackWithID:(nullable NSNumber *)trackID NS_SWIFT_NAME(selectSubtitleTrack(id:));
+- (uint64_t)selectAudioTrackWithID:(NSInteger)trackID
+                        completion:(nullable OMMpvTrackSelectionCompletion)completion
+    NS_SWIFT_NAME(selectAudioTrack(id:completion:));
+- (uint64_t)selectSubtitleTrackWithID:(nullable NSNumber *)trackID
+                           completion:(nullable OMMpvTrackSelectionCompletion)completion
+    NS_SWIFT_NAME(selectSubtitleTrack(id:completion:));
 - (void)cycleSubtitles;
 - (void)cycleAudioTrack;
 - (void)attachVideoViewToHost:(NSView *)hostView;
