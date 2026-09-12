@@ -19,6 +19,8 @@ struct PlaybackSourceSheet: View {
     @State private var candidates: [AddonStreamCandidate] = []
     @State private var resolution: PlaybackSourceResolution?
     @State private var isResolving = true
+    @State private var selectionID: UUID?
+    @State private var isHandingOffPlayback = false
     @State private var retryingAddonIDs: Set<String> = []
     @State private var selectedAddonID: String?
     @State private var resolvingCandidateID: String?
@@ -148,9 +150,17 @@ struct PlaybackSourceSheet: View {
                     }
                 }
             }
-            .task(id: "\(item.id)::\(episode?.id ?? "title")") {
+            .task(id: mediaKey) {
+                let selectionID = playback.beginSourceSelection()
+                self.selectionID = selectionID
+                isHandingOffPlayback = false
                 isResolving = true
+                candidates = []
+                resolution = nil
+                selectedAddonID = nil
+                resolverFailures = [:]
                 let enrichedItem = await metadata.details(for: item)
+                guard !Task.isCancelled, playback.isCurrentSourceSelection(selectionID) else { return }
                 let lookupItem = item.mergingSourceIdentifiers(from: enrichedItem)
                 let result = await PlaybackSourceResolver.resolve(
                     for: lookupItem,
@@ -158,6 +168,7 @@ struct PlaybackSourceSheet: View {
                     addons: store.installedAddons,
                     timeout: settings.preferences.addonTimeout
                 )
+                guard !Task.isCancelled, playback.isCurrentSourceSelection(selectionID) else { return }
                 resolution = result
                 candidates = result.candidates
                 isResolving = false
@@ -181,6 +192,9 @@ struct PlaybackSourceSheet: View {
                 Text(LocalTorrentConsent.disclosure)
             }
             .onDisappear {
+                if !isHandingOffPlayback, let selectionID {
+                    playback.cancelSourceSelection(selectionID)
+                }
                 #if os(macOS)
                 localTorrentEngine?.cancel()
                 localTorrentEngine = nil
@@ -895,15 +909,24 @@ struct PlaybackSourceSheet: View {
     }
 
     private func beginPlayback(_ input: PlaybackInput, candidate: AddonStreamCandidate? = nil) {
+        guard let selectionID, playback.isCurrentSourceSelection(selectionID), !isHandingOffPlayback else {
+            releaseUnusedInput(input)
+            return
+        }
         let item = item
         let episode = episode
         let resumeAt = resumeAt
-        closePresentation()
+        let mediaKey = mediaKey
+        isHandingOffPlayback = true
+        closePresentation(preservingSelection: true)
 
         Task { @MainActor in
             await Task.yield()
             try? await Task.sleep(for: .milliseconds(180))
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, playback.claimSourceSelection(selectionID) else {
+                releaseUnusedInput(input)
+                return
+            }
             playback.setSubtitlePreferencesHandler { update in
                 settings.update {
                     $0.playbackSubtitleStyle = update.style
@@ -941,7 +964,18 @@ struct PlaybackSourceSheet: View {
         }
     }
 
-    private func closePresentation() {
+    private func releaseUnusedInput(_ input: PlaybackInput) {
+        #if os(macOS)
+        if let protection = input.cacheProtection {
+            Task { await LocalPlaybackJobCoordinator.shared.unprotect(protection) }
+        }
+        #endif
+    }
+
+    private func closePresentation(preservingSelection: Bool = false) {
+        if !preservingSelection, let selectionID {
+            playback.cancelSourceSelection(selectionID)
+        }
         if let onClose {
             onClose()
         } else {
@@ -965,6 +999,10 @@ struct PlaybackSourceSheet: View {
     }
 
     private func startAutomaticallyIfAllowed() {
+        guard !Task.isCancelled,
+              let selectionID,
+              playback.isCurrentSourceSelection(selectionID),
+              settings.preferences.rememberLastSelection else { return }
         #if os(macOS)
         let directCandidates = candidates.filter {
             $0.nativePlaybackSource != nil
@@ -1041,7 +1079,7 @@ struct PlaybackExperienceView: View {
     @State private var segments: [SkipSegment] = []
     @State private var visibleSkipSegment: SkipSegment?
     @State private var showsUpNext = false
-    @State private var showsNextSourceSheet = false
+    @State private var nextSourceRequest: PlaybackRequest?
     @State private var didHandleEnd = false
     @State private var automation = PlaybackAutomationController(policy: .init(
         showSkipIntro: true,
@@ -1083,7 +1121,7 @@ struct PlaybackExperienceView: View {
                     self.visibleSkipSegment = nil
                 },
                 upNextTitle: upNextTitle,
-                showUpNext: { showsNextSourceSheet = true }
+                showUpNext: presentNextEpisode
             )
             .opacity(showsChrome ? 1 : 0)
             .allowsHitTesting(showsChrome)
@@ -1103,7 +1141,7 @@ struct PlaybackExperienceView: View {
                 }
                 if showsUpNext, let nextEpisode = playback.nextEpisode {
                     Button("Up Next: S\(nextEpisode.seasonNumber) E\(nextEpisode.episodeNumber)", systemImage: "forward.fill") {
-                        showsNextSourceSheet = true
+                        presentNextEpisode()
                     }
                     .buttonStyle(.borderedProminent)
                     .accessibilityHint("Choose an in-app source for the next episode")
@@ -1127,13 +1165,14 @@ struct PlaybackExperienceView: View {
                 hideChrome(after: 3.2)
             }
         }
-        .omniaGlassModal(isPresented: $showsNextSourceSheet) {
-            if let item = playback.mediaItem, let nextEpisode = playback.nextEpisode {
+        .omniaGlassModal(isPresented: showsNextSourceSheet) {
+            if let request = nextSourceRequest {
                 PlaybackSourceSheet(
-                    item: item,
-                    episode: nextEpisode,
-                    onClose: { showsNextSourceSheet = false }
+                    item: request.item,
+                    episode: request.episode,
+                    onClose: { nextSourceRequest = nil }
                 )
+                .id(request.id)
             }
         }
         #if os(macOS)
@@ -1171,6 +1210,20 @@ struct PlaybackExperienceView: View {
         "\(playback.mediaItem?.id ?? "none"):\(playback.episode?.id ?? "title"):\(settings.preferences.showSkipIntro):\(settings.preferences.autoSkipIntro):\(settings.preferences.autoplayNextEpisode):\(settings.preferences.upNextLeadTime.rawValue)"
     }
 
+    private var showsNextSourceSheet: Binding<Bool> {
+        Binding(
+            get: { nextSourceRequest != nil },
+            set: { if !$0 { nextSourceRequest = nil } }
+        )
+    }
+
+    private func presentNextEpisode() {
+        guard nextSourceRequest == nil,
+              let item = playback.mediaItem,
+              let episode = playback.nextEpisode else { return }
+        nextSourceRequest = PlaybackRequest(item: item, episode: episode, resumeAt: nil)
+    }
+
     private var upNextTitle: String? {
         guard showsUpNext, let nextEpisode = playback.nextEpisode else { return nil }
         return "Up Next: S\(nextEpisode.seasonNumber) E\(nextEpisode.episodeNumber)"
@@ -1186,6 +1239,7 @@ struct PlaybackExperienceView: View {
         visibleSkipSegment = nil
         showsUpNext = false
         didHandleEnd = false
+        nextSourceRequest = nil
     }
 
     private func loadIntroSegments() async {
@@ -1233,7 +1287,7 @@ struct PlaybackExperienceView: View {
               duration - playback.positionSeconds >= 0 else { return }
         didHandleEnd = true
         if automation.playbackEnded(hasNextEpisode: playback.nextEpisode != nil) == .resolveNextEpisode {
-            showsNextSourceSheet = true
+            presentNextEpisode()
         }
     }
 

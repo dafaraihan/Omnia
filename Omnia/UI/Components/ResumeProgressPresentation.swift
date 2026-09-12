@@ -8,7 +8,7 @@ import SwiftUI
 /// The complete launch decision for the title-level playback action. Source
 /// selection must carry this decision unchanged so choosing a stream cannot
 /// discard the selected episode or saved timestamp.
-struct MediaDetailPlaybackIntent: Equatable {
+nonisolated struct MediaDetailPlaybackIntent: Equatable {
     let title: String
     let item: MediaItem
     let episode: MediaEpisode?
@@ -64,7 +64,7 @@ struct MediaDetailPlaybackIntent: Equatable {
 /// One source of truth for partial-playback metadata across heroes, shelves,
 /// and episode cards. Completed and untouched titles deliberately produce no
 /// presentation so Play and Rewatch stay visually clean.
-struct ResumeProgressPresentation: Equatable {
+nonisolated struct ResumeProgressPresentation: Equatable {
     let progress: Double
     let remainingText: String
     let episodeIdentifier: String?

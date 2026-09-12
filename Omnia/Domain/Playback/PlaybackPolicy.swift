@@ -1,5 +1,14 @@
 import Foundation
 
+/// Captures one user action. The episode must not be recomputed from mutable
+/// resume progress or the player's next episode while source lookup awaits.
+nonisolated struct PlaybackRequest: Identifiable {
+    let id = UUID()
+    let item: MediaItem
+    let episode: MediaEpisode?
+    let resumeAt: Double?
+}
+
 enum PlaybackAdapter: Equatable, Sendable {
     case avPlayer
     case libmpv

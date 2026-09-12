@@ -1,6 +1,7 @@
 import XCTest
 @testable import Omnia
 
+@MainActor
 final class HeroBackdropPresentationTests: XCTestCase {
     func testMacOSUsesOneWindowOwnedHeroArtworkLayerThatTracksTheScrollHero() {
         XCTAssertEqual(HeroBackdropPresentation.artworkPlacement, .windowTracked)
@@ -40,7 +41,7 @@ final class HeroBackdropPresentationTests: XCTestCase {
         let home = item(id: "home", title: "Home")
         let nextHome = item(id: "next-home", title: "Next Home")
         let detail = item(id: "detail", title: "Detail")
-        var state = HeroBackdropState()
+        let state = HeroBackdropState()
 
         state.report(home, frame: .zero, from: .home)
         state.report(detail, frame: .zero, from: .detail)
@@ -64,13 +65,67 @@ final class HeroBackdropPresentationTests: XCTestCase {
             title: "Detail",
             backdropURL: URL(string: "https://example.com/resolved-backdrop.jpg")
         )
-        var state = HeroBackdropState()
+        let state = HeroBackdropState()
 
         state.report(initial, frame: CGRect(x: 220, y: 0, width: 1_580, height: 820), from: .detail)
         state.report(resolved, frame: CGRect(x: 220, y: 0, width: 1_580, height: 820), from: .detail)
 
         XCTAssertEqual(state.presentation?.item.backdropURL, initial.backdropURL)
         XCTAssertEqual(state.presentation?.frame.height, 820)
+    }
+
+    func testHomeHeroDoesNotDiscardVisibleArtworkWhenMetadataOmitsBackdrop() {
+        let initial = item(
+            id: "catalog:home",
+            title: "Home",
+            backdropURL: URL(string: "https://example.com/catalog-backdrop.jpg")
+        )
+        let resolvedWithoutBackdrop = item(
+            id: "catalog:home",
+            title: "Home"
+        )
+        let state = HeroBackdropState()
+
+        state.report(initial, frame: CGRect(x: 220, y: 0, width: 1_580, height: 820), from: .home)
+        state.report(
+            resolvedWithoutBackdrop,
+            frame: CGRect(x: 220, y: 0, width: 1_580, height: 820),
+            from: .home
+        )
+
+        XCTAssertEqual(state.presentation?.item.backdropURL, initial.backdropURL)
+    }
+
+    func testOutgoingCarouselViewCannotClearTheIncomingArtwork() {
+        let state = HeroBackdropState()
+        let outgoing = UUID()
+        let incoming = UUID()
+        state.report(item(id: "old", title: "Old"), frame: .zero, from: .home, owner: outgoing)
+        state.report(item(id: "new", title: "New"), frame: .zero, from: .home, owner: incoming)
+
+        state.clear(.home, owner: outgoing)
+
+        XCTAssertEqual(state.presentation?.item.id, "new")
+        state.clear(.home, owner: incoming)
+        XCTAssertNil(state.presentation)
+    }
+
+    func testHomeSelectionHandlesRepeatedCatalogItemsAndKeepsSixUniqueTitles() {
+        let items = (1...8).map { item(id: "\($0)", title: "Title \($0)") }
+        let selection = HomeView.selectHeroCandidates(from: items + items)
+        XCTAssertEqual(selection.map(\.id), ["1", "2", "3", "4", "5", "6"])
+        XCTAssertTrue(HomeView.selectHeroCandidates(from: []).isEmpty)
+    }
+
+    func testMissingInitialArtworkCanBeFilledByMetadata() {
+        let state = HeroBackdropState()
+        let url = URL(string: "https://example.com/resolved.jpg")!
+        for source in [HeroBackdropSource.home, .detail] {
+            state.report(item(id: "same", title: "Same"), frame: .zero, from: source)
+            state.report(item(id: "same", title: "Same", backdropURL: url), frame: .zero, from: source)
+            XCTAssertEqual(state.presentation?.item.backdropURL, url)
+            state.clear(source)
+        }
     }
 
     private func item(id: String, title: String, backdropURL: URL? = nil) -> MediaItem {

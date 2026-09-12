@@ -7,7 +7,7 @@ import Foundation
 
 /// A compatible subset of the documented Stremio add-on manifest protocol.
 /// Omnia intentionally accepts only declarative HTTP(S) manifests; it never executes add-on code.
-struct StremioAddonManifest: Codable, Hashable, Sendable {
+nonisolated struct StremioAddonManifest: Codable, Hashable, Sendable {
     let id: String
     let version: String
     let name: String
@@ -47,7 +47,7 @@ struct StremioAddonManifest: Codable, Hashable, Sendable {
     }
 }
 
-enum AddonResource: Codable, Hashable, Sendable {
+nonisolated enum AddonResource: Codable, Hashable, Sendable {
     case name(String)
     case detailed(AddonResourceDetail)
 
@@ -86,20 +86,20 @@ enum AddonResource: Codable, Hashable, Sendable {
     }
 }
 
-struct AddonResourceDetail: Codable, Hashable, Sendable {
+nonisolated struct AddonResourceDetail: Codable, Hashable, Sendable {
     let name: String
     let types: [String]?
     let idPrefixes: [String]?
 }
 
-struct AddonCatalog: Codable, Hashable, Sendable, Identifiable {
+nonisolated struct AddonCatalog: Codable, Hashable, Sendable, Identifiable {
     let type: String
     let id: String
     let name: String?
     let extra: [AddonCatalogExtra]?
 }
 
-struct AddonCatalogExtra: Codable, Hashable, Sendable, Identifiable {
+nonisolated struct AddonCatalogExtra: Codable, Hashable, Sendable, Identifiable {
     let name: String
     let isRequired: Bool?
     let options: [String]?
@@ -116,12 +116,12 @@ extension AddonCatalog {
     var canLoadWithoutExtra: Bool { !(extra?.contains { $0.isRequired == true } ?? false) }
 }
 
-struct AddonBehaviorHints: Codable, Hashable, Sendable {
+nonisolated struct AddonBehaviorHints: Codable, Hashable, Sendable {
     let configurable: Bool?
     let configurationRequired: Bool?
 }
 
-struct InstalledAddon: Identifiable, Codable, Hashable, Sendable {
+nonisolated struct InstalledAddon: Identifiable, Codable, Hashable, Sendable {
     let manifest: StremioAddonManifest
     let manifestURL: URL
     var isEnabled: Bool

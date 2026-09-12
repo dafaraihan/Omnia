@@ -1,6 +1,6 @@
 import Foundation
 
-enum LocalMediaBackupError: Error, Equatable {
+nonisolated enum LocalMediaBackupError: Error, Equatable {
     case fileTooLarge
     case unsupportedVersion
     case tooManyRecords
@@ -8,7 +8,7 @@ enum LocalMediaBackupError: Error, Equatable {
     case invalidRecord
 }
 
-struct LocalMediaBackupRecord: Codable, Equatable, Sendable {
+nonisolated struct LocalMediaBackupRecord: Codable, Equatable, Sendable {
     let media: SavedMediaItem
     let isInWatchlist: Bool
     let savedAt: Date?
@@ -57,7 +57,7 @@ struct LocalMediaBackupRecord: Codable, Equatable, Sendable {
     }
 }
 
-struct LocalMediaBackupDocument: Codable, Equatable, Sendable {
+nonisolated struct LocalMediaBackupDocument: Codable, Equatable, Sendable {
     static let maximumByteCount = 10 * 1_024 * 1_024
     static let maximumRecordCount = 10_000
 
@@ -108,27 +108,27 @@ struct LocalMediaBackupDocument: Codable, Equatable, Sendable {
     }
 }
 
-struct LocalMediaConfirmation: Hashable, Sendable {
+nonisolated struct LocalMediaConfirmation: Hashable, Sendable {
     let rawValue: UUID
 }
 
-struct LocalMediaImportReview: Sendable {
+nonisolated struct LocalMediaImportReview: Sendable {
     let document: LocalMediaBackupDocument
     let conflictingMediaIDs: [String]
     let confirmation: LocalMediaConfirmation
 }
 
-enum LocalMediaImportMode: Sendable {
+nonisolated enum LocalMediaImportMode: Sendable {
     case merge
     case replace(LocalMediaConfirmation)
 }
 
-enum LocalMediaDestructiveAction: String, Sendable {
+nonisolated enum LocalMediaDestructiveAction: String, Sendable {
     case clearProgress
     case clearWatchlist
 }
 
-struct LocalMediaDestructiveConfirmation: Sendable {
+nonisolated struct LocalMediaDestructiveConfirmation: Sendable {
     let action: LocalMediaDestructiveAction
     let rawValue: UUID
 }

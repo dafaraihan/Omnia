@@ -20,29 +20,46 @@ struct WindowHeroPresentation {
     let frame: CGRect
 }
 
-struct HeroBackdropState {
+@Observable
+@MainActor
+final class HeroBackdropState {
     private var homePresentation: WindowHeroPresentation?
     private var detailPresentation: WindowHeroPresentation?
+    @ObservationIgnored private var homeOwner: UUID?
+    @ObservationIgnored private var detailOwner: UUID?
 
     var presentation: WindowHeroPresentation? {
         detailPresentation ?? homePresentation
     }
 
-    mutating func report(_ item: MediaItem, frame: CGRect, from source: HeroBackdropSource) {
+    func report(_ item: MediaItem, frame: CGRect, from source: HeroBackdropSource, owner: UUID? = nil) {
         switch source {
         case .home:
-            homePresentation = WindowHeroPresentation(item: item, frame: frame)
+            homeOwner = owner
+            homePresentation = updatedPresentation(homePresentation, item: item, frame: frame)
         case .detail:
             // A detail request replaces its lightweight catalog model with
             // richer metadata while the page is already visible. Keep the
             // first artwork resource for that title so the full-window image
             // does not visibly recrop during the async handoff; only its
             // scrolling frame is allowed to change.
-            let artworkItem = detailPresentation.map { current in
-                representsSameDetail(current.item, item) ? current.item : item
-            } ?? item
-            detailPresentation = WindowHeroPresentation(item: artworkItem, frame: frame)
+            detailOwner = owner
+            detailPresentation = updatedPresentation(detailPresentation, item: item, frame: frame)
         }
+    }
+
+    private func updatedPresentation(
+        _ current: WindowHeroPresentation?, item: MediaItem, frame: CGRect
+    ) -> WindowHeroPresentation {
+        // Metadata enrichment must not discard or replace artwork that is
+        // already visible. A missing initial backdrop can still be filled in.
+        let artworkItem: MediaItem
+        if let current, current.item.backdropURL != nil, representsSameDetail(current.item, item) {
+            artworkItem = current.item
+        } else {
+            artworkItem = item
+        }
+        return WindowHeroPresentation(item: artworkItem, frame: frame)
     }
 
     private func representsSameDetail(_ current: MediaItem, _ incoming: MediaItem) -> Bool {
@@ -74,12 +91,16 @@ struct HeroBackdropState {
             && (current.year == incoming.year || current.year == "—" || incoming.year == "—")
     }
 
-    mutating func clear(_ source: HeroBackdropSource) {
+    func clear(_ source: HeroBackdropSource, owner: UUID? = nil) {
         switch source {
         case .home:
+            guard owner == nil || owner == homeOwner else { return }
             homePresentation = nil
+            homeOwner = nil
         case .detail:
+            guard owner == nil || owner == detailOwner else { return }
             detailPresentation = nil
+            detailOwner = nil
         }
     }
 }
@@ -101,11 +122,11 @@ enum HeroBackdropPresentation {
 }
 
 private struct HeroBackdropReporterKey: EnvironmentKey {
-    static let defaultValue: (HeroBackdropSource, MediaItem?, CGRect) -> Void = { _, _, _ in }
+    static let defaultValue: (HeroBackdropSource, UUID, MediaItem?, CGRect) -> Void = { _, _, _, _ in }
 }
 
 extension EnvironmentValues {
-    var reportWindowHeroBackdrop: (HeroBackdropSource, MediaItem?, CGRect) -> Void {
+    var reportWindowHeroBackdrop: (HeroBackdropSource, UUID, MediaItem?, CGRect) -> Void {
         get { self[HeroBackdropReporterKey.self] }
         set { self[HeroBackdropReporterKey.self] = newValue }
     }
@@ -153,6 +174,7 @@ struct HeroArtworkCanvas: View {
     var artworkAlignment: Alignment = .topTrailing
     @Environment(\.reportWindowHeroBackdrop) private var reportWindowHeroBackdrop
     @State private var measuredFrame = CGRect.zero
+    @State private var owner = UUID()
 
     var body: some View {
         Group {
@@ -172,9 +194,12 @@ struct HeroArtworkCanvas: View {
         .onChange(of: artworkKey) { _, _ in
             report(item: item, frame: measuredFrame)
         }
+        .onAppear {
+            report(item: item, frame: measuredFrame)
+        }
         .onDisappear {
             guard let source else { return }
-            reportWindowHeroBackdrop(source, nil, measuredFrame)
+            reportWindowHeroBackdrop(source, owner, nil, measuredFrame)
         }
         #endif
     }
@@ -186,7 +211,7 @@ struct HeroArtworkCanvas: View {
 
     private func report(item: MediaItem, frame: CGRect) {
         guard let source, frame.width > 0, frame.height > 0 else { return }
-        reportWindowHeroBackdrop(source, item, frame)
+        reportWindowHeroBackdrop(source, owner, item, frame)
     }
     #endif
 }
@@ -214,14 +239,14 @@ enum WindowHeroBackdropLayout {
 }
 
 struct WindowHeroBackdrop: View {
-    let presentation: WindowHeroPresentation?
+    let state: HeroBackdropState
 
     var body: some View {
         GeometryReader { proxy in
             ZStack(alignment: .topLeading) {
                 Color(nsColor: .windowBackgroundColor)
 
-                if let presentation {
+                if let presentation = state.presentation {
                     let artworkFrame = WindowHeroBackdropLayout.artworkFrame(
                         windowWidth: proxy.size.width,
                         measuredHeroFrame: presentation.frame

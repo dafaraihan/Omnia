@@ -3,6 +3,24 @@ import XCTest
 
 @MainActor
 final class UpcomingServiceTests: XCTestCase {
+    func testHomeCardMetadataIncludesSeasonEpisodeAndEpisodeTitle() {
+        let episode = MediaEpisode(
+            id: "episode",
+            seasonNumber: 3,
+            episodeNumber: 8,
+            title: "Pie",
+            overview: "",
+            runtimeMinutes: nil,
+            stillURL: nil,
+            airDate: "2026-08-12"
+        )
+
+        XCTAssertEqual(
+            UpcomingEpisodeCardPresentation.metadataText(for: episode),
+            "S3 E8 · Pie"
+        )
+    }
+
     func testFiltersToInclusiveWindowDeduplicatesAndOrders() async {
         let now = ISO8601DateFormatter().date(from: "2026-08-11T04:00:00Z")!
         let item = series(

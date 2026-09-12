@@ -68,7 +68,6 @@ final class WindowChromeView: NSView {
         window.titleVisibility = .visible
         window.titlebarAppearsTransparent = true
         window.styleMask.insert(.fullSizeContentView)
-        window.toolbar?.showsBaselineSeparator = false
     }
 }
 #endif

@@ -6,7 +6,7 @@
 import Foundation
 import SwiftUI
 
-struct MediaItem: Identifiable, Hashable, Sendable {
+nonisolated struct MediaItem: Identifiable, Hashable, Sendable {
     enum Kind: String, CaseIterable, Codable, Sendable {
         case movie = "Movie"
         case series = "Series"
@@ -204,9 +204,9 @@ struct MediaItem: Identifiable, Hashable, Sendable {
             genres: genres,
             symbol: symbol,
             artworkColors: artworkColors,
-            artworkURL: artworkURL,
-            backdropURL: backdropURL,
-            logoURL: logoURL,
+            artworkURL: artworkURL ?? enrichedItem.artworkURL,
+            backdropURL: backdropURL ?? enrichedItem.backdropURL,
+            logoURL: logoURL ?? enrichedItem.logoURL,
             metadataProvider: metadataProvider ?? enrichedItem.metadataProvider,
             metadataProviderID: metadataProviderID ?? enrichedItem.metadataProviderID,
             metadataRecordID: metadataRecordID ?? enrichedItem.metadataRecordID,
@@ -241,7 +241,7 @@ struct MediaItem: Identifiable, Hashable, Sendable {
     }
 }
 
-struct MediaCredit: Identifiable, Codable, Hashable, Sendable {
+nonisolated struct MediaCredit: Identifiable, Codable, Hashable, Sendable {
     let id: String
     let name: String
     let role: String?
@@ -249,18 +249,18 @@ struct MediaCredit: Identifiable, Codable, Hashable, Sendable {
     let profileURL: URL?
 }
 
-struct MediaStudio: Identifiable, Codable, Hashable, Sendable {
+nonisolated struct MediaStudio: Identifiable, Codable, Hashable, Sendable {
     let id: String
     let name: String
 }
 
-struct MediaCollection: Hashable, Sendable {
+nonisolated struct MediaCollection: Hashable, Sendable {
     let id: String
     let name: String
     let members: [MediaItem]
 }
 
-struct MediaEpisode: Identifiable, Hashable, Sendable {
+nonisolated struct MediaEpisode: Identifiable, Hashable, Sendable {
     let id: String
     let seasonNumber: Int
     let episodeNumber: Int
@@ -271,7 +271,7 @@ struct MediaEpisode: Identifiable, Hashable, Sendable {
     let airDate: String?
 }
 
-struct MediaSeason: Identifiable, Hashable, Sendable {
+nonisolated struct MediaSeason: Identifiable, Hashable, Sendable {
     let id: String
     let seasonNumber: Int
     let title: String
@@ -280,7 +280,7 @@ struct MediaSeason: Identifiable, Hashable, Sendable {
     let episodes: [MediaEpisode]
 }
 
-struct MediaVideo: Identifiable, Hashable, Sendable {
+nonisolated struct MediaVideo: Identifiable, Hashable, Sendable {
     let id: String
     let title: String
     let type: String
@@ -289,7 +289,7 @@ struct MediaVideo: Identifiable, Hashable, Sendable {
     let publishedAt: String?
 }
 
-struct MediaTitleDetails: Hashable, Sendable {
+nonisolated struct MediaTitleDetails: Hashable, Sendable {
     let ageRating: String?
     let runtimeMinutes: Int?
     let status: String?

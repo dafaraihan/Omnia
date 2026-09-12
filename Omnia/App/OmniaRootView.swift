@@ -75,15 +75,15 @@ struct OmniaRootView: View {
     private var rootContent: some View {
         #if os(macOS)
         ZStack {
-            WindowHeroBackdrop(presentation: windowHeroState.presentation)
+            WindowHeroBackdrop(state: windowHeroState)
             navigationTabs
         }
         .coordinateSpace(name: HeroBackdropPresentation.windowCoordinateSpace)
-        .environment(\.reportWindowHeroBackdrop) { source, item, frame in
+        .environment(\.reportWindowHeroBackdrop) { source, owner, item, frame in
             if let item {
-                windowHeroState.report(item, frame: frame, from: source)
+                windowHeroState.report(item, frame: frame, from: source, owner: owner)
             } else {
-                windowHeroState.clear(source)
+                windowHeroState.clear(source, owner: owner)
             }
         }
         .onChange(of: navigation.selection) { _, _ in

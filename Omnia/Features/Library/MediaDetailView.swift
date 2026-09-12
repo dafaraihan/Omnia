@@ -12,12 +12,11 @@ struct MediaDetailView: View {
     @Environment(SettingsPreferencesStore.self) private var settings
     @Environment(\.dismiss) private var dismiss
     @State private var resolvedItem: MediaItem?
-    @State private var showsSourceSelector = false
+    @State private var sourceRequest: PlaybackRequest?
     @State private var showsSynopsis = false
     @State private var creditSection: CreditSection = .cast
     @State private var selectedSeasonNumber = 1
     @State private var selectedEpisode: MediaEpisode?
-    @State private var selectedResumePosition: Double?
     @State private var ratingsLoader = MDBListRatingsLoader()
     @State private var showsMDBListSettings = false
 
@@ -64,13 +63,16 @@ struct MediaDetailView: View {
                 settings.recordMDBListRatingProviders(presentation.discoveredProviderIDs)
             }
         }
-        .omniaGlassModal(isPresented: $showsSourceSelector) {
-            PlaybackSourceSheet(
-                item: displayItem,
-                episode: selectedEpisode,
-                resumeAt: selectedResumePosition,
-                onClose: { showsSourceSelector = false }
-            )
+        .omniaGlassModal(isPresented: showsSourceSelector) {
+            if let request = sourceRequest {
+                PlaybackSourceSheet(
+                    item: request.item,
+                    episode: request.episode,
+                    resumeAt: request.resumeAt,
+                    onClose: { sourceRequest = nil }
+                )
+                .id(request.id)
+            }
         }
         .omniaGlassModal(isPresented: $showsSynopsis) {
             SynopsisSheet(
@@ -205,8 +207,7 @@ struct MediaDetailView: View {
                         resumeProgress: resumeProgressPresentation,
                         selectEpisode: { episode in
                             selectedEpisode = episode
-                            selectedResumePosition = nil
-                            showsSourceSelector = true
+                            sourceRequest = PlaybackRequest(item: displayItem, episode: episode, resumeAt: nil)
                         }
                     )
                 }
@@ -257,9 +258,9 @@ struct MediaDetailView: View {
             watchAction: heroWatchAction
         ) {
             Button {
-                selectedEpisode = playbackIntent.episode
-                selectedResumePosition = playbackIntent.resumeAt
-                showsSourceSelector = true
+                let intent = playbackIntent
+                selectedEpisode = intent.episode
+                sourceRequest = PlaybackRequest(item: intent.item, episode: intent.episode, resumeAt: intent.resumeAt)
             } label: {
                 HeroPrimaryActionLabel(
                     title: playbackActionTitle,
@@ -276,6 +277,13 @@ struct MediaDetailView: View {
 
     private var detailEpisodes: [MediaEpisode] {
         displayItem.details?.seasons.flatMap(\.episodes) ?? []
+    }
+
+    private var showsSourceSelector: Binding<Bool> {
+        Binding(
+            get: { sourceRequest != nil },
+            set: { if !$0 { sourceRequest = nil } }
+        )
     }
 
     private var currentDetailEpisode: MediaEpisode? {

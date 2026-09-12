@@ -13,6 +13,7 @@ struct HomeView: View {
     @State private var upcomingResult: UpcomingResult?
     @State private var isLoadingUpcoming = false
     @State private var heroIndex = 0
+    @State private var heroCandidates: [MediaItem] = []
     @State private var sourcePlaybackItem: MediaItem?
     @AppStorage("home-show-continue-watching") private var showsContinueWatching = true
     @AppStorage(HomeShelfPreferences.storageKey) private var disabledHomeShelfIDs = ""
@@ -27,18 +28,11 @@ struct HomeView: View {
     /// hard-coded feature art. Prefer titles that can present a proper
     /// cinematic treatment, while retaining useful fallbacks when a provider
     /// has incomplete artwork.
-    private var heroCandidates: [MediaItem] {
-        let catalogItems = visibleHomeCatalogs.flatMap(\.items)
+    private var heroCatalogItems: [MediaItem] {
+        visibleHomeCatalogs.flatMap(\.items)
             + metadata.movieCatalog
             + metadata.seriesCatalog
             + store.library
-
-        let artworkFirst = catalogItems.sorted { lhs, rhs in
-            heroArtworkScore(for: lhs) > heroArtworkScore(for: rhs)
-        }
-
-        var identifiers = Set<String>()
-        return artworkFirst.filter { identifiers.insert($0.id).inserted }.prefix(6).map { $0 }
     }
 
     private var visibleHomeCatalogs: [BuiltInHomeCatalog] {
@@ -143,7 +137,9 @@ struct HomeView: View {
                 resolvedFeatured = nil
                 return
             }
-            resolvedFeatured = await metadata.details(for: featured)
+            let resolved = await metadata.details(for: featured)
+            guard !Task.isCancelled else { return }
+            resolvedFeatured = resolved
         }
         .task(id: "\(heroCandidateKey)-\(heroIndex)") {
             guard heroCandidates.count > 1 else { return }
@@ -162,6 +158,9 @@ struct HomeView: View {
         }
         .onChange(of: heroCandidateKey) { _, _ in
             heroIndex = 0
+        }
+        .onChange(of: heroCatalogItems, initial: true) { _, items in
+            heroCandidates = Self.selectHeroCandidates(from: items)
         }
     }
 
@@ -477,7 +476,17 @@ struct HomeView: View {
         heroCandidates.map(\.id).joined(separator: "|")
     }
 
-    private func heroArtworkScore(for item: MediaItem) -> Int {
+    static func selectHeroCandidates(from items: [MediaItem]) -> [MediaItem] {
+        let artworkFirst = items.sorted {
+            heroArtworkScore(for: $0) > heroArtworkScore(for: $1)
+        }
+        var identifiers = Set<String>()
+        // Deduplication mutates the set, so evaluate it once before taking a
+        // prefix. Lazy collection indexing can evaluate a predicate again.
+        return Array(artworkFirst.filter { identifiers.insert($0.id).inserted }.prefix(6))
+    }
+
+    private static func heroArtworkScore(for item: MediaItem) -> Int {
         var score = 0
         if item.backdropURL != nil { score += 4 }
         if item.logoURL != nil { score += 2 }
@@ -506,6 +515,12 @@ struct HomeView: View {
 
 }
 
+enum UpcomingEpisodeCardPresentation {
+    static func metadataText(for episode: MediaEpisode) -> String {
+        "S\(episode.seasonNumber) E\(episode.episodeNumber) · \(episode.title)"
+    }
+}
+
 private struct UpcomingEpisodeCard: View {
     let item: UpcomingEpisode
 
@@ -530,7 +545,13 @@ private struct UpcomingEpisodeCard: View {
                 .frame(width: 304, height: 171)
                 .clipShape(.rect(cornerRadius: 16, style: .continuous))
 
-                Text(item.series.title).font(.headline).lineLimit(1)
+                Text(item.series.title)
+                    .font(.headline)
+                    .lineLimit(1)
+                Text(UpcomingEpisodeCardPresentation.metadataText(for: item.episode))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
             .frame(width: 304, alignment: .leading)
         }

@@ -1,6 +1,6 @@
 import Foundation
 
-struct MediaEpisodeKey: Codable, Hashable, Sendable {
+nonisolated struct MediaEpisodeKey: Codable, Hashable, Sendable {
     let id: String
     let seasonNumber: Int
     let episodeNumber: Int
@@ -12,7 +12,7 @@ struct MediaEpisodeKey: Codable, Hashable, Sendable {
     }
 }
 
-struct LocalMediaWatchState: Codable, Equatable, Sendable {
+nonisolated struct LocalMediaWatchState: Codable, Equatable, Sendable {
     var movieWatched: Bool?
     var episodeStates: [MediaEpisodeKey: Bool]
 
@@ -39,7 +39,7 @@ struct LocalMediaWatchState: Codable, Equatable, Sendable {
     }
 }
 
-enum LocalMediaWatchCommand: Equatable, Sendable {
+nonisolated enum LocalMediaWatchCommand: Equatable, Sendable {
     case markMovie(watched: Bool)
     case markEpisode(MediaEpisode, watched: Bool)
     case markSeason(containing: MediaEpisode, watched: Bool)

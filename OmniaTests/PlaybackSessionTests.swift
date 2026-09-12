@@ -2,6 +2,33 @@ import XCTest
 @testable import Omnia
 
 final class PlaybackSessionTests: XCTestCase {
+    @MainActor
+    func testExplicitEpisodeSelectionSupersedesPendingNextEpisodeLookup() {
+        let playback = PlaybackSession()
+        let oldNextEpisode = playback.beginSourceSelection()
+        let explicitEpisode = playback.beginSourceSelection()
+
+        // A late dismissal/completion from Up Next must not cancel or claim
+        // the request created by the explicit episode click.
+        playback.cancelSourceSelection(oldNextEpisode)
+        XCTAssertFalse(playback.claimSourceSelection(oldNextEpisode))
+        XCTAssertTrue(playback.isCurrentSourceSelection(explicitEpisode))
+        XCTAssertTrue(playback.claimSourceSelection(explicitEpisode))
+        XCTAssertFalse(playback.claimSourceSelection(explicitEpisode))
+    }
+
+    @MainActor
+    func testClosingPickerOrStoppingPlayerPreventsDelayedPlaybackStart() {
+        let playback = PlaybackSession()
+        let cancelled = playback.beginSourceSelection()
+        playback.cancelSourceSelection(cancelled)
+        XCTAssertFalse(playback.claimSourceSelection(cancelled))
+
+        let pending = playback.beginSourceSelection()
+        playback.stop(persisting: false)
+        XCTAssertFalse(playback.claimSourceSelection(pending))
+    }
+
     func testAspectRatioModeCyclesOriginalFillAndBackToOriginal() {
         XCTAssertEqual(PlaybackAspectRatioMode.allCases, [.original, .fill])
         XCTAssertEqual(PlaybackAspectRatioMode.original.next, .fill)

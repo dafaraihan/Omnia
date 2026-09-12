@@ -216,6 +216,29 @@ final class PlaybackSession {
     @ObservationIgnored private let outputVolumeController: MacOutputVolumeControlling
     #endif
     @ObservationIgnored private var lastPersistedPosition: Double = 0
+    @ObservationIgnored private var sourceSelectionID: UUID?
+
+    /// A new episode choice supersedes pending work from every older picker,
+    /// including an Up Next picker that is still fading out.
+    func beginSourceSelection() -> UUID {
+        let id = UUID()
+        sourceSelectionID = id
+        return id
+    }
+
+    func isCurrentSourceSelection(_ id: UUID) -> Bool {
+        sourceSelectionID == id
+    }
+
+    func cancelSourceSelection(_ id: UUID) {
+        if sourceSelectionID == id { sourceSelectionID = nil }
+    }
+
+    func claimSourceSelection(_ id: UUID) -> Bool {
+        guard sourceSelectionID == id else { return false }
+        sourceSelectionID = nil
+        return true
+    }
 
     #if os(macOS)
     init(outputVolumeController: MacOutputVolumeControlling? = nil) {
@@ -527,6 +550,7 @@ final class PlaybackSession {
     #endif
 
     func stop(persisting: Bool = true) {
+        sourceSelectionID = nil
         if persisting { flushProgress() }
         #if os(macOS)
         if isFullScreenActive {

@@ -75,7 +75,9 @@ enum StremioAddonClient {
         var receivedValidResponse = false
 
         for identifier in identifiers {
+            try Task.checkCancellation()
             for mediaType in mediaTypes where addon.manifest.supports(resource: "stream", type: mediaType, identifier: identifier) {
+                try Task.checkCancellation()
                 let endpoint = resourceURL(addon: addon, resource: "stream", type: mediaType, id: identifier)
                 do {
                     guard let origin = NormalizedOrigin(url: endpoint) else { continue }
@@ -90,6 +92,7 @@ enum StremioAddonClient {
                         maximumResponseBytes: 8_388_608,
                         acceptedContentTypes: ["application/json"]
                     ))
+                    try Task.checkCancellation()
                     guard let result = try? JSONDecoder().decode(AddonStreamResponse.self, from: data),
                           !result.streams.isEmpty || result.discardedEntryCount == 0 else {
                         mostRecentError = AddonClientError.invalidResponse
@@ -104,7 +107,12 @@ enum StremioAddonClient {
                             position: position
                         )
                     }
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch HTTPTransportError.cancelled {
+                    throw CancellationError()
                 } catch {
+                    try Task.checkCancellation()
                     // One unsupported or temporarily unavailable identifier
                     // must not suppress an add-on's valid later ID formats.
                     mostRecentError = error
@@ -112,6 +120,7 @@ enum StremioAddonClient {
             }
         }
 
+        try Task.checkCancellation()
         if candidates.isEmpty, !receivedValidResponse, let mostRecentError { throw mostRecentError }
         var seen = Set<String>()
         return candidates.filter { seen.insert($0.deduplicationKey).inserted }

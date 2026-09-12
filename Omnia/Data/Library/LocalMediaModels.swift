@@ -3,7 +3,7 @@ import SwiftData
 import SwiftUI
 
 @Model
-final class LocalMediaRecord {
+nonisolated final class LocalMediaRecord {
     @Attribute(.unique) var mediaID: String
     var mediaData: Data
     var isInWatchlist: Bool
@@ -31,7 +31,7 @@ final class LocalMediaRecord {
     }
 }
 
-struct LocalMediaSnapshot: Equatable, Sendable {
+nonisolated struct LocalMediaSnapshot: Equatable, Sendable {
     let item: MediaItem
     let isInWatchlist: Bool
     let savedAt: Date?
@@ -60,7 +60,7 @@ struct LocalMediaSnapshot: Equatable, Sendable {
 
 /// Stable JSON representation used by legacy migration and local backup.
 /// SwiftUI-only values are derived when reconstructing the domain model.
-struct SavedMediaItem: Codable, Equatable, Sendable {
+nonisolated struct SavedMediaItem: Codable, Equatable, Sendable {
     let id: String
     let title: String
     let year: String

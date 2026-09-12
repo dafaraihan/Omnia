@@ -213,6 +213,27 @@ final class StremioAddonClientTests: XCTestCase {
         }
     }
 
+    func testCancelledEpisodeLookupDoesNotReturnSourcesOrTryFallbackIdentifiers() async {
+        let transport = CancellingStreamTransport()
+        let addon = streamAddon()
+        defer { addon.removeSecureManifestURL() }
+
+        do {
+            _ = try await StremioAddonClient.fetchStreamCandidates(
+                from: addon,
+                mediaTypes: ["movie"],
+                identifiers: ["tt1234567:3:8", "tmdb:123:3:8"],
+                timeout: .seconds10,
+                transport: transport
+            )
+            XCTFail("A cancelled lookup must not publish sources for the old episode")
+        } catch {
+            XCTAssertTrue(error is CancellationError)
+        }
+        let requests = await transport.requestCount
+        XCTAssertEqual(requests, 1)
+    }
+
     private func validManifestData(name: String = "Example") -> Data {
         let object: [String: Any] = [
             "id": "org.example.addon",
@@ -249,6 +270,16 @@ final class StremioAddonClientTests: XCTestCase {
 
 private enum FixtureTransportError: Error {
     case unavailable
+}
+
+private actor CancellingStreamTransport: HTTPTransporting {
+    private(set) var requestCount = 0
+
+    func data(for policy: HTTPRequestPolicy) async throws -> Data {
+        requestCount += 1
+        if requestCount == 1 { throw CancellationError() }
+        return Data(#"{"streams":[{"url":"https://media.example/old-episode.mp4","name":"Old episode"}]}"#.utf8)
+    }
 }
 
 private actor SequencedTransport: HTTPTransporting {

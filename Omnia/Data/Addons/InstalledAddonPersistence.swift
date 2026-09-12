@@ -1,6 +1,6 @@
 import Foundation
 
-struct InstalledAddonRestoreIssue: Identifiable, Equatable, Sendable {
+nonisolated struct InstalledAddonRestoreIssue: Identifiable, Equatable, Sendable {
     let id: String
     let addonID: String?
     let addonName: String
@@ -12,7 +12,7 @@ struct InstalledAddonRestoreIssue: Identifiable, Equatable, Sendable {
     }
 }
 
-struct InstalledAddonLoadResult: Equatable, Sendable {
+nonisolated struct InstalledAddonLoadResult: Equatable, Sendable {
     let addons: [InstalledAddon]
     let issues: [InstalledAddonRestoreIssue]
 
@@ -60,7 +60,7 @@ actor InstalledAddonPersistence {
     }
 }
 
-private struct RestorableAddonRecord: Decodable {
+private nonisolated struct RestorableAddonRecord: Decodable {
     let addon: InstalledAddon?
     let issue: InstalledAddonRestoreIssue?
 
@@ -79,8 +79,8 @@ private struct RestorableAddonRecord: Decodable {
     }
 }
 
-private struct StoredAddonIdentity: Decodable {
-    struct ManifestIdentity: Decodable {
+private nonisolated struct StoredAddonIdentity: Decodable {
+    nonisolated struct ManifestIdentity: Decodable {
         let id: String
         let name: String
     }

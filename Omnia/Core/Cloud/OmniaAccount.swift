@@ -60,7 +60,13 @@ final class OmniaAccount {
         client = SupabaseClient(
             supabaseURL: configuration.projectURL,
             supabaseKey: configuration.publishableKey,
-            options: .init(auth: .init(redirectToURL: Self.redirectURL, flowType: .pkce))
+            options: .init(
+                auth: .init(
+                    redirectToURL: Self.redirectURL,
+                    flowType: .pkce,
+                    emitLocalSessionAsInitialSession: true
+                )
+            )
         )
     }
 

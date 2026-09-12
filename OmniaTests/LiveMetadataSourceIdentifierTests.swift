@@ -15,6 +15,47 @@ final class LiveMetadataSourceIdentifierTests: XCTestCase {
         super.tearDown()
     }
 
+    func testDetailsPreservesCatalogBackdropWhenEnrichedResponseOmitsIt() async throws {
+        MetadataSourceURLProtocol.handler = { request in
+            Self.response(
+                for: request,
+                json: #"{"item":{"canonicalKey":"tmdb:movie:1084242","provider":"tmdb","providerID":"1084242","type":"movie","title":"Moana","releaseDate":"2026-07-09","logoPath":"/resolved-logo.png","externalIDs":{"tmdb":"1084242"}},"cached":true}"#
+            )
+        }
+        let store = LiveMetadataStore(
+            configuration: .init(
+                projectURL: URL(string: "https://metadata.example")!,
+                publishableKey: "publishable-test-key"
+            ),
+            loadsBundleConfiguration: false
+        )
+        let catalogBackdrop = URL(string: "https://image.tmdb.org/t/p/w1280/catalog-backdrop.jpg")!
+        let item = MediaItem(
+            id: "tmdb:movie:1084242",
+            title: "Moana",
+            year: "2026",
+            kind: .movie,
+            overview: "Catalog overview",
+            genres: ["Family"],
+            symbol: "film.fill",
+            artworkColors: [.indigo, .black],
+            artworkURL: URL(string: "https://image.tmdb.org/t/p/w500/catalog-poster.jpg"),
+            backdropURL: catalogBackdrop,
+            metadataProvider: .tmdb,
+            metadataProviderID: "1084242",
+            externalIDs: ["tmdb": "1084242"],
+            progress: nil
+        )
+
+        let result = await store.details(for: item)
+
+        XCTAssertEqual(result.backdropURL, catalogBackdrop)
+        XCTAssertEqual(
+            result.logoURL,
+            URL(string: "https://image.tmdb.org/t/p/w500/resolved-logo.png")
+        )
+    }
+
     func testDetailsAddsIMDbFromExactTMDBFallbackWhenTVDBHasNoCrossID() async throws {
         MetadataSourceURLProtocol.handler = { request in
             let payload = try Self.payload(from: request)
