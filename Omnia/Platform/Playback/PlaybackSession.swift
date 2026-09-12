@@ -116,6 +116,36 @@ final class CoreAudioOutputVolumeController: MacOutputVolumeControlling {
 }
 #endif
 
+nonisolated struct PlaybackTrackSelectionGate: Equatable {
+    private(set) var audioRequestID: UInt64?
+    private(set) var subtitleRequestID: UInt64?
+
+    mutating func beginAudio(_ id: UInt64) {
+        audioRequestID = id == 0 ? nil : id
+    }
+
+    mutating func beginSubtitle(_ id: UInt64) {
+        subtitleRequestID = id == 0 ? nil : id
+    }
+
+    mutating func finishAudio(_ id: UInt64) -> Bool {
+        guard audioRequestID == id else { return false }
+        audioRequestID = nil
+        return true
+    }
+
+    mutating func finishSubtitle(_ id: UInt64) -> Bool {
+        guard subtitleRequestID == id else { return false }
+        subtitleRequestID = nil
+        return true
+    }
+
+    mutating func reset() {
+        audioRequestID = nil
+        subtitleRequestID = nil
+    }
+}
+
 nonisolated enum PlaybackInput: Sendable {
     case stream(PlaybackSource)
     #if os(macOS)
@@ -214,6 +244,8 @@ final class PlaybackSession {
     #else
     @ObservationIgnored private var cacheProtection: LocalPlaybackJobCoordinator.PlaybackProtection?
     @ObservationIgnored private let outputVolumeController: MacOutputVolumeControlling
+    @ObservationIgnored private var trackSelectionGate = PlaybackTrackSelectionGate()
+    @ObservationIgnored private var pendingSubtitlePreference: (id: Int?, tracks: [PlaybackTrack])?
     #endif
     @ObservationIgnored private var lastPersistedPosition: Double = 0
     @ObservationIgnored private var sourceSelectionID: UUID?
@@ -299,6 +331,8 @@ final class PlaybackSession {
         aspectRatioMode = .original
 
         #if os(macOS)
+        trackSelectionGate.reset()
+        pendingSubtitlePreference = nil
         cacheProtection = input.cacheProtection
         let mpv: OMMpvPlayerController
         switch input {
@@ -454,16 +488,43 @@ final class PlaybackSession {
 
     func selectAudioTrack(_ id: Int) {
         #if os(macOS)
-        player?.selectAudioTrack(id: id)
-        refreshState()
+        guard let player else { return }
+        let requestID = player.selectAudioTrack(id: id) { [weak self] completedID, succeeded, message in
+            guard let self, self.trackSelectionGate.finishAudio(completedID) else { return }
+            if !succeeded, let message {
+                self.playbackError = message
+            }
+            self.refreshState()
+        }
+        trackSelectionGate.beginAudio(requestID)
+        if requestID == 0 {
+            playbackError = "Audio track selection is unavailable."
+        }
         #endif
     }
 
     func selectSubtitleTrack(_ id: Int?) {
         #if os(macOS)
-        player?.selectSubtitleTrack(id: id.map { NSNumber(value: $0) })
-        subtitlePreferencesHandler?(.selecting(id: id, from: subtitleTracks, style: subtitleStyle))
-        refreshState()
+        guard let player else { return }
+        let requestedTracks = subtitleTracks
+        let requestID = player.selectSubtitleTrack(id: id.map { NSNumber(value: $0) }) {
+            [weak self] completedID,
+            succeeded,
+            message in
+            guard let self, self.trackSelectionGate.finishSubtitle(completedID) else { return }
+            if succeeded {
+                self.pendingSubtitlePreference = (id, requestedTracks)
+                self.confirmPendingSubtitlePreference()
+            } else if let message {
+                self.pendingSubtitlePreference = nil
+                self.playbackError = message
+            }
+            self.refreshState()
+        }
+        trackSelectionGate.beginSubtitle(requestID)
+        if requestID == 0 {
+            playbackError = "Subtitle track selection is unavailable."
+        }
         #endif
     }
 
@@ -564,6 +625,8 @@ final class PlaybackSession {
         mediaSelectionTask = nil
         #endif
         #if os(macOS)
+        trackSelectionGate.reset()
+        pendingSubtitlePreference = nil
         let cacheProtection = cacheProtection
         self.cacheProtection = nil
         if let cacheProtection {
@@ -771,7 +834,27 @@ final class PlaybackSession {
         playbackError = snapshot.errorMessage
         audioTracks = snapshot.audioTracks.map(PlaybackTrack.init)
         subtitleTracks = snapshot.subtitleTracks.map(PlaybackTrack.init)
+        confirmPendingSubtitlePreference()
         areTracksLoading = snapshot.tracksLoading
+    }
+
+    private func confirmPendingSubtitlePreference() {
+        guard let pendingSubtitlePreference else { return }
+        let isConfirmed: Bool
+        if let id = pendingSubtitlePreference.id {
+            isConfirmed = subtitleTracks.contains { $0.id == id && $0.isSelected }
+        } else {
+            isConfirmed = !subtitleTracks.contains(where: \.isSelected)
+        }
+        guard isConfirmed else { return }
+        subtitlePreferencesHandler?(
+            .selecting(
+                id: pendingSubtitlePreference.id,
+                from: pendingSubtitlePreference.tracks,
+                style: subtitleStyle
+            )
+        )
+        self.pendingSubtitlePreference = nil
     }
     #endif
 

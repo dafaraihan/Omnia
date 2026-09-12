@@ -2,6 +2,24 @@ import XCTest
 @testable import Omnia
 
 final class PlaybackSessionTests: XCTestCase {
+    func testTrackSelectionGateRejectsSupersededReply() {
+        var gate = PlaybackTrackSelectionGate()
+        gate.beginAudio(10)
+        gate.beginAudio(11)
+
+        XCTAssertFalse(gate.finishAudio(10))
+        XCTAssertTrue(gate.finishAudio(11))
+    }
+
+    func testTrackSelectionGateTracksAudioAndSubtitleIndependently() {
+        var gate = PlaybackTrackSelectionGate()
+        gate.beginAudio(20)
+        gate.beginSubtitle(21)
+
+        XCTAssertTrue(gate.finishSubtitle(21))
+        XCTAssertTrue(gate.finishAudio(20))
+    }
+
     @MainActor
     func testExplicitEpisodeSelectionSupersedesPendingNextEpisodeLookup() {
         let playback = PlaybackSession()
