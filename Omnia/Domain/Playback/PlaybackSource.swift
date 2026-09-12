@@ -189,8 +189,13 @@ struct PlaybackSource: Identifiable, Hashable, Sendable {
     let streamIdentifier: String
     let url: URL
     let requestHeaders: [String: String]
+    let timelinePreviewDescriptor: PlaybackTimelinePreviewDescriptor?
 
-    init(candidate: AddonStreamCandidate, url: URL) {
+    init(
+        candidate: AddonStreamCandidate,
+        url: URL,
+        timelinePreviewDescriptor: PlaybackTimelinePreviewDescriptor? = nil
+    ) {
         id = candidate.id
         addonID = candidate.addonID
         addonName = candidate.addonName
@@ -199,9 +204,14 @@ struct PlaybackSource: Identifiable, Hashable, Sendable {
         streamIdentifier = candidate.streamIdentifier
         self.url = url
         requestHeaders = candidate.requestHeaders
+        self.timelinePreviewDescriptor = timelinePreviewDescriptor
     }
 
-    init(localCandidate candidate: AddonStreamCandidate, fileURL: URL) {
+    init(
+        localCandidate candidate: AddonStreamCandidate,
+        fileURL: URL,
+        timelinePreviewDescriptor: PlaybackTimelinePreviewDescriptor? = nil
+    ) {
         id = candidate.id
         addonID = candidate.addonID
         addonName = candidate.addonName
@@ -210,9 +220,27 @@ struct PlaybackSource: Identifiable, Hashable, Sendable {
         streamIdentifier = candidate.streamIdentifier
         url = fileURL
         requestHeaders = [:]
+        self.timelinePreviewDescriptor = timelinePreviewDescriptor
     }
 
     #if DEBUG
+    init(
+        previewID: String,
+        url: URL,
+        requestHeaders: [String: String] = [:],
+        timelinePreviewDescriptor: PlaybackTimelinePreviewDescriptor? = nil
+    ) {
+        id = previewID
+        addonID = "omnia.tests"
+        addonName = "Omnia Tests"
+        title = "Test Source"
+        detail = nil
+        streamIdentifier = previewID
+        self.url = url
+        self.requestHeaders = requestHeaders
+        self.timelinePreviewDescriptor = timelinePreviewDescriptor
+    }
+
     /// Apple's public HLS sample is available exclusively in debug builds for
     /// exercising native player integration. It isn't presented as title media.
     static let integrationSample = PlaybackSource(
