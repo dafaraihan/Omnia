@@ -4,6 +4,7 @@ struct SettingsView: View {
     @Environment(OmniaStore.self) private var store
     @Environment(OmniaAccount.self) private var account
     @Environment(SettingsPreferencesStore.self) private var settings
+    @Environment(PluginStore.self) private var plugins
     @State private var searchText = ""
     #if os(macOS)
     @State private var hoveredRoute: SettingsRoute?
@@ -13,14 +14,10 @@ struct SettingsView: View {
         rootSettingsContent
             .omniaNavigationTitle("Settings", screen: .settings)
         #if os(macOS)
-            .searchable(text: $searchText, placement: MacSettingsPresentation.searchPlacement(for: settings.preferences.navigationStyle), prompt: "Search Settings")
-
-            .background {
-                MacSettingsSearchToolbarWidthLimiter(
-                    maximumWidth: MacSettingsPresentation.searchWidth(
-                        proposedWidth: .greatestFiniteMagnitude
-                    )
-                )
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    MacSettingsToolbarSearch(text: $searchText)
+                }
             }
         #else
             .searchable(text: $searchText, prompt: "Search Settings")
@@ -29,7 +26,7 @@ struct SettingsView: View {
 
     private var rootSettingsContent: some View {
         settingsContent {
-            OmniaSettingsForm {
+            OmniaSettingsForm(isRoot: true) {
                 ForEach(SettingsRoute.filteredRootGroups(query: searchText)) { group in
                     Section(group.section.title) {
                         ForEach(group.routes, id: \.self) { route in
@@ -77,8 +74,20 @@ struct SettingsView: View {
             }
             let count = store.installedAddons.filter(\.isEnabled).count
             return count == 0 ? "No sources enabled" : "\(count) enabled"
+        case .plugins:
+            if plugins.repositories.isEmpty { return "No repositories" }
+            guard plugins.pluginsEnabled else { return "Turned off" }
+            let count = plugins.enabledScraperCount
+            return count == 1 ? "1 plugin on" : "\(count) plugins on"
+        case .home:
+            let catalogs = AddonCatalogStore.catalogs(in: store)
+            guard !catalogs.isEmpty else { return "Built-in rows" }
+            let visible = catalogs.filter { store.isCatalogEnabled(for: $0.addon, catalog: $0.catalog) }.count
+            return "\(visible) of \(catalogs.count) catalogs visible"
         case .catalogs:
             return "Built-in and add-on catalogs"
+        case .collections:
+            return "Folders of catalogs on Home"
         case .metadata:
             return "Providers and fallback order"
         case .progress:
@@ -93,7 +102,7 @@ struct SettingsView: View {
             return store.appearance.title
         case .about:
             return "Resources, attributions, and licenses"
-        case .playbackResolver, .metadataProvider, .aboutSection:
+        case .streamSelection, .playbackResolver, .metadataProvider, .aboutSection, .posterCards, .continueWatching, .detailPage:
             return nil
         }
     }
@@ -109,8 +118,14 @@ struct SettingsDestinationView: View {
                 AccountSettingsView()
             case .addons:
                 AddonsSettingsView()
+            case .plugins:
+                PluginsSettingsView()
+            case .home:
+                HomeSettingsView()
             case .catalogs:
                 CatalogsSettingsView()
+            case .collections:
+                CollectionsSettingsView()
             case .metadata:
                 MetadataSettingsView()
             case .progress:
@@ -119,12 +134,20 @@ struct SettingsDestinationView: View {
                 UpcomingSettingsView()
             case .videoPlayer:
                 VideoPlayerSettingsView()
+            case .streamSelection:
+                StreamSelectionSettingsView()
             case .subtitle:
                 SubtitleAppearanceSettingsView()
             case .playbackResolver:
                 PlaybackResolverSettingsView()
             case .appearance:
                 AppearanceSettingsView()
+            case .posterCards:
+                PosterCardSettingsView()
+            case .continueWatching:
+                ContinueWatchingSettingsView()
+            case .detailPage:
+                DetailPageSettingsView()
             case .about:
                 AboutSettingsView()
             case let .metadataProvider(id):
@@ -143,15 +166,54 @@ struct SettingsDestinationView: View {
         }
     }
 
+    /// Sub-pages are native grouped Forms, which bring their own scrolling,
+    /// insets and readable width, so they are not wrapped in the root's
+    /// card container.
     @ViewBuilder
     private func settingsContent<Content: View>(
         @ViewBuilder content: () -> Content
     ) -> some View {
-        #if os(macOS)
-        MacSettingsContentContainer(content: content)
-        #else
         content()
-        #endif
+    }
+}
+
+/// A settings row that opens another settings page, styled like the rows on
+/// the Settings root. Sub-pages such as Home use it for their own links.
+struct SettingsRouteLink: View {
+    let route: SettingsRoute
+    let summary: String?
+    @Environment(\.settingsUsesNativeForm) private var usesNativeForm
+    #if os(macOS)
+    @State private var isHovered = false
+    #endif
+
+    var body: some View {
+        if usesNativeForm {
+            // Inside a grouped Form the system draws the row, its chevron and
+            // its highlight, as in System Settings.
+            NavigationLink {
+                SettingsDestinationView(route: route)
+            } label: {
+                LabeledContent {
+                    if let summary {
+                        Text(summary)
+                    }
+                } label: {
+                    Label(route.title, systemImage: route.systemImage)
+                }
+            }
+        } else {
+            NavigationLink {
+                SettingsDestinationView(route: route)
+            } label: {
+                SettingsRouteLabel(route: route, summary: summary)
+            }
+            #if os(macOS)
+            .buttonStyle(MacSettingsNavigationButtonStyle(isHovered: isHovered))
+            .focusEffectDisabled()
+            .onHover { isHovered = $0 }
+            #endif
+        }
     }
 }
 
@@ -189,110 +251,50 @@ private struct SettingsRouteLabel: View {
 }
 
 #if os(macOS)
-private struct MacSettingsSearchToolbarWidthLimiter: NSViewRepresentable {
-    let maximumWidth: CGFloat
+struct MacSettingsToolbarSearch: View {
+    @Binding var text: String
 
-    func makeNSView(context: Context) -> SearchToolbarConfigurationView {
-        let view = SearchToolbarConfigurationView()
-        view.maximumWidth = maximumWidth
-        return view
-    }
-
-    func updateNSView(_ nsView: SearchToolbarConfigurationView, context: Context) {
-        nsView.maximumWidth = maximumWidth
-        nsView.configureAfterToolbarUpdate()
-    }
-
-    final class SearchToolbarConfigurationView: NSView {
-        var maximumWidth: CGFloat = 320
-
-        override func viewDidMoveToWindow() {
-            super.viewDidMoveToWindow()
-            configureAfterToolbarUpdate()
-        }
-
-        func configureAfterToolbarUpdate() {
-            if !configureSearchToolbarItem() {
-                retryConfigure(attempts: 5)
-            }
-        }
-
-        private func retryConfigure(attempts: Int) {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-                guard let self = self else { return }
-                if !self.configureSearchToolbarItem() && attempts > 0 {
-                    self.retryConfigure(attempts: attempts - 1)
-                }
-            }
-        }
-
-        @discardableResult
-        private func configureSearchToolbarItem() -> Bool {
-            guard let toolbar = window?.toolbar else { return false }
-            var foundSearchField: NSSearchField?
-            var searchItemIndex: Int?
-            
-            for (index, item) in toolbar.items.enumerated() {
-                if let searchItem = item as? NSSearchToolbarItem, searchItem.searchField.placeholderString == "Search Settings" {
-                    foundSearchField = searchItem.searchField
-                    searchItem.preferredWidthForSearchField = maximumWidth
-                    searchItemIndex = index
-                    break
-                }
-                
-                if let searchField = findSearchField(in: item.view) {
-                    foundSearchField = searchField
-                    searchItemIndex = index
-                    break
-                }
-            }
-            
-            guard let searchField = foundSearchField else { return false }
-
-            let identifier = "Omnia.SettingsSearch.MaximumWidth"
-            if let constraint = searchField.constraints.first(where: {
-                $0.identifier == identifier
-            }) {
-                constraint.constant = maximumWidth
-            } else {
-                let constraint = searchField.widthAnchor.constraint(
-                    lessThanOrEqualToConstant: maximumWidth
-                )
-                constraint.identifier = identifier
-                constraint.isActive = true
-            }
-
-            if let index = searchItemIndex {
-                let needsSpace: Bool
-                if index == 0 {
-                    needsSpace = true
-                } else {
-                    let prevItem = toolbar.items[index - 1]
-                    needsSpace = (prevItem.itemIdentifier != .flexibleSpace)
-                }
-                
-                if needsSpace {
-                    toolbar.insertItem(withItemIdentifier: .flexibleSpace, at: index)
-                }
-            }
-            return true
-        }
-        
-        private func findSearchField(in view: NSView?) -> NSSearchField? {
-            guard let view = view else { return nil }
-            if let searchField = view as? NSSearchField, searchField.placeholderString == "Search Settings" {
-                return searchField
-            }
-            for subview in view.subviews {
-                if let found = findSearchField(in: subview) {
-                    return found
-                }
-            }
-            return nil
-        }
+    var body: some View {
+        MacSettingsSearchField(text: $text)
+            .frame(width: MacSettingsPresentation.searchWidth)
     }
 }
 
+private struct MacSettingsSearchField: NSViewRepresentable {
+    @Binding var text: String
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text)
+    }
+
+    func makeNSView(context: Context) -> NSSearchField {
+        let searchField = NSSearchField()
+        searchField.placeholderString = "Search Settings"
+        searchField.sendsSearchStringImmediately = true
+        searchField.delegate = context.coordinator
+        return searchField
+    }
+
+    func updateNSView(_ searchField: NSSearchField, context: Context) {
+        context.coordinator.text = $text
+        if searchField.stringValue != text {
+            searchField.stringValue = text
+        }
+    }
+
+    final class Coordinator: NSObject, NSSearchFieldDelegate {
+        var text: Binding<String>
+
+        init(text: Binding<String>) {
+            self.text = text
+        }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard let searchField = notification.object as? NSSearchField else { return }
+            text.wrappedValue = searchField.stringValue
+        }
+    }
+}
 
 private struct MacSettingsNavigationButtonStyle: ButtonStyle {
     let isHovered: Bool

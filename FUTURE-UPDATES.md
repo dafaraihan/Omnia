@@ -1,5 +1,7 @@
 # Omnia Future Updates
 
+> **Automated-validation policy:** Follow the repository-root `AGENTS.md`. Instructions below that call for automated test targets, suites, fixtures, or scripts are historical and superseded; use builds, static checks, and focused manual evidence instead.
+
 This roadmap turns the open findings in [SECURITY.md](SECURITY.md),
 [PERFORMANCE.md](PERFORMANCE.md), [INFRASTRUCTURE.md](INFRASTRUCTURE.md), and
 [DESIGN.md](DESIGN.md) into one dependency-ordered execution sequence. It does

@@ -1,5 +1,7 @@
 # macOS Settings Layout Implementation Plan
 
+> **Automated-validation policy:** Follow the repository-root `AGENTS.md`. Instructions below that call for automated test targets, suites, fixtures, or scripts are historical and superseded; use builds, static checks, and focused manual evidence instead.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the stretched macOS Settings presentation with a centered, top-aligned native form pane while retaining Omnia's main sidebar and the system Back button for every pushed Settings screen.
@@ -62,8 +64,7 @@ The production mutation these tests catch is returning the full detail-column wi
 Run:
 
 ```sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' \
-  -only-testing:OmniaTests/SettingsPresentationTests test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: compilation fails with `cannot find 'MacSettingsLayout' in scope`. A signing or host-application error is environmental and must be resolved before proceeding; it is not the expected RED result.
@@ -216,8 +217,7 @@ Do not add a navigation stack, toolbar Back item, dismissal button, or `navigati
 Run:
 
 ```sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' \
-  -only-testing:OmniaTests/SettingsPresentationTests test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: `SettingsPresentationTests` passes with no new warnings or errors.
@@ -233,7 +233,7 @@ Run:
 ```sh
 rg -n 'NavigationStack|navigationBarBackButtonHidden|Image\(systemName: "chevron\.(left|backward)' \
   Omnia/Features/Settings Omnia/App/OmniaRootView.swift
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test
+[Automated validation command removed by repository policy.]
 xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' build
 xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'generic/platform=iOS Simulator' build
 git diff --check

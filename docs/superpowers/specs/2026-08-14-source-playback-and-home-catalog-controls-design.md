@@ -1,5 +1,7 @@
 # Source Playback and Home Catalog Controls Design
 
+> **Automated-validation policy:** Follow the repository-root `AGENTS.md`. Instructions below that call for automated test targets, suites, fixtures, or scripts are historical and superseded; use builds, static checks, and focused manual evidence instead.
+
 **Date:** 2026-08-14  
 **Status:** Approved by the user for immediate implementation  
 **Scope:** macOS source selection/playback, add-on management, and built-in Home shelf visibility. iPhone and iPad keep torrent playback disabled.

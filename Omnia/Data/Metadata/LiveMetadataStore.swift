@@ -20,6 +20,7 @@ final class LiveMetadataStore {
     var seriesCatalog: [MediaItem] = []
     var animeCatalogs: [BuiltInAnimeCatalog] = []
     var homeCatalogs: [BuiltInHomeCatalog] = []
+    private var catalogsLoadedAt: Date?
     var topMovies: [MediaItem] = []
     var topSeries: [MediaItem] = []
     var movieGenres: [MetadataGenre] = []
@@ -42,6 +43,14 @@ final class LiveMetadataStore {
         guard self.metadataRouting != metadataRouting else { return }
         self.metadataRouting = metadataRouting
         genreCatalogs.removeAll()
+    }
+
+    /// TMDB's trending and popular lists move through the day. Reload Home's
+    /// rows when the app comes back to the front after they've gone stale,
+    /// instead of keeping the lists from launch for the whole session.
+    func refreshCatalogsIfStale(maxAge: TimeInterval = 60 * 60) async {
+        guard let catalogsLoadedAt, Date.now.timeIntervalSince(catalogsLoadedAt) > maxAge else { return }
+        await loadDefaultCatalogs()
     }
 
     func loadDefaultCatalogs() async {
@@ -90,7 +99,7 @@ final class LiveMetadataStore {
                 BuiltInHomeCatalog(shelf: .trendingSeries, items: responses.4),
                 BuiltInHomeCatalog(shelf: .topRatedSeries, items: responses.6),
                 BuiltInHomeCatalog(shelf: .airingToday, items: responses.7),
-            ], excluding: rankedMovies + rankedSeries)
+            ])
 
             movieCatalog = shelves.first(where: { $0.title == "Trending Now" })?.items ?? []
             seriesCatalog = shelves.first(where: { $0.title == "Series Worth Starting" })?.items ?? []
@@ -100,6 +109,7 @@ final class LiveMetadataStore {
         seriesGenres = responses.10
         homeCatalogs = shelves
         animeCatalogs = await anime
+        catalogsLoadedAt = .now
 
         if shelves.isEmpty, rankedMovies.isEmpty, rankedSeries.isEmpty, animeCatalogs.isEmpty {
             errorMessage = "Built-in discovery is temporarily unavailable."
@@ -196,37 +206,63 @@ final class LiveMetadataStore {
     }
 
     func details(for item: MediaItem) async -> MediaItem {
-        guard
-            let client,
-            let provider = item.metadataProvider,
-            let identifier = item.metadataProviderID
-        else { return item }
+        guard let client else { return item }
 
-        do {
-            let response = try await client.details(provider: provider, id: identifier, type: item.metadataType)
+        var resolvedItem = item
+        // The metadata service only answers detail requests for TMDB and
+        // TVDB. AniList and add-on titles go straight to the TMDB match below.
+        if let provider = item.metadataProvider,
+           provider != .anilist,
+           let identifier = item.metadataProviderID,
+           let response = await detailsWithRetry(client, provider: provider, id: identifier, type: item.metadataType) {
             let providerItem = Self.item(
                 from: response.item,
                 progress: item.progress,
                 positionSeconds: item.positionSeconds,
                 durationSeconds: item.durationSeconds
             )
-            let resolvedItem = providerItem.mergingSourceIdentifiers(from: item)
-
-            guard provider != .tmdb,
-                  !resolvedItem.hasIMDbIdentifier
-            else { return resolvedItem }
-
-            do {
-                guard let fallbackItem = try await exactTMDBFallback(for: item, client: client) else {
-                    return resolvedItem
-                }
-                return resolvedItem.mergingSourceIdentifiers(from: fallbackItem)
-            } catch {
-                return resolvedItem
-            }
-        } catch {
-            return item
+            resolvedItem = providerItem.mergingSourceIdentifiers(from: item)
         }
+
+        guard resolvedItem.metadataProvider != .tmdb else { return resolvedItem }
+
+        // Only TMDB records carry seasons, cast and full-size artwork. Without
+        // this, TVDB, AniList and add-on titles open with no season or episode
+        // pickers, no cast, and a poster stretched into a blurry hero.
+        guard let counterpart = await tmdbCounterpart(for: resolvedItem, client: client) else {
+            return resolvedItem
+        }
+        return resolvedItem.mergingTMDBCounterpart(counterpart)
+    }
+
+    /// One retry absorbs the transient failures seen while Home's catalog
+    /// requests are still in flight, which otherwise leave a detail page bare.
+    private func detailsWithRetry(
+        _ client: SupabaseMetadataClient,
+        provider: MetadataProviderIdentifier,
+        id: String,
+        type: MediaType
+    ) async -> MetadataDetailResponse? {
+        for attempt in 0..<2 {
+            if attempt > 0 {
+                try? await Task.sleep(for: .milliseconds(600))
+            }
+            guard !Task.isCancelled else { return nil }
+            if let response = try? await client.details(provider: provider, id: id, type: type) {
+                return response
+            }
+        }
+        return nil
+    }
+
+    private func tmdbCounterpart(for item: MediaItem, client: SupabaseMetadataClient) async -> MediaItem? {
+        let tmdbID = (item.externalIDs["tmdb"] ?? item.externalIDs["tmdb_id"])?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if let tmdbID, !tmdbID.isEmpty,
+           let response = await detailsWithRetry(client, provider: .tmdb, id: tmdbID, type: item.metadataType) {
+            return Self.item(from: response.item)
+        }
+        return try? await exactTMDBFallback(for: item, client: client)
     }
 
     /// Older hosted TVDB records may not contain remote IDs even though the
@@ -454,12 +490,13 @@ final class LiveMetadataStore {
     /// A title earns a single home-shelf placement. Ranked shelves reserve their
     /// titles first, then each subsequent shelf contributes only unseen items.
     private static func uniqueHomeCatalogs(
-        _ catalogs: [BuiltInHomeCatalog],
-        excluding reservedItems: [MediaItem]
+        _ catalogs: [BuiltInHomeCatalog]
     ) -> [BuiltInHomeCatalog] {
-        var seen = Set(reservedItems.map(\.id))
-
-        return catalogs.compactMap { catalog in
+        // Each row mirrors its TMDB list in TMDB's order. Removing titles that
+        // already appeared in an earlier row or the Top 10 made rows drift
+        // from the real lists, so only duplicates within one row are dropped.
+        catalogs.compactMap { catalog in
+            var seen = Set<String>()
             let uniqueItems = catalog.items.filter { seen.insert($0.id).inserted }
             guard !uniqueItems.isEmpty else { return nil }
             return BuiltInHomeCatalog(shelf: catalog.shelf, items: uniqueItems)
@@ -680,7 +717,7 @@ final class LiveMetadataStore {
             overview: record.overview ?? "No overview is available yet.",
             genres: record.genres ?? [],
             symbol: type == .movie ? "film.fill" : "tv.fill",
-            artworkColors: type == .movie ? [.indigo, .black] : [.cyan, .indigo],
+            artworkColors: MediaItem.placeholderArtworkColors,
             artworkURL: artworkURL(for: record.posterPath, provider: record.provider, width: "w500"),
             backdropURL: artworkURL(for: record.backdropPath, provider: record.provider, width: "w1280"),
             logoURL: artworkURL(for: record.logoPath, provider: record.provider, width: "w500"),

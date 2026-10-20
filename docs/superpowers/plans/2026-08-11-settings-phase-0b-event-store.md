@@ -1,5 +1,7 @@
 # Settings Phase 0B Event Store Implementation Plan
 
+> **Automated-validation policy:** Follow the repository-root `AGENTS.md`. Instructions below that call for automated test targets, suites, fixtures, or scripts are historical and superseded; use builds, static checks, and focused manual evidence instead.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build profile-isolated SwiftData event stores whose append-only events, transactional projections, delivery outbox, replay, bounded retention, and verified erasure become Omnia’s durable progress/watchlist foundation.
@@ -76,7 +78,7 @@ final class EventStoreSchemaTests: XCTestCase {
 - [ ] **Step 2: Run RED**
 
 ~~~sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test -only-testing:OmniaTests/EventStoreSchemaTests
+[Automated validation command removed by repository policy.]
 ~~~
 
 Expected: compilation fails because the SwiftData models are absent.
@@ -110,7 +112,7 @@ Add explicit initializers; do not expose mutable records outside `Data/Persisten
 - [ ] **Step 4: Run GREEN and commit**
 
 ~~~sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test -only-testing:OmniaTests/EventStoreSchemaTests
+[Automated validation command removed by repository policy.]
 git diff --check -- Omnia/Data/Persistence/EventStore OmniaTests/EventStoreSchemaTests.swift
 git add -- Omnia/Data/Persistence/EventStore OmniaTests/EventStoreSchemaTests.swift
 git commit --only -m "Define the profile event store schema" -- Omnia/Data/Persistence/EventStore OmniaTests/EventStoreSchemaTests.swift
@@ -167,7 +169,7 @@ Also test malformed data, invalid positions/durations, oversized identifiers, an
 - [ ] **Step 2: Run RED**
 
 ~~~sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test -only-testing:OmniaTests/DomainEventCodecTests
+[Automated validation command removed by repository policy.]
 ~~~
 
 - [ ] **Step 3: Implement normalized payloads**
@@ -209,7 +211,7 @@ enum DecodedDomainEvent: Equatable, Sendable {
 - [ ] **Step 5: Run GREEN and commit**
 
 ~~~sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test -only-testing:OmniaTests/DomainEventCodecTests
+[Automated validation command removed by repository policy.]
 git diff --check -- Omnia/Domain/Events Omnia/Data/Persistence/EventStore/DomainEventCodec.swift OmniaTests/DomainEventCodecTests.swift
 git add -- Omnia/Domain/Events Omnia/Data/Persistence/EventStore/DomainEventCodec.swift OmniaTests/DomainEventCodecTests.swift
 git commit --only -m "Define versioned domain events" -- Omnia/Domain/Events Omnia/Data/Persistence/EventStore/DomainEventCodec.swift OmniaTests/DomainEventCodecTests.swift
@@ -253,12 +255,12 @@ func testFailedDestinationOpenLeavesCurrentHandleActive() async throws {
 - [ ] **Step 2: Run RED**
 
 ~~~sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test -only-testing:OmniaTests/ProfileStoreIsolationTests
+[Automated validation command removed by repository policy.]
 ~~~
 
 - [ ] **Step 3: Implement opaque store mapping**
 
-The Keychain mapping stores an opaque random store UUID using the service `PrimeDeca.Omnia.ProfileStores`. The filesystem layout is:
+The Keychain mapping stores an opaque random store UUID using the service `Dafa-Raihan.Omnia.ProfileStores`. The filesystem layout is:
 
 ~~~text
 Application Support/Omnia/ProfileStores/<opaque-store-id>/
@@ -275,7 +277,7 @@ The pointer contains only generation ID and last verified event sequence. Create
 - [ ] **Step 5: Run GREEN and commit**
 
 ~~~sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test -only-testing:OmniaTests/ProfileStoreIsolationTests
+[Automated validation command removed by repository policy.]
 git diff --check -- Omnia/Data/Persistence/Profiles OmniaTests/TestSupport/InMemoryProfileMappingStore.swift OmniaTests/ProfileStoreIsolationTests.swift
 git add -- Omnia/Data/Persistence/Profiles OmniaTests/TestSupport/InMemoryProfileMappingStore.swift OmniaTests/ProfileStoreIsolationTests.swift
 git commit --only -m "Isolate event stores by profile" -- Omnia/Data/Persistence/Profiles OmniaTests/TestSupport/InMemoryProfileMappingStore.swift OmniaTests/ProfileStoreIsolationTests.swift
@@ -320,7 +322,7 @@ func testStaleActivationCannotWrite() async throws {
 - [ ] **Step 2: Run RED**
 
 ~~~sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test -only-testing:OmniaTests/ProfileEventStoreTests
+[Automated validation command removed by repository policy.]
 ~~~
 
 - [ ] **Step 3: Implement the serialized transaction**
@@ -347,7 +349,7 @@ Verify ordered paging, payload checksum rejection, duplicate sequence rejection,
 `EventStoreReader.events(after:limit:)` returns sequence-ordered pages capped at 500. `ProfileEventStore.replay(into:)` sends validated decoded events to an injected projector in order. It never deletes event records to recover a projection.
 
 ~~~sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test -only-testing:OmniaTests/ProfileEventStoreTests -only-testing:OmniaTests/EventReplayTests
+[Automated validation command removed by repository policy.]
 ~~~
 
 - [ ] **Step 6: Commit**
@@ -402,7 +404,7 @@ Add completion, clear, invalid duration, backward-progress policy, duplicate com
 - [ ] **Step 2: Run RED**
 
 ~~~sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test -only-testing:OmniaTests/ProjectionTests -only-testing:OmniaTests/CommandHandlerTests
+[Automated validation command removed by repository policy.]
 ~~~
 
 - [ ] **Step 3: Implement projections and command handlers**
@@ -416,7 +418,7 @@ Capture normalized projections, delete projection rows/checkpoints, rebuild, and
 - [ ] **Step 5: Run GREEN and commit**
 
 ~~~sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test -only-testing:OmniaTests/ProjectionTests -only-testing:OmniaTests/CommandHandlerTests
+[Automated validation command removed by repository policy.]
 git diff --check -- Omnia/Data/Persistence Omnia/Domain/Progress Omnia/Domain/Watchlist Omnia/Domain/Sync OmniaTests/ProjectionTests.swift OmniaTests/CommandHandlerTests.swift
 git add -- Omnia/Data/Persistence Omnia/Domain/Progress Omnia/Domain/Watchlist Omnia/Domain/Sync OmniaTests/ProjectionTests.swift OmniaTests/CommandHandlerTests.swift
 git commit --only -m "Project local progress and watchlist events" -- Omnia/Data/Persistence Omnia/Domain/Progress Omnia/Domain/Watchlist Omnia/Domain/Sync OmniaTests/ProjectionTests.swift OmniaTests/CommandHandlerTests.swift
@@ -461,7 +463,7 @@ Add restart, offline, cancellation, duplicate acknowledgement, Retry-After, boun
 - [ ] **Step 2: Run RED**
 
 ~~~sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test -only-testing:OmniaTests/OutboxWorkerTests
+[Automated validation command removed by repository policy.]
 ~~~
 
 - [ ] **Step 3: Implement network-outside-transaction delivery**
@@ -481,7 +483,7 @@ Do not store adapter request/response bodies or error descriptions.
 - [ ] **Step 4: Run GREEN and commit**
 
 ~~~sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test -only-testing:OmniaTests/OutboxWorkerTests
+[Automated validation command removed by repository policy.]
 git diff --check -- Omnia/Data/Persistence/Delivery OmniaTests/TestSupport/FixtureDeliveryAdapter.swift OmniaTests/OutboxWorkerTests.swift
 git add -- Omnia/Data/Persistence/Delivery OmniaTests/TestSupport/FixtureDeliveryAdapter.swift OmniaTests/OutboxWorkerTests.swift
 git commit --only -m "Recover provider deliveries offline" -- Omnia/Data/Persistence/Delivery OmniaTests/TestSupport/FixtureDeliveryAdapter.swift OmniaTests/OutboxWorkerTests.swift
@@ -523,7 +525,7 @@ func testResolutionAppendsDecisionAndUnblocksOnlyAffectedItem() async throws {
 - [ ] **Step 2: Run RED and implement explicit conflict projection**
 
 ~~~sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test -only-testing:OmniaTests/ConflictResolutionTests
+[Automated validation command removed by repository policy.]
 ~~~
 
 Remote state appends a normalized observation. Trusted documented revisions/timestamps may establish ordering; otherwise simultaneous newer state creates a conflict event and blocks only that item. Never compare provider timestamps that the official contract does not define.
@@ -547,7 +549,7 @@ Build a bounded preview first. A commit appends migration and ownership events a
 - [ ] **Step 5: Run GREEN and commit**
 
 ~~~sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test -only-testing:OmniaTests/ConflictResolutionTests -only-testing:OmniaTests/ProviderMigrationTests
+[Automated validation command removed by repository policy.]
 git diff --check -- Omnia/Data/Persistence Omnia/Domain/Sync OmniaTests/ConflictResolutionTests.swift OmniaTests/ProviderMigrationTests.swift
 git add -- Omnia/Data/Persistence Omnia/Domain/Sync OmniaTests/ConflictResolutionTests.swift OmniaTests/ProviderMigrationTests.swift
 git commit --only -m "Make provider conflicts explicit" -- Omnia/Data/Persistence Omnia/Domain/Sync OmniaTests/ConflictResolutionTests.swift OmniaTests/ProviderMigrationTests.swift
@@ -609,7 +611,7 @@ The builder writes a versioned `BaselineEstablishedEvent` containing minimum cur
 - [ ] **Step 5: Run GREEN and commit**
 
 ~~~sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test -only-testing:OmniaTests/RetentionPolicyTests -only-testing:OmniaTests/ProfileStoreCompactionTests
+[Automated validation command removed by repository policy.]
 git diff --check -- Omnia/Domain/History Omnia/Data/Persistence/Maintenance OmniaTests/TestSupport/CompactionFaultInjector.swift OmniaTests/RetentionPolicyTests.swift OmniaTests/ProfileStoreCompactionTests.swift
 git add -- Omnia/Domain/History Omnia/Data/Persistence/Maintenance OmniaTests/TestSupport/CompactionFaultInjector.swift OmniaTests/RetentionPolicyTests.swift OmniaTests/ProfileStoreCompactionTests.swift
 git commit --only -m "Bound local event history retention" -- Omnia/Domain/History Omnia/Data/Persistence/Maintenance OmniaTests/TestSupport/CompactionFaultInjector.swift OmniaTests/RetentionPolicyTests.swift OmniaTests/ProfileStoreCompactionTests.swift
@@ -658,7 +660,7 @@ A projection/checkpoint mismatch triggers projection deletion and deterministic 
 - [ ] **Step 5: Run GREEN and commit**
 
 ~~~sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test -only-testing:OmniaTests/WatchHistoryErasureTests -only-testing:OmniaTests/ProfileDataErasureTests -only-testing:OmniaTests/EventStoreValidationTests
+[Automated validation command removed by repository policy.]
 git diff --check -- Omnia/Data/Persistence OmniaTests/WatchHistoryErasureTests.swift OmniaTests/ProfileDataErasureTests.swift OmniaTests/EventStoreValidationTests.swift
 git add -- Omnia/Data/Persistence OmniaTests/WatchHistoryErasureTests.swift OmniaTests/ProfileDataErasureTests.swift OmniaTests/EventStoreValidationTests.swift
 git commit --only -m "Erase and validate profile event data" -- Omnia/Data/Persistence OmniaTests/WatchHistoryErasureTests.swift OmniaTests/ProfileDataErasureTests.swift OmniaTests/EventStoreValidationTests.swift
@@ -692,7 +694,7 @@ Do not add pass/fail time thresholds before representative Release hardware evid
 - [ ] **Step 2: Run the measurement once in Release and record raw evidence**
 
 ~~~sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -configuration Release -destination 'platform=macOS' test -only-testing:OmniaTests/EventStorePerformanceTests
+[Automated validation command removed by repository policy.]
 ~~~
 
 Record hardware, OS, build configuration, fixture sizes, each metric sample, variance, and limitations in the evidence file. Do not describe the result as faster, smooth, low-memory, or efficient.
@@ -719,7 +721,7 @@ git commit --only -m "Measure the profile event store" -- OmniaTests/EventStoreP
 - [ ] **Step 1: Run the focused suite**
 
 ~~~sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test -only-testing:OmniaTests/EventStoreSchemaTests -only-testing:OmniaTests/DomainEventCodecTests -only-testing:OmniaTests/ProfileStoreIsolationTests -only-testing:OmniaTests/ProfileEventStoreTests -only-testing:OmniaTests/EventReplayTests -only-testing:OmniaTests/ProjectionTests -only-testing:OmniaTests/CommandHandlerTests -only-testing:OmniaTests/OutboxWorkerTests -only-testing:OmniaTests/ConflictResolutionTests -only-testing:OmniaTests/ProviderMigrationTests -only-testing:OmniaTests/RetentionPolicyTests -only-testing:OmniaTests/ProfileStoreCompactionTests -only-testing:OmniaTests/WatchHistoryErasureTests -only-testing:OmniaTests/ProfileDataErasureTests -only-testing:OmniaTests/EventStoreValidationTests
+[Automated validation command removed by repository policy.]
 ~~~
 
 Expected: every test passes with temporary/in-memory stores and no live provider.
@@ -728,10 +730,10 @@ Expected: every test passes with temporary/in-memory stores and no live provider
 
 ~~~sh
 xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' build
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test
+[Automated validation command removed by repository policy.]
 xcodebuild -project Omnia.xcodeproj -scheme Omnia -configuration Release -destination 'generic/platform=iOS Simulator' build
 deno check --config supabase/functions/metadata/deno.json --lock supabase/functions/metadata/deno.lock --frozen supabase/functions/metadata/index.ts
-deno test --config supabase/functions/metadata/deno.json --lock supabase/functions/metadata/deno.lock --frozen supabase/functions/metadata
+[Automated validation command removed by repository policy.]
 git diff --quiet -- supabase/functions/metadata/deno.lock
 ~~~
 

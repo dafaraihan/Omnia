@@ -220,7 +220,7 @@ nonisolated enum LocalTorrentCacheManager {
             throw CacheError.cacheUnavailable
         }
         return caches
-            .appendingPathComponent("PrimeDeca.Omnia", isDirectory: true)
+            .appendingPathComponent("Dafa-Raihan.Omnia", isDirectory: true)
             .appendingPathComponent("TorrentMedia", isDirectory: true)
     }
 

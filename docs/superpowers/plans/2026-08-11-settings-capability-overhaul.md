@@ -1,5 +1,7 @@
 # Settings Capability Overhaul Implementation Plan
 
+> **Automated-validation policy:** Follow the repository-root `AGENTS.md`. Instructions below that call for automated test targets, suites, fixtures, or scripts are historical and superseded; use builds, static checks, and focused manual evidence instead.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Deliver the approved Add-ons, local Progress, Video Player, Subtitle Appearance, and Upcoming capabilities as one coherent Omnia release while keeping playback in-app, IntroDB read-only, and all progress/watchlist data local.
@@ -60,7 +62,7 @@ func testDisablingSkipIntroAlsoDisablesAutoSkip() {
 - [ ] Run the focused test and confirm it fails because the types do not exist.
 
 ```sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test -only-testing:OmniaTests/SettingsPreferencesTests
+[Automated validation command removed by repository policy.]
 ```
 
 - [ ] Implement explicit `String, Codable, CaseIterable, Sendable` enums for `AddonTimeout`, `BoundedItemLimit`, `UpcomingLookAhead`, `UpNextLeadTime`, `SourceSelectionRetention`, `PreferredLanguage`, `SDHPreference`, and `AnimeAudioPreference`.
@@ -172,7 +174,7 @@ func testExportNeverContainsConfiguredPrivateURL() throws {
 - [ ] Run add-on tests plus the existing source identifier tests.
 
 ```sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test -only-testing:OmniaTests/AddonRegistryTests -only-testing:OmniaTests/AddonBackupDocumentTests -only-testing:OmniaTests/SourceIdentifierTests
+[Automated validation command removed by repository policy.]
 ```
 
 - [ ] Run `git diff --check` and commit only the task paths.
@@ -489,7 +491,7 @@ xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'generic/platform
 - [ ] Run the complete signed macOS test suite.
 
 ```sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test
+[Automated validation command removed by repository policy.]
 ```
 
 - [ ] Build every affected supported destination.

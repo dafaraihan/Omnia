@@ -481,7 +481,7 @@ final class AniListMetadataClient {
             overview: overview,
             genres: media.genres,
             symbol: "play.tv.fill",
-            artworkColors: kind == .movie ? [.indigo, .black] : [.cyan, .indigo],
+            artworkColors: MediaItem.placeholderArtworkColors,
             artworkURL: artworkURL,
             backdropURL: media.bannerImage.flatMap(URL.init(string:)),
             metadataProvider: .anilist,

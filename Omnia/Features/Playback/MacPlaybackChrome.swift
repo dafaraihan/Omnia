@@ -3,6 +3,7 @@ import AppKit
 import SwiftUI
 
 private enum MacPlaybackPanel: Hashable {
+    case episodes
     case audio
     case subtitles
     case speed
@@ -16,9 +17,39 @@ private enum MacSubtitlePanelPage: Hashable {
     case background
 }
 
+private struct MacPlaybackPanelObservationBoundary<Content: View>: View, Equatable {
+    let panel: MacPlaybackPanel
+    let subtitlePage: MacSubtitlePanelPage
+    let episodeSeasonNumber: Int?
+    let content: () -> Content
+
+    init(
+        panel: MacPlaybackPanel,
+        subtitlePage: MacSubtitlePanelPage,
+        episodeSeasonNumber: Int? = nil,
+        @ViewBuilder content: @escaping () -> Content
+    ) {
+        self.panel = panel
+        self.subtitlePage = subtitlePage
+        self.episodeSeasonNumber = episodeSeasonNumber
+        self.content = content
+    }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.panel == rhs.panel
+            && lhs.subtitlePage == rhs.subtitlePage
+            && lhs.episodeSeasonNumber == rhs.episodeSeasonNumber
+    }
+
+    var body: some View {
+        content()
+    }
+}
+
 enum MacPlaybackKeyboardAction: Equatable {
     case seekBackward10
     case seekForward10
+    case togglePause
     case close
 
     static func resolve(keyCode: UInt16, hasCommandLikeModifier: Bool) -> Self? {
@@ -26,6 +57,9 @@ enum MacPlaybackKeyboardAction: Equatable {
         switch keyCode {
         case 123: return .seekBackward10
         case 124: return .seekForward10
+        // Space lives here rather than on the Play button, which leaves the
+        // view tree when the chrome auto-hides.
+        case 49: return .togglePause
         case 53: return .close
         default: return nil
         }
@@ -70,6 +104,8 @@ final class MacPlaybackKeyboardMonitorView: NSView {
     private func installMonitor() {
         guard monitor == nil else { return }
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            // Leave typing alone, for example in the source picker's fields.
+            if event.window?.firstResponder is NSText { return event }
             let commandLikeModifiers = event.modifierFlags.intersection([.command, .control, .option])
             guard let action = MacPlaybackKeyboardAction.resolve(
                 keyCode: event.keyCode,
@@ -135,16 +171,88 @@ enum MacPlaybackPromptKind: Equatable {
 }
 
 enum MacPlaybackPromptAnchor: Equatable {
-    case aboveMetadata
-    case aboveOptionControls
+    case optionControlBand
 }
 
 struct MacPlaybackPromptLayout {
     static func anchor(for prompt: MacPlaybackPromptKind) -> MacPlaybackPromptAnchor {
         switch prompt {
-        case .skipIntro: .aboveMetadata
-        case .upNext: .aboveOptionControls
+        case .skipIntro, .upNext: .optionControlBand
         }
+    }
+}
+
+enum MacPlaybackAction: Hashable {
+    case skipIntro
+    case episodes
+    case audio
+    case subtitles
+    case speed
+    case nextEpisode
+    case upNext
+    case cancelUpNext
+}
+
+struct MacPlaybackActionPresentation {
+    static func actions(
+        isChromeVisible: Bool,
+        showsSkipIntro: Bool,
+        hasEpisodes: Bool = false,
+        hasNextEpisode: Bool,
+        upNextTitle: String?,
+        canCancelUpNext: Bool = false
+    ) -> [MacPlaybackAction] {
+        var actions: [MacPlaybackAction] = []
+        if showsSkipIntro { actions.append(.skipIntro) }
+        guard isChromeVisible else {
+            if upNextTitle != nil {
+                if canCancelUpNext { actions.append(.cancelUpNext) }
+                actions.append(.upNext)
+            }
+            return actions
+        }
+
+        if hasEpisodes { actions.append(.episodes) }
+        actions += [.audio, .subtitles, .speed]
+        if upNextTitle != nil {
+            if canCancelUpNext { actions.append(.cancelUpNext) }
+            actions.append(.upNext)
+        } else if hasNextEpisode {
+            actions.append(.nextEpisode)
+        }
+        return actions
+    }
+}
+
+struct MacPlaybackEpisodePresentation {
+    static func seasonTitle(_ season: MediaSeason) -> String {
+        let title = season.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if season.seasonNumber == 0 { return title.isEmpty ? "Specials" : title }
+        return title.isEmpty ? "Season \(season.seasonNumber)" : title
+    }
+
+    static func title(_ episode: MediaEpisode) -> String {
+        let title = episode.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let number = "E\(episode.episodeNumber)"
+        return title.isEmpty ? number : "\(number) · \(title)"
+    }
+
+    /// Release year and runtime, for example "2024 · 47 min".
+    static func details(_ episode: MediaEpisode) -> String {
+        var parts: [String] = []
+        if let airDate = episode.airDate, airDate.count >= 4 {
+            parts.append(String(airDate.prefix(4)))
+        }
+        if let runtime = episode.runtimeMinutes, runtime > 0 {
+            parts.append("\(runtime) min")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    static func isSame(_ episode: MediaEpisode, _ current: MediaEpisode?) -> Bool {
+        guard let current else { return false }
+        return episode.id == current.id
+            || (episode.seasonNumber == current.seasonNumber && episode.episodeNumber == current.episodeNumber)
     }
 }
 
@@ -170,15 +278,12 @@ struct MacPlaybackChromeInsets {
     }
 }
 
-nonisolated enum MacPlaybackTimelinePreviewLayout {
-    static func clampedCenter(
-        pointerX: CGFloat,
-        bubbleWidth: CGFloat,
-        availableWidth: CGFloat
-    ) -> CGFloat {
-        guard availableWidth > 0 else { return 0 }
-        let half = min(max(bubbleWidth, 0) / 2, availableWidth / 2)
-        return min(max(pointerX, half), availableWidth - half)
+enum MacPlaybackChromeCoordinateSpaceIdentity: Hashable {
+    case windowed
+    case exclusiveFullScreen
+
+    init(isExclusiveFullScreen: Bool) {
+        self = isExclusiveFullScreen ? .exclusiveFullScreen : .windowed
     }
 }
 
@@ -194,6 +299,7 @@ enum MacSubtitlePreviewControl: Equatable {
     case audio
     case subtitles
     case speed
+    case nextEpisode
 }
 
 struct MacSubtitlePreviewPresentation {
@@ -207,7 +313,7 @@ struct MacSubtitlePreviewPresentation {
         .rewind, .playPause, .fastForward
     ]
     static let bottomTrailingControls: [MacSubtitlePreviewControl] = [
-        .audio, .subtitles, .speed
+        .audio, .subtitles, .speed, .nextEpisode
     ]
     static let includesTimeline = true
     static let includesMediaMetadata = true
@@ -247,6 +353,14 @@ struct MacSubtitlePlaybackPreview: View {
 
     private let sampleSubtitle = "The quick brown fox jumps over the lazy dog"
 
+    private var outlineColor: Color {
+        style.outlineEnabled ? (Color(omniaHex: style.outlineColorHex) ?? .black) : .clear
+    }
+
+    private var outlineWidth: CGFloat {
+        style.outlineEnabled ? max(0.5, style.outlineSize * 0.6) : 0
+    }
+
     var body: some View {
         GeometryReader { geometry in
             let previewScale = min(max(min(geometry.size.width / 1_250, geometry.size.height / 650), 0.42), 0.72)
@@ -269,12 +383,19 @@ struct MacSubtitlePlaybackPreview: View {
 
                 Text(sampleSubtitle)
                     .font(.custom(previewFontName(presentation.fontName), size: presentation.fontSize))
-                    .foregroundStyle(.white)
+                    .bold(style.isBold)
+                    .italic(style.isItalic)
+                    .foregroundStyle(Color(omniaHex: style.textColorHex) ?? .white)
                     .multilineTextAlignment(.center)
+                    // Four hard offset shadows stand in for mpv's outline.
+                    .shadow(color: outlineColor, radius: 0, x: outlineWidth, y: 0)
+                    .shadow(color: outlineColor, radius: 0, x: -outlineWidth, y: 0)
+                    .shadow(color: outlineColor, radius: 0, x: 0, y: outlineWidth)
+                    .shadow(color: outlineColor, radius: 0, x: 0, y: -outlineWidth)
                     .padding(.horizontal, 12 * previewScale)
                     .padding(.vertical, 5 * previewScale)
                     .background(
-                        Color.black.opacity(presentation.backgroundOpacity),
+                        (Color(omniaHex: style.backgroundColorHex) ?? .black).opacity(presentation.backgroundOpacity),
                         in: RoundedRectangle(cornerRadius: 4 * previewScale, style: .continuous)
                     )
                     .shadow(
@@ -344,6 +465,7 @@ struct MacSubtitlePlaybackPreview: View {
                     previewCircle("waveform", scale: scale)
                     previewCircle("captions.bubble", scale: scale)
                     previewCircle("speedometer", scale: scale)
+                    previewCircle("forward.end.fill", scale: scale)
                 }
             }
 
@@ -401,22 +523,83 @@ private extension View {
     func playbackRoundedGlassButton(cornerRadius: CGFloat = 14) -> some View {
         omniaRoundedGlassButton(cornerRadius: cornerRadius)
     }
+
+    func playbackCapsuleGlassButton() -> some View {
+        omniaCapsuleGlassButton()
+    }
+}
+
+private struct MacPlaybackExpandedSlider: View {
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let width: CGFloat
+    let onEditingChanged: (Bool) -> Void
+
+    @State private var isPointerEditing = false
+
+    var body: some View {
+        GeometryReader { geometry in
+            Slider(value: $value, in: range)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(.interaction, Rectangle())
+                .highPriorityGesture(
+                    DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                        .onChanged { gesture in
+                            beginPointerEditingIfNeeded()
+                            updateValue(at: gesture.location.x, width: geometry.size.width)
+                        }
+                        .onEnded { gesture in
+                            updateValue(at: gesture.location.x, width: geometry.size.width)
+                            endPointerEditingIfNeeded()
+                        }
+                )
+        }
+        .frame(width: width, height: 54)
+        .onDisappear {
+            endPointerEditingIfNeeded()
+        }
+    }
+
+    private func beginPointerEditingIfNeeded() {
+        guard !isPointerEditing else { return }
+        isPointerEditing = true
+        onEditingChanged(true)
+    }
+
+    private func endPointerEditingIfNeeded() {
+        guard isPointerEditing else { return }
+        isPointerEditing = false
+        onEditingChanged(false)
+    }
+
+    private func updateValue(at horizontalLocation: CGFloat, width: CGFloat) {
+        guard width > 0 else { return }
+        let fraction = Double(min(max(horizontalLocation / width, 0), 1))
+        value = range.lowerBound + fraction * (range.upperBound - range.lowerBound)
+    }
 }
 
 struct MacPlaybackChrome: View {
     @Environment(PlaybackSession.self) private var playback
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var isInteracting: Bool
     let close: () -> Void
     let showsSkipIntro: Bool
+    var skipTitle = "Skip Intro"
     let skipIntro: () -> Void
+    let hasNextEpisode: Bool
     let upNextTitle: String?
     let showUpNext: () -> Void
+    /// Stops the next-episode countdown, when one is running.
+    var cancelUpNext: (() -> Void)? = nil
+    var playEpisode: (MediaEpisode) -> Void = { _ in }
 
     @State private var activePanel: MacPlaybackPanel?
+    @State private var episodeSeasonNumber: Int?
     @State private var subtitlePage: MacSubtitlePanelPage = .overview
     @State private var volumeDragValue: Double?
-    @State private var timelinePointerX: CGFloat?
+    @State private var scrubValue: Double?
+    @State private var isScrubbingTimeline = false
+    @State private var lastScrubSeek = Date.distantPast
 
     private var duration: Double { playback.durationSeconds ?? 0 }
     private var position: Double { min(max(playback.positionSeconds, 0), duration) }
@@ -428,6 +611,22 @@ struct MacPlaybackChrome: View {
             positionSeconds: playback.positionSeconds,
             durationSeconds: playback.durationSeconds
         )
+    }
+    private var playbackActions: [MacPlaybackAction] {
+        MacPlaybackActionPresentation.actions(
+            isChromeVisible: true,
+            showsSkipIntro: showsSkipIntro,
+            hasEpisodes: !episodeSeasons.isEmpty,
+            hasNextEpisode: hasNextEpisode,
+            upNextTitle: upNextTitle,
+            canCancelUpNext: cancelUpNext != nil
+        )
+    }
+    private var episodeSeasons: [MediaSeason] {
+        guard playback.episode != nil else { return [] }
+        return (playback.mediaItem?.details?.seasons ?? [])
+            .filter { !$0.episodes.isEmpty }
+            .sorted { $0.seasonNumber < $1.seasonNumber }
     }
 
     var body: some View {
@@ -442,9 +641,18 @@ struct MacPlaybackChrome: View {
                 transportControls
 
                 if let activePanel {
-                    playbackPanel(activePanel)
+                    MacPlaybackPanelObservationBoundary(
+                        panel: activePanel,
+                        subtitlePage: subtitlePage,
+                        episodeSeasonNumber: episodeSeasonNumber
+                    ) {
+                        playbackPanel(activePanel)
+                    }
+                    .equatable()
                         .frame(
-                            width: min(390, max(320, geometry.size.width - 48))
+                            width: activePanel == .episodes
+                                ? min(480, max(340, geometry.size.width - 48))
+                                : min(390, max(320, geometry.size.width - 48))
                         )
                         .frame(
                             height: panelHeight(
@@ -453,7 +661,7 @@ struct MacPlaybackChrome: View {
                             )
                         )
                         .padding(.trailing, 30)
-                        .padding(.bottom, upNextTitle == nil ? 142 : 202)
+                        .padding(.bottom, 142)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                         .transition(.scale(scale: 0.96, anchor: .bottomTrailing).combined(with: .opacity))
                 }
@@ -474,9 +682,11 @@ struct MacPlaybackChrome: View {
             if panel != .subtitles {
                 subtitlePage = .overview
             }
+            if panel == .episodes {
+                episodeSeasonNumber = playback.episode?.seasonNumber
+            }
         }
         .onDisappear {
-            playback.endTimelinePreview()
             isInteracting = false
         }
     }
@@ -542,7 +752,7 @@ struct MacPlaybackChrome: View {
                             .frame(width: 22)
                             .accessibilityHidden(true)
 
-                        Slider(
+                        MacPlaybackExpandedSlider(
                             value: Binding(
                                 get: {
                                     MacPlaybackVolumePresentation.displayedValue(
@@ -552,7 +762,8 @@ struct MacPlaybackChrome: View {
                                 },
                                 set: { queueVolumeUpdate($0) }
                             ),
-                            in: 0 ... 1,
+                            range: 0 ... 1,
+                            width: compact ? 118 : 188,
                             onEditingChanged: { isEditing in
                                 if isEditing {
                                     volumeDragValue = playback.volume
@@ -566,7 +777,6 @@ struct MacPlaybackChrome: View {
                             }
                         )
                         .tint(.white)
-                        .frame(width: compact ? 118 : 188)
                         .accessibilityLabel("Volume")
                     }
                     .padding(.horizontal, 18)
@@ -594,7 +804,6 @@ struct MacPlaybackChrome: View {
                 }
                 .playbackCircleGlassButton()
                 .accessibilityLabel(playback.isPaused ? "Play" : "Pause")
-                .keyboardShortcut(.space, modifiers: [])
 
                 transportButton(symbol: "goforward.10", label: "Forward 10 seconds") {
                     playback.seek(by: 10)
@@ -606,47 +815,15 @@ struct MacPlaybackChrome: View {
     private var bottomControls: some View {
         VStack(spacing: 12) {
             HStack(alignment: .bottom, spacing: 24) {
-                VStack(alignment: .leading, spacing: 3) {
-                    if showsSkipIntro {
-                        promptButton(
-                            "Skip Intro",
-                            symbol: "forward.end.fill",
-                            action: skipIntro
-                        )
-                        .keyboardShortcut(.return, modifiers: [])
-                        .accessibilityHint("Seeks to the end of the detected intro")
-                        .padding(.bottom, 7)
-                    }
-
-                    if !metadata.context.isEmpty {
-                        Text(metadata.context)
-                            .font(.headline.weight(.medium))
-                            .foregroundStyle(.white.opacity(0.78))
-                            .lineLimit(1)
-                    }
-                    Text(metadata.title)
-                        .font(.title.weight(.semibold))
-                        .lineLimit(1)
-                }
-                .shadow(color: .black.opacity(0.55), radius: 12, y: 3)
+                playbackMetadata
+                    .shadow(color: .black.opacity(0.55), radius: 12, y: 3)
 
                 Spacer(minLength: 20)
 
-                VStack(alignment: .trailing, spacing: 10) {
-                    if let upNextTitle {
-                        promptButton(
-                            upNextTitle,
-                            symbol: "forward.fill",
-                            action: showUpNext
-                        )
-                        .accessibilityHint("Choose an in-app source for the next episode")
-                    }
-
-                    GlassEffectContainer(spacing: 10) {
-                        HStack(spacing: 10) {
-                            optionButton(.audio, symbol: "waveform", label: "Audio")
-                            optionButton(.subtitles, symbol: "captions.bubble", label: "Subtitles")
-                            optionButton(.speed, symbol: "speedometer", label: "Playback speed")
+                GlassEffectContainer(spacing: 10) {
+                    HStack(spacing: 10) {
+                        ForEach(playbackActions, id: \.self) { action in
+                            playbackAction(action)
                         }
                     }
                 }
@@ -656,62 +833,27 @@ struct MacPlaybackChrome: View {
                 Text(timeline.elapsedText)
                     .frame(minWidth: 46, alignment: .leading)
 
-                GeometryReader { geometry in
-                    Slider(
-                        value: Binding(
-                            get: { duration > 0 ? position : 0 },
-                            set: { playback.seek(to: $0) }
-                        ),
-                        in: 0 ... max(duration, 0.001),
-                        onEditingChanged: { isEditing in
-                            isInteracting = MacPlaybackInteractionPresentation.keepsChromeVisible(
-                                isEditingControl: isEditing,
-                                hasPresentedPanel: activePanel != nil
-                            )
+                Slider(
+                    value: Binding(
+                        get: { duration > 0 ? (scrubValue ?? position) : 0 },
+                        set: { scrub(to: $0) }
+                    ),
+                    in: 0 ... max(duration, 0.001),
+                    onEditingChanged: { isEditing in
+                        isScrubbingTimeline = isEditing
+                        if !isEditing, let scrubValue {
+                            playback.seek(to: scrubValue)
+                            self.scrubValue = nil
                         }
-                    )
-                    .tint(.white)
-                    .accessibilityLabel("Playback position")
-                    .disabled(duration <= 0)
-                    .onContinuousHover { phase in
-                        switch phase {
-                        case let .active(location):
-                            guard let timestamp = PlaybackTimelinePreviewPosition.timestamp(
-                                x: location.x,
-                                width: geometry.size.width,
-                                duration: duration
-                            ) else { return }
-                            timelinePointerX = location.x
-                            isInteracting = true
-                            playback.requestTimelinePreview(at: timestamp)
-                        case .ended:
-                            timelinePointerX = nil
-                            isInteracting = activePanel != nil
-                            playback.endTimelinePreview()
-                        }
-                    }
-
-                    if let pointerX = timelinePointerX,
-                       let timestamp = playback.timelinePreviewTimestamp {
-                        timelinePreviewBubble(
-                            timestamp: timestamp,
-                            image: playback.timelinePreviewImage
+                        isInteracting = MacPlaybackInteractionPresentation.keepsChromeVisible(
+                            isEditingControl: isEditing,
+                            hasPresentedPanel: activePanel != nil
                         )
-                        .frame(width: 192)
-                        .position(
-                            x: MacPlaybackTimelinePreviewLayout.clampedCenter(
-                                pointerX: pointerX,
-                                bubbleWidth: 192,
-                                availableWidth: geometry.size.width
-                            ),
-                            y: -72
-                        )
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
-                        .transition(reduceMotion ? .identity : .opacity)
                     }
-                }
-                .frame(height: 20)
+                )
+                .tint(.white)
+                .accessibilityLabel("Playback position")
+                .disabled(duration <= 0)
 
                 Text(timeline.remainingText)
                     .frame(minWidth: 54, alignment: .trailing)
@@ -724,35 +866,56 @@ struct MacPlaybackChrome: View {
         }
     }
 
-    private func timelinePreviewBubble(timestamp: Double, image: NSImage?) -> some View {
-        VStack(spacing: 6) {
-            Group {
-                if let image {
-                    Image(nsImage: image)
-                        .resizable()
-                        .scaledToFill()
-                } else {
-                    Color.black.opacity(0.32)
-                }
-            }
-            .frame(width: 176, height: 99)
-            .clipped()
-            .clipShape(.rect(cornerRadius: 9, style: .continuous))
-
-            Text(PlaybackTimelinePresentation.timeText(timestamp))
-                .font(.caption.monospacedDigit().weight(.semibold))
+    /// Dragging the timeline used to send mpv an exact seek for every pointer
+    /// move, which queued up seeks faster than mpv could finish them. The knob
+    /// now follows the pointer, mpv gets at most one seek per interval while
+    /// dragging, and the final position is sent when the drag ends.
+    private func scrub(to value: Double) {
+        // Keyboard and accessibility adjustments arrive without a drag.
+        guard isScrubbingTimeline else {
+            playback.seek(to: value)
+            return
         }
-        .padding(8)
-        .omniaLiquidGlass(
-            in: RoundedRectangle(cornerRadius: 14, style: .continuous),
-            role: .playbackTimeline
-        )
+        scrubValue = value
+        let now = Date()
+        guard now.timeIntervalSince(lastScrubSeek) >= 0.2 else { return }
+        lastScrubSeek = now
+        playback.seek(to: value)
+    }
+
+    @ViewBuilder
+    private var playbackMetadata: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            if playback.episode != nil {
+                Text(metadata.title)
+                    .font(.title.weight(.semibold))
+                    .lineLimit(1)
+                if !metadata.context.isEmpty {
+                    Text(metadata.context)
+                        .font(.headline.weight(.medium))
+                        .foregroundStyle(.white.opacity(0.78))
+                        .lineLimit(1)
+                }
+            } else {
+                if !metadata.context.isEmpty {
+                    Text(metadata.context)
+                        .font(.headline.weight(.medium))
+                        .foregroundStyle(.white.opacity(0.78))
+                        .lineLimit(1)
+                }
+                Text(metadata.title)
+                    .font(.title.weight(.semibold))
+                    .lineLimit(1)
+            }
+        }
     }
 
     @ViewBuilder
     private func playbackPanel(_ panel: MacPlaybackPanel) -> some View {
         ScrollView {
             switch panel {
+            case .episodes:
+                episodesPanel
             case .audio:
                 audioPanel
             case .subtitles:
@@ -770,12 +933,132 @@ struct MacPlaybackChrome: View {
             for: .scrollIndicators
         )
         .contentMargins(.trailing, 6, for: .scrollIndicators)
-        .glassEffect(.clear, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
         .accessibilityElement(children: .contain)
     }
 
+    private var selectedEpisodeSeason: MediaSeason? {
+        let seasons = episodeSeasons
+        let number = episodeSeasonNumber ?? playback.episode?.seasonNumber
+        return seasons.first { $0.seasonNumber == number } ?? seasons.first
+    }
+
+    private var episodesPanel: some View {
+        LazyVStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Episodes")
+                    .font(.title3.weight(.semibold))
+                Spacer()
+                if episodeSeasons.count > 1, let season = selectedEpisodeSeason {
+                    Menu {
+                        Picker("Season", selection: Binding(
+                            get: { season.seasonNumber },
+                            set: { episodeSeasonNumber = $0 }
+                        )) {
+                            ForEach(episodeSeasons) { season in
+                                Text(MacPlaybackEpisodePresentation.seasonTitle(season))
+                                    .tag(season.seasonNumber)
+                            }
+                        }
+                        .pickerStyle(.inline)
+                    } label: {
+                        Label(
+                            MacPlaybackEpisodePresentation.seasonTitle(season),
+                            systemImage: "chevron.up.chevron.down"
+                        )
+                        .labelStyle(.titleAndIcon)
+                        .font(.subheadline.weight(.semibold))
+                    }
+                    .menuStyle(.button)
+                    .buttonStyle(.glass)
+                    .fixedSize()
+                    .accessibilityLabel("Season")
+                } else if let season = selectedEpisodeSeason {
+                    Text(MacPlaybackEpisodePresentation.seasonTitle(season))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            panelDivider
+
+            ForEach(selectedEpisodeSeason?.episodes ?? []) { episode in
+                episodeRow(episode)
+            }
+        }
+    }
+
+    private func episodeRow(_ episode: MediaEpisode) -> some View {
+        let isCurrent = MacPlaybackEpisodePresentation.isSame(episode, playback.episode)
+
+        return Button {
+            withAnimation(.easeInOut(duration: 0.18)) {
+                activePanel = nil
+            }
+            guard !isCurrent else { return }
+            playEpisode(episode)
+        } label: {
+            HStack(alignment: .top, spacing: 12) {
+                AsyncImage(url: episode.stillURL) { phase in
+                    if let image = phase.image {
+                        image.resizable().scaledToFill()
+                    } else {
+                        ZStack {
+                            Color.white.opacity(0.08)
+                            Image(systemName: "film")
+                                .foregroundStyle(.white.opacity(0.4))
+                        }
+                    }
+                }
+                .frame(width: 128, height: 72)
+                .clipShape(.rect(cornerRadius: 10, style: .continuous))
+                .overlay(alignment: .center) {
+                    if isCurrent {
+                        Image(systemName: "speaker.wave.2.fill")
+                            .font(.headline)
+                            .padding(8)
+                            .background(.black.opacity(0.55), in: Circle())
+                            .accessibilityHidden(true)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(MacPlaybackEpisodePresentation.title(episode))
+                        .font(.headline)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                    let details = MacPlaybackEpisodePresentation.details(episode)
+                    if !details.isEmpty {
+                        Text(details)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    if !episode.overview.isEmpty {
+                        Text(episode.overview)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(8)
+            .background {
+                if isCurrent {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(.white.opacity(0.1))
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .omniaMenuRowButton()
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(isCurrent ? "Now playing" : "")
+        .accessibilityHint(isCurrent ? "" : "Choose a source for this episode")
+    }
+
     private var audioPanel: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        LazyVStack(alignment: .leading, spacing: 12) {
             panelTitle("Audio Track", detail: selectedAudioTrackName)
             panelDivider
 
@@ -802,7 +1085,7 @@ struct MacPlaybackChrome: View {
     private var subtitlesPanel: some View {
         switch subtitlePage {
         case .overview:
-            VStack(alignment: .leading, spacing: 12) {
+            LazyVStack(alignment: .leading, spacing: 12) {
                 panelTitle("Subtitles", detail: selectedSubtitleTrackName)
 
                 panelRow("On", isSelected: playback.subtitleTracks.contains(where: \.isSelected), isEnabled: !playback.subtitleTracks.isEmpty) {
@@ -825,7 +1108,7 @@ struct MacPlaybackChrome: View {
                 }
             }
         case .language:
-            VStack(alignment: .leading, spacing: 12) {
+            LazyVStack(alignment: .leading, spacing: 12) {
                 panelTitle("Language", detail: selectedSubtitleTrackName, backTo: .overview)
                 panelDivider
                 switch PlaybackTrackAvailability(
@@ -846,7 +1129,7 @@ struct MacPlaybackChrome: View {
                 }
             }
         case .style:
-            VStack(alignment: .leading, spacing: 16) {
+            LazyVStack(alignment: .leading, spacing: 16) {
                 panelTitle("Style", detail: "Custom", backTo: .overview)
                 panelDivider
                 navigationRow("Font", detail: selectedFontTitle) {
@@ -910,7 +1193,7 @@ struct MacPlaybackChrome: View {
                 }
             }
         case .background:
-            VStack(alignment: .leading, spacing: 12) {
+            LazyVStack(alignment: .leading, spacing: 12) {
                 panelTitle("Background", detail: subtitleBackgroundTitle, backTo: .style)
                 panelDivider
                 ForEach(PlaybackSubtitleBackground.allCases) { background in
@@ -926,7 +1209,7 @@ struct MacPlaybackChrome: View {
     }
 
     private var speedPanel: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        LazyVStack(alignment: .leading, spacing: 12) {
             panelTitle("Playback Speed", detail: playbackRateTitle(playback.playbackRate))
             panelDivider
             ForEach([2.0, 1.5, 1.25, 1, 0.75, 0.5], id: \.self) { rate in
@@ -1009,7 +1292,42 @@ struct MacPlaybackChrome: View {
                 .frame(minHeight: 44)
                 .contentShape(Capsule())
         }
-        .omniaCapsuleGlassButton()
+        .playbackCapsuleGlassButton()
+    }
+
+    @ViewBuilder
+    private func playbackAction(_ action: MacPlaybackAction) -> some View {
+        switch action {
+        case .skipIntro:
+            promptButton(skipTitle, symbol: "forward.end.fill", action: skipIntro)
+                .keyboardShortcut(.return, modifiers: [])
+                .accessibilityHint("Seeks past the detected segment")
+        case .episodes:
+            optionButton(.episodes, symbol: "list.and.film", label: "Episodes")
+        case .audio:
+            optionButton(.audio, symbol: "waveform", label: "Audio")
+        case .subtitles:
+            optionButton(.subtitles, symbol: "captions.bubble", label: "Subtitles")
+        case .speed:
+            optionButton(.speed, symbol: "speedometer", label: "Playback speed")
+        case .nextEpisode:
+            circleButton(
+                symbol: "forward.end.fill",
+                label: "Next episode",
+                hint: "Choose an in-app source for the next episode",
+                action: showUpNext
+            )
+        case .upNext:
+            if let upNextTitle {
+                promptButton(upNextTitle, symbol: "forward.end.fill", action: showUpNext)
+                    .accessibilityHint("Plays the next episode")
+            }
+        case .cancelUpNext:
+            if let cancelUpNext {
+                promptButton("Cancel", symbol: "xmark", action: cancelUpNext)
+                    .accessibilityHint("Stops the next episode from starting automatically")
+            }
+        }
     }
 
     private func panelTitle(
@@ -1181,6 +1499,14 @@ struct MacPlaybackChrome: View {
         maximumHeight: CGFloat
     ) -> CGFloat {
         switch panel {
+        case .episodes:
+            // Episode rows are roughly two standard rows tall.
+            return MacPlaybackPanelLayout.idealHeight(
+                rowCount: max(1, selectedEpisodeSeason?.episodes.count ?? 1) * 2,
+                navigationRowCount: 0,
+                sliderCount: 0,
+                maximumHeight: maximumHeight
+            )
         case .audio:
             return MacPlaybackPanelLayout.idealHeight(
                 rowCount: max(1, playback.audioTracks.count),
@@ -1234,6 +1560,87 @@ struct MacPlaybackChrome: View {
                 )
             }
         }
+    }
+}
+
+struct MacPlaybackContextualActions: View {
+    let showsSkipIntro: Bool
+    var skipTitle = "Skip Intro"
+    let skipIntro: () -> Void
+    let upNextTitle: String?
+    let showUpNext: () -> Void
+    var cancelUpNext: (() -> Void)? = nil
+
+    private var actions: [MacPlaybackAction] {
+        MacPlaybackActionPresentation.actions(
+            isChromeVisible: false,
+            showsSkipIntro: showsSkipIntro,
+            hasNextEpisode: false,
+            upNextTitle: upNextTitle,
+            canCancelUpNext: cancelUpNext != nil
+        )
+    }
+
+    var body: some View {
+        GlassEffectContainer(spacing: 10) {
+            HStack(spacing: 10) {
+                ForEach(actions, id: \.self) { action in
+                    contextualAction(action)
+                }
+            }
+        }
+        .foregroundStyle(.white)
+    }
+
+    @ViewBuilder
+    private func contextualAction(_ action: MacPlaybackAction) -> some View {
+        switch action {
+        case .skipIntro:
+            promptButton(
+                skipTitle,
+                symbol: "forward.end.fill",
+                hint: "Seeks past the detected segment",
+                action: skipIntro
+            )
+            .keyboardShortcut(.return, modifiers: [])
+        case .upNext:
+            if let upNextTitle {
+                promptButton(
+                    upNextTitle,
+                    symbol: "forward.end.fill",
+                    hint: "Plays the next episode",
+                    action: showUpNext
+                )
+            }
+        case .cancelUpNext:
+            if let cancelUpNext {
+                promptButton(
+                    "Cancel",
+                    symbol: "xmark",
+                    hint: "Stops the next episode from starting automatically",
+                    action: cancelUpNext
+                )
+            }
+        case .episodes, .audio, .subtitles, .speed, .nextEpisode:
+            EmptyView()
+        }
+    }
+
+    private func promptButton(
+        _ title: String,
+        symbol: String,
+        hint: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: symbol)
+                .font(.headline.weight(.semibold))
+                .padding(.horizontal, 18)
+                .frame(minHeight: 44)
+                .contentShape(Capsule())
+        }
+        .playbackCapsuleGlassButton()
+        .accessibilityHint(hint)
     }
 }
 

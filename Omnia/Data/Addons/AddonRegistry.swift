@@ -49,6 +49,12 @@ final class AddonRegistry {
         persist()
     }
 
+    func rename(id: String, to name: String) {
+        guard let index = addons.firstIndex(where: { $0.id == id }) else { return }
+        addons[index].rename(to: name)
+        persist()
+    }
+
     func remove(id: String) {
         addons.first(where: { $0.id == id })?.removeSecureManifestURL()
         addons.removeAll { $0.id == id }

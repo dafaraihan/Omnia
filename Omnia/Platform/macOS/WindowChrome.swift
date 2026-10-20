@@ -6,15 +6,22 @@ import SwiftUI
 /// and navigation titles. Individual screens still own their content artwork.
 struct WindowChrome: NSViewRepresentable {
     let isPlaybackPresented: Bool
+    let isExclusiveFullScreen: Bool
 
     func makeNSView(context: Context) -> WindowChromeView {
         let view = WindowChromeView(frame: .zero)
-        view.updatePlaybackPresentation(isPresented: isPlaybackPresented)
+        view.updatePlaybackPresentation(
+            isPresented: isPlaybackPresented,
+            isExclusiveFullScreen: isExclusiveFullScreen
+        )
         return view
     }
 
     func updateNSView(_ view: WindowChromeView, context: Context) {
-        view.updatePlaybackPresentation(isPresented: isPlaybackPresented)
+        view.updatePlaybackPresentation(
+            isPresented: isPlaybackPresented,
+            isExclusiveFullScreen: isExclusiveFullScreen
+        )
     }
 }
 
@@ -35,19 +42,38 @@ struct WindowChromeRestorationState {
 final class WindowChromeView: NSView {
     private var restorationState = WindowChromeRestorationState()
     private var restorationTask: Task<Void, Never>?
+    private var isPlaybackPresented = false
+    private var isExclusiveFullScreen = false
+    private weak var suppressedTitlebarHitLayer: NSView?
+    private var titlebarHitLayerWasHidden = false
+    private weak var suppressedTitlebarWindow: NSWindow?
+    private var titlebarWindowIgnoredMouseEvents = false
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow !== window {
+            restoreTitlebarHitLayer()
+        }
+        super.viewWillMove(toWindow: newWindow)
+    }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         applyWindowChrome()
     }
 
-    func updatePlaybackPresentation(isPresented: Bool) {
+    func updatePlaybackPresentation(
+        isPresented: Bool,
+        isExclusiveFullScreen: Bool
+    ) {
+        let didChangeFullScreenPresentation = self.isExclusiveFullScreen != isExclusiveFullScreen
+        self.isPlaybackPresented = isPresented
+        self.isExclusiveFullScreen = isExclusiveFullScreen
         let shouldRestoreAfterToolbarTransition = restorationState.update(
             isPlaybackPresented: isPresented
         )
         applyWindowChrome()
 
-        guard shouldRestoreAfterToolbarTransition else { return }
+        guard shouldRestoreAfterToolbarTransition || didChangeFullScreenPresentation else { return }
         restorationTask?.cancel()
         restorationTask = Task { @MainActor [weak self] in
             await Task.yield()
@@ -68,6 +94,74 @@ final class WindowChromeView: NSView {
         window.titleVisibility = .visible
         window.titlebarAppearsTransparent = true
         window.styleMask.insert(.fullSizeContentView)
+        updateTitlebarHitLayer(in: window)
+    }
+
+    private func updateTitlebarHitLayer(in window: NSWindow) {
+        guard isPlaybackPresented && isExclusiveFullScreen else {
+            restoreTitlebarHitLayer()
+            return
+        }
+        suppressFullScreenTitlebarWindow(of: window)
+        guard let titlebarHitLayer = fullScreenTitlebarHitLayer(in: window) else {
+            return
+        }
+
+        if suppressedTitlebarHitLayer !== titlebarHitLayer {
+            restoreTitlebarHitLayer()
+            suppressedTitlebarHitLayer = titlebarHitLayer
+            titlebarHitLayerWasHidden = titlebarHitLayer.isHidden
+        }
+        titlebarHitLayer.isHidden = true
+    }
+
+    private func fullScreenTitlebarHitLayer(in window: NSWindow) -> NSView? {
+        guard let titlebarContainer = window.standardWindowButton(.closeButton)?.superview?.superview else {
+            return nil
+        }
+
+        // In an exclusive full-screen Space, AppKit wraps the ordinary
+        // titlebar container in a shallow full-screen toolbar view. Hiding only
+        // the inner container leaves that transparent parent intercepting the
+        // playback controls beneath it. Never select the full window frame.
+        guard let parent = titlebarContainer.superview,
+              parent.bounds.height <= 160
+        else {
+            return titlebarContainer
+        }
+        return parent
+    }
+
+    /// In a full-screen Space the titlebar and toolbar move into their own
+    /// borderless window (`NSToolbarFullScreenWindow`) layered above the
+    /// content window. Hiding views inside it isn't enough: the window itself
+    /// still takes every click in its frame, which is where the player's close,
+    /// PiP, full-screen, aspect and volume controls sit. Let clicks pass
+    /// through it while full-screen playback is on screen.
+    private func suppressFullScreenTitlebarWindow(of window: NSWindow) {
+        guard let titlebarWindow = window.standardWindowButton(.closeButton)?.window,
+              titlebarWindow !== window
+        else { return }
+
+        if suppressedTitlebarWindow !== titlebarWindow {
+            restoreTitlebarWindow()
+            suppressedTitlebarWindow = titlebarWindow
+            titlebarWindowIgnoredMouseEvents = titlebarWindow.ignoresMouseEvents
+        }
+        titlebarWindow.ignoresMouseEvents = true
+    }
+
+    private func restoreTitlebarWindow() {
+        suppressedTitlebarWindow?.ignoresMouseEvents = titlebarWindowIgnoredMouseEvents
+        suppressedTitlebarWindow = nil
+        titlebarWindowIgnoredMouseEvents = false
+    }
+
+    private func restoreTitlebarHitLayer() {
+        restoreTitlebarWindow()
+        suppressedTitlebarHitLayer?.isHidden = titlebarHitLayerWasHidden
+        suppressedTitlebarHitLayer = nil
+        titlebarHitLayerWasHidden = false
     }
 }
 #endif

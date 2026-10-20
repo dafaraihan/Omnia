@@ -162,6 +162,52 @@ struct SubtitleAppearanceSettingsView: View {
                     range: 0 ... 20,
                     valueLabel: { "\(Int($0.rounded()))" }
                 )
+                if settings.preferences.playbackSubtitleStyle.background != .none {
+                    ColorPicker(
+                        "Background Color",
+                        selection: hexColorBinding(\.backgroundColorHex),
+                        supportsOpacity: false
+                    )
+                }
+            }
+
+            Section("Text") {
+                ColorPicker("Text Color", selection: hexColorBinding(\.textColorHex), supportsOpacity: false)
+                Toggle("Bold", isOn: styleBinding(\.isBold))
+                Toggle("Italic", isOn: styleBinding(\.isItalic))
+                Toggle("Outline", isOn: styleBinding(\.outlineEnabled))
+                if settings.preferences.playbackSubtitleStyle.outlineEnabled {
+                    ColorPicker("Outline Color", selection: hexColorBinding(\.outlineColorHex), supportsOpacity: false)
+                    SubtitleDoubleSlider(
+                        title: "Outline Width",
+                        value: styleBinding(\.outlineSize),
+                        range: 0.5 ... 5,
+                        valueLabel: { String(format: "%.1f", $0) }
+                    )
+                }
+            }
+
+            Section {
+                SubtitleDoubleSlider(
+                    title: "Subtitle Delay",
+                    value: Binding(
+                        get: { settings.preferences.playbackSubtitleStyle.delaySeconds },
+                        // Tenth-of-a-second steps, like the player's own control.
+                        set: { value in
+                            settings.update { $0.playbackSubtitleStyle.delaySeconds = (value * 10).rounded() / 10 }
+                        }
+                    ),
+                    range: -10 ... 10,
+                    valueLabel: { String(format: "%+.1f s", $0) }
+                )
+                Button("Reset Delay") {
+                    settings.update { $0.playbackSubtitleStyle.delaySeconds = 0 }
+                }
+                .disabled(settings.preferences.playbackSubtitleStyle.delaySeconds == 0)
+            } header: {
+                Text("Timing")
+            } footer: {
+                Text("A positive delay shows subtitles later; use it when they appear before the speech.")
             }
 
             Section {
@@ -186,6 +232,16 @@ struct SubtitleAppearanceSettingsView: View {
     private var previewFontTitle: String {
         let name = settings.preferences.playbackSubtitleStyle.fontName
         return name == PlaybackSubtitleStyle.default.fontName ? "System" : name
+    }
+
+    private func hexColorBinding(_ keyPath: WritableKeyPath<PlaybackSubtitleStyle, String>) -> Binding<Color> {
+        Binding(
+            get: { Color(omniaHex: settings.preferences.playbackSubtitleStyle[keyPath: keyPath]) ?? .white },
+            set: { color in
+                guard let hex = color.omniaHex else { return }
+                settings.update { $0.playbackSubtitleStyle[keyPath: keyPath] = hex }
+            }
+        )
     }
 
     private func styleBinding<Value>(
@@ -321,10 +377,10 @@ private struct SubtitleSettingsLanguagePicker: View {
             if includesNone {
                 Text("Off / No preference").tag(PreferredLanguage.none)
             }
-            Text("English").tag(PreferredLanguage.language("en"))
-            Text("Indonesian").tag(PreferredLanguage.language("id"))
-            Text("Japanese").tag(PreferredLanguage.language("ja"))
-            Text("Spanish").tag(PreferredLanguage.language("es"))
+            Divider()
+            ForEach(PlaybackLanguageCatalog.codes, id: \.self) { code in
+                Text(PlaybackLanguageCatalog.name(for: code)).tag(PreferredLanguage.language(code))
+            }
         }
     }
 }

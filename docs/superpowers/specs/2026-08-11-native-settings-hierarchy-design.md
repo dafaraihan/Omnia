@@ -1,5 +1,7 @@
 # Native Settings Hierarchy Design
 
+> **Automated-validation policy:** Follow the repository-root `AGENTS.md`. Instructions below that call for automated test targets, suites, fixtures, or scripts are historical and superseded; use builds, static checks, and focused manual evidence instead.
+
 **Date:** 2026-08-11
 
 **Status:** Approved in design review

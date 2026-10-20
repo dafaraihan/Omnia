@@ -1,5 +1,7 @@
 # Non-Blocking Playback Track Switching Implementation Plan
 
+> **Automated-validation policy:** Follow the repository-root `AGENTS.md`. Instructions below that call for automated test targets, suites, fixtures, or scripts are historical and superseded; use builds, static checks, and focused manual evidence instead.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Change macOS audio and subtitle tracks without blocking the main actor or changing the user's paused state.
@@ -175,8 +177,8 @@ private func retainAndStop(_ graph: PlayerGraph) {
 - [ ] **Step 2: Run the integration tests and verify the API mismatch fails**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test \
-  -only-testing:OmniaTests/MPVPlaybackIntegrationTests
+[Automated validation command removed by repository policy.]
+
 ```
 
 Expected: compilation fails because the controller has no completion-based selection methods.
@@ -401,8 +403,8 @@ func testTrackSelectionGateTracksAudioAndSubtitleIndependently() {
 - [ ] **Step 2: Run the focused tests and verify failure**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test \
-  -only-testing:OmniaTests/PlaybackSessionTests
+[Automated validation command removed by repository policy.]
+
 ```
 
 Expected: compilation fails because `PlaybackTrackSelectionGate` is undefined.
@@ -494,9 +496,9 @@ private func confirmPendingSubtitlePreference() {
 - [ ] **Step 5: Run focused and integration tests**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test \
-  -only-testing:OmniaTests/PlaybackSessionTests \
-  -only-testing:OmniaTests/MPVPlaybackIntegrationTests
+[Automated validation command removed by repository policy.]
+
+
 ```
 
 Expected: PASS.
@@ -523,7 +525,7 @@ git commit -m "Confirm playback track selections"
 - [ ] **Step 1: Run the complete macOS suite and build**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test
+[Automated validation command removed by repository policy.]
 xcodebuild -project Omnia.xcodeproj -scheme Omnia -configuration Release \
   -destination 'platform=macOS' build
 ```

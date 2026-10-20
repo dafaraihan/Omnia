@@ -1,5 +1,7 @@
 # MDBList Rating Providers Design
 
+> **Automated-validation policy:** Follow the repository-root `AGENTS.md`. Instructions below that call for automated test targets, suites, fixtures, or scripts are historical and superseded; use builds, static checks, and focused manual evidence instead.
+
 ## Status
 
 Approved direction: **native Apple-platform controls with a typed provider registry and dynamic fallback**. Omnia displays every usable rating source returned by MDBList, enables newly discovered sources by default, lets the user disable individual external sources, and always shows MDBList's aggregate score when it is available.
@@ -215,7 +217,7 @@ Production behavior follows test-driven development: each behavior begins with a
 Run from the repository root:
 
 ```sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test
+[Automated validation command removed by repository policy.]
 xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' build
 xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'generic/platform=iOS Simulator' build
 git diff --check

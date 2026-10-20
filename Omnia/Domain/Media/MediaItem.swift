@@ -13,6 +13,10 @@ nonisolated struct MediaItem: Identifiable, Hashable, Sendable {
         case episode = "Episode"
     }
 
+    /// Neutral graphite shown while artwork loads or when a title has none,
+    /// like the system's own placeholders, instead of a tinted gradient.
+    static let placeholderArtworkColors: [Color] = [Color(white: 0.22), Color(white: 0.11)]
+
     let id: String
     let title: String
     let year: String
@@ -226,6 +230,45 @@ nonisolated struct MediaItem: Identifiable, Hashable, Sendable {
         )
     }
 
+    /// Fills what a TVDB, AniList or add-on record can't supply on its own
+    /// (seasons, cast, recommendations, full-size artwork) from the matching
+    /// TMDB title. TVDB only provides a small `thumbnail` as its backdrop, so a
+    /// TVDB backdrop gives way to TMDB's.
+    func mergingTMDBCounterpart(_ tmdbItem: MediaItem) -> MediaItem {
+        let tmdbHasSeasons = tmdbItem.details?.seasons.isEmpty == false
+        let useTMDBDetails = details == nil
+            || (kind == .series && details?.seasons.isEmpty == true && tmdbHasSeasons)
+        let preferTMDBBackdrop = metadataProvider == .tvdb || backdropURL == nil
+        let hasOverview = !overview.isEmpty && overview != "No overview is available yet."
+
+        return MediaItem(
+            id: id,
+            title: title,
+            year: year,
+            kind: kind,
+            overview: hasOverview ? overview : tmdbItem.overview,
+            genres: genres.isEmpty ? tmdbItem.genres : genres,
+            symbol: symbol,
+            artworkColors: artworkColors,
+            artworkURL: artworkURL ?? tmdbItem.artworkURL,
+            backdropURL: preferTMDBBackdrop ? (tmdbItem.backdropURL ?? backdropURL) : backdropURL,
+            logoURL: logoURL ?? tmdbItem.logoURL,
+            metadataProvider: metadataProvider ?? tmdbItem.metadataProvider,
+            metadataProviderID: metadataProviderID ?? tmdbItem.metadataProviderID,
+            metadataRecordID: metadataRecordID ?? tmdbItem.metadataRecordID,
+            externalIDs: externalIDs.merging(tmdbItem.externalIDs) { current, _ in current },
+            details: useTMDBDetails ? (tmdbItem.details ?? details) : details,
+            progress: progress,
+            positionSeconds: positionSeconds,
+            durationSeconds: durationSeconds,
+            resumeEpisodeID: resumeEpisodeID,
+            resumeSeasonNumber: resumeSeasonNumber,
+            resumeEpisodeNumber: resumeEpisodeNumber,
+            resumeEpisodeTitle: resumeEpisodeTitle,
+            resumeEpisodeStillURL: resumeEpisodeStillURL
+        )
+    }
+
     private static let remainingTimeFormatter: DateComponentsFormatter = {
         let formatter = DateComponentsFormatter()
         formatter.allowedUnits = [.hour, .minute]
@@ -233,6 +276,52 @@ nonisolated struct MediaItem: Identifiable, Hashable, Sendable {
         formatter.zeroFormattingBehavior = .dropAll
         return formatter
     }()
+
+    /// Names this title has in each ID namespace (IMDb, TMDB, TVDB and the
+    /// anime databases). The same show reached from an add-on catalog and
+    /// from search often has a different `id`, but shares one of these, so
+    /// the Library can tell they're one title.
+    var identityKeys: Set<String> {
+        // TMDB and TVDB number movies and shows separately.
+        let scope = kind == .movie ? "movie" : "show"
+        var keys: Set<String> = ["id:\(id)"]
+        func add(_ namespace: String, _ value: String?, scoped: Bool = false) {
+            guard var value = value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+                  !value.isEmpty else { return }
+            if value.hasPrefix(namespace + ":") { value.removeFirst(namespace.count + 1) }
+            // "tt123:1:2" and "tmdb:603/..." still name the title.
+            value = value.split(whereSeparator: { $0 == ":" || $0 == "/" }).first.map(String.init) ?? value
+            guard !value.isEmpty else { return }
+            keys.insert(scoped ? "\(namespace):\(scope):\(value)" : "\(namespace):\(value)")
+        }
+        add("imdb", externalIDs["imdb"] ?? externalIDs["imdb_id"])
+        add("tmdb", externalIDs["tmdb"] ?? externalIDs["tmdb_id"], scoped: true)
+        add("tvdb", externalIDs["tvdb"] ?? externalIDs["tvdb_id"], scoped: true)
+        add("anilist", externalIDs["anilist"] ?? externalIDs["anilist_id"])
+        add("mal", externalIDs["mal"] ?? externalIDs["mal_id"] ?? externalIDs["myanimelist"])
+        add("kitsu", externalIDs["kitsu"] ?? externalIDs["kitsu_id"])
+        if let metadataProviderID {
+            switch metadataProvider {
+            case .tmdb: add("tmdb", metadataProviderID, scoped: true)
+            case .tvdb: add("tvdb", metadataProviderID, scoped: true)
+            case .anilist: add("anilist", metadataProviderID)
+            case .none: break
+            }
+        }
+        let lowered = id.lowercased()
+        if lowered.hasPrefix("tt") { add("imdb", lowered) }
+        for namespace in ["tmdb", "tvdb"] where lowered.hasPrefix(namespace + ":") {
+            add(namespace, lowered, scoped: true)
+        }
+        for namespace in ["anilist", "mal", "kitsu"] where lowered.hasPrefix(namespace + ":") {
+            add(namespace, lowered)
+        }
+        return keys
+    }
+
+    func isSameTitle(as other: MediaItem) -> Bool {
+        id == other.id || !identityKeys.isDisjoint(with: other.identityKeys)
+    }
 
     private func values(for keys: [String], prefix: String?) -> [String] {
         keys.compactMap { key in

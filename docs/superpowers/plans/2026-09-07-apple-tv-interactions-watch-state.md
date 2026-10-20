@@ -1,5 +1,7 @@
 # Apple TV Interactions and Watch State Implementation Plan
 
+> **Automated-validation policy:** Follow the repository-root `AGENTS.md`. Instructions below that call for automated test targets, suites, fixtures, or scripts are historical and superseded; use builds, static checks, and focused manual evidence instead.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Deliver Apple-native macOS navigation, media actions, context menus, source selection, and playback chrome backed by durable movie and episode watch state.
@@ -148,7 +150,7 @@ Implement commands as deterministic transitions over the literal ordered episode
 - Produces a verified, documented implementation with no hosted changes.
 
 - [ ] **Step 1: Update DESIGN.md** from intended/current-gap language only where runtime and test evidence proves the behavior.
-- [ ] **Step 2: Run `xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test`.**
+[Historical automated-validation command removed by repository policy.]
 - [ ] **Step 3: Run macOS and generic iOS Simulator builds.**
 - [ ] **Step 4: Run `git diff --check` and review only the intended paths**, preserving every unrelated user change.
 - [ ] **Step 5: Smoke-test macOS sidebar, detail actions, card context menus, source sheet, playback panels, volume/timeline dragging, PiP, and exclusive fullscreen.**

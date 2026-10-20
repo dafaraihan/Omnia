@@ -1,5 +1,7 @@
 # Settings Phase 0A: Evidence and Contracts Design
 
+> **Automated-validation policy:** Follow the repository-root `AGENTS.md`. Instructions below that call for automated test targets, suites, fixtures, or scripts are historical and superseded; use builds, static checks, and focused manual evidence instead.
+
 **Status:** Approved on 2026-08-11
 
 **Scope:** Evidence, domain contracts, security boundaries, feature gates, and deterministic test infrastructure

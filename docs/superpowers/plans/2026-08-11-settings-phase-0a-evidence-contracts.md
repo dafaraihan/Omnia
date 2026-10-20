@@ -1,5 +1,7 @@
 # Settings Phase 0A Evidence and Contracts Implementation Plan
 
+> **Automated-validation policy:** Follow the repository-root `AGENTS.md`. Instructions below that call for automated test targets, suites, fixtures, or scripts are historical and superseded; use builds, static checks, and focused manual evidence instead.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Establish reproducible baseline evidence, typed Settings/provider contracts, Release-enforced feature gates, deterministic test support, hardened network policy, scoped credentials, and privacy-safe diagnostics without changing current product UI.
@@ -73,10 +75,10 @@ Run each independently and record PASS, FAIL, or BLOCKED plus the first actionab
 
 ~~~sh
 xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' build
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test
+[Automated validation command removed by repository policy.]
 xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'generic/platform=iOS Simulator' build
 deno check --config supabase/functions/metadata/deno.json --lock supabase/functions/metadata/deno.lock --frozen supabase/functions/metadata/index.ts
-deno test --config supabase/functions/metadata/deno.json --lock supabase/functions/metadata/deno.lock --frozen supabase/functions/metadata
+[Automated validation command removed by repository policy.]
 ~~~
 
 Do not bypass signing, install dependencies, deploy, or contact a live provider to manufacture a pass.
@@ -136,7 +138,7 @@ final class DeterminismTests: XCTestCase {
 - [ ] **Step 2: Run RED**
 
 ~~~sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test -only-testing:OmniaTests/DeterminismTests
+[Automated validation command removed by repository policy.]
 ~~~
 
 Expected: compilation fails because the deterministic types do not exist.
@@ -170,7 +172,7 @@ Implement the two test actors. Exhausting `SequenceIDGenerator` must fail immedi
 - [ ] **Step 4: Run GREEN and commit**
 
 ~~~sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test -only-testing:OmniaTests/DeterminismTests
+[Automated validation command removed by repository policy.]
 git diff --check -- Omnia/Core/Determinism OmniaTests/TestSupport OmniaTests/DeterminismTests.swift
 git add -- Omnia/Core/Determinism OmniaTests/TestSupport/ManualOmniaClock.swift OmniaTests/TestSupport/FixedOmniaClock.swift OmniaTests/TestSupport/SequenceIDGenerator.swift OmniaTests/DeterminismTests.swift
 git commit --only -m "Add deterministic domain inputs" -- Omnia/Core/Determinism OmniaTests/TestSupport/ManualOmniaClock.swift OmniaTests/TestSupport/FixedOmniaClock.swift OmniaTests/TestSupport/SequenceIDGenerator.swift OmniaTests/DeterminismTests.swift
@@ -211,7 +213,7 @@ Also assert Trakt and PublicMetaDB support only the data types approved in the s
 - [ ] **Step 2: Run RED**
 
 ~~~sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test -only-testing:OmniaTests/ProfileOwnershipTests
+[Automated validation command removed by repository policy.]
 ~~~
 
 - [ ] **Step 3: Implement typed ownership**
@@ -245,7 +247,7 @@ enum ProviderKind: String, Codable, CaseIterable, Sendable {
 - [ ] **Step 4: Run GREEN and commit**
 
 ~~~sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test -only-testing:OmniaTests/ProfileOwnershipTests
+[Automated validation command removed by repository policy.]
 git diff --check -- Omnia/Domain/Profiles Omnia/Domain/Sync OmniaTests/ProfileOwnershipTests.swift
 git add -- Omnia/Domain/Profiles Omnia/Domain/Sync OmniaTests/ProfileOwnershipTests.swift
 git commit --only -m "Define profile and ownership contracts" -- Omnia/Domain/Profiles Omnia/Domain/Sync OmniaTests/ProfileOwnershipTests.swift
@@ -287,7 +289,7 @@ func testEventRejectsPayloadAbove64KiB() {
 - [ ] **Step 2: Run RED**
 
 ~~~sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test -only-testing:OmniaTests/DomainContractTests
+[Automated validation command removed by repository policy.]
 ~~~
 
 - [ ] **Step 3: Implement canonical bounded events**
@@ -316,7 +318,7 @@ Define separate protocols named `ProgressProvider`, `WatchlistProvider`, `Upcomi
 - [ ] **Step 5: Run GREEN and commit**
 
 ~~~sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test -only-testing:OmniaTests/DomainContractTests
+[Automated validation command removed by repository policy.]
 git diff --check -- Omnia/Domain/Events Omnia/Domain/Providers OmniaTests/DomainContractTests.swift
 git add -- Omnia/Domain/Events Omnia/Domain/Providers OmniaTests/DomainContractTests.swift
 git commit --only -m "Define event and provider contracts" -- Omnia/Domain/Events Omnia/Domain/Providers OmniaTests/DomainContractTests.swift
@@ -355,7 +357,7 @@ Add Trakt registration/broker, OpenRouter subtitle/consent/ZDR, and uncomposed S
 - [ ] **Step 2: Run RED**
 
 ~~~sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test -only-testing:OmniaTests/FeatureGateTests
+[Automated validation command removed by repository policy.]
 ~~~
 
 - [ ] **Step 3: Implement immutable build policy before runtime readiness**
@@ -380,7 +382,7 @@ The evaluator checks the closed Release policy first. Persisted state and inject
 - [ ] **Step 4: Run GREEN and Release compile**
 
 ~~~sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test -only-testing:OmniaTests/FeatureGateTests
+[Automated validation command removed by repository policy.]
 xcodebuild -project Omnia.xcodeproj -scheme Omnia -configuration Release -destination 'generic/platform=iOS Simulator' build
 ~~~
 
@@ -424,7 +426,7 @@ Add cancelled, timeout, unacceptable content type, invalid limit, and retry-elig
 - [ ] **Step 2: Run RED**
 
 ~~~sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test -only-testing:OmniaTests/HTTPTransportContractTests
+[Automated validation command removed by repository policy.]
 ~~~
 
 - [ ] **Step 3: Implement the closed request policy**
@@ -442,7 +444,7 @@ The fixture enforces the same size and cancellation rules as production.
 - [ ] **Step 4: Run GREEN and commit**
 
 ~~~sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test -only-testing:OmniaTests/HTTPTransportContractTests
+[Automated validation command removed by repository policy.]
 git diff --check -- Omnia/Core/Networking OmniaTests/TestSupport OmniaTests/HTTPTransportContractTests.swift
 git add -- Omnia/Core/Networking/HTTPRequestPolicy.swift Omnia/Core/Networking/HTTPTransport.swift OmniaTests/TestSupport/FixtureHTTPTransport.swift OmniaTests/TestSupport/XCTAsyncAssertions.swift OmniaTests/HTTPTransportContractTests.swift
 git commit --only -m "Define bounded HTTP transport" -- Omnia/Core/Networking/HTTPRequestPolicy.swift Omnia/Core/Networking/HTTPTransport.swift OmniaTests/TestSupport/FixtureHTTPTransport.swift OmniaTests/TestSupport/XCTAsyncAssertions.swift OmniaTests/HTTPTransportContractTests.swift
@@ -484,7 +486,7 @@ func testPrivateAddressRequiresExactHostGrant() throws {
 - [ ] **Step 2: Run RED and implement endpoint validation**
 
 ~~~sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test -only-testing:OmniaTests/EndpointValidatorTests
+[Automated validation command removed by repository policy.]
 ~~~
 
 Use `inet_pton` for literal classification and an injected `HostAddressResolver`. `SystemHostAddressResolver` uses `getaddrinfo` off the main actor. Treat resolution failure as failure. Reject a public hostname if any answer is private unless the exact normalized hostname is granted. Revalidate immediately before the request and on every redirect.
@@ -508,7 +510,7 @@ Use `URLSession.bytes(for:)` and stop when the bound is exceeded. A per-request 
 - [ ] **Step 5: Run GREEN and commit**
 
 ~~~sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test -only-testing:OmniaTests/EndpointValidatorTests -only-testing:OmniaTests/URLSessionHTTPTransportTests
+[Automated validation command removed by repository policy.]
 git diff --check -- Omnia/Core/Networking OmniaTests/EndpointValidatorTests.swift OmniaTests/URLSessionHTTPTransportTests.swift
 git add -- Omnia/Core/Networking OmniaTests/EndpointValidatorTests.swift OmniaTests/URLSessionHTTPTransportTests.swift
 git commit --only -m "Harden provider network transport" -- Omnia/Core/Networking OmniaTests/EndpointValidatorTests.swift OmniaTests/URLSessionHTTPTransportTests.swift
@@ -553,7 +555,7 @@ Also test wrong/mixed-case components, duplicate/missing query items, state mism
 - [ ] **Step 2: Run RED**
 
 ~~~sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test -only-testing:OmniaTests/CredentialScopeTests -only-testing:OmniaTests/OAuthCallbackValidatorTests
+[Automated validation command removed by repository policy.]
 ~~~
 
 - [ ] **Step 3: Implement scoped Keychain names and validation**
@@ -563,7 +565,7 @@ Keychain account names contain fixed labels, lowercase profile UUID, provider, a
 - [ ] **Step 4: Run GREEN and commit**
 
 ~~~sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test -only-testing:OmniaTests/CredentialScopeTests -only-testing:OmniaTests/OAuthCallbackValidatorTests
+[Automated validation command removed by repository policy.]
 git diff --check -- Omnia/Core/Security OmniaTests/CredentialScopeTests.swift OmniaTests/OAuthCallbackValidatorTests.swift
 git add -- Omnia/Core/Security OmniaTests/CredentialScopeTests.swift OmniaTests/OAuthCallbackValidatorTests.swift
 git commit --only -m "Scope credentials and OAuth callbacks" -- Omnia/Core/Security OmniaTests/CredentialScopeTests.swift OmniaTests/OAuthCallbackValidatorTests.swift
@@ -597,7 +599,7 @@ Add explicit equality coverage for each enum field and prove encoding never emit
 - [ ] **Step 2: Run RED and implement**
 
 ~~~sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test -only-testing:OmniaTests/IntegrationDiagnosticTests
+[Automated validation command removed by repository policy.]
 ~~~
 
 Use closed enums, duration buckets, and no arbitrary metadata dictionary. `Logger` renders enum values publicly and correlation IDs privately.
@@ -605,7 +607,7 @@ Use closed enums, duration buckets, and no arbitrary metadata dictionary. `Logge
 - [ ] **Step 3: Run GREEN and commit**
 
 ~~~sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test -only-testing:OmniaTests/IntegrationDiagnosticTests
+[Automated validation command removed by repository policy.]
 git diff --check -- Omnia/Core/Diagnostics OmniaTests/IntegrationDiagnosticTests.swift
 git add -- Omnia/Core/Diagnostics OmniaTests/IntegrationDiagnosticTests.swift
 git commit --only -m "Add privacy-safe diagnostics" -- Omnia/Core/Diagnostics OmniaTests/IntegrationDiagnosticTests.swift
@@ -624,7 +626,7 @@ git commit --only -m "Add privacy-safe diagnostics" -- Omnia/Core/Diagnostics Om
 - [ ] **Step 1: Run all focused tests**
 
 ~~~sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test -only-testing:OmniaTests/DeterminismTests -only-testing:OmniaTests/ProfileOwnershipTests -only-testing:OmniaTests/DomainContractTests -only-testing:OmniaTests/FeatureGateTests -only-testing:OmniaTests/HTTPTransportContractTests -only-testing:OmniaTests/EndpointValidatorTests -only-testing:OmniaTests/URLSessionHTTPTransportTests -only-testing:OmniaTests/CredentialScopeTests -only-testing:OmniaTests/OAuthCallbackValidatorTests -only-testing:OmniaTests/IntegrationDiagnosticTests
+[Automated validation command removed by repository policy.]
 ~~~
 
 Expected: all listed tests pass without live network access.
@@ -635,7 +637,7 @@ Expected: all listed tests pass without live network access.
 xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' build
 xcodebuild -project Omnia.xcodeproj -scheme Omnia -configuration Release -destination 'generic/platform=iOS Simulator' build
 deno check --config supabase/functions/metadata/deno.json --lock supabase/functions/metadata/deno.lock --frozen supabase/functions/metadata/index.ts
-deno test --config supabase/functions/metadata/deno.json --lock supabase/functions/metadata/deno.lock --frozen supabase/functions/metadata
+[Automated validation command removed by repository policy.]
 git diff --quiet -- supabase/functions/metadata/deno.lock
 ~~~
 

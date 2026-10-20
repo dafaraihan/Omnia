@@ -1,5 +1,7 @@
 # Playback Source and Track Reliability Implementation Plan
 
+> **Automated-validation policy:** Follow the repository-root `AGENTS.md`. Instructions below that call for automated test targets, suites, fixtures, or scripts are historical and superseded; use builds, static checks, and focused manual evidence instead.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Show every add-on source, attempt every direct HTTPS source with libmpv on macOS, and synchronize embedded audio/subtitle tracks from libmpv events.
@@ -72,9 +74,7 @@ func testOpaqueHTTPSRemainsEligibleForLibmpvWhenCompatibilityFilterIsEnabled() {
 Run:
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' \
-  -only-testing:OmniaTests/StremioAddonClientTests/testNotWebReadyDirectHTTPSRemainsAPlayerCandidate \
-  -only-testing:OmniaTests/PlaybackPolicyTests/testOpaqueHTTPSRemainsEligibleForLibmpvWhenCompatibilityFilterIsEnabled test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: the `notWebReady` test fails because the candidate is not `.nativeHTTPS`; the policy test fails on an unmodified baseline or documents the already-applied working-tree fix.
@@ -146,8 +146,7 @@ Provide a private fixture initializer matching `PlaybackPolicyTests.candidate`.
 - [ ] **Step 2: Run the new test and witness RED**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' \
-  -only-testing:OmniaTests/PlaybackSourcePresentationTests test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: compile failure because `PlaybackSourceSections` does not exist.
@@ -227,9 +226,7 @@ Delete `isVisibleCandidate` and `incompatibleFormatCandidates`. Derive `Playback
 - [ ] **Step 4: Run presentation and policy tests**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' \
-  -only-testing:OmniaTests/PlaybackSourcePresentationTests \
-  -only-testing:OmniaTests/PlaybackPolicyTests test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: pass.
@@ -272,8 +269,7 @@ After selecting audio/subtitles, assert the handler emits the selected ID.
 - [ ] **Step 2: Run the integration test and witness RED**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' \
-  -only-testing:OmniaTests/MPVPlaybackIntegrationTests/testLocalMultiTrackFixtureRendersAndSupportsExplicitTrackSelection test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: compile failure because the snapshot and handler do not exist.
@@ -335,8 +331,7 @@ XCTAssertEqual(
 - [ ] **Step 2: Run the track tests and witness RED**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' \
-  -only-testing:OmniaTests/PlaybackTrackTests test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: compile failure because `PlaybackTrackAvailability` does not exist.
@@ -364,11 +359,7 @@ Keep the 250 ms task for time/progress only; remove track-list polling from `ref
 - [ ] **Step 4: Run all playback tests and both builds**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' \
-  -only-testing:OmniaTests/PlaybackPolicyTests \
-  -only-testing:OmniaTests/PlaybackSourcePresentationTests \
-  -only-testing:OmniaTests/PlaybackTrackTests \
-  -only-testing:OmniaTests/MPVPlaybackIntegrationTests test
+[Automated validation command removed by repository policy.]
 xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'generic/platform=iOS Simulator' build
 git diff --check
 ```

@@ -1,5 +1,7 @@
 # MDBList Rating Providers Implementation Plan
 
+> **Automated-validation policy:** Follow the repository-root `AGENTS.md`. Instructions below that call for automated test targets, suites, fixtures, or scripts are historical and superseded; use builds, static checks, and focused manual evidence instead.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Let Omnia users enable or disable every external rating provider returned by MDBList and show enabled ratings, plus the always-visible MDBList aggregate score, directly below title metadata with native Apple-platform behavior.
@@ -134,9 +136,7 @@ XCTAssertEqual(registry.formattedAggregate(8.1), "8.1")
 - [ ] **Step 3: Run tests and verify RED**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia \
-  -destination 'platform=macOS' \
-  -only-testing:OmniaTests/MDBListRatingProviderTests test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: compile failure because the provider types do not exist.
@@ -219,9 +219,7 @@ struct MDBListRatingPreferences: Codable, Equatable, Sendable {
 - [ ] **Step 2: Run preference tests and verify RED**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia \
-  -destination 'platform=macOS' \
-  -only-testing:OmniaTests/SettingsPreferencesTests test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: compile failures for the missing nested preference and store methods.
@@ -317,9 +315,7 @@ Assert:
 - [ ] **Step 4: Run client tests and verify RED**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia \
-  -destination 'platform=macOS' \
-  -only-testing:OmniaTests/MDBListMetadataClientTests test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: compile/test failure because the current client uses `URLSession.shared`, accepts unbounded identifiers, decodes the entire ratings array as all-or-nothing, and lacks typed mappings.
@@ -397,9 +393,7 @@ Prove:
 - [ ] **Step 2: Run cache tests and verify RED**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia \
-  -destination 'platform=macOS' \
-  -only-testing:OmniaTests/MDBListRatingsCacheTests test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: compile failure because `MDBListRatingsCache` does not exist.
@@ -413,10 +407,7 @@ The MDBList client must perform the credential read before calling the cache so 
 - [ ] **Step 4: Run cache and client tests and verify GREEN**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia \
-  -destination 'platform=macOS' \
-  -only-testing:OmniaTests/MDBListRatingsCacheTests \
-  -only-testing:OmniaTests/MDBListMetadataClientTests test
+[Automated validation command removed by repository policy.]
 ```
 
 - [ ] **Step 5: Commit safe new paths only**
@@ -472,9 +463,7 @@ Inject an `MDBListRatingServing` fake with controllable continuations. Assert th
 - [ ] **Step 3: Run tests and verify RED**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia \
-  -destination 'platform=macOS' \
-  -only-testing:OmniaTests/MDBListRatingsPresentationTests test
+[Automated validation command removed by repository policy.]
 ```
 
 - [ ] **Step 4: Implement a small main-actor loader**
@@ -556,10 +545,7 @@ Check no credential, stored credential, known disabled, discovered unknown, long
 - [ ] **Step 5: Run tests and affected builds**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia \
-  -destination 'platform=macOS' \
-  -only-testing:OmniaTests/MDBListRatingsPresentationTests \
-  -only-testing:OmniaTests/SettingsPreferencesTests test
+[Automated validation command removed by repository policy.]
 xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' build
 xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'generic/platform=iOS Simulator' build
 ```
@@ -617,9 +603,7 @@ Test existing `detailHeroHeight` at iPhone portrait/landscape, iPad full-screen 
 - [ ] **Step 6: Run focused tests and builds**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia \
-  -destination 'platform=macOS' \
-  -only-testing:OmniaTests/MDBListRatingsPresentationTests test
+[Automated validation command removed by repository policy.]
 xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' build
 xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'generic/platform=iOS Simulator' build
 ```
@@ -677,10 +661,7 @@ Render each approved mark on light and dark semantic backgrounds at the actual t
 - [ ] **Step 6: Run tests and builds**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia \
-  -destination 'platform=macOS' \
-  -only-testing:OmniaTests/AboutSettingsTests \
-  -only-testing:OmniaTests/MDBListRatingProviderTests test
+[Automated validation command removed by repository policy.]
 xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' build
 xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'generic/platform=iOS Simulator' build
 ```
@@ -706,7 +687,7 @@ Never include the six pre-staged asset `Contents.json` files. Commit only the ne
 - [ ] **Step 1: Run the complete macOS test bundle with fresh evidence**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: all existing and new tests pass. If signing prevents the hosted test bundle, report the exact signing blocker; do not bypass signing.

@@ -8,25 +8,26 @@ import SwiftUI
 /// A manifest-driven catalog browser. It only sends extras the add-on
 /// advertised, including the documented `search` and `skip` controls.
 struct AddonCatalogBrowseView: View {
+    @Environment(\.displayPreferences) private var display
     let addon: InstalledAddon
     let catalog: AddonCatalog
 
     @State private var items: [MediaItem] = []
     @State private var selectedExtras: [String: String] = [:]
     @State private var search = ""
-    @State private var page = 0
+    /// The next page starts where the last one ended, counting every title
+    /// the add-on sent, as Stremio and Nuvio do.
+    @State private var nextSkip = 0
+    @State private var hasReachedEnd = false
     @State private var isLoading = false
     @State private var errorMessage: String?
 
     private var title: String { catalog.name?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty ?? catalog.id }
     private var supportsSearch: Bool { catalog.supportsSearch }
-    private var supportsPagination: Bool { catalog.extra?.contains { $0.name == "skip" } == true }
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 20) {
-                if !filterExtras.isEmpty { filterControls }
-
                 if isLoading && items.isEmpty {
                     ProgressView("Loading \(title)…")
                         .frame(maxWidth: .infinity, minHeight: 220)
@@ -38,7 +39,7 @@ struct AddonCatalogBrowseView: View {
                         .frame(maxWidth: .infinity, minHeight: 220)
                 } else {
                     LazyVGrid(
-                        columns: MediaBrowseMetrics.posterGridColumns,
+                        columns: MediaBrowseMetrics.posterGridColumns(display),
                         alignment: .leading,
                         spacing: MediaBrowseMetrics.gridRowSpacing
                     ) {
@@ -47,24 +48,22 @@ struct AddonCatalogBrowseView: View {
                         }
                     }
 
-                    if supportsPagination {
-                        HStack {
-                            Button("Previous") {
-                                page -= 1
-                                Task { await load() }
+                    // More titles load on their own at the bottom. The
+                    // marker stays put while a page loads: swapping it for
+                    // the spinner cancelled its task, and with it the request.
+                    if !hasReachedEnd {
+                        Color.clear
+                            .frame(height: 1)
+                            .task(id: items.count) {
+                                // Not tied to the marker, so scrolling away
+                                // mid-request doesn't cancel the page.
+                                await Task { await loadNextPage() }.value
                             }
-                            .disabled(page == 0 || isLoading)
-                            Spacer()
-                            Text("Page \(page + 1)")
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                            Button("Next") {
-                                page += 1
-                                Task { await load() }
-                            }
-                            .disabled(isLoading || items.isEmpty)
-                        }
-                        .buttonStyle(.bordered)
+                    }
+                    if isLoading {
+                        ProgressView()
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 20)
                     }
                 }
             }
@@ -72,12 +71,22 @@ struct AddonCatalogBrowseView: View {
             .padding(.vertical, 24)
         }
         .omniaNavigationTitle(title)
-        .searchable(text: $search, prompt: supportsSearch ? "Search \(title)" : "")
-        .onChange(of: search) { _, _ in
-            guard supportsSearch else { return }
-            page = 0
+        .modifier(CatalogSearchModifier(isEnabled: supportsSearch, text: $search, prompt: "Search \(title)"))
+        .toolbar {
+            if !filterExtras.isEmpty {
+                ToolbarItem(placement: .primaryAction) {
+                    filterMenu
+                }
+            }
         }
-        .task(id: requestKey) { await load() }
+        .task(id: requestKey) {
+            items = []
+            nextSkip = 0
+            hasReachedEnd = false
+            errorMessage = nil
+            isLoading = false
+            await loadNextPage()
+        }
         .navigationDestination(for: MediaItem.self) { MediaDetailView(item: $0) }
     }
 
@@ -85,62 +94,95 @@ struct AddonCatalogBrowseView: View {
         (catalog.extra ?? []).filter { $0.name != "search" && $0.name != "skip" && !($0.options ?? []).isEmpty }
     }
 
-    private var filterControls: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Filter")
-                .font(.headline)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    ForEach(filterExtras) { extra in
-                        Picker(extra.name.capitalized, selection: filterBinding(for: extra.name)) {
-                            Text("All").tag("")
-                            ForEach(extra.options ?? [], id: \.self) { option in
-                                Text(option).tag(option)
-                            }
-                        }
-                        .pickerStyle(.menu)
+    /// The add-on's own filters, in a toolbar menu like Discover's.
+    private var filterMenu: some View {
+        Menu {
+            // In a menu, each Picker is already its own submenu.
+            ForEach(filterExtras) { extra in
+                Picker(selection: filterBinding(for: extra)) {
+                    // A required filter has no "All": the add-on only
+                    // answers with one chosen.
+                    if extra.isRequired != true { Text("All").tag("") }
+                    ForEach(extra.options ?? [], id: \.self) { option in
+                        Text(option).tag(option)
                     }
+                } label: {
+                    Label(extra.name.capitalized, systemImage: extra.name == "genre" ? "theatermasks" : "line.3.horizontal.decrease")
                 }
+                .pickerStyle(.menu)
             }
+        } label: {
+            Label("Filter", systemImage: "line.3.horizontal.decrease.circle")
         }
+        .help("Filter \(title)")
     }
 
-    private func filterBinding(for name: String) -> Binding<String> {
+    private func filterBinding(for extra: AddonCatalogExtra) -> Binding<String> {
         Binding(
-            get: { selectedExtras[name] ?? "" },
+            get: {
+                selectedExtras[extra.name]
+                    ?? (extra.isRequired == true ? extra.options?.first ?? "" : "")
+            },
             set: { value in
-                if value.isEmpty { selectedExtras.removeValue(forKey: name) }
-                else { selectedExtras[name] = value }
-                page = 0
+                if value.isEmpty { selectedExtras.removeValue(forKey: extra.name) }
+                else { selectedExtras[extra.name] = value }
             }
         )
     }
 
     private var requestKey: String {
-        "\(addon.manifestURL.absoluteString)|\(catalog.id)|\(search)|\(page)|\(selectedExtras.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: "&"))"
+        "\(addon.manifestURL.absoluteString)|\(catalog.id)|\(supportsSearch ? search : "")|\(selectedExtras.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: "&"))"
     }
 
-    private func load() async {
+    private func loadNextPage() async {
+        guard !isLoading, !hasReachedEnd else { return }
+        let key = requestKey
         isLoading = true
-        errorMessage = nil
+        defer { if key == requestKey { isLoading = false } }
         var extras = selectedExtras
         if supportsSearch, let value = search.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty {
             extras["search"] = value
         }
-        if supportsPagination { extras["skip"] = String(page * 50) }
+        let start = nextSkip
+        if start > 0 { extras["skip"] = String(start) }
         do {
             let metas = try await StremioAddonClient.fetchCatalog(from: addon, catalog: catalog, extra: extras)
-            guard !Task.isCancelled else { return }
-            items = metas.compactMap { $0.mediaItem(addon: addon) }
+            // A filter or search changed while this page was on its way.
+            guard !Task.isCancelled, key == requestKey else { return }
+            let existing = Set(items.map(\.id))
+            let fresh = metas.compactMap { $0.mediaItem(addon: addon) }.filter { !existing.contains($0.id) }
+            // An add-on that doesn't page sends the first page again.
+            if metas.isEmpty || fresh.isEmpty {
+                hasReachedEnd = true
+            } else {
+                items.append(contentsOf: fresh)
+                nextSkip = start + metas.count
+            }
         } catch is CancellationError {
             return
         } catch {
-            errorMessage = "This add-on did not return a usable catalog response."
-            items = []
+            guard key == requestKey else { return }
+            if items.isEmpty { errorMessage = "This add-on did not return a usable catalog response." }
+            hasReachedEnd = true
         }
-        isLoading = false
     }
 
+}
+
+/// A search field only for catalogs that declare `search`; an empty one
+/// sat in the toolbar of every other catalog.
+private struct CatalogSearchModifier: ViewModifier {
+    let isEnabled: Bool
+    @Binding var text: String
+    let prompt: String
+
+    func body(content: Content) -> some View {
+        if isEnabled {
+            content.searchable(text: $text, prompt: prompt)
+        } else {
+            content
+        }
+    }
 }
 
 private extension String {

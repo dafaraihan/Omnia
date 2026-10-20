@@ -1,5 +1,7 @@
 # macOS Local Playback Resolver Design
 
+> **Automated-validation policy:** Follow the repository-root `AGENTS.md`. Instructions below that call for automated test targets, suites, fixtures, or scripts are historical and superseded; use builds, static checks, and focused manual evidence instead.
+
 **Date:** 2026-08-12  
 **Status:** Approved in conversation; pending implementation  
 **Scope:** macOS playback source visibility, local resolving, libmpv track discovery, storage, security, and distributable native dependencies. iPhone and iPad are a separately reviewed future phase.

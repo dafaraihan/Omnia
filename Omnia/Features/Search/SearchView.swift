@@ -13,6 +13,7 @@ enum SearchViewPresentation {
 }
 
 struct SearchView: View {
+    @Environment(\.displayPreferences) private var display
     @Environment(OmniaStore.self) private var store
     @Environment(LiveMetadataStore.self) private var metadata
     @State private var query = ""
@@ -46,7 +47,9 @@ struct SearchView: View {
                 isSearchingAddons = false
                 return
             }
-            try? await Task.sleep(for: .milliseconds(250))
+            // Each search asks every add-on search catalog, so wait until typing
+            // pauses rather than searching on every few keystrokes.
+            try? await Task.sleep(for: .milliseconds(450))
             guard !Task.isCancelled else { return }
             isSearchingAddons = true
             async let metadataSearch: Void = metadata.search(query)
@@ -104,9 +107,13 @@ struct SearchView: View {
 
                 Divider()
 
+                // Fill the rest of the popover so short states such as
+                // "Searching" don't shrink the stack and let it centre,
+                // which dropped the field into the middle of the popover.
                 searchContent
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .frame(width: 760, height: 620)
+            .frame(width: 1040, height: 760, alignment: .top)
             .background(.black.opacity(0.18))
             .onAppear {
                 isPopoverSearchFocused = true
@@ -120,13 +127,16 @@ struct SearchView: View {
         Group {
             if trimmedQuery.count < 2 {
                 SearchBrowseDirectoryView(genres: metadata.movieGenres)
-            } else if metadata.isSearching || isSearchingAddons {
-                ContentUnavailableView("Searching Omnia", systemImage: "magnifyingglass")
+            } else if (metadata.isSearching || isSearchingAddons) && results.isEmpty {
+                // Keep earlier results on screen while the next query runs;
+                // only an empty result set shows the spinner.
+                ProgressView("Searching…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if results.isEmpty {
                 ContentUnavailableView.search(text: query)
             } else {
                 GeometryReader { proxy in
-                    let layout = MediaBrowseMetrics.posterGridLayout(containerWidth: proxy.size.width)
+                    let layout = MediaBrowseMetrics.posterGridLayout(containerWidth: proxy.size.width, display: display)
 
                     ScrollView(.vertical, showsIndicators: false) {
                         LazyVGrid(

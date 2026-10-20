@@ -1,5 +1,7 @@
 # macOS Local Torrent Resolver Implementation Plan
 
+> **Automated-validation policy:** Follow the repository-root `AGENTS.md`. Instructions below that call for automated test targets, suites, fixtures, or scripts are historical and superseded; use builds, static checks, and focused manual evidence instead.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Resolve add-on torrent sources entirely inside the macOS app, stream selected verified bytes to libmpv, and manage peer consent, cache, limits, progress, cancellation, and cleanup.
@@ -62,8 +64,7 @@ Also cover 32-character base32 v1 and 64-character hexadecimal v2 hashes, a 513-
 - [ ] **Step 2: Run the descriptor tests and witness RED**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' \
-  -only-testing:OmniaTests/TorrentSourceDescriptorTests test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: compile failure because the descriptor does not exist.
@@ -93,11 +94,7 @@ Require index `0...100_000`, filename at most 512 UTF-8 bytes after trimming, at
 - [ ] **Step 4: Run source, policy, and descriptor tests**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' \
-  -only-testing:OmniaTests/TorrentSourceDescriptorTests \
-  -only-testing:OmniaTests/StremioAddonClientTests \
-  -only-testing:OmniaTests/PlaybackPolicyTests \
-  -only-testing:OmniaTests/PlaybackSourcePresentationTests test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: pass; torrent rows remain visible and are not direct-autoplay candidates.
@@ -144,8 +141,7 @@ Add tests for quota failure before writing, path confinement, duplicate reservat
 - [ ] **Step 2: Run cache tests and witness RED**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' \
-  -only-testing:OmniaTests/ResolverCacheTests test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: compile failure because cache types do not exist.
@@ -230,8 +226,7 @@ Add round-trip, corrupt-payload recovery, consent revocation, and bounds tests (
 - [ ] **Step 2: Run settings tests and witness RED**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' \
-  -only-testing:OmniaTests/LocalResolverSettingsTests test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: compile failure because local resolver settings do not exist.
@@ -274,9 +269,7 @@ Replace endpoint/token/host editing with local resolver status, peer disclosure,
 - [ ] **Step 4: Run settings tests and macOS build**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' \
-  -only-testing:OmniaTests/LocalResolverSettingsTests \
-  -only-testing:OmniaTests/SettingsPresentationTests test
+[Automated validation command removed by repository policy.]
 xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' build
 ```
 
@@ -318,8 +311,7 @@ Add tests for multiple similarly sized episodes requiring choice, traversal/abso
 - [ ] **Step 2: Run selection tests and witness RED**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' \
-  -only-testing:OmniaTests/TorrentFileSelectionPolicyTests test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: compile failure because policy types do not exist.
@@ -395,8 +387,7 @@ No public tracker, DHT node, or peer is contacted in this test.
 - [ ] **Step 2: Run the engine test and witness RED**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' \
-  -only-testing:OmniaTests/LocalTorrentEngineIntegrationTests test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: compile failure because the bridge does not exist.
@@ -467,8 +458,7 @@ Add tests for consent missing, storage reservation failure, metadata timeout at 
 - [ ] **Step 2: Run resolver tests and witness RED**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' \
-  -only-testing:OmniaTests/LocalPlaybackResolverTests test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: compile failure because resolver types do not exist.
@@ -570,8 +560,7 @@ Create a test byte-stream provider backed by the existing multi-track MKV fixtur
 - [ ] **Step 2: Run the custom-stream test and witness RED**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' \
-  -only-testing:OmniaTests/MPVPlaybackIntegrationTests test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: compile failure because the stream-provider initializer does not exist.
@@ -605,10 +594,7 @@ enum PlaybackInput {
 - [ ] **Step 4: Run mpv integration and resolver tests**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' \
-  -only-testing:OmniaTests/MPVPlaybackIntegrationTests \
-  -only-testing:OmniaTests/LocalPlaybackResolverTests \
-  -only-testing:OmniaTests/LocalTorrentEngineIntegrationTests test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: pass; stream seek reaches the provider and embedded tracks populate.
@@ -643,9 +629,7 @@ Test exact accessible labels for `.readingMetadata`, `.selectingFile`, `.bufferi
 - [ ] **Step 2: Run presentation tests and witness RED**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' \
-  -only-testing:OmniaTests/PlaybackSourcePresentationTests \
-  -only-testing:OmniaTests/LocalPlaybackResolverTests test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: failure because local resolver presentation states are not mapped.
@@ -659,7 +643,7 @@ Update security and design documentation with the exact network, storage, consen
 - [ ] **Step 4: Run the complete macOS suite, mobile build, and hygiene checks**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test
+[Automated validation command removed by repository policy.]
 xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'generic/platform=iOS Simulator' build
 git diff --check
 git status --short

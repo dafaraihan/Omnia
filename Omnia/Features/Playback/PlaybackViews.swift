@@ -5,20 +5,34 @@
 
 import SwiftUI
 
+struct PlaybackSourceHandoff {
+    static func preparedItem(original: MediaItem, enriched: MediaItem) -> MediaItem {
+        original.mergingSourceIdentifiers(from: enriched)
+    }
+}
+
 struct PlaybackSourceSheet: View {
     let item: MediaItem
     var episode: MediaEpisode? = nil
     var resumeAt: Double? = nil
+    /// Opened for the next episode from the player. Nuvio's next-episode
+    /// rules then replace the library rules, and `nextEpisodeRequest` nil
+    /// shows the list.
+    var isNextEpisode = false
+    var nextEpisodeRequest: StreamAutoPlayRequest? = nil
     var onClose: (() -> Void)? = nil
 
     @Environment(OmniaStore.self) private var store
     @Environment(LiveMetadataStore.self) private var metadata
     @Environment(PlaybackSession.self) private var playback
     @Environment(SettingsPreferencesStore.self) private var settings
+    @Environment(PluginStore.self) private var plugins
     @Environment(\.dismiss) private var dismiss
     @State private var candidates: [AddonStreamCandidate] = []
     @State private var resolution: PlaybackSourceResolution?
+    @State private var preparedPlaybackItem: MediaItem?
     @State private var isResolving = true
+    @State private var pendingSourceCount = 0
     @State private var selectionID: UUID?
     @State private var isHandingOffPlayback = false
     @State private var retryingAddonIDs: Set<String> = []
@@ -28,6 +42,11 @@ struct PlaybackSourceSheet: View {
     @State private var localResolverSettings = LocalResolverSettingsStore()
     @State private var pendingLocalTorrentCandidate: AddonStreamCandidate?
     @State private var localTorrentProgress: [String: Double] = [:]
+    @State private var autoSelection: StreamAutoSelectionRun?
+    /// Shown while a source is being chosen automatically.
+    @State private var autoSelectionStatus: String?
+    @State private var lastLinkTask: Task<Void, Never>?
+    @State private var choosesManually = false
     #if os(macOS)
     @State private var localTorrentEngine: OMLocalTorrentEngine?
     @State private var localTorrentTask: Task<Void, Never>?
@@ -44,11 +63,29 @@ struct PlaybackSourceSheet: View {
                     .font(.headline)
                 Spacer()
                 Button("Cancel") { closePresentation() }
+                    .keyboardShortcut(.cancelAction)
             }
             .padding(.horizontal, 20)
             .frame(height: 52)
 
             Divider()
+
+            if let autoSelectionStatus {
+                HStack(spacing: 10) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text(autoSelectionStatus)
+                        .font(.callout)
+                        .lineLimit(2)
+                    Spacer(minLength: 12)
+                    Button("Choose Manually", action: chooseManually)
+                        .accessibilityHint("Stops automatic selection so you can pick a source")
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
+                .background(.thinMaterial)
+                .transition(.opacity)
+            }
 
             Group {
                 if isResolving {
@@ -83,11 +120,14 @@ struct PlaybackSourceSheet: View {
                         sourceFilters
                         Divider()
                         List {
-                            if !addonStatusResults.isEmpty {
-                                Section("Add-on Status") {
-                                    ForEach(addonStatusResults) { result in
-                                        addonStatusRow(result)
-                                    }
+                            if pendingSourceCount > 0 {
+                                HStack(spacing: 8) {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                    Text(pendingSourceCount == 1
+                                         ? "Still checking 1 more source…"
+                                         : "Still checking \(pendingSourceCount) more sources…")
+                                        .foregroundStyle(.secondary)
                                 }
                             }
 
@@ -111,7 +151,7 @@ struct PlaybackSourceSheet: View {
                                 }
                             }
 
-                            if !sourceSections.external.isEmpty {
+                            if !hidesIncompatibleSources, !sourceSections.external.isEmpty {
                                 Section {
                                     ForEach(sourceSections.external) { candidate in
                                         unavailableRow(candidate)
@@ -121,13 +161,31 @@ struct PlaybackSourceSheet: View {
                                 }
                             }
 
-                            if !sourceSections.unavailable.isEmpty {
+                            if !hidesIncompatibleSources, !sourceSections.unavailable.isEmpty {
                                 Section {
                                     ForEach(sourceSections.unavailable) { candidate in
                                         unavailableRow(candidate)
                                     }
                                 } header: {
                                     Text("Unavailable Sources")
+                                }
+                            }
+
+                            if hidesIncompatibleSources, hiddenIncompatibleCount > 0 {
+                                Text(hiddenIncompatibleCount == 1
+                                     ? "1 source that can't play in Omnia is hidden. Turn off Show Only Compatible Formats in Settings to see it."
+                                     : "\(hiddenIncompatibleCount) sources that can't play in Omnia are hidden. Turn off Show Only Compatible Formats in Settings to see them.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            // Sources come first; add-ons and plugins that
+                            // found nothing are listed after them.
+                            if !addonStatusResults.isEmpty {
+                                Section("Add-on Status") {
+                                    ForEach(addonStatusResults) { result in
+                                        addonStatusRow(result)
+                                    }
                                 }
                             }
                         }
@@ -142,24 +200,57 @@ struct PlaybackSourceSheet: View {
                 self.selectionID = selectionID
                 isHandingOffPlayback = false
                 isResolving = true
+                pendingSourceCount = 0
                 candidates = []
                 resolution = nil
+                preparedPlaybackItem = nil
                 selectedAddonID = nil
                 resolverFailures = [:]
+                choosesManually = false
+                autoSelection?.cancel()
+                autoSelection = nil
+                autoSelectionStatus = nil
                 let enrichedItem = await metadata.details(for: item)
                 guard !Task.isCancelled, playback.isCurrentSourceSelection(selectionID) else { return }
-                let lookupItem = item.mergingSourceIdentifiers(from: enrichedItem)
+                let lookupItem = PlaybackSourceHandoff.preparedItem(
+                    original: item,
+                    enriched: enrichedItem
+                )
+                preparedPlaybackItem = lookupItem
+                if await playLastLinkIfAllowed(selectionID: selectionID) { return }
+                guard !Task.isCancelled, playback.isCurrentSourceSelection(selectionID) else { return }
+                startAutomaticSelection()
+                if let preloaded = playback.takePreloadedSources(for: mediaKey) {
+                    resolution = preloaded
+                    candidates = preloaded.candidates
+                    pendingSourceCount = 0
+                    isResolving = false
+                    autoSelection?.receive(preloaded.candidates, isComplete: true)
+                    return
+                }
                 let result = await PlaybackSourceResolver.resolve(
                     for: lookupItem,
                     episode: episode,
                     addons: store.installedAddons,
+                    plugins: plugins.plan(for: lookupItem, episode: episode),
                     timeout: settings.preferences.addonTimeout
-                )
+                ) { partial, pending in
+                    // Show what has arrived instead of waiting for the
+                    // slowest add-on, like Nuvio.
+                    guard !Task.isCancelled, playback.isCurrentSourceSelection(selectionID),
+                          !partial.candidates.isEmpty else { return }
+                    resolution = partial
+                    candidates = partial.candidates
+                    pendingSourceCount = pending
+                    isResolving = false
+                    autoSelection?.receive(partial.candidates, isComplete: false)
+                }
                 guard !Task.isCancelled, playback.isCurrentSourceSelection(selectionID) else { return }
                 resolution = result
                 candidates = result.candidates
+                pendingSourceCount = 0
                 isResolving = false
-                startAutomaticallyIfAllowed()
+                autoSelection?.receive(result.candidates, isComplete: true)
             }
             .confirmationDialog(
                 "Allow Local Peer Playback?",
@@ -179,6 +270,9 @@ struct PlaybackSourceSheet: View {
                 Text(LocalTorrentConsent.disclosure)
             }
             .onDisappear {
+                autoSelection?.cancel()
+                autoSelection = nil
+                lastLinkTask?.cancel()
                 if !isHandingOffPlayback, let selectionID {
                     playback.cancelSourceSelection(selectionID)
                 }
@@ -219,6 +313,16 @@ struct PlaybackSourceSheet: View {
         PlaybackSourceSections(candidates: filteredCandidates)
     }
 
+    /// Show Only Compatible Formats hides web pages and sources Omnia can't
+    /// open, so the list holds only what plays in the app.
+    private var hidesIncompatibleSources: Bool {
+        settings.preferences.compatibleFormatsOnly
+    }
+
+    private var hiddenIncompatibleCount: Int {
+        sourceSections.external.count + sourceSections.unavailable.count
+    }
+
     private var addonStatusResults: [AddonSourceResolution] {
         resolution?.addonResults.filter { $0.state != .loaded } ?? []
     }
@@ -245,6 +349,10 @@ struct PlaybackSourceSheet: View {
     }
 
     private func retryAddon(_ addonID: String) {
+        if PluginStreamResolver.isPluginSource(addonID) {
+            retryPlugin(addonID)
+            return
+        }
         guard let resolution,
               !retryingAddonIDs.contains(addonID),
               let addon = enabledStreamAddons.first(where: { $0.id == addonID })
@@ -267,13 +375,46 @@ struct PlaybackSourceSheet: View {
         }
     }
 
+    private func retryPlugin(_ sourceID: String) {
+        guard resolution != nil, !retryingAddonIDs.contains(sourceID) else { return }
+        let plan = plugins.plan(forSourceID: sourceID)
+        guard !plan.entries.isEmpty else { return }
+        let lookupItem = preparedPlaybackItem ?? item
+        retryingAddonIDs.insert(sourceID)
+        Task {
+            let results = await PluginStreamResolver.resolve(plan, for: lookupItem, episode: episode)
+            guard !Task.isCancelled, var updated = resolution else { return }
+            for result in results { updated = updated.replacingAddonResult(result) }
+            self.resolution = updated
+            candidates = updated.candidates
+            retryingAddonIDs.remove(sourceID)
+        }
+    }
+
     private var enabledStreamAddons: [InstalledAddon] {
         store.installedAddons.filter { $0.isEnabled && $0.manifest.supportsStreams }
     }
 
     private var filteredCandidates: [AddonStreamCandidate] {
         guard let selectedAddonID else { return candidates }
+        if let repository = pluginRepositories.first(where: { $0.filterID == selectedAddonID }) {
+            return candidates.filter { repository.sourceIDs.contains($0.addonID) }
+        }
         return candidates.filter { $0.addonID == selectedAddonID }
+    }
+
+    /// Plugin repositories get a filter each, like add-ons, as in Nuvio.
+    private var pluginRepositories: [(filterID: String, name: String, sourceIDs: Set<String>)] {
+        guard plugins.pluginsEnabled else { return [] }
+        return plugins.repositories.compactMap { repository in
+            let sourceIDs = Set(
+                plugins.scrapers
+                    .filter { $0.repositoryURL == repository.manifestURL && $0.isEnabled }
+                    .map(PluginStreamResolver.sourceID(for:))
+            )
+            guard !sourceIDs.isEmpty else { return nil }
+            return ("plugin-repository:" + repository.id, repository.name, sourceIDs)
+        }
     }
 
     private var sourceFilters: some View {
@@ -289,11 +430,21 @@ struct PlaybackSourceSheet: View {
 
                 ForEach(enabledStreamAddons) { addon in
                     sourceFilter(
-                        title: addon.manifest.name,
+                        title: addon.displayName,
                         count: candidates.filter { $0.addonID == addon.id }.count,
                         isSelected: selectedAddonID == addon.id
                     ) {
                         selectedAddonID = addon.id
+                    }
+                }
+
+                ForEach(pluginRepositories, id: \.filterID) { repository in
+                    sourceFilter(
+                        title: repository.name,
+                        count: candidates.filter { repository.sourceIDs.contains($0.addonID) }.count,
+                        isSelected: selectedAddonID == repository.filterID
+                    ) {
+                        selectedAddonID = repository.filterID
                     }
                 }
             }
@@ -900,11 +1051,14 @@ struct PlaybackSourceSheet: View {
             releaseUnusedInput(input)
             return
         }
-        let item = item
+        let item = preparedPlaybackItem ?? item
+        let progressItem = self.item
         let episode = episode
         let resumeAt = resumeAt
         let mediaKey = mediaKey
         isHandingOffPlayback = true
+        autoSelection?.cancel()
+        autoSelectionStatus = nil
         closePresentation(preservingSelection: true)
 
         Task { @MainActor in
@@ -914,40 +1068,18 @@ struct PlaybackSourceSheet: View {
                 releaseUnusedInput(input)
                 return
             }
-            playback.setSubtitlePreferencesHandler { update in
-                settings.update {
-                    $0.playbackSubtitleStyle = update.style
-                    if let isEnabled = update.isEnabled {
-                        $0.subtitlesEnabled = isEnabled
-                    }
-                    if let preferredLanguage = update.preferredLanguage {
-                        $0.preferredSubtitleLanguage = preferredLanguage
-                    }
-                }
-            }
-            playback.start(
-                item: item,
-                episode: episode,
+            PlaybackLauncher.start(
                 input: input,
+                candidate: candidate,
+                item: item,
+                progressItem: progressItem,
+                episode: episode,
                 resumeAt: resumeAt,
-                preferences: settings.preferences
-            ) { position, duration in
-                store.recordPlayback(
-                    for: item,
-                    episode: episode,
-                    positionSeconds: position,
-                    durationSeconds: duration
-                )
-            }
-            if settings.preferences.rememberLastSelection, let candidate {
-                try? RememberedSourceStore().remember(
-                    mediaKey: mediaKey,
-                    addonID: candidate.addonID,
-                    bingeGroup: candidate.bingeGroup,
-                    displayNameFingerprint: candidate.displayNameFingerprint,
-                    retention: settings.preferences.sourceSelectionRetention
-                )
-            }
+                linkKey: mediaKey,
+                playback: playback,
+                settings: settings,
+                store: store
+            )
         }
     }
 
@@ -970,53 +1102,147 @@ struct PlaybackSourceSheet: View {
         }
     }
 
-    private var adapter: PlaybackAdapter {
-        #if os(macOS)
-        .libmpv
-        #else
-        .avPlayer
-        #endif
+    private var mediaKey: MediaPlaybackKey {
+        PlaybackLauncher.linkKey(item: item, episode: episode)
     }
 
-    private var mediaKey: MediaPlaybackKey {
+    /// Nuvio's Reuse Last Link: the stream played last for this movie or
+    /// episode starts again without asking the add-ons. A moment is left to
+    /// choose another source instead.
+    private func playLastLinkIfAllowed(selectionID: UUID) async -> Bool {
+        let behavior = settings.preferences.playbackBehavior
+        guard !isNextEpisode, behavior.reuseLastLink else { return false }
+        let enabledSourceIDs = Set(store.installedAddons.filter(\.isEnabled).map(\.id))
+            .union(plugins.pluginsEnabled
+                ? plugins.scrapers.filter(\.isEnabled).map(PluginStreamResolver.sourceID(for:))
+                : [])
+        guard let cached = StreamLinkCacheStore().candidate(
+            for: mediaKey,
+            maximumAgeHours: behavior.lastLinkCacheHours,
+            enabledSourceIDs: enabledSourceIDs
+        ), let source = cached.nativePlaybackSource else { return false }
+        withAnimation { autoSelectionStatus = "Playing your last source, \(cached.addonName)…" }
+        let task = Task<Void, Never> { try? await Task.sleep(for: .seconds(1.2)) }
+        lastLinkTask = task
+        await task.value
+        if Task.isCancelled || !playback.isCurrentSourceSelection(selectionID) { return true }
+        // Choose Manually cancelled the wait: show the list instead.
+        if task.isCancelled { return false }
+        beginPlayback(source, candidate: cached)
+        return true
+    }
+
+    /// Starts Nuvio's Auto Stream Selection for this lookup, if it applies.
+    private func startAutomaticSelection() {
+        let behavior = settings.preferences.playbackBehavior
+        let request: StreamAutoPlayRequest?
+        if isNextEpisode {
+            request = nextEpisodeRequest
+        } else {
+            let remembered = episode == nil ? nil : BingeGroupCacheStore().bingeGroup(forSeries: item.id)
+            request = behavior.selectionRequest(rememberedBingeGroup: remembered)
+        }
+        guard let request, !choosesManually else { return }
+        autoSelection = StreamAutoSelectionRun(request: request) { outcome in
+            withAnimation { autoSelectionStatus = nil }
+            if case let .play(candidate) = outcome, let source = candidate.nativePlaybackSource {
+                beginPlayback(source, candidate: candidate)
+            }
+        }
+        withAnimation {
+            autoSelectionStatus = request.bingeGroupOnly
+                ? "Looking for the same release as last time…"
+                : "Choosing a source automatically…"
+        }
+    }
+
+    private func chooseManually() {
+        choosesManually = true
+        lastLinkTask?.cancel()
+        autoSelection?.cancel()
+        withAnimation { autoSelectionStatus = nil }
+    }
+
+}
+
+extension MediaEpisode {
+    /// Nuvio only plays a next episode that has aired; a missing or
+    /// unreadable date counts as aired.
+    var hasAired: Bool {
+        guard let airDate, airDate.count >= 10 else { return true }
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd"
+        guard let date = formatter.date(from: String(airDate.prefix(10))) else { return true }
+        return date <= Date()
+    }
+}
+
+/// Starts a chosen source and records what Nuvio remembers about it: the
+/// link for Reuse Last Link and the series' binge group.
+enum PlaybackLauncher {
+    static func linkKey(item: MediaItem, episode: MediaEpisode?) -> MediaPlaybackKey {
         if let episode {
             return MediaPlaybackKey(rawValue: "\(item.id):\(episode.seasonNumber):\(episode.episodeNumber)")
         }
         return MediaPlaybackKey(rawValue: item.id)
     }
 
-    private func startAutomaticallyIfAllowed() {
-        guard !Task.isCancelled,
-              let selectionID,
-              playback.isCurrentSourceSelection(selectionID),
-              settings.preferences.rememberLastSelection else { return }
-        #if os(macOS)
-        let directCandidates = candidates.filter {
-            $0.nativePlaybackSource != nil
-                && PlaybackSourceRowState(candidate: $0).isEligibleForAutoplay
+    static func start(
+        input: PlaybackInput,
+        candidate: AddonStreamCandidate?,
+        item: MediaItem,
+        progressItem: MediaItem,
+        episode: MediaEpisode?,
+        resumeAt: Double?,
+        linkKey: MediaPlaybackKey,
+        playback: PlaybackSession,
+        settings: SettingsPreferencesStore,
+        store: OmniaStore
+    ) {
+        playback.setSubtitlePreferencesHandler { update in
+            settings.update {
+                $0.playbackSubtitleStyle = update.style
+                if let isEnabled = update.isEnabled {
+                    $0.subtitlesEnabled = isEnabled
+                }
+                if let preferredLanguage = update.preferredLanguage {
+                    $0.preferredSubtitleLanguage = preferredLanguage
+                }
+            }
         }
-        #else
-        let directCandidates = candidates.filter { $0.nativePlaybackSource != nil }
-        #endif
-        let remembered = settings.preferences.rememberLastSelection
-            ? RememberedSourceStore().source(
-                for: mediaKey,
-                enabledAddonIDs: Set(store.installedAddons.filter(\.isEnabled).map(\.id))
+        playback.start(
+            item: item,
+            episode: episode,
+            input: input,
+            resumeAt: resumeAt,
+            preferences: settings.preferences
+        ) { position, duration in
+            store.recordPlayback(
+                for: progressItem,
+                episode: episode,
+                positionSeconds: position,
+                durationSeconds: duration
             )
-            : nil
-        let decision = PlaybackPolicy.choose(
-            from: directCandidates,
-            adapter: adapter,
-            compatibleOnly: settings.preferences.compatibleFormatsOnly,
-            autoplayFirst: settings.preferences.autoplayFirstCompatibleSource,
-            remembered: remembered,
-            now: .now
+        }
+        playback.setCurrentSource(candidate, linkKey: candidate == nil ? nil : linkKey)
+        playback.loadAddonSubtitles(
+            addons: store.installedAddons,
+            item: item,
+            episode: episode,
+            videoSize: candidate?.videoSize,
+            preferences: settings.preferences
         )
-        if case let .play(candidate) = decision, let source = candidate.nativePlaybackSource {
-            beginPlayback(source, candidate: candidate)
+        guard let candidate else { return }
+        if settings.preferences.playbackBehavior.reuseLastLink {
+            StreamLinkCacheStore().save(candidate, for: linkKey)
+        }
+        if episode != nil, let bingeGroup = candidate.bingeGroup {
+            BingeGroupCacheStore().save(bingeGroup, forSeries: progressItem.id)
         }
     }
-
 }
 
 struct PlaybackTimelinePresentation: Equatable {
@@ -1050,7 +1276,7 @@ struct PlaybackChromeMetadata: Equatable {
     init(item: MediaItem?, episode: MediaEpisode?) {
         title = item?.title ?? "Now Playing"
         if let episode {
-            context = "\(episode.title) · S\(episode.seasonNumber), E\(episode.episodeNumber)"
+            context = "\(episode.title) - Season \(episode.seasonNumber) Episode \(episode.episodeNumber)"
         } else {
             context = item?.year ?? ""
         }
@@ -1060,20 +1286,42 @@ struct PlaybackChromeMetadata: Equatable {
 struct PlaybackExperienceView: View {
     @Environment(PlaybackSession.self) private var playback
     @Environment(SettingsPreferencesStore.self) private var settings
+    @Environment(OmniaStore.self) private var store
+    @Environment(PluginStore.self) private var plugins
     @State private var isScrubbing = false
     @State private var showsChrome = true
     @State private var chromeHideTask: Task<Void, Never>?
     @State private var segments: [SkipSegment] = []
     @State private var visibleSkipSegment: SkipSegment?
+    /// Nuvio hides the skip prompt after 10 seconds while the controls are
+    /// hidden; it comes back with the controls.
+    @State private var skipPromptExpired = false
+    @State private var skipPromptTask: Task<Void, Never>?
+    @State private var skipNotice: String?
     @State private var showsUpNext = false
     @State private var nextSourceRequest: PlaybackRequest?
+    @State private var nextSourceAutoSelection: StreamAutoPlayRequest?
     @State private var didHandleEnd = false
+    @State private var nextEpisodeAutoPlay: NextEpisodeAutoPlay?
+    @State private var nextEpisodeTask: Task<Void, Never>?
+    @State private var preloadTask: Task<Void, Never>?
+    @State private var showsPauseOverlay = false
+    @State private var pauseOverlayTask: Task<Void, Never>?
     @State private var automation = PlaybackAutomationController(policy: .init(
-        showSkipIntro: true,
-        autoSkipIntro: false,
-        autoplayNextEpisode: false,
-        upNextLeadSeconds: 30
+        skipEnabled: true,
+        autoSkipKinds: [],
+        thresholdMode: .percentage,
+        thresholdPercent: 99,
+        thresholdMinutes: 2,
+        preloadLeadSeconds: nil
     ))
+
+    /// Nuvio's next-episode countdown: "Playing via {source}" then 3, 2, 1.
+    struct NextEpisodeAutoPlay: Equatable {
+        let episode: MediaEpisode
+        var candidate: AddonStreamCandidate?
+        var secondsLeft: Int
+    }
 
     var body: some View {
         ZStack {
@@ -1088,6 +1336,8 @@ struct PlaybackExperienceView: View {
             } else if let player = playback.player {
                 NativePlayerView(player: player)
                     .ignoresSafeArea()
+                    .allowsHitTesting(false)
+                    .zIndex(0)
             } else {
                 ContentUnavailableView("Playback Unavailable", systemImage: "play.slash")
                     .foregroundStyle(.white)
@@ -1098,52 +1348,132 @@ struct PlaybackExperienceView: View {
             revealChrome()
         }
         .overlay {
-            PlaybackChrome(
-                isScrubbing: $isScrubbing,
-                close: { playback.stop() },
-                showsSkipIntro: visibleSkipSegment != nil,
-                skipIntro: {
-                    guard let visibleSkipSegment else { return }
-                    playback.seek(to: visibleSkipSegment.endSeconds)
-                    self.visibleSkipSegment = nil
-                },
-                upNextTitle: upNextTitle,
-                showUpNext: presentNextEpisode
-            )
-            .opacity(showsChrome ? 1 : 0)
-            .allowsHitTesting(showsChrome)
-            .animation(.easeInOut(duration: 0.2), value: showsChrome)
+            if showsLoadingOverlay, let item = playback.mediaItem {
+                PlaybackLoadingOverlay(
+                    item: item,
+                    episode: playback.episode,
+                    status: behavior.showLoadingStatus ? loadingStatus : nil
+                )
+                .allowsHitTesting(false)
+                .transition(.opacity)
+            } else if showsPauseOverlay, !showsChrome, let item = playback.mediaItem {
+                PlaybackPauseOverlay(item: item, episode: playback.episode)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
         }
+        .animation(.easeInOut(duration: 0.35), value: showsLoadingOverlay)
+        .animation(.easeInOut(duration: 0.35), value: showsPauseOverlay)
+        .overlay {
+            if showsChrome {
+                PlaybackChrome(
+                    isScrubbing: $isScrubbing,
+                    close: { playback.stop() },
+                    showsSkipIntro: visibleSkipSegment != nil,
+                    skipTitle: skipTitle,
+                    skipIntro: skipIntro,
+                    hasNextEpisode: playback.nextEpisode != nil,
+                    upNextTitle: upNextTitle,
+                    showUpNext: showUpNext,
+                    cancelUpNext: cancelUpNextAction,
+                    playEpisode: presentEpisode
+                )
+                #if os(macOS)
+                .id(
+                    MacPlaybackChromeCoordinateSpaceIdentity(
+                        isExclusiveFullScreen: playback.isFullScreenActive
+                    )
+                )
+                #endif
+                .transition(.opacity)
+                .zIndex(10)
+            }
+        }
+        #if os(macOS)
+        .overlay(alignment: .bottomTrailing) {
+            if !showsChrome, showsContextualSkip || upNextTitle != nil {
+                MacPlaybackContextualActions(
+                    showsSkipIntro: showsContextualSkip,
+                    skipTitle: skipTitle,
+                    skipIntro: skipIntro,
+                    upNextTitle: upNextTitle,
+                    showUpNext: showUpNext,
+                    cancelUpNext: cancelUpNextAction
+                )
+                .id(
+                    MacPlaybackChromeCoordinateSpaceIdentity(
+                        isExclusiveFullScreen: playback.isFullScreenActive
+                    )
+                )
+                .padding(.trailing, 30)
+                .padding(.bottom, 86)
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+        }
+        #endif
+        .overlay(alignment: .topTrailing) {
+            if let skipNotice {
+                Label(skipNotice, systemImage: "forward.end.fill")
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .glassEffect(.regular, in: Capsule())
+                    .padding(28)
+                    .transition(.opacity)
+                    .accessibilityAddTraits(.updatesFrequently)
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: showsChrome)
+        .animation(.easeInOut(duration: 0.2), value: skipNotice)
         #if !os(macOS)
         .overlay(alignment: .bottomTrailing) {
             VStack(alignment: .trailing, spacing: 10) {
-                if let visibleSkipSegment {
-                    Button("Skip Intro", systemImage: "forward.end.fill") {
-                        playback.seek(to: visibleSkipSegment.endSeconds)
-                        self.visibleSkipSegment = nil
+                if visibleSkipSegment != nil {
+                    Button(skipTitle, systemImage: "forward.end.fill") {
+                        skipIntro()
                     }
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.return, modifiers: [])
-                    .accessibilityHint("Seeks to the end of the detected intro")
+                    .accessibilityHint("Seeks past the detected segment")
                 }
-                if showsUpNext, let nextEpisode = playback.nextEpisode {
-                    Button("Up Next: S\(nextEpisode.seasonNumber) E\(nextEpisode.episodeNumber)", systemImage: "forward.fill") {
-                        presentNextEpisode()
+                if let upNextTitle {
+                    HStack(spacing: 8) {
+                        if let cancelUpNextAction {
+                            Button("Cancel", action: cancelUpNextAction)
+                                .buttonStyle(.bordered)
+                        }
+                        Button(upNextTitle, systemImage: "forward.fill") {
+                            showUpNext()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .accessibilityHint("Plays the next episode")
                     }
-                    .buttonStyle(.borderedProminent)
-                    .accessibilityHint("Choose an in-app source for the next episode")
                 }
             }
             .padding(28)
         }
         #endif
         .onAppear { revealChrome() }
-        .onDisappear { chromeHideTask?.cancel() }
+        .onDisappear {
+            chromeHideTask?.cancel()
+            skipPromptTask?.cancel()
+            nextEpisodeTask?.cancel()
+            preloadTask?.cancel()
+            pauseOverlayTask?.cancel()
+        }
         .task(id: playbackAutomationKey) {
             configureAutomation()
-            await loadIntroSegments()
+            await loadSkipSegments()
         }
         .onChange(of: playback.positionSeconds) { _, _ in updateAutomation() }
+        .onChange(of: playback.isPaused) { _, isPaused in schedulePauseOverlay(isPaused: isPaused) }
+        .onChange(of: playback.playbackError) { _, error in
+            // A stream that fails is never offered again by Reuse Last Link.
+            if error != nil, let key = playback.currentLinkKey {
+                StreamLinkCacheStore().remove(key)
+            }
+        }
         .onChange(of: isScrubbing) { _, isInteracting in
             if isInteracting {
                 chromeHideTask?.cancel()
@@ -1152,11 +1482,18 @@ struct PlaybackExperienceView: View {
                 hideChrome(after: 3.2)
             }
         }
+        .onChange(of: showsChrome) { _, isVisible in
+            if isVisible, visibleSkipSegment != nil {
+                restartSkipPromptTimer()
+            }
+        }
         .omniaGlassModal(isPresented: showsNextSourceSheet) {
             if let request = nextSourceRequest {
                 PlaybackSourceSheet(
                     item: request.item,
                     episode: request.episode,
+                    isNextEpisode: true,
+                    nextEpisodeRequest: nextSourceAutoSelection,
                     onClose: { nextSourceRequest = nil }
                 )
                 .id(request.id)
@@ -1172,8 +1509,16 @@ struct PlaybackExperienceView: View {
                 case .seekForward10:
                     playback.seek(by: 10)
                     revealChrome()
+                case .togglePause:
+                    playback.togglePause()
+                    revealChrome()
                 case .close:
-                    playback.stop()
+                    // Esc leaves full screen first, as it does across macOS.
+                    if playback.isFullScreenActive {
+                        playback.setFullScreen(false)
+                    } else {
+                        playback.stop()
+                    }
                 }
             }
             .frame(width: 0, height: 0)
@@ -1193,8 +1538,23 @@ struct PlaybackExperienceView: View {
         #endif
     }
 
+    private var behavior: PlaybackBehaviorPreferences {
+        settings.preferences.playbackBehavior
+    }
+
     private var playbackAutomationKey: String {
-        "\(playback.mediaItem?.id ?? "none"):\(playback.episode?.id ?? "title"):\(settings.preferences.showSkipIntro):\(settings.preferences.autoSkipIntro):\(settings.preferences.autoplayNextEpisode):\(settings.preferences.upNextLeadTime.rawValue)"
+        [
+            playback.mediaItem?.id ?? "none",
+            playback.episode?.id ?? "title",
+            "\(settings.preferences.showSkipIntro)",
+            "\(settings.preferences.autoplayNextEpisode)",
+            behavior.autoSkipSegments.map(\.rawValue).sorted().joined(separator: ","),
+            behavior.nextEpisodeThresholdMode.rawValue,
+            "\(behavior.nextEpisodeThresholdPercent)",
+            "\(behavior.nextEpisodeThresholdMinutes)",
+            "\(behavior.preloadNextEpisodeSources)",
+            "\(behavior.selectionTimeoutSeconds)",
+        ].joined(separator: ":")
     }
 
     private var showsNextSourceSheet: Binding<Bool> {
@@ -1204,46 +1564,141 @@ struct PlaybackExperienceView: View {
         )
     }
 
-    private func presentNextEpisode() {
+    /// Nuvio's Loading Overlay: the title's artwork until the first frame.
+    private var showsLoadingOverlay: Bool {
+        behavior.showLoadingOverlay
+            && playback.playbackError == nil
+            && playback.player != nil
+            && !playback.hasRenderedVideoFrame
+    }
+
+    private var loadingStatus: String {
+        if playback.areTracksLoading { return "Opening stream…" }
+        if playback.durationSeconds == nil { return "Buffering…" }
+        return "Starting playback…"
+    }
+
+    /// Nuvio's Pause Overlay: the title's details after five seconds paused.
+    private func schedulePauseOverlay(isPaused: Bool) {
+        pauseOverlayTask?.cancel()
+        guard isPaused, behavior.showPauseOverlay else {
+            showsPauseOverlay = false
+            return
+        }
+        pauseOverlayTask = Task {
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled,
+                  playback.isPaused,
+                  playback.playbackError == nil,
+                  (playback.durationSeconds ?? 0) > 0 else { return }
+            showsPauseOverlay = true
+        }
+    }
+
+    private var showsContextualSkip: Bool {
+        visibleSkipSegment != nil && !skipPromptExpired
+    }
+
+    private var skipTitle: String {
+        visibleSkipSegment?.kind.skipTitle ?? "Skip Intro"
+    }
+
+    /// Picking an episode from the player's list is always a manual choice.
+    private func presentEpisode(_ episode: MediaEpisode) {
+        guard nextSourceRequest == nil, let item = playback.mediaItem else { return }
+        cancelNextEpisodeAutoPlay()
+        nextSourceAutoSelection = nil
+        nextSourceRequest = PlaybackRequest(item: item, episode: episode, resumeAt: nil)
+    }
+
+    /// Up Next: plays the counted-down source now, or opens the next
+    /// episode's sources with Nuvio's next-episode rules (a source from the
+    /// same binge group plays by itself).
+    private func showUpNext() {
+        if let autoPlay = nextEpisodeAutoPlay, let candidate = autoPlay.candidate {
+            playNextEpisode(autoPlay.episode, candidate: candidate)
+            return
+        }
+        cancelNextEpisodeAutoPlay()
+        openNextEpisodeSources(
+            autoSelection: behavior.nextEpisodeRequest(
+                currentBingeGroup: playback.currentCandidate?.bingeGroup,
+                autoplayNextEpisode: false
+            )
+        )
+    }
+
+    private func openNextEpisodeSources(autoSelection: StreamAutoPlayRequest?) {
         guard nextSourceRequest == nil,
               let item = playback.mediaItem,
               let episode = playback.nextEpisode else { return }
+        nextSourceAutoSelection = autoSelection
         nextSourceRequest = PlaybackRequest(item: item, episode: episode, resumeAt: nil)
+    }
+
+    private var cancelUpNextAction: (() -> Void)? {
+        nextEpisodeAutoPlay == nil ? nil : { cancelNextEpisodeAutoPlay() }
+    }
+
+    private func skipIntro() {
+        guard let visibleSkipSegment else { return }
+        playback.seek(to: PlaybackAutomationController.skipTarget(for: visibleSkipSegment, in: segments))
+        self.visibleSkipSegment = nil
     }
 
     private var upNextTitle: String? {
         guard showsUpNext, let nextEpisode = playback.nextEpisode else { return nil }
-        return "Up Next: S\(nextEpisode.seasonNumber) E\(nextEpisode.episodeNumber)"
+        let number = "S\(nextEpisode.seasonNumber) E\(nextEpisode.episodeNumber)"
+        if let autoPlay = nextEpisodeAutoPlay {
+            if let candidate = autoPlay.candidate {
+                return "Playing \(number) via \(candidate.addonName) in \(autoPlay.secondsLeft)"
+            }
+            return "Finding a source for \(number)…"
+        }
+        return "Up Next: \(number)"
     }
 
     private func configureAutomation() {
+        let behavior = behavior
+        let timeout = behavior.selectionTimeoutSeconds
         automation = PlaybackAutomationController(policy: .init(
-            showSkipIntro: settings.preferences.showSkipIntro,
-            autoSkipIntro: settings.preferences.autoSkipIntro,
-            autoplayNextEpisode: settings.preferences.autoplayNextEpisode,
-            upNextLeadSeconds: Double(settings.preferences.upNextLeadTime.rawValue)
+            skipEnabled: settings.preferences.showSkipIntro,
+            autoSkipKinds: behavior.autoSkipSegments,
+            thresholdMode: behavior.nextEpisodeThresholdMode,
+            thresholdPercent: behavior.nextEpisodeThresholdPercent,
+            thresholdMinutes: behavior.nextEpisodeThresholdMinutes,
+            // Nuvio preloads one selection timeout ahead of the card.
+            preloadLeadSeconds: behavior.preloadNextEpisodeSources
+                ? Double(timeout > 0 ? timeout : 10)
+                : nil
         ))
         visibleSkipSegment = nil
+        skipPromptExpired = false
         showsUpNext = false
         didHandleEnd = false
         nextSourceRequest = nil
+        cancelNextEpisodeAutoPlay()
+        preloadTask?.cancel()
     }
 
-    private func loadIntroSegments() async {
+    private func loadSkipSegments() async {
         guard settings.preferences.showSkipIntro,
               let item = playback.mediaItem,
-              let episode = playback.episode,
               let imdbID = item.externalIDs["imdb"] ?? item.externalIDs["imdb_id"]
         else {
             segments = []
             return
         }
         do {
-            segments = try await IntroDBClient().segments(
-                imdbID: imdbID,
-                season: episode.seasonNumber,
-                episode: episode.episodeNumber
-            )
+            if let episode = playback.episode {
+                segments = try await IntroDBClient().segments(
+                    imdbID: imdbID,
+                    season: episode.seasonNumber,
+                    episode: episode.episodeNumber
+                )
+            } else {
+                segments = try await IntroDBClient().movieSegments(imdbID: imdbID)
+            }
             updateAutomation()
         } catch is CancellationError {
             return
@@ -1253,28 +1708,183 @@ struct PlaybackExperienceView: View {
     }
 
     private func updateAutomation() {
-        switch automation.update(
+        let hasNextEpisode = playback.nextEpisode != nil
+        let effects = automation.update(
             position: playback.positionSeconds,
             duration: playback.durationSeconds,
             segments: segments,
-            hasNextEpisode: playback.nextEpisode != nil
-        ) {
-        case let .presentSkip(segment): visibleSkipSegment = segment
-        case .dismissSkip: visibleSkipSegment = nil
-        case let .seek(position):
-            playback.seek(to: position)
-            visibleSkipSegment = nil
-        case .presentUpNext: showsUpNext = true
-        case .none, .resolveNextEpisode, .stopAtEnd: break
-        }
+            hasNextEpisode: hasNextEpisode,
+            isPlaying: !playback.isPaused && !isScrubbing
+        )
+        for effect in effects { apply(effect) }
 
         guard !didHandleEnd,
               let duration = playback.durationSeconds,
               duration - playback.positionSeconds <= 0.5,
               duration - playback.positionSeconds >= 0 else { return }
         didHandleEnd = true
-        if automation.playbackEnded(hasNextEpisode: playback.nextEpisode != nil) == .resolveNextEpisode {
-            presentNextEpisode()
+        if let effect = automation.playbackEnded(hasNextEpisode: hasNextEpisode) {
+            apply(effect)
+        }
+    }
+
+    private func apply(_ effect: PlaybackAutomationController.Effect) {
+        switch effect {
+        case let .presentSkip(segment):
+            visibleSkipSegment = segment
+            restartSkipPromptTimer()
+            dismissChromeForContextualAction()
+        case .dismissSkip:
+            visibleSkipSegment = nil
+            skipPromptTask?.cancel()
+        case let .autoSkip(segment, position):
+            playback.seek(to: position)
+            visibleSkipSegment = nil
+            showSkipNotice("Skipped \(segment.kind.settingsTitle)")
+        case .presentUpNext:
+            showsUpNext = true
+            dismissChromeForContextualAction()
+            if settings.preferences.autoplayNextEpisode {
+                startNextEpisodeAutoPlay()
+            }
+        case .preloadNextEpisode:
+            preloadNextEpisodeSources()
+        }
+    }
+
+    private func restartSkipPromptTimer() {
+        skipPromptExpired = false
+        skipPromptTask?.cancel()
+        skipPromptTask = Task {
+            try? await Task.sleep(for: .seconds(10))
+            guard !Task.isCancelled else { return }
+            skipPromptExpired = true
+        }
+    }
+
+    private func showSkipNotice(_ text: String) {
+        skipNotice = text
+        Task {
+            try? await Task.sleep(for: .seconds(1.4))
+            if skipNotice == text { skipNotice = nil }
+        }
+    }
+
+    /// Nuvio's Auto-play Next Episode: chooses the next episode's source in
+    /// the background while the credits run, counts down 3, 2, 1 and then
+    /// switches. With no source chosen, the source list opens instead.
+    private func startNextEpisodeAutoPlay() {
+        guard nextEpisodeAutoPlay == nil,
+              nextSourceRequest == nil,
+              let item = playback.mediaItem,
+              let episode = playback.nextEpisode,
+              episode.hasAired
+        else { return }
+        guard let request = behavior.nextEpisodeRequest(
+            currentBingeGroup: playback.currentCandidate?.bingeGroup,
+            autoplayNextEpisode: true
+        ) else {
+            openNextEpisodeSources(autoSelection: nil)
+            return
+        }
+        nextEpisodeAutoPlay = NextEpisodeAutoPlay(episode: episode, candidate: nil, secondsLeft: 3)
+        let key = PlaybackLauncher.linkKey(item: item, episode: episode)
+        let addons = store.installedAddons
+        let pluginPlan = plugins.plan(for: item, episode: episode)
+        let timeout = settings.preferences.addonTimeout
+        nextEpisodeTask?.cancel()
+        nextEpisodeTask = Task {
+            var outcome: StreamAutoPlayTracker.Outcome?
+            let run = StreamAutoSelectionRun(request: request) { outcome = $0 }
+            if let preloaded = playback.takePreloadedSources(for: key) {
+                run.receive(preloaded.candidates, isComplete: true)
+            } else {
+                let lookup = Task {
+                    let result = await PlaybackSourceResolver.resolve(
+                        for: item,
+                        episode: episode,
+                        addons: addons,
+                        plugins: pluginPlan,
+                        timeout: timeout
+                    ) { partial, _ in
+                        run.receive(partial.candidates, isComplete: false)
+                    }
+                    guard !Task.isCancelled else { return }
+                    run.receive(result.candidates, isComplete: true)
+                }
+                // Nuvio gives up after two minutes and shows the list.
+                let deadline = Date().addingTimeInterval(120)
+                while outcome == nil, !Task.isCancelled, Date() < deadline {
+                    try? await Task.sleep(for: .milliseconds(200))
+                }
+                lookup.cancel()
+            }
+            guard !Task.isCancelled, nextEpisodeAutoPlay?.episode == episode else {
+                run.cancel()
+                return
+            }
+            guard case let .play(candidate) = outcome else {
+                run.cancel()
+                nextEpisodeAutoPlay = nil
+                openNextEpisodeSources(autoSelection: nil)
+                return
+            }
+            nextEpisodeAutoPlay?.candidate = candidate
+            for secondsLeft in stride(from: 3, through: 1, by: -1) {
+                nextEpisodeAutoPlay?.secondsLeft = secondsLeft
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled, nextEpisodeAutoPlay != nil else { return }
+            }
+            playNextEpisode(episode, candidate: candidate)
+        }
+    }
+
+    private func cancelNextEpisodeAutoPlay() {
+        nextEpisodeTask?.cancel()
+        nextEpisodeTask = nil
+        nextEpisodeAutoPlay = nil
+    }
+
+    private func playNextEpisode(_ episode: MediaEpisode, candidate: AddonStreamCandidate) {
+        nextEpisodeTask?.cancel()
+        nextEpisodeTask = nil
+        nextEpisodeAutoPlay = nil
+        guard let item = playback.mediaItem, let source = candidate.nativePlaybackSource else { return }
+        PlaybackLauncher.start(
+            input: .stream(source),
+            candidate: candidate,
+            item: item,
+            progressItem: item,
+            episode: episode,
+            resumeAt: nil,
+            linkKey: PlaybackLauncher.linkKey(item: item, episode: episode),
+            playback: playback,
+            settings: settings,
+            store: store
+        )
+    }
+
+    /// Nuvio's Preload Next Episode Sources: the lookup runs ahead of Up
+    /// Next, so the list or the automatic choice is ready when it appears.
+    private func preloadNextEpisodeSources() {
+        guard let item = playback.mediaItem,
+              let episode = playback.nextEpisode,
+              episode.hasAired else { return }
+        let key = PlaybackLauncher.linkKey(item: item, episode: episode)
+        let addons = store.installedAddons
+        let pluginPlan = plugins.plan(for: item, episode: episode)
+        let timeout = settings.preferences.addonTimeout
+        preloadTask?.cancel()
+        preloadTask = Task {
+            let result = await PlaybackSourceResolver.resolve(
+                for: item,
+                episode: episode,
+                addons: addons,
+                plugins: pluginPlan,
+                timeout: timeout
+            )
+            guard !Task.isCancelled else { return }
+            playback.storePreloadedSources(result, for: key)
         }
     }
 
@@ -1283,6 +1893,12 @@ struct PlaybackExperienceView: View {
         showsChrome = true
         guard !isScrubbing else { return }
         hideChrome(after: 3.2)
+    }
+
+    private func dismissChromeForContextualAction() {
+        guard !isScrubbing else { return }
+        chromeHideTask?.cancel()
+        withAnimation(.easeInOut(duration: 0.2)) { showsChrome = false }
     }
 
     private func hideChrome(after delay: TimeInterval) {
@@ -1299,15 +1915,19 @@ struct PlaybackExperienceView: View {
 }
 
 /// Fusion-style playback chrome is one coordinated overlay above the libmpv
-/// renderer: its exit button and transport surface appear and dismiss together
-/// instead of being unrelated, permanently visible SwiftUI controls.
+/// renderer. Contextual episode actions stay available when the main transport
+/// surface dismisses so they never obstruct or depend on transient chrome.
 private struct PlaybackChrome: View {
     @Binding var isScrubbing: Bool
     let close: () -> Void
     let showsSkipIntro: Bool
+    let skipTitle: String
     let skipIntro: () -> Void
+    let hasNextEpisode: Bool
     let upNextTitle: String?
     let showUpNext: () -> Void
+    let cancelUpNext: (() -> Void)?
+    let playEpisode: (MediaEpisode) -> Void
 
     var body: some View {
         #if os(macOS)
@@ -1315,9 +1935,13 @@ private struct PlaybackChrome: View {
             isInteracting: $isScrubbing,
             close: close,
             showsSkipIntro: showsSkipIntro,
+            skipTitle: skipTitle,
             skipIntro: skipIntro,
+            hasNextEpisode: hasNextEpisode,
             upNextTitle: upNextTitle,
-            showUpNext: showUpNext
+            showUpNext: showUpNext,
+            cancelUpNext: cancelUpNext,
+            playEpisode: playEpisode
         )
             .ignoresSafeArea()
         #else
@@ -1526,5 +2150,105 @@ private struct PlaybackControlSurface: View {
         return hours > 0
             ? String(format: "%d:%02d:%02d", hours, minutes, seconds)
             : String(format: "%d:%02d", minutes, seconds)
+    }
+}
+
+/// The title's backdrop, logo and episode while a stream opens.
+private struct PlaybackLoadingOverlay: View {
+    let item: MediaItem
+    let episode: MediaEpisode?
+    let status: String?
+
+    var body: some View {
+        ZStack {
+            Color.black
+            if let backdrop = item.backdropURL ?? item.artworkURL {
+                AsyncImage(url: backdrop) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: {
+                    LinearGradient(colors: item.artworkColors, startPoint: .topLeading, endPoint: .bottomTrailing)
+                }
+                .opacity(0.45)
+                .blur(radius: 6)
+                .clipped()
+            }
+            LinearGradient(colors: [.black.opacity(0.2), .black.opacity(0.85)], startPoint: .top, endPoint: .bottom)
+            VStack(spacing: 18) {
+                if let logo = item.logoURL {
+                    TitleLogoView(url: logo, title: item.title, maximumWidth: 420, maximumHeight: 140, alignment: .center)
+                } else {
+                    Text(item.title)
+                        .font(.largeTitle.weight(.bold))
+                        .multilineTextAlignment(.center)
+                }
+                if let episode {
+                    Text("S\(episode.seasonNumber) E\(episode.episodeNumber) · \(episode.title)")
+                        .font(.headline)
+                        .foregroundStyle(.white.opacity(0.8))
+                }
+                HStack(spacing: 10) {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(.white)
+                    if let status {
+                        Text(status)
+                            .font(.callout)
+                            .foregroundStyle(.white.opacity(0.75))
+                    }
+                }
+            }
+            .foregroundStyle(.white)
+            .padding(40)
+        }
+        .ignoresSafeArea()
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// The title's details over a paused picture.
+private struct PlaybackPauseOverlay: View {
+    let item: MediaItem
+    let episode: MediaEpisode?
+
+    private var overview: String {
+        let episodeOverview = episode?.overview.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return episodeOverview.isEmpty ? item.overview : episodeOverview
+    }
+
+    var body: some View {
+        ZStack(alignment: .bottomLeading) {
+            LinearGradient(
+                colors: [.black.opacity(0.85), .black.opacity(0.35), .clear],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            VStack(alignment: .leading, spacing: 10) {
+                Text("You're watching")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.7))
+                if let logo = item.logoURL {
+                    TitleLogoView(url: logo, title: item.title, maximumWidth: 320, maximumHeight: 110, alignment: .leading)
+                } else {
+                    Text(item.title)
+                        .font(.largeTitle.weight(.bold))
+                }
+                if let episode {
+                    Text("S\(episode.seasonNumber) E\(episode.episodeNumber) · \(episode.title)")
+                        .font(.title3.weight(.semibold))
+                }
+                if !overview.isEmpty {
+                    Text(overview)
+                        .font(.body)
+                        .foregroundStyle(.white.opacity(0.8))
+                        .lineLimit(5)
+                        .frame(maxWidth: 520, alignment: .leading)
+                }
+            }
+            .foregroundStyle(.white)
+            .padding(.leading, 56)
+            .padding(.bottom, 120)
+        }
+        .ignoresSafeArea()
+        .accessibilityElement(children: .combine)
     }
 }

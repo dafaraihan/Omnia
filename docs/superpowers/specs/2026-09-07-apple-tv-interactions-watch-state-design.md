@@ -1,5 +1,7 @@
 # Apple TV Interactions and Watch State Design
 
+> **Automated-validation policy:** Follow the repository-root `AGENTS.md`. Instructions below that call for automated test targets, suites, fixtures, or scripts are historical and superseded; use builds, static checks, and focused manual evidence instead.
+
 ## Goal
 
 Bring Omnia's macOS navigation, media actions, context menus, source selector, and libmpv playback chrome into one coherent Apple-native interaction language while making every watch-state command durable and functional.

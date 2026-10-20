@@ -1,5 +1,7 @@
 # Performance Guide and Measurement Plan
 
+> **Automated-validation policy:** Follow the repository-root `AGENTS.md`. Instructions below that call for automated test targets, suites, fixtures, or scripts are historical and superseded; use builds, static checks, and focused manual evidence instead.
+
 ## Status and interpretation
 
 Omnia does not yet have a recorded performance baseline. No repository artifact currently establishes launch latency, visible-content latency, interaction response, frame rate or hitch behavior, memory use, energy use, network cost, image-decoding cost, or playback startup time. The numbers below are **proposed targets**, not measurements of the current app and not promises for every provider or network.

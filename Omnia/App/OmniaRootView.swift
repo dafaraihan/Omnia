@@ -15,6 +15,9 @@ struct OmniaRootView: View {
     @State private var navigation = MacPrimaryNavigationState()
     @State private var hoveredSidebarDestination: AppDestination?
     @State private var windowHeroState = HeroBackdropState()
+    /// Each tab's last scroll report for Nuvio's top bar.
+    @State private var topBarScroll: [AppDestination: TopBarScrollReport] = [:]
+    @State private var windowWidth: CGFloat = 0
     #else
     @State private var selection: AppDestination = .home
     #endif
@@ -62,14 +65,14 @@ struct OmniaRootView: View {
             WindowChromePresentation.hidesToolbarBackgroundDuringBrowsing ? .hidden : .automatic,
             for: .windowToolbar
         )
-        .background(WindowChrome(isPlaybackPresented: isFullWindowPlayback))
-        .onChange(of: settings.preferences.navigationStyle) { _, navigationStyle in
-            switch navigationStyle {
-            case .sidebar:
-                navigation.setSearchPresented(false)
-            case .topBar:
-                navigation.activateTopBar()
-            }
+        .background(
+            WindowChrome(
+                isPlaybackPresented: isFullWindowPlayback,
+                isExclusiveFullScreen: playback.isFullScreenActive
+            )
+        )
+        .onChange(of: usesFloatingSearch) { _, floating in
+            navigation.applySearchStyle(floating: floating)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { _ in
             playback.handleFullScreenEnter()
@@ -80,14 +83,21 @@ struct OmniaRootView: View {
         #endif
     }
 
+    /// Settings › Appearance › Accent Color.
+    private var accentColor: Color {
+        settings.preferences.display.accentColor
+    }
+
     @ViewBuilder
     private var rootContent: some View {
         #if os(macOS)
         ZStack {
-            if navigation.selection.allowsWindowHeroBackdrop && !navigation.isSearchPresented {
+            // The floating search panel sits over the page, so the page's
+            // hero stays behind it.
+            if navigation.selection.allowsWindowHeroBackdrop {
                 WindowHeroBackdrop(state: windowHeroState)
             } else {
-                Color(nsColor: .windowBackgroundColor)
+                OmniaPageBackground()
                     .ignoresSafeArea()
             }
             navigationTabs
@@ -98,6 +108,9 @@ struct OmniaRootView: View {
             } else {
                 windowHeroState.clear(source, owner: owner)
             }
+        }
+        .environment(\.activateWindowHeroBackdrop) { source, owner in
+            windowHeroState.activate(source, owner: owner)
         }
         .onChange(of: navigation.selection) { _, _ in
             windowHeroState = HeroBackdropState()
@@ -137,7 +150,7 @@ struct OmniaRootView: View {
             }
         }
         .tabViewStyle(.sidebarAdaptable)
-        .tint(store.accentColor)
+        .tint(accentColor)
         .toolbarBackground(OmniaMaterial.tabBar, for: .tabBar)
         .toolbarBackground(.visible, for: .tabBar)
         .tabBarMinimizeBehavior(.onScrollDown)
@@ -152,17 +165,85 @@ struct OmniaRootView: View {
         } detail: {
             macNavigationStack(for: navigation.selection)
         }
+        // The detail stack is rebuilt per destination, so a destination left
+        // behind starts again at its root, as it did before paths were stored.
+        .onChange(of: navigation.selection) { previous, _ in
+            navigation.resetPath(for: previous)
+        }
         // Keep the platform sidebar so macOS owns its Liquid Glass surface,
         // resizing, keyboard behavior, and the single native toolbar toggle.
         .navigationSplitViewStyle(.balanced)
         .tint(.gray)
         .accentColor(.gray)
+        .modifier(floatingSearchPanel)
     }
 
+    /// Whether Search opens as a floating panel instead of a page.
+    private var usesFloatingSearch: Bool {
+        settings.preferences.searchStyle.usesFloatingSearch(with: settings.preferences.navigationStyle)
+    }
+
+    private var floatingSearchPanel: FloatingSearchPanel {
+        FloatingSearchPanel(
+            isPresented: macSearchPresentation,
+            accentColor: accentColor,
+            openDetail: { navigation.openDetailFromSearch($0) }
+        )
+    }
+
+    /// Settings › Appearance › Top Bar Style. iPadOS Native is the system
+    /// tab bar; the other styles are Nuvio's floating bar.
+    @ViewBuilder
     private var macTopBarNavigation: some View {
+        if settings.preferences.display.topBarStyle.isNuvio {
+            nuvioTopBarNavigation
+        } else {
+            nativeTopBarNavigation
+        }
+    }
+
+    /// Nuvio's bar sits where the system tab bar does, in the centre of the
+    /// window toolbar, so every page shows it in the same place.
+    private var nuvioTopBarNavigation: some View {
+        macNavigationStack(for: navigation.selection)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    NuvioTopBar(
+                        destinations: AppDestination.macTopBarDestinations,
+                        selection: navigation.selection,
+                        style: settings.preferences.display.topBarStyle,
+                        showsGlow: settings.preferences.display.topBarGlow,
+                        scroll: topBarScroll[navigation.selection] ?? TopBarScrollReport(),
+                        // Leaves room for the title and the page's own
+                        // toolbar buttons on either side.
+                        maximumWidth: max(windowWidth - 420, 0),
+                        select: { navigation.select($0, floatingSearch: usesFloatingSearch) }
+                    )
+                }
+                .sharedBackgroundVisibility(.hidden)
+            }
+        // Only the width is tracked, so resizing doesn't rebuild every page.
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
+            windowWidth = width
+        }
+        .environment(\.reportTopBarScroll) { destination, report in
+            if topBarScroll[destination] != report {
+                topBarScroll[destination] = report
+            }
+        }
+        // Like the sidebar, each tab starts again at its root when left.
+        .onChange(of: navigation.selection) { previous, _ in
+            navigation.resetPath(for: previous)
+            topBarScroll[previous] = nil
+        }
+        .tint(accentColor)
+        .modifier(floatingSearchPanel)
+    }
+
+    private var nativeTopBarNavigation: some View {
         TabView(selection: macTopBarSelection) {
             ForEach(AppDestination.macTopBarDestinations, id: \.self) { destination in
-                if destination == .search {
+                if destination == .search && usesFloatingSearch {
                     Tab(
                         destination.title,
                         systemImage: destination.symbolName,
@@ -182,17 +263,8 @@ struct OmniaRootView: View {
             }
         }
         .tabViewStyle(.tabBarOnly)
-        .tint(store.accentColor)
-        .popover(
-            isPresented: macSearchPresentation,
-            attachmentAnchor: .point(.top),
-            arrowEdge: .top
-        ) {
-            NavigationStack {
-                SearchView(presentation: .popover)
-            }
-            .tint(store.accentColor)
-        }
+        .tint(accentColor)
+        .modifier(floatingSearchPanel)
     }
 
     private var macSidebar: some View {
@@ -240,7 +312,7 @@ struct OmniaRootView: View {
     }
 
     private func macNavigationStack(for destination: AppDestination) -> some View {
-        NavigationStack {
+        NavigationStack(path: macPath(for: destination)) {
             switch destination {
             case .home:
                 HomeView()
@@ -255,9 +327,10 @@ struct OmniaRootView: View {
             }
         }
         .id(destination)
+        .environment(\.isActiveDestination, destination == navigation.selection)
         // Sidebar row colors are local to the leading column. Destination
         // controls and native context-menu selection retain Apple system blue.
-        .tint(store.accentColor)
+        .tint(accentColor)
     }
 
     private var macSidebarDestinations: [AppDestination] {
@@ -278,7 +351,7 @@ struct OmniaRootView: View {
     private func macSidebarSymbolColor(for destination: AppDestination) -> Color {
         switch MacSidebarPresentation.symbolTreatment(for: destination, selection: navigation.selection) {
         case .appleBlue:
-            .blue
+            accentColor
         case .secondary:
             .secondary
         }
@@ -287,14 +360,21 @@ struct OmniaRootView: View {
     private var macSelection: Binding<AppDestination> {
         Binding(
             get: { navigation.selection },
-            set: { navigation.select($0) }
+            set: { navigation.select($0, floatingSearch: usesFloatingSearch) }
         )
     }
 
     private var macTopBarSelection: Binding<AppDestination> {
         Binding(
             get: { navigation.selection },
-            set: { navigation.selectFromTopBar($0) }
+            set: { navigation.select($0, floatingSearch: usesFloatingSearch) }
+        )
+    }
+
+    private func macPath(for destination: AppDestination) -> Binding<NavigationPath> {
+        Binding(
+            get: { navigation.paths[destination] ?? NavigationPath() },
+            set: { navigation.paths[destination] = $0 }
         )
     }
 
@@ -309,6 +389,29 @@ struct OmniaRootView: View {
 }
 
 #if os(macOS)
+/// The floating search panel, used from either navigation style.
+private struct FloatingSearchPanel: ViewModifier {
+    let isPresented: Binding<Bool>
+    let accentColor: Color
+    let openDetail: (MediaItem) -> Void
+
+    func body(content: Content) -> some View {
+        content.popover(
+            isPresented: isPresented,
+            attachmentAnchor: .point(.top),
+            arrowEdge: .top
+        ) {
+            NavigationStack {
+                SearchView(presentation: .popover)
+            }
+            .environment(\.openMediaDetail, OpenMediaDetailAction { item in
+                openDetail(item)
+            })
+            .tint(accentColor)
+        }
+    }
+}
+
 private struct MacSidebarSelectionConfigurator: NSViewRepresentable {
     func makeNSView(context: Context) -> MacSidebarSelectionConfigurationView {
         MacSidebarSelectionConfigurationView()

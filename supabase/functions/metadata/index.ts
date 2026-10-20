@@ -698,19 +698,29 @@ async function cacheRecord(item: NormalizedMetadata): Promise<NormalizedMetadata
 /// The discovery index deliberately retains only normalized records and their
 /// stable ordering. It is server-only; apps always read it through this
 /// function, so provider credentials and database access remain private.
-async function cachedCatalogPage(type: MediaType, page: number): Promise<NormalizedMetadata[]> {
+// TMDB's popular order changes daily. A stored page older than this is
+// fetched again, so Home and Discover follow the current list instead of the
+// order captured when the pool was first seeded.
+const DISCOVERY_PAGE_MAX_AGE_MS = 24 * 60 * 60 * 1000
+
+async function cachedCatalogPage(type: MediaType, page: number): Promise<{ items: NormalizedMetadata[]; isStale: boolean }> {
   const { data, error } = await serviceClient()
     .from("discovery_catalog_entries")
-    .select("position, metadata_records(id, canonical_key, provider, provider_id, media_type, title, original_title, overview, release_date, poster_path, backdrop_path, external_ids, payload)")
+    .select("position, updated_at, metadata_records(id, canonical_key, provider, provider_id, media_type, title, original_title, overview, release_date, poster_path, backdrop_path, external_ids, payload)")
     .eq("media_type", type)
     .eq("catalog_category", "popular")
     .eq("source_page", page)
     .order("position", { ascending: true })
   if (error) throw error
-  return (data ?? []).flatMap((entry) => {
+  const isStale = (data ?? []).some((entry) => {
+    const updatedAt = Date.parse(String(entry.updated_at ?? ""))
+    return !Number.isFinite(updatedAt) || Date.now() - updatedAt > DISCOVERY_PAGE_MAX_AGE_MS
+  })
+  const items = (data ?? []).flatMap((entry) => {
     const record = entry.metadata_records
     return record && !Array.isArray(record) ? [normalizedRecord(record as MetadataRecordRow)] : []
   })
+  return { items, isStale }
 }
 
 async function storeDiscoveryPage(type: MediaType, page: number, items: NormalizedMetadata[]) {
@@ -910,11 +920,17 @@ export default {
         // the next provider page on demand.
         if (category === "popular" && !request.genre_id && providers[0] === "tmdb") {
           const indexed = await cachedCatalogPage(request.type, page)
-          if (indexed.length > 0) {
-            return response({ results: indexed, providers: ["tmdb"] })
+          if (indexed.items.length > 0 && !indexed.isStale) {
+            return response({ results: indexed.items, providers: ["tmdb"] })
           }
-          const fetched = await seedDiscoveryPage(request.type, page, language)
-          return response({ results: fetched, providers: ["tmdb"] })
+          try {
+            const fetched = await seedDiscoveryPage(request.type, page, language)
+            return response({ results: fetched, providers: ["tmdb"] })
+          } catch (error) {
+            // A stale page is still better than an empty shelf while TMDB is unreachable.
+            if (indexed.items.length > 0) return response({ results: indexed.items, providers: ["tmdb"] })
+            throw error
+          }
         }
 
         const providerResults = await Promise.allSettled(providers.map((provider) =>

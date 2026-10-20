@@ -20,7 +20,12 @@ final class OmniaStore {
     @ObservationIgnored private var playbackPersistenceTask: Task<Void, Never>?
     private let localMediaStore: LocalMediaStore?
     private let addonPersistence: InstalledAddonPersistence?
-    var installedAddons: [InstalledAddon]
+    var installedAddons: [InstalledAddon] {
+        didSet { addonHomeCatalogCache = nil }
+    }
+    /// Home catalogs derived from `installedAddons`, rebuilt only when the
+    /// add-ons change. Home and Settings read them on every render.
+    @ObservationIgnored var addonHomeCatalogCache: [AddonHomeCatalog]?
     private(set) var installedAddonsAreLoading: Bool
     private(set) var installedAddonRestoreIssues: [InstalledAddonRestoreIssue]
     private(set) var disabledAddonCatalogIDs: Set<String>
@@ -59,9 +64,38 @@ final class OmniaStore {
         installedAddons: [.preview]
     )
 
+    /// Installing from an address that is already installed replaces that
+    /// add-on in place. Another configuration of the same add-on (same
+    /// manifest id, different address) is added next to it instead of
+    /// replacing it.
     func add(_ addon: InstalledAddon) {
-        installedAddons.removeAll { $0.id == addon.id }
-        installedAddons.append(addon)
+        var addon = addon
+        if let index = installedAddons.firstIndex(where: { $0.manifestURL == addon.manifestURL }) {
+            let existing = installedAddons[index]
+            addon = InstalledAddon(
+                manifest: addon.manifest,
+                manifestURL: addon.manifestURL,
+                isEnabled: addon.isEnabled,
+                addedAt: existing.addedAt,
+                customName: existing.customName,
+                installID: existing.installID
+            )
+            installedAddons[index] = addon
+        } else {
+            if installedAddons.contains(where: { $0.id == addon.id }) {
+                addon = InstalledAddon(
+                    manifest: addon.manifest,
+                    manifestURL: addon.manifestURL,
+                    isEnabled: addon.isEnabled,
+                    addedAt: addon.addedAt,
+                    customName: addon.customName,
+                    installID: InstalledAddon.secondaryInstallID(manifestID: addon.manifest.id, manifestURL: addon.manifestURL)
+                )
+                // Installing the same second configuration again replaces it.
+                installedAddons.removeAll { $0.id == addon.id }
+            }
+            installedAddons.append(addon)
+        }
         installedAddonRestoreIssues.removeAll { $0.addonID == addon.id }
         saveAddons()
     }
@@ -93,9 +127,49 @@ final class OmniaStore {
             manifest: manifest,
             manifestURL: manifestURL,
             isEnabled: existing.isEnabled,
-            addedAt: existing.addedAt
+            addedAt: existing.addedAt,
+            customName: existing.customName,
+            installID: existing.installID
         )
         saveAddons()
+    }
+
+    /// Add-ons such as Xperience change their manifest when they are
+    /// reconfigured on the web, while the address stays the same. Like
+    /// Nuvio, fetch every enabled manifest again at launch, so newly enabled
+    /// catalogs, and the collection folders that point at them, show up.
+    func refreshInstalledManifests() async {
+        let addons = installedAddons.filter(\.isEnabled).map { (id: $0.id, url: $0.manifestURL) }
+        await withTaskGroup(of: (String, URL, Result<StremioAddonManifest, Error>).self) { group in
+            for addon in addons {
+                group.addTask {
+                    do {
+                        return (addon.id, addon.url, .success(try await StremioAddonClient.fetchManifest(from: addon.url)))
+                    } catch {
+                        return (addon.id, addon.url, .failure(error))
+                    }
+                }
+            }
+            for await (id, url, result) in group {
+                let manifest: StremioAddonManifest
+                switch result {
+                case let .success(fetched):
+                    AddonDiagnostics.shared.recordSuccess(.manifest, addonID: id)
+                    manifest = fetched
+                case let .failure(error):
+                    // The last manifest keeps working; Settings shows why
+                    // it couldn't be refreshed.
+                    AddonDiagnostics.shared.recordFailure(.manifest, addonID: id, error: error)
+                    continue
+                }
+                guard let current = installedAddons.first(where: { $0.id == id }),
+                      manifest.id == current.manifest.id,
+                      current.manifestURL == url,
+                      current.manifest != manifest
+                else { continue }
+                replaceAddon(id: id, manifest: manifest, manifestURL: url)
+            }
+        }
     }
 
     func moveAddons(from source: IndexSet, to destination: Int) {
@@ -106,6 +180,12 @@ final class OmniaStore {
     func toggleAddon(id: String) {
         guard let index = installedAddons.firstIndex(where: { $0.id == id }) else { return }
         installedAddons[index].isEnabled.toggle()
+        saveAddons()
+    }
+
+    func renameAddon(id: String, to name: String) {
+        guard let index = installedAddons.firstIndex(where: { $0.id == id }) else { return }
+        installedAddons[index].rename(to: name)
         saveAddons()
     }
 
@@ -127,6 +207,13 @@ final class OmniaStore {
         saveDisabledCatalogIDs()
     }
 
+    /// Home Layout's Reset to Default shows every catalog again.
+    func enableAllCatalogs() {
+        guard !disabledAddonCatalogIDs.isEmpty else { return }
+        disabledAddonCatalogIDs.removeAll()
+        saveDisabledCatalogIDs()
+    }
+
     var enabledAddonCatalogCount: Int {
         installedAddons.reduce(into: 0) { count, addon in
             count += addon.manifest.catalogs.filter { isCatalogEnabled(for: addon, catalog: $0) }.count
@@ -134,22 +221,33 @@ final class OmniaStore {
     }
 
     func isSaved(_ item: MediaItem) -> Bool {
-        localMediaSnapshots.first(where: { $0.mediaID == item.id })?.isInWatchlist
-            ?? library.contains { $0.id == item.id }
+        savedSnapshot(matching: item)?.isInWatchlist
+            ?? library.contains { $0.isSameTitle(as: item) }
+    }
+
+    /// The stored entry for this title, found by its exact ID first, then by
+    /// any shared IMDb/TMDB/TVDB ID, so a title added from Home and found
+    /// again through search is one entry, not two.
+    private func savedSnapshot(matching item: MediaItem) -> LocalMediaSnapshot? {
+        localMediaSnapshots.first { $0.mediaID == item.id }
+            ?? localMediaSnapshots.first { $0.isInWatchlist && $0.item.isSameTitle(as: item) }
+            ?? localMediaSnapshots.first { $0.item.isSameTitle(as: item) }
     }
 
     func toggleSaved(_ item: MediaItem) {
         setSaved(item, isIncluded: !isSaved(item))
     }
 
-    func setSaved(_ item: MediaItem, isIncluded: Bool) {
+    func setSaved(_ requested: MediaItem, isIncluded: Bool) {
+        // Save to, or remove, the entry already stored for this title.
+        let item = savedSnapshot(matching: requested)?.item ?? requested
         guard let localMediaStore else {
             if isIncluded {
-                if !library.contains(where: { $0.id == item.id }) {
+                if !library.contains(where: { $0.isSameTitle(as: item) }) {
                     library.insert(item, at: 0)
                 }
             } else {
-                library.removeAll { $0.id == item.id }
+                library.removeAll { $0.isSameTitle(as: item) }
             }
 
             let snapshotIndex = localMediaSnapshots.firstIndex { $0.mediaID == item.id }
@@ -173,9 +271,17 @@ final class OmniaStore {
             return
         }
 
+        // Removing also clears any duplicate saved before titles were
+        // matched across IDs.
+        let duplicates = isIncluded ? [] : localMediaSnapshots
+            .filter { $0.isInWatchlist && $0.mediaID != item.id && $0.item.isSameTitle(as: item) }
+            .map(\.item)
         Task {
             do {
                 try await localMediaStore.setWatchlist(item, isIncluded: isIncluded, at: .now)
+                for duplicate in duplicates {
+                    try await localMediaStore.setWatchlist(duplicate, isIncluded: false, at: .now)
+                }
                 await refreshLocalMedia()
             } catch {
                 localMediaPersistenceFailed = true

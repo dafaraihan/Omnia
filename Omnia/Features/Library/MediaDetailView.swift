@@ -10,7 +10,9 @@ struct MediaDetailView: View {
     @Environment(OmniaStore.self) private var store
     @Environment(LiveMetadataStore.self) private var metadata
     @Environment(SettingsPreferencesStore.self) private var settings
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.displayPreferences) private var display
     @State private var resolvedItem: MediaItem?
     @State private var sourceRequest: PlaybackRequest?
     @State private var showsSynopsis = false
@@ -21,6 +23,15 @@ struct MediaDetailView: View {
     @State private var showsMDBListSettings = false
 
     private var displayItem: MediaItem { resolvedItem ?? item }
+
+    /// Settings › Home › Detail Page › Background.
+    private var usesArtworkBackground: Bool {
+        HeroBackdropPresentation.usesArtworkAccentBelowHero && display.detailBackground == .artworkColor
+    }
+
+    private var watchState: LocalMediaWatchState {
+        store.localMediaSnapshots.first(where: { $0.mediaID == displayItem.id })?.watchState ?? .empty
+    }
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -42,18 +53,13 @@ struct MediaDetailView: View {
         #endif
         .task(id: item.id) {
             ratingsLoader.cancel()
-            async let providerMetadata = metadata.details(for: item)
-            async let addonMetadata = StremioAddonClient.fetchMetadata(
-                for: item,
-                addons: store.installedAddons
-            )
-            let providerResolved = await providerMetadata
-            let fromAddons = await addonMetadata
-            let resolved = fromAddons.reduce(providerResolved) { partial, addonItem in
-                partial.mergingAddonMetadata(addonItem)
+            let resolved: MediaItem
+            if AddonCatalogStore.isAddonMode(store) {
+                resolved = await loadAddonFirstDetails()
+            } else {
+                resolved = await loadProviderFirstDetails()
             }
-            resolvedItem = resolved
-            selectedSeasonNumber = resolved.details?.seasons.first?.seasonNumber ?? 1
+            guard !Task.isCancelled else { return }
 
             await ratingsLoader.load(
                 for: resolved,
@@ -92,8 +98,6 @@ struct MediaDetailView: View {
     private var detailHero: some View {
         ZStack(alignment: .bottomLeading) {
             HeroArtworkCanvas(item: displayItem, source: .detail, artworkAlignment: .topTrailing)
-                .id(displayItem.id)
-                .frame(minHeight: detailHeroHeight, maxHeight: detailHeroHeight)
 
             VStack(alignment: .leading, spacing: 0) {
                 Spacer(minLength: 0)
@@ -105,7 +109,6 @@ struct MediaDetailView: View {
             .padding(.leading, CinematicHeroLayout.horizontalInset)
             .padding(.bottom, 34)
         }
-        .frame(maxWidth: .infinity, minHeight: detailHeroHeight, maxHeight: detailHeroHeight)
         #if os(iOS)
         .overlay(alignment: .topLeading) {
             Button {
@@ -123,6 +126,7 @@ struct MediaDetailView: View {
             .accessibilityLabel("Back")
         }
         #endif
+        .frame(maxWidth: .infinity, minHeight: detailHeroHeight, maxHeight: detailHeroHeight)
         // The hero owns the top safe area on every platform. On macOS the
         // compact system Back control floats above this artwork; it must not
         // create a separate black titlebar band.
@@ -139,6 +143,21 @@ struct MediaDetailView: View {
                     maximumHeight: CinematicHeroLayout.logoHeight,
                     alignment: .center
                 )
+            } else if resolvedItem != nil {
+                // Details have loaded and the provider has no logo: show the
+                // title as text instead of an empty gap.
+                Text(displayItem.title)
+                    .font(.system(size: 44, weight: .bold))
+                    .foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.6)
+                    .shadow(color: .black.opacity(0.35), radius: 8, y: 3)
+                    .frame(
+                        width: CinematicHeroLayout.logoWidth,
+                        height: CinematicHeroLayout.logoHeight,
+                        alignment: .center
+                    )
             } else {
                 // Detail metadata may update with a transparent logo after
                 // the first render. Reserve its canvas rather than showing a
@@ -181,7 +200,7 @@ struct MediaDetailView: View {
 
     private var detailInformation: some View {
         VStack(alignment: .leading, spacing: 34) {
-            if !displayItem.genres.isEmpty {
+            if display.shows(.genres), !displayItem.genres.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Genres")
                         .font(.headline)
@@ -200,13 +219,16 @@ struct MediaDetailView: View {
             }
 
             if let details = displayItem.details {
-                TitleFactsView(details: details)
+                if display.shows(.facts) {
+                    TitleFactsView(details: details)
+                }
 
-                if displayItem.kind == .series, !details.seasons.isEmpty {
+                if display.shows(.episodes), displayItem.kind == .series, !details.seasons.isEmpty {
                     EpisodeShelf(
                         seasons: details.seasons,
                         selectedSeasonNumber: $selectedSeasonNumber,
                         resumeProgress: resumeProgressPresentation,
+                        watchState: watchState,
                         selectEpisode: { episode in
                             selectedEpisode = episode
                             sourceRequest = PlaybackRequest(item: displayItem, episode: episode, resumeAt: nil)
@@ -214,27 +236,27 @@ struct MediaDetailView: View {
                     )
                 }
 
-                if !details.trailers.isEmpty {
+                if display.shows(.trailers), !details.trailers.isEmpty {
                     VideoShelf(title: "Trailers", videos: details.trailers)
                 }
 
-                if !details.bonusContent.isEmpty {
+                if display.shows(.bonusContent), !details.bonusContent.isEmpty {
                     VideoShelf(title: "Bonus Content", videos: details.bonusContent)
                 }
 
-                if !displayPeople(for: details).isEmpty {
+                if display.shows(.people), !displayPeople(for: details).isEmpty {
                     peopleSection(details: details)
                 }
 
-                if !details.studioTitles.isEmpty {
+                if display.shows(.studio), !details.studioTitles.isEmpty {
                     detailShelf(title: studioShelfTitle(details), items: details.studioTitles)
                 }
 
-                if let collection = details.collection, !collection.members.isEmpty {
+                if display.shows(.collection), let collection = details.collection, !collection.members.isEmpty {
                     detailShelf(title: collection.name, items: collection.members)
                 }
 
-                if !details.recommendations.isEmpty {
+                if display.shows(.recommendations), !details.recommendations.isEmpty {
                     detailShelf(title: "More Like This", items: details.recommendations)
                 }
             }
@@ -244,12 +266,66 @@ struct MediaDetailView: View {
         .padding(.top, 32)
         .padding(.bottom, 72)
         .background {
-            if HeroBackdropPresentation.usesArtworkAccentBelowHero {
+            if usesArtworkBackground {
                 HeroAccentBackground(item: displayItem)
             } else {
                 pageBackground
             }
         }
+        // The info sections sit on the dark artwork accent; keep their
+        // text light in Light appearance.
+        .environment(\.colorScheme, usesArtworkBackground ? .dark : colorScheme)
+    }
+
+    /// Add-on mode (Nuvio's model): the add-on that listed the title is the
+    /// source of truth. TMDB/TVDB only fills what the add-on left empty, such
+    /// as cast photos or recommendations.
+    private func loadAddonFirstDetails() async -> MediaItem {
+        let fromAddon = await AddonMetadataResolver.resolve(item, addons: store.installedAddons)
+        guard !Task.isCancelled else { return fromAddon ?? item }
+        let addonFirst = fromAddon ?? item
+        if fromAddon != nil {
+            resolvedItem = addonFirst
+            selectedSeasonNumber = addonFirst.details?.seasons.first(where: { $0.seasonNumber > 0 })?.seasonNumber
+                ?? addonFirst.details?.seasons.first?.seasonNumber ?? 1
+        }
+
+        let provider = await metadata.details(for: addonFirst)
+        guard !Task.isCancelled else { return addonFirst }
+        let resolved = addonFirst.fillingGaps(from: provider)
+        resolvedItem = resolved
+        if addonFirst.details?.seasons.isEmpty != false {
+            selectedSeasonNumber = resolved.details?.seasons.first?.seasonNumber ?? 1
+        }
+        return resolved
+    }
+
+    /// Without catalog add-ons, Omnia's own providers lead and add-ons fill
+    /// gaps.
+    private func loadProviderFirstDetails() async -> MediaItem {
+        async let providerMetadata = metadata.details(for: item)
+        async let addonMetadata = StremioAddonClient.fetchMetadata(
+            for: item,
+            addons: store.installedAddons
+        )
+        let providerResolved = await providerMetadata
+        // Show provider metadata as soon as it arrives. Add-on meta requests
+        // can take up to their 20 second timeout, and waiting on them left
+        // the page without seasons or cast for that whole time.
+        guard !Task.isCancelled else { return providerResolved }
+        resolvedItem = providerResolved
+        selectedSeasonNumber = providerResolved.details?.seasons.first?.seasonNumber ?? 1
+
+        let fromAddons = await addonMetadata
+        guard !Task.isCancelled else { return providerResolved }
+        let resolved = fromAddons.reduce(providerResolved) { partial, addonItem in
+            partial.mergingAddonMetadata(addonItem)
+        }
+        resolvedItem = resolved
+        if providerResolved.details?.seasons.isEmpty != false {
+            selectedSeasonNumber = resolved.details?.seasons.first?.seasonNumber ?? 1
+        }
+        return resolved
     }
 
     private var actions: some View {
@@ -425,19 +501,11 @@ struct MediaDetailView: View {
     }
 
     private var posterItemSpan: CGFloat {
-        #if os(iOS)
-        148
-        #else
-        170
-        #endif
+        MediaBrowseMetrics.posterItemSpan(display)
     }
 
-    private var pageBackground: Color {
-        #if os(iOS)
-        Color(uiColor: .systemBackground)
-        #else
-        Color(nsColor: .windowBackgroundColor)
-        #endif
+    private var pageBackground: some View {
+        OmniaPageBackground()
     }
 
     @ViewBuilder
@@ -612,8 +680,9 @@ private struct EpisodeShelf: View {
     let seasons: [MediaSeason]
     @Binding var selectedSeasonNumber: Int
     let resumeProgress: ResumeProgressPresentation?
+    let watchState: LocalMediaWatchState
     let selectEpisode: (MediaEpisode) -> Void
-    @State private var showsSeasonChoices = false
+    @Environment(\.displayPreferences) private var display
 
     private var selectedSeason: MediaSeason? {
         seasons.first(where: { $0.seasonNumber == selectedSeasonNumber }) ?? seasons.first
@@ -629,8 +698,16 @@ private struct EpisodeShelf: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Button {
-                showsSeasonChoices.toggle()
+            // A native menu gives the standard checkmark, keyboard
+            // navigation and VoiceOver behaviour for the season list.
+            Menu {
+                Picker("Season", selection: $selectedSeasonNumber) {
+                    ForEach(seasons) { season in
+                        Text(season.title).tag(season.seasonNumber)
+                    }
+                }
+                .pickerStyle(.inline)
+                .labelsHidden()
             } label: {
                 HStack(spacing: 8) {
                     Text(selectedSeason?.title ?? "Season")
@@ -644,49 +721,46 @@ private struct EpisodeShelf: View {
                 }
                 .contentShape(Rectangle())
             }
+            .menuStyle(.button)
             .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .fixedSize()
             .accessibilityLabel("Choose \(selectedSeason?.title ?? "season")")
-            .popover(isPresented: $showsSeasonChoices, arrowEdge: .bottom) {
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(seasons) { season in
-                        Button {
-                            selectedSeasonNumber = season.seasonNumber
-                            showsSeasonChoices = false
-                        } label: {
-                            HStack(spacing: 12) {
-                                Text(season.title)
-                                Spacer(minLength: 0)
-                                if season.seasonNumber == selectedSeasonNumber {
-                                    Image(systemName: "checkmark")
-                                        .font(.caption.weight(.bold))
-                                }
-                            }
-                            .foregroundStyle(.primary)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 9)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(6)
-                .frame(minWidth: 180)
-            }
 
             if let selectedSeason {
-                ShelfScrollView(
-                    items: selectedSeason.episodes,
-                    itemSpan: episodeCardSpan,
-                    accessibilityLabel: selectedSeason.title
-                ) { episode in
-                    EpisodeCard(
-                        episode: episode,
-                        resumeProgress: resumeProgress?.matches(episode) == true ? resumeProgress : nil
-                    ) {
-                        selectEpisode(episode)
+                switch display.episodeLayout {
+                case .horizontal:
+                    ShelfScrollView(
+                        items: selectedSeason.episodes,
+                        itemSpan: episodeCardSpan,
+                        accessibilityLabel: selectedSeason.title
+                    ) { episode in
+                        card(for: episode)
+                    }
+                case .list:
+                    LazyVStack(alignment: .leading, spacing: 16) {
+                        ForEach(selectedSeason.episodes) { episode in
+                            card(for: episode)
+                        }
                     }
                 }
             }
+        }
+    }
+
+    private func card(for episode: MediaEpisode) -> some View {
+        let progress = resumeProgress?.matches(episode) == true ? resumeProgress : nil
+        return EpisodeCard(
+            episode: episode,
+            resumeProgress: progress,
+            layout: display.episodeLayout,
+            // Blur Unwatched hides the still of every episode not yet
+            // watched or started, so thumbnails can't spoil it.
+            blursArtwork: display.blurUnwatchedEpisodes
+                && progress == nil
+                && watchState.isWatched(episode) != true
+        ) {
+            selectEpisode(episode)
         }
     }
 }
@@ -694,90 +768,28 @@ private struct EpisodeShelf: View {
 private struct EpisodeCard: View {
     let episode: MediaEpisode
     let resumeProgress: ResumeProgressPresentation?
+    var layout: EpisodeCardLayout = .horizontal
+    var blursArtwork = false
     let action: () -> Void
     @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
-            VStack(alignment: .leading, spacing: 10) {
-            AsyncImage(url: episode.stillURL) { image in
-                image.resizable().scaledToFill()
-            } placeholder: {
-                LinearGradient(
-                    colors: [.indigo.opacity(0.84), .black],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .overlay {
-                    Image(systemName: "play.rectangle.fill")
-                        .font(.title)
-                        .foregroundStyle(.white.opacity(0.7))
+            switch layout {
+            case .horizontal:
+                VStack(alignment: .leading, spacing: 10) {
+                    artwork(width: cardWidth, height: artworkHeight)
+                    information
                 }
-            }
-            .frame(width: cardWidth, height: artworkHeight)
-            .clipped()
-            .overlay {
-                LinearGradient(
-                    colors: [.clear, .black.opacity(0.34)],
-                    startPoint: .center,
-                    endPoint: .bottom
-                )
-            }
-            .overlay(alignment: .bottom) {
-                if let resumeProgress {
-                    VStack(spacing: 7) {
-                        Text(resumeProgress.remainingText)
-                            .font(.caption.weight(.semibold))
-                            .frame(maxWidth: .infinity, alignment: .trailing)
-                        ResumeProgressBar(progress: resumeProgress.progress)
-                    }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 9)
+                .frame(width: cardWidth, alignment: .leading)
+            case .list:
+                HStack(alignment: .top, spacing: 16) {
+                    artwork(width: listArtworkWidth, height: listArtworkWidth / cardWidth * artworkHeight)
+                    information
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .overlay {
-                Image(systemName: "play.fill")
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(.black)
-                    .frame(width: 42, height: 42)
-                    .background(.white, in: Circle())
-                    .opacity(isHovered ? 1 : 0)
-                    .animation(.easeInOut(duration: 0.14), value: isHovered)
-            }
-            .clipShape(.rect(cornerRadius: 16, style: .continuous))
-
-            VStack(alignment: .leading, spacing: 5) {
-                Text("EPISODE \(episode.episodeNumber)")
-                    .font(.caption2.weight(.bold))
-                    .tracking(0.7)
-                    .foregroundStyle(.secondary)
-                Text(episode.title)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                Text(episode.overview)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-                HStack(spacing: 7) {
-                    if let releaseDateText {
-                        Text(releaseDateText)
-                    }
-                    if releaseDateText != nil, episode.runtimeMinutes != nil {
-                        Text("•")
-                    }
-                    if let runtime = episode.runtimeMinutes {
-                        Text(runtimeText(runtime))
-                    }
-                }
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .frame(width: cardWidth, alignment: .leading)
         }
         .buttonStyle(EpisodeCardButtonStyle())
         #if os(macOS)
@@ -786,6 +798,97 @@ private struct EpisodeCard: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Episode \(episode.episodeNumber), \(episode.title)")
         .accessibilityValue(episode.overview)
+    }
+
+    private func artwork(width: CGFloat, height: CGFloat) -> some View {
+        AsyncImage(url: episode.stillURL) { image in
+            image.resizable().scaledToFill()
+                .blur(radius: blursArtwork ? 18 : 0, opaque: true)
+        } placeholder: {
+            LinearGradient(
+                colors: [.indigo.opacity(0.84), .black],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .overlay {
+                Image(systemName: "play.rectangle.fill")
+                    .font(.title)
+                    .foregroundStyle(.white.opacity(0.7))
+            }
+        }
+        .frame(width: width, height: height)
+        .clipped()
+        .overlay {
+            LinearGradient(
+                colors: [.clear, .black.opacity(0.34)],
+                startPoint: .center,
+                endPoint: .bottom
+            )
+        }
+        .overlay(alignment: .bottom) {
+            if let resumeProgress {
+                VStack(spacing: 7) {
+                    Text(resumeProgress.remainingText)
+                        .font(.caption.weight(.semibold))
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                    ResumeProgressBar(progress: resumeProgress.progress)
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 9)
+            }
+        }
+        .overlay {
+            Image(systemName: "play.fill")
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(.black)
+                .frame(width: 42, height: 42)
+                .background(.white, in: Circle())
+                .opacity(isHovered ? 1 : 0)
+                .animation(.easeInOut(duration: 0.14), value: isHovered)
+        }
+        .clipShape(.rect(cornerRadius: 16, style: .continuous))
+        .cardDepth(.episodes, cornerRadius: 16)
+    }
+
+    private var information: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text("EPISODE \(episode.episodeNumber)")
+                .font(.caption2.weight(.bold))
+                .tracking(0.7)
+                .foregroundStyle(.secondary)
+            Text(episode.title)
+                .font(.headline)
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+            Text(episode.overview)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .lineLimit(layout == .list ? 3 : 2)
+                .multilineTextAlignment(.leading)
+            HStack(spacing: 7) {
+                if let releaseDateText {
+                    Text(releaseDateText)
+                }
+                if releaseDateText != nil, episode.runtimeMinutes != nil {
+                    Text("•")
+                }
+                if let runtime = episode.runtimeMinutes {
+                    Text(runtimeText(runtime))
+                }
+            }
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var listArtworkWidth: CGFloat {
+        #if os(iOS)
+        168
+        #else
+        240
+        #endif
     }
 
     private func runtimeText(_ minutes: Int) -> String {
@@ -907,6 +1010,7 @@ private struct VideoCard: View {
         }
         .frame(width: cardWidth, height: cardHeight)
         .clipShape(.rect(cornerRadius: 16, style: .continuous))
+        .cardDepth(.trailers, cornerRadius: 16)
     }
 
     private var cardWidth: CGFloat {
@@ -988,6 +1092,7 @@ private struct CreditCard: View {
             }
             .frame(width: 104, height: 104)
             .clipShape(Circle())
+            .cardDepth(.cast, shape: Circle())
 
             Text(person.name)
                 .font(.subheadline.weight(.medium))
@@ -1017,6 +1122,7 @@ private struct SynopsisSheet: View {
                     .font(.headline)
                 Spacer()
                 Button("Done") { closePresentation() }
+                    .keyboardShortcut(.defaultAction)
             }
             .padding(.horizontal, 20)
             .frame(height: 52)

@@ -22,7 +22,7 @@ On macOS, an HTTPS source identified as an ISO can be explicitly prepared as an 
 - Homebrew libmpv and libtorrent-rasterbar for ordinary macOS Debug builds: `brew install mpv libtorrent-rasterbar`.
 - CMake, Meson/Ninja, and the platform toolchain for the pinned macOS native playback artifact workflow documented in [NativeDependencies](NativeDependencies/README.md). Release builds reject live Homebrew inputs and require a separately reviewed universal artifact root.
 - The Supabase CLI and Docker for the local Supabase stack.
-- Deno for checking and testing the metadata Edge Function.
+- Deno for statically checking the metadata Edge Function.
 
 ## Get started
 
@@ -36,24 +36,20 @@ On macOS, an HTTPS source identified as an ISO can be explicitly prepared as an 
 
 The documentation map below contains the full credential boundary, Auth configuration, and hosted deployment sequence.
 
-### Build and test
+### Build and check
 
-Run the macOS build and XCTest suite from the repository root. The test host must be signed for the bundled libmpv runtime.
+Run the macOS build from the repository root.
 
 ```sh
 xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' build
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test
 ```
 
-Check and test the metadata Edge Function:
+Statically check the metadata Edge Function:
 
 ```sh
 deno check --config supabase/functions/metadata/deno.json \
   --lock supabase/functions/metadata/deno.lock --frozen \
   supabase/functions/metadata/index.ts
-deno test --config supabase/functions/metadata/deno.json \
-  --lock supabase/functions/metadata/deno.lock --frozen \
-  supabase/functions/metadata
 ```
 
 ### Local Supabase
@@ -81,7 +77,7 @@ The hosted runtime supplies `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`; do n
 
 ## Current maturity
 
-The repository contains the native app target, a macOS libmpv playback integration, a Supabase schema, and a metadata Edge Function, alongside focused Apple and Edge Function tests. The experience is still under active development: cloud library synchronization is not connected to app state, tvOS is not a target, several provider and playback paths have intentionally limited scope, and broader UI, accessibility, backend, and device verification remains planned. Consult the design and future-update references before treating an integration as production-ready.
+The repository contains the native app target, a macOS libmpv playback integration, a Supabase schema, and a metadata Edge Function. Automated test targets and suites are intentionally absent; validation uses builds, static checks, and focused manual evidence. The experience is still under active development: cloud library synchronization is not connected to app state, tvOS is not a target, several provider and playback paths have intentionally limited scope, and broader UI, accessibility, backend, and device verification remains planned. Consult the design and future-update references before treating an integration as production-ready.
 
 ## Documentation map
 

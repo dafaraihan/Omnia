@@ -1,5 +1,7 @@
 # MDBList Community Rating Marks Implementation Plan
 
+> **Automated-validation policy:** Follow the repository-root `AGENTS.md`. Instructions below that call for automated test targets, suites, fixtures, or scripts are historical and superseded; use builds, static checks, and focused manual evidence instead.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace text-only known MDBList rating sources with bundled transparent provider marks, including value-dependent Rotten Tomatoes artwork, without changing rating retrieval or preference behavior.
@@ -93,8 +95,7 @@ func testInvalidValuesCannotSelectArtwork() {
 Run:
 
 ```sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' \
-  -only-testing:OmniaTests/MDBListRatingProviderTests test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: FAIL because `defaultAssetName`, `assetName(for:value:)`, and `aggregateAssetName` do not exist.
@@ -251,8 +252,7 @@ func testSettingsUseDefaultArtworkForEveryKnownSourceAndAggregate() {
 Run:
 
 ```sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' \
-  -only-testing:OmniaTests/MDBListRatingsPresentationTests test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: FAIL because the presentation models still expose `approvedAssetName` and do not select value-dependent or aggregate assets.
@@ -306,9 +306,7 @@ Settings uses a 20-point image height, a 72-point maximum width, and always reta
 - [ ] **Step 5: Run focused provider and presentation tests**
 
 ```sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' \
-  -only-testing:OmniaTests/MDBListRatingProviderTests \
-  -only-testing:OmniaTests/MDBListRatingsPresentationTests test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: PASS, including existing accessibility, ordering, toggles, unknown fallback, and aggregate tests.
@@ -367,9 +365,7 @@ func testEveryRatingAssetIsInReviewedProvenanceMatrix() {
 - [ ] **Step 2: Run About/provider tests and verify failure**
 
 ```sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' \
-  -only-testing:OmniaTests/AboutSettingsTests \
-  -only-testing:OmniaTests/MDBListRatingProviderTests test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: FAIL because provenance records still expose only `approvedAssetName` and cover only TMDB.
@@ -439,10 +435,7 @@ Each source record lists its exact image-set names. Rotten Tomatoes owns four na
 - [ ] **Step 6: Run asset/provenance tests and compile the asset catalog**
 
 ```sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' \
-  -only-testing:OmniaTests/AboutSettingsTests \
-  -only-testing:OmniaTests/MDBListRatingProviderTests \
-  -only-testing:OmniaTests/MDBListRatingsPresentationTests test
+[Automated validation command removed by repository policy.]
 xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' build
 ```
 
@@ -470,7 +463,7 @@ git commit -m "Bundle MDBList rating provider marks"
 - [ ] **Step 1: Run the complete macOS XCTest suite**
 
 ```sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: 0 failed tests.

@@ -119,7 +119,7 @@ nonisolated struct SavedMediaItem: Codable, Equatable, Sendable {
             overview: overview,
             genres: genres,
             symbol: symbol,
-            artworkColors: kind == .series ? [.cyan, .indigo] : [.indigo, .black],
+            artworkColors: MediaItem.placeholderArtworkColors,
             artworkURL: artworkURL,
             backdropURL: backdropURL,
             logoURL: logoURL,

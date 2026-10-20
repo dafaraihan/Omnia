@@ -1,5 +1,7 @@
 # Reproducible Native Playback Dependencies Implementation Plan
 
+> **Automated-validation policy:** Follow the repository-root `AGENTS.md`. Instructions below that call for automated test targets, suites, fixtures, or scripts are historical and superseded; use builds, static checks, and focused manual evidence instead.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace distribution reliance on an arbitrary Homebrew libmpv closure with pinned, checksummed, license-reviewed universal macOS artifacts that also provide libtorrent for the local resolver.
@@ -27,7 +29,7 @@
 - Create: `NativeDependencies/playback-dependencies.json`
 - Create: `NativeDependencies/README.md`
 - Create: `Scripts/verify-playback-manifest.sh`
-- Test: `Scripts/Tests/verify-playback-manifest-tests.sh`
+[Historical automated-validation reference removed by repository policy.]
 
 **Interfaces:**
 - Consumes: dependency records with `name`, `version`, `source_url`, `sha256`, `license`, `license_url`, and `build_system`.
@@ -48,7 +50,7 @@ jq -e '.components | map(.name) | contains(["mpv", "ffmpeg", "libtorrent", "boos
 - [ ] **Step 2: Run the contract test and witness RED**
 
 ```bash
-/bin/bash Scripts/Tests/verify-playback-manifest-tests.sh
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: failure because the manifest and verifier do not exist.
@@ -80,7 +82,7 @@ The verifier uses `jq -e` to enforce required keys, exact top-level versions, HT
 - [ ] **Step 4: Run the verifier and witness GREEN**
 
 ```bash
-/bin/bash Scripts/Tests/verify-playback-manifest-tests.sh
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: pass only after independently verified digests and the complete selected closure are recorded.
@@ -88,7 +90,7 @@ Expected: pass only after independently verified digests and the complete select
 - [ ] **Step 5: Commit the provenance contract**
 
 ```bash
-git add NativeDependencies/playback-dependencies.json NativeDependencies/README.md Scripts/verify-playback-manifest.sh Scripts/Tests/verify-playback-manifest-tests.sh
+[Historical automated-validation reference removed by repository policy.]
 git commit -m "Define native playback dependency provenance"
 ```
 
@@ -97,8 +99,8 @@ git commit -m "Define native playback dependency provenance"
 **Files:**
 - Create: `Scripts/build-playback-dependencies.sh`
 - Create: `Scripts/verify-playback-artifacts.sh`
-- Create: `Scripts/Tests/Fixtures/NativeArtifacts/`
-- Test: `Scripts/Tests/verify-playback-artifacts-tests.sh`
+[Historical automated-validation reference removed by repository policy.]
+[Historical automated-validation reference removed by repository policy.]
 
 **Interfaces:**
 - Consumes: the verified manifest and an explicit output directory argument.
@@ -115,12 +117,12 @@ expect_failure missing-license
 expect_failure gpl-enabled-ffmpeg
 ```
 
-`expect_failure` copies the named fixture from `Scripts/Tests/Fixtures/NativeArtifacts/<name>` and requires `verify-playback-artifacts.sh` to exit nonzero without printing a path containing a user home directory.
+[Historical automated-validation reference removed by repository policy.]
 
 - [ ] **Step 2: Run the artifact tests and witness RED**
 
 ```bash
-/bin/bash Scripts/Tests/verify-playback-artifacts-tests.sh
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: failure because the build and verifier scripts do not exist.
@@ -150,7 +152,7 @@ The verifier checks `lipo -archs`, `otool -L`, `otool -l`, metadata flags, runti
 - [ ] **Step 4: Run fixture tests, then build and verify real artifacts**
 
 ```bash
-/bin/bash Scripts/Tests/verify-playback-artifacts-tests.sh
+[Automated validation command removed by repository policy.]
 native_output="$(mktemp -d)"
 /bin/bash Scripts/build-playback-dependencies.sh NativeDependencies/playback-dependencies.json "$native_output"
 /bin/bash Scripts/verify-playback-artifacts.sh "$native_output"
@@ -161,7 +163,7 @@ Expected: hostile fixtures are rejected; the real universal artifact passes. Kee
 - [ ] **Step 5: Commit build tooling, not binaries**
 
 ```bash
-git add Scripts/build-playback-dependencies.sh Scripts/verify-playback-artifacts.sh Scripts/Tests/verify-playback-artifacts-tests.sh Scripts/Tests/Fixtures/NativeArtifacts
+[Historical automated-validation reference removed by repository policy.]
 git commit -m "Build reproducible native playback artifacts"
 ```
 
@@ -171,7 +173,7 @@ git commit -m "Build reproducible native playback artifacts"
 - Modify: `Omnia.xcodeproj/project.pbxproj`
 - Replace: `Omnia/Platform/Playback/embed-libmpv.sh`
 - Create: `Omnia/Platform/Playback/stage-native-playback.sh`
-- Test: `Scripts/Tests/stage-native-playback-tests.sh`
+[Historical automated-validation reference removed by repository policy.]
 
 **Interfaces:**
 - Consumes: `OMNIA_NATIVE_PLAYBACK_ROOT` pointing to verified staged artifacts.
@@ -194,7 +196,7 @@ Expected contract: missing Release artifacts fail; non-macOS exits successfully 
 - [ ] **Step 2: Run the staging test and witness RED**
 
 ```bash
-/bin/bash Scripts/Tests/stage-native-playback-tests.sh
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: failure because the staging script does not exist.
@@ -208,7 +210,7 @@ The staging script copies the verified runtime closure, rewrites only known reco
 - [ ] **Step 4: Run script tests and Xcode builds**
 
 ```bash
-/bin/bash Scripts/Tests/stage-native-playback-tests.sh
+[Automated validation command removed by repository policy.]
 xcodebuild -project Omnia.xcodeproj -scheme Omnia -configuration Debug -destination 'platform=macOS' build
 xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'generic/platform=iOS Simulator' build
 ```
@@ -218,7 +220,7 @@ For Release, set `OMNIA_NATIVE_PLAYBACK_ROOT` to the Task 2 verified output and 
 - [ ] **Step 5: Commit Xcode integration**
 
 ```bash
-git add Omnia.xcodeproj/project.pbxproj Omnia/Platform/Playback/embed-libmpv.sh Omnia/Platform/Playback/stage-native-playback.sh Scripts/Tests/stage-native-playback-tests.sh
+[Historical automated-validation reference removed by repository policy.]
 git commit -m "Link verified native playback artifacts"
 ```
 
@@ -230,7 +232,7 @@ git commit -m "Link verified native playback artifacts"
 - Create: `Omnia/Resources/ThirdPartyNotices.md`
 - Create: `NativeDependencies/playback-sbom.spdx.json`
 - Modify: `Omnia/Features/Settings/AboutSettingsView.swift`
-- Test: `Scripts/Tests/playback-compliance-tests.sh`
+[Historical automated-validation reference removed by repository policy.]
 
 **Interfaces:**
 - Consumes: verified dependency manifest, exact extracted license files, and artifact metadata.
@@ -248,7 +250,7 @@ jq -e '.packages | length > 5' NativeDependencies/playback-sbom.spdx.json >/dev/
 - [ ] **Step 2: Run compliance tests and witness RED**
 
 ```bash
-/bin/bash Scripts/Tests/playback-compliance-tests.sh
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: failure because notices and SBOM do not exist.
@@ -269,7 +271,7 @@ first="$(shasum -a 256 Omnia/Resources/ThirdPartyNotices.md NativeDependencies/p
 /bin/bash Scripts/generate-playback-sbom.sh NativeDependencies/playback-dependencies.json NativeDependencies/playback-sbom.spdx.json
 second="$(shasum -a 256 Omnia/Resources/ThirdPartyNotices.md NativeDependencies/playback-sbom.spdx.json)"
 test "$first" = "$second"
-/bin/bash Scripts/Tests/playback-compliance-tests.sh
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: identical hashes and passing compliance assertions.
@@ -277,7 +279,7 @@ Expected: identical hashes and passing compliance assertions.
 - [ ] **Step 5: Commit compliance outputs**
 
 ```bash
-git add Scripts/generate-playback-notices.sh Scripts/generate-playback-sbom.sh Scripts/Tests/playback-compliance-tests.sh Omnia/Resources/ThirdPartyNotices.md NativeDependencies/playback-sbom.spdx.json Omnia/Features/Settings/AboutSettingsView.swift
+[Historical automated-validation reference removed by repository policy.]
 git commit -m "Publish native playback licenses and SBOM"
 ```
 
@@ -289,7 +291,7 @@ git commit -m "Publish native playback licenses and SBOM"
 - Modify: `SECURITY.md`
 - Modify: `INFRASTRUCTURE.md`
 - Modify: `README.md`
-- Test: `Scripts/Tests/verify-playback-archive-tests.sh`
+[Historical automated-validation reference removed by repository policy.]
 
 **Interfaces:**
 - Consumes: a signed `.xcarchive`, manifest, notices, SBOM, and vulnerability scan result.
@@ -302,7 +304,7 @@ Create synthetic metadata fixtures for missing sandbox, unsigned dylib, unexpect
 - [ ] **Step 2: Run verifier tests and witness RED**
 
 ```bash
-/bin/bash Scripts/Tests/verify-playback-archive-tests.sh
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: failure because the archive verifier does not exist.
@@ -316,11 +318,11 @@ The workflow verifies manifest/notices/SBOM on every related change and builds n
 - [ ] **Step 4: Run all tooling and a signed local archive check**
 
 ```bash
-/bin/bash Scripts/Tests/verify-playback-manifest-tests.sh
-/bin/bash Scripts/Tests/verify-playback-artifacts-tests.sh
-/bin/bash Scripts/Tests/stage-native-playback-tests.sh
-/bin/bash Scripts/Tests/playback-compliance-tests.sh
-/bin/bash Scripts/Tests/verify-playback-archive-tests.sh
+[Automated validation command removed by repository policy.]
+[Automated validation command removed by repository policy.]
+[Automated validation command removed by repository policy.]
+[Automated validation command removed by repository policy.]
+[Automated validation command removed by repository policy.]
 git diff --check
 ```
 
@@ -329,6 +331,6 @@ Create a local archive only with the user's valid identity and explicit `OMNIA_N
 - [ ] **Step 5: Commit release gates**
 
 ```bash
-git add Scripts/verify-playback-archive.sh Scripts/Tests/verify-playback-archive-tests.sh .github/workflows/native-playback.yml SECURITY.md INFRASTRUCTURE.md README.md
+[Historical automated-validation reference removed by repository policy.]
 git commit -m "Gate native playback distribution"
 ```

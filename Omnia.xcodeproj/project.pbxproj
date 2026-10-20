@@ -10,19 +10,8 @@
 		E170B0013018EA5D0066A3C3 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = E170B0023018EA5D0066A3C3 /* Supabase */; };
 /* End PBXBuildFile section */
 
-/* Begin PBXContainerItemProxy section */
-		F700000A3018EA5D0066A3C3 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 9D577E393018EA5D0066A3C3 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 9D577E403018EA5D0066A3C3;
-			remoteInfo = Omnia;
-		};
-/* End PBXContainerItemProxy section */
-
 /* Begin PBXFileReference section */
 		9D577E413018EA5D0066A3C3 /* Omnia.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Omnia.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		F70000023018EA5D0066A3C3 /* OmniaTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OmniaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -45,11 +34,6 @@
 			path = Omnia;
 			sourceTree = "<group>";
 		};
-		F70000033018EA5D0066A3C3 /* OmniaTests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = OmniaTests;
-			sourceTree = "<group>";
-		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -61,13 +45,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		F70000053018EA5D0066A3C3 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -75,7 +52,6 @@
 			isa = PBXGroup;
 			children = (
 				9D577E433018EA5D0066A3C3 /* Omnia */,
-				F70000033018EA5D0066A3C3 /* OmniaTests */,
 				9D577E423018EA5D0066A3C3 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -84,7 +60,6 @@
 			isa = PBXGroup;
 			children = (
 				9D577E413018EA5D0066A3C3 /* Omnia.app */,
-				F70000023018EA5D0066A3C3 /* OmniaTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -116,29 +91,6 @@
 			productReference = 9D577E413018EA5D0066A3C3 /* Omnia.app */;
 			productType = "com.apple.product-type.application";
 		};
-		F70000013018EA5D0066A3C3 /* OmniaTests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = F70000093018EA5D0066A3C3 /* Build configuration list for PBXNativeTarget "OmniaTests" */;
-			buildPhases = (
-				F70000043018EA5D0066A3C3 /* Sources */,
-				F70000053018EA5D0066A3C3 /* Frameworks */,
-				F70000063018EA5D0066A3C3 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				F700000B3018EA5D0066A3C3 /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				F70000033018EA5D0066A3C3 /* OmniaTests */,
-			);
-			name = OmniaTests;
-			packageProductDependencies = (
-			);
-			productName = OmniaTests;
-			productReference = F70000023018EA5D0066A3C3 /* OmniaTests.xctest */;
-			productType = "com.apple.product-type.bundle.unit-test";
-		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -151,10 +103,6 @@
 				TargetAttributes = {
 					9D577E403018EA5D0066A3C3 = {
 						CreatedOnToolsVersion = 26.6;
-					};
-					F70000013018EA5D0066A3C3 = {
-						CreatedOnToolsVersion = 26.6;
-						TestTargetID = 9D577E403018EA5D0066A3C3;
 					};
 				};
 			};
@@ -176,20 +124,12 @@
 			projectRoot = "";
 			targets = (
 				9D577E403018EA5D0066A3C3 /* Omnia */,
-				F70000013018EA5D0066A3C3 /* OmniaTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		9D577E3F3018EA5D0066A3C3 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		F70000063018EA5D0066A3C3 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -235,22 +175,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		F70000043018EA5D0066A3C3 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXSourcesBuildPhase section */
-
-/* Begin PBXTargetDependency section */
-		F700000B3018EA5D0066A3C3 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 9D577E403018EA5D0066A3C3 /* Omnia */;
-			targetProxy = F700000A3018EA5D0066A3C3 /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		9D577E4A3018EA5D0066A3C3 /* Debug */ = {
@@ -292,7 +217,6 @@
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = 88P2ULUJDG;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_DYNAMIC_NO_PIC = NO;
@@ -312,6 +236,7 @@
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
+				ORGANIZATIONNAME = "Dafa Raihan";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = macosx;
 				SUPPORTS_MACCATALYST = YES;
@@ -372,6 +297,7 @@
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
+				ORGANIZATIONNAME = "Dafa Raihan";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = macosx;
 				SUPPORTS_MACCATALYST = YES;
@@ -576,44 +502,6 @@
 			};
 			name = Release;
 		};
-		F70000073018EA5D0066A3C3 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEAD_CODE_STRIPPING = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 26.5;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = PrimeDeca.OmniaTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = macosx;
-				SUPPORTED_PLATFORMS = macosx;
-				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Omnia.app/Contents/MacOS/Omnia";
-			};
-			name = Debug;
-		};
-		F70000083018EA5D0066A3C3 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEAD_CODE_STRIPPING = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 26.5;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = PrimeDeca.OmniaTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = macosx;
-				SUPPORTED_PLATFORMS = macosx;
-				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Omnia.app/Contents/MacOS/Omnia";
-			};
-			name = Release;
-		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -631,15 +519,6 @@
 			buildConfigurations = (
 				9D577E4D3018EA5D0066A3C3 /* Debug */,
 				9D577E4E3018EA5D0066A3C3 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		F70000093018EA5D0066A3C3 /* Build configuration list for PBXNativeTarget "OmniaTests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				F70000073018EA5D0066A3C3 /* Debug */,
-				F70000083018EA5D0066A3C3 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

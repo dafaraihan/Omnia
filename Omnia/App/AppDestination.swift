@@ -6,6 +6,7 @@
 import Foundation
 #if os(macOS)
 import Observation
+import SwiftUI
 #endif
 
 enum AppPlatform: Equatable, Sendable {
@@ -104,6 +105,16 @@ enum AppDestination: Hashable {
             false
         }
     }
+
+    /// Whether this destination's stack declares a `MediaItem` destination.
+    var hostsMediaDetail: Bool {
+        switch self {
+        case .home, .library, .discover, .search:
+            true
+        case .settings:
+            false
+        }
+    }
 }
 
 #if os(macOS)
@@ -112,6 +123,9 @@ enum AppDestination: Hashable {
 final class MacPrimaryNavigationState {
     private(set) var selection: AppDestination
     private(set) var isSearchPresented = false
+    /// Each destination's navigation stack, so titles opened from the search
+    /// popover can be pushed onto the main window's current page.
+    var paths: [AppDestination: NavigationPath] = [:]
     var stackIdentity: AppDestination { selection }
     private var previousContentSelection: AppDestination
 
@@ -129,22 +143,48 @@ final class MacPrimaryNavigationState {
         }
     }
 
-    func selectFromTopBar(_ destination: AppDestination) {
-        if destination == .search {
+    /// Selecting Search either opens the floating search panel over the
+    /// current page or goes to the Search page, depending on the setting.
+    func select(_ destination: AppDestination, floatingSearch: Bool) {
+        if destination == .search, floatingSearch {
             isSearchPresented = true
         } else {
             select(destination)
         }
     }
 
-    func activateTopBar() {
-        guard selection == .search else { return }
-        selection = previousContentSelection
-        isSearchPresented = true
+    /// Applies a change of search style: leaving the Search page for the
+    /// floating panel, or closing the panel when Search becomes a page.
+    func applySearchStyle(floating: Bool) {
+        if floating {
+            guard selection == .search else { return }
+            selection = previousContentSelection
+            isSearchPresented = true
+        } else {
+            isSearchPresented = false
+        }
     }
 
     func setSearchPresented(_ isPresented: Bool) {
         isSearchPresented = isPresented
+    }
+
+    func resetPath(for destination: AppDestination) {
+        paths[destination] = nil
+    }
+
+    /// Closes the search popover and opens the title as a normal detail page
+    /// on the current browsing destination. Settings has no title pages, so
+    /// it falls back to Home.
+    func openDetailFromSearch(_ item: MediaItem) {
+        isSearchPresented = false
+        if selection == .search {
+            selection = previousContentSelection
+        }
+        if !selection.hostsMediaDetail {
+            select(.home)
+        }
+        paths[selection, default: NavigationPath()].append(item)
     }
 }
 #endif

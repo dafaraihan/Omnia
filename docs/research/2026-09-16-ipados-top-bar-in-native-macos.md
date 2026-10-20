@@ -1,5 +1,7 @@
 # iPadOS-Style Top Tab Bar in Omnia's Native macOS Build
 
+> **Automated-validation policy:** Follow the repository-root `AGENTS.md`. Instructions below that call for automated test targets, suites, fixtures, or scripts are historical and superseded; use builds, static checks, and focused manual evidence instead.
+
 Date: 2026-09-16
 
 ## Conclusion

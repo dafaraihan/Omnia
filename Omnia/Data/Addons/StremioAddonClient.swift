@@ -24,23 +24,32 @@ enum StremioAddonClient {
 
         let data: Data
         do {
-            data = try await transport.data(for: HTTPRequestPolicy(
+            // Catalog add-ons such as Xperience and AIOMetadata generate large
+            // manifests (hundreds of catalogs with long genre lists) on demand,
+            // so they get more time and room than the user's stream timeout.
+            data = try await transport.data(for: Self.addonPolicy(HTTPRequestPolicy(
                 url: url,
                 allowedOrigin: origin,
-                timeout: TimeInterval(timeout.rawValue),
-                maximumResponseBytes: 1_048_576,
-                acceptedContentTypes: ["application/json"]
-            ))
+                timeout: TimeInterval(max(timeout.rawValue, 60)),
+                maximumResponseBytes: 10 * 1_048_576,
+                acceptedContentTypes: Self.jsonContentTypes,
+                requestHeaders: ["Accept": "application/json"]
+            )))
         } catch let error as AddonClientError {
+            throw error
+        } catch let error as HTTPTransportError {
             throw error
         } catch {
             throw AddonClientError.invalidResponse
         }
 
-        guard let manifest = try? JSONDecoder().decode(StremioAddonManifest.self, from: data),
-              manifest.hasValidBounds else {
-            throw AddonClientError.invalidManifest
+        let manifest: StremioAddonManifest
+        do {
+            manifest = try await decodeJSON(StremioAddonManifest.self, from: data)
+        } catch {
+            throw AddonClientError.notAManifest
         }
+        guard manifest.hasValidBounds else { throw AddonClientError.invalidManifest }
         return manifest
     }
 
@@ -76,12 +85,17 @@ enum StremioAddonClient {
 
         for identifier in identifiers {
             try Task.checkCancellation()
+            // Nuvio and Stremio ask an add-on once, with the first ID it
+            // accepts. Later IDs are only a fallback for add-ons that found
+            // nothing, so one slow add-on isn't asked again and again.
+            if !candidates.isEmpty { break }
             for mediaType in mediaTypes where addon.manifest.supports(resource: "stream", type: mediaType, identifier: identifier) {
                 try Task.checkCancellation()
+                if !candidates.isEmpty { break }
                 let endpoint = resourceURL(addon: addon, resource: "stream", type: mediaType, id: identifier)
                 do {
                     guard let origin = NormalizedOrigin(url: endpoint) else { continue }
-                    let data = try await transport.data(for: HTTPRequestPolicy(
+                    let data = try await transport.data(for: Self.addonPolicy(HTTPRequestPolicy(
                         url: endpoint,
                         allowedOrigin: origin,
                         timeout: TimeInterval(timeout.rawValue),
@@ -90,10 +104,11 @@ enum StremioAddonClient {
                         // bounded, but allow the payload size observed from
                         // compatible Stremio clients and AIOStreams.
                         maximumResponseBytes: 8_388_608,
-                        acceptedContentTypes: ["application/json"]
-                    ))
+                        acceptedContentTypes: Self.jsonContentTypes,
+                        requestHeaders: ["Accept": "application/json"]
+                    )))
                     try Task.checkCancellation()
-                    guard let result = try? JSONDecoder().decode(AddonStreamResponse.self, from: data),
+                    guard let result = try? await decodeJSON(AddonStreamResponse.self, from: data),
                           !result.streams.isEmpty || result.discardedEntryCount == 0 else {
                         mostRecentError = AddonClientError.invalidResponse
                         continue
@@ -121,6 +136,11 @@ enum StremioAddonClient {
         }
 
         try Task.checkCancellation()
+        if receivedValidResponse {
+            AddonDiagnostics.shared.recordSuccess(.stream, addon: addon)
+        } else if let mostRecentError {
+            AddonDiagnostics.shared.recordFailure(.stream, addon: addon, error: mostRecentError)
+        }
         if candidates.isEmpty, !receivedValidResponse, let mostRecentError { throw mostRecentError }
         var seen = Set<String>()
         return candidates.filter { seen.insert($0.deduplicationKey).inserted }
@@ -129,13 +149,22 @@ enum StremioAddonClient {
     static func fetchCatalog(
         from addon: InstalledAddon,
         catalog: AddonCatalog,
-        extra: [String: String] = [:]
+        extra: [String: String] = [:],
+        allowsMissingRequiredExtras: Bool = false
     ) async throws -> [AddonMetaPreview] {
-        guard addon.isEnabled,
-              addon.manifest.supports(resource: "catalog", type: catalog.type),
-              extra.keys.allSatisfy({ key in catalog.extra?.contains(where: { $0.name == key }) == true }),
-              !(catalog.extra ?? []).contains(where: { $0.isRequired == true && extra[$0.name] == nil })
-        else { return [] }
+        // Collection folders open catalogs that AIOMetadata and Xperience
+        // keep off Home by marking `genre` required; Nuvio requests them
+        // without it, and so does Omnia when `allowsMissingRequiredExtras`.
+        // Everywhere else a missing required value takes its first option,
+        // as in Stremio. Types and extras aren't checked against the
+        // manifest: a listed catalog is enough, and Stremio sends them as is.
+        guard addon.isEnabled else { return [] }
+        var extra = extra.filter { !$0.value.isEmpty && !($0.key == "skip" && $0.value == "0") }
+        if !allowsMissingRequiredExtras {
+            // A search-only catalog with nothing to search for.
+            guard let resolved = catalog.resolvingExtras(extra) else { return [] }
+            extra = resolved
+        }
 
         let endpoint = resourceURL(
             addon: addon,
@@ -144,8 +173,14 @@ enum StremioAddonClient {
             id: catalog.id,
             extra: extra
         )
-        let response: AddonCatalogResponse = try await fetch(endpoint)
-        return response.metas
+        do {
+            let response: AddonCatalogResponse = try await fetch(endpoint)
+            AddonDiagnostics.shared.recordSuccess(.catalog, addon: addon, catalog: catalog)
+            return response.metas
+        } catch {
+            AddonDiagnostics.shared.recordFailure(.catalog, addon: addon, catalog: catalog, error: error)
+            throw error
+        }
     }
 
     static func searchCatalogs(
@@ -154,7 +189,7 @@ enum StremioAddonClient {
     ) async -> [AddonCatalogItem] {
         let enabledCatalogs = addons.flatMap { addon in
             addon.isEnabled ? addon.manifest.catalogs
-                .filter { $0.supportsSearch && ["movie", "series"].contains($0.type) }
+                .filter(\.supportsSearch)
                 .map { (addon, $0) } : []
         }
 
@@ -162,10 +197,9 @@ enum StremioAddonClient {
             for (addon, catalog) in enabledCatalogs {
                 group.addTask {
                     guard let metas = try? await fetchCatalog(from: addon, catalog: catalog, extra: ["search": query]) else { return [] }
-                    return await MainActor.run {
-                        metas.compactMap { preview in
-                            preview.mediaItem(addon: addon).map { .init(item: $0, addon: addon, catalog: catalog) }
-                        }
+                    // Building titles is nonisolated, so it stays off the main actor.
+                    return metas.compactMap { preview in
+                        preview.mediaItem(addon: addon).map { .init(item: $0, addon: addon, catalog: catalog) }
                     }
                 }
             }
@@ -182,12 +216,23 @@ enum StremioAddonClient {
         identifiers: [String]
     ) async throws -> AddonMeta? {
         guard addon.isEnabled else { return nil }
+        var lastError: Error?
         for identifier in identifiers {
             guard addon.manifest.supports(resource: "meta", type: mediaType, identifier: identifier) else { continue }
             let endpoint = resourceURL(addon: addon, resource: "meta", type: mediaType, id: identifier)
-            if let response: AddonMetaResponse = try? await fetch(endpoint) {
+            do {
+                // Details back the Home hero, which moves on after a few
+                // seconds; a stalled add-on must not hold it for a minute.
+                let response: AddonMetaResponse = try await fetch(endpoint, timeout: 15)
+                AddonDiagnostics.shared.recordSuccess(.meta, addon: addon)
                 return response.meta
+            } catch {
+                lastError = error
             }
+        }
+        // A 404 only means this add-on doesn't know the title.
+        if let lastError, lastError as? HTTPTransportError != .unsuccessfulStatus(404) {
+            AddonDiagnostics.shared.recordFailure(.meta, addon: addon, error: lastError)
         }
         return nil
     }
@@ -203,7 +248,7 @@ enum StremioAddonClient {
             for (index, addon) in addons.enumerated() where addon.isEnabled && addon.manifest.supportsMeta {
                 group.addTask {
                     let meta = (try? await fetchMeta(from: addon, mediaType: mediaType, identifiers: identifiers)) ?? nil
-                    let item = await MainActor.run { meta?.mediaItem(addon: addon) }
+                    let item = meta?.mediaItem(addon: addon)
                     return (index, item)
                 }
             }
@@ -227,12 +272,19 @@ enum StremioAddonClient {
               addon.manifest.supports(resource: "subtitles", type: mediaType, identifier: videoID)
         else { return [] }
 
-        var extra: [String: String] = ["videoID": videoID]
+        // Stremio protocol: /subtitles/{type}/{videoID}/videoHash=…&videoSize=….json
+        var extra: [String: String] = [:]
         if let videoHash { extra["videoHash"] = videoHash }
         if let videoSize { extra["videoSize"] = String(videoSize) }
-        let endpoint = resourceURL(addon: addon, resource: "subtitles", type: mediaType, id: "", extra: extra)
-        let response: AddonSubtitlesResponse = try await fetch(endpoint)
-        return response.subtitles
+        let endpoint = resourceURL(addon: addon, resource: "subtitles", type: mediaType, id: videoID, extra: extra)
+        do {
+            let response: AddonSubtitlesResponse = try await fetch(endpoint)
+            AddonDiagnostics.shared.recordSuccess(.subtitles, addon: addon)
+            return response.subtitles
+        } catch {
+            AddonDiagnostics.shared.recordFailure(.subtitles, addon: addon, error: error)
+            throw error
+        }
     }
 
     static func fetchAddonCatalog(
@@ -248,27 +300,43 @@ enum StremioAddonClient {
         return response.addons
     }
 
-    private static func fetch<Response: Decodable>(_ url: URL) async throws -> Response {
+    private static func fetch<Response: Decodable & Sendable>(_ url: URL, timeout: TimeInterval = 60) async throws -> Response {
         guard let origin = NormalizedOrigin(url: url) else {
             throw AddonClientError.invalidResponse
         }
         let data: Data
         do {
-            data = try await HTTPTransport().data(for: HTTPRequestPolicy(
+            data = try await HTTPTransport().data(for: Self.addonPolicy(HTTPRequestPolicy(
                 url: url,
                 allowedOrigin: origin,
-                timeout: 20,
-                maximumResponseBytes: 2_097_152,
-                acceptedContentTypes: ["application/json"]
-            ))
+                timeout: timeout,
+                maximumResponseBytes: 10 * 1_048_576,
+                acceptedContentTypes: Self.jsonContentTypes,
+                requestHeaders: ["Accept": "application/json"]
+            )))
+        } catch let error as HTTPTransportError {
+            // Kept as is, so callers can tell a timeout or a 404 from bad JSON.
+            throw error
         } catch {
             throw AddonClientError.invalidResponse
         }
         do {
-            return try JSONDecoder().decode(Response.self, from: data)
+            return try await decodeJSON(Response.self, from: data)
         } catch {
             throw AddonClientError.invalidResponse
         }
+    }
+
+    /// Add-on responses can be megabytes of JSON (a manifest with hundreds of
+    /// catalogs, a catalog page, hundreds of streams). Decoding them on the
+    /// main actor stalled scrolling and typing, so it runs on the cooperative
+    /// pool instead. The response types are `nonisolated` for this reason.
+    @concurrent
+    nonisolated private static func decodeJSON<Value: Decodable & Sendable>(
+        _ type: Value.Type,
+        from data: Data
+    ) async throws -> Value {
+        try JSONDecoder().decode(type, from: data)
     }
 
     private static func resourceURL(
@@ -278,58 +346,96 @@ enum StremioAddonClient {
         id: String,
         extra: [String: String] = [:]
     ) -> URL {
-        var url = addon.manifestURL.deletingLastPathComponent()
-            .appending(path: resource)
-            .appending(path: type)
-        if !id.isEmpty { url.append(path: id) }
+        // Some add-ons keep their configuration in the manifest's query
+        // string; it is sent again with every resource request, as Nuvio does.
+        var components = URLComponents(url: addon.manifestURL, resolvingAgainstBaseURL: false)
+        let query = components?.percentEncodedQuery
+        components?.percentEncodedQuery = nil
+        components?.fragment = nil
+        let manifestWithoutQuery = components?.url ?? addon.manifestURL
+
+        // Every segment is encoded like Stremio's `encodeURIComponent`, so
+        // ids such as `kitsu:1` and genres such as `Action/Adventure` stay
+        // one segment instead of splitting the path.
+        var path = manifestWithoutQuery.deletingLastPathComponent().absoluteString
+        if !path.hasSuffix("/") { path += "/" }
+        path += [resource, type].map(Self.encodeComponent).joined(separator: "/")
+        if !id.isEmpty { path += "/" + Self.encodeComponent(id) }
         if !extra.isEmpty {
-            let serialized = extra.sorted { $0.key < $1.key }.map { key, value in
-                "\(key)=\(value.addingPercentEncoding(withAllowedCharacters: .urlQueryValueAllowed) ?? value)"
-            }.joined(separator: "&")
-            // Extras are a query-string-shaped *path segment* in the Stremio
-            // protocol. `URL.append(path:)` would encode `%` again and turn a
-            // search term such as `the%20matrix` into `the%2520matrix`.
-            return URL(string: "\(url.absoluteString)/\(serialized).json")!
+            // Extras are a query-string-shaped path segment, ordered the
+            // way Stremio and Nuvio send them.
+            let order = ["search", "genre", "skip"]
+            let keys = extra.keys.sorted { lhs, rhs in
+                let left = order.firstIndex(of: lhs) ?? order.count
+                let right = order.firstIndex(of: rhs) ?? order.count
+                return left == right ? lhs < rhs : left < right
+            }
+            path += "/" + keys.map { "\(Self.encodeComponent($0))=\(Self.encodeComponent(extra[$0] ?? ""))" }
+                .joined(separator: "&")
         }
-        return url.appendingPathExtension("json")
+        let suffix = query.map { "?\($0)" } ?? ""
+        return URL(string: path + ".json" + suffix) ?? manifestWithoutQuery
     }
+
+    /// Percent-encodes everything but RFC 3986 unreserved characters.
+    private static func encodeComponent(_ value: String) -> String {
+        value.addingPercentEncoding(withAllowedCharacters: .addonUnreserved) ?? value
+    }
+
+    /// Add-on requests behave like Stremio's: redirects to another HTTPS
+    /// host are followed and the body is judged by decoding it, not by its
+    /// Content-Type label.
+    private static func addonPolicy(_ policy: HTTPRequestPolicy) -> HTTPRequestPolicy {
+        var policy = policy
+        policy.allowsCrossOriginRedirects = true
+        policy.acceptsAnyContentType = true
+        return policy
+    }
+
+    /// Add-on servers label JSON in several ways; the body is still decoded
+    /// and validated as JSON whatever the label says.
+    static let jsonContentTypes: Set<String> = [
+        "application/json", "text/json", "text/plain", "application/javascript", "text/javascript"
+    ]
 
     enum AddonClientError: LocalizedError, Equatable {
         case requiresHTTPS
         case invalidResponse
         case invalidManifest
+        case notAManifest
 
         var errorDescription: String? {
             switch self {
             case .requiresHTTPS: "Omnia accepts HTTPS add-on manifests only."
             case .invalidResponse: "The add-on server returned an invalid response."
             case .invalidManifest: "This manifest is missing required identity information."
+            case .notAManifest: "This address didn't return an add-on manifest. Use the add-on's install link, which usually ends in manifest.json."
             }
         }
     }
 }
 
-private extension StremioAddonManifest {
+private nonisolated extension StremioAddonManifest {
     var hasValidBounds: Bool {
         let identityIsValid = !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && id.count <= 256
             && !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && name.count <= 256
             && version.count <= 64
-            && description.count <= 4_096
+            && description.count <= 32_768
         let collectionsAreBounded = resources.count <= 64
-            && types.count <= 64
-            && catalogs.count <= 256
-            && (addonCatalogs?.count ?? 0) <= 256
-            && (idPrefixes?.count ?? 0) <= 128
+            && types.count <= 256
+            && catalogs.count <= 4_096
+            && (addonCatalogs?.count ?? 0) <= 1_024
+            && (idPrefixes?.count ?? 0) <= 1_024
         let stringsAreBounded = resources.allSatisfy { $0.name.count <= 64 }
-            && types.allSatisfy { !$0.isEmpty && $0.count <= 64 }
+            && types.allSatisfy { $0.count <= 64 }
             && catalogs.allSatisfy { !$0.id.isEmpty && $0.id.count <= 256 && $0.type.count <= 64 }
         return identityIsValid && collectionsAreBounded && stringsAreBounded
     }
 }
 
-struct AddonStreamResponse: Decodable {
+nonisolated struct AddonStreamResponse: Decodable, Sendable {
     let streams: [AddonStream]
     let discardedEntryCount: Int
 
@@ -343,23 +449,35 @@ struct AddonStreamResponse: Decodable {
     }
 }
 
-struct AddonCatalogResponse: Decodable {
+nonisolated struct AddonCatalogResponse: Decodable, Sendable {
     let metas: [AddonMetaPreview]
+
+    private enum CodingKeys: String, CodingKey {
+        case metas
+    }
+
+    // One malformed card (for example a broken poster URL) must not empty the
+    // whole row, so entries decode independently.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let decoded = try container.decodeIfPresent([LossyDecodable<AddonMetaPreview>].self, forKey: .metas) ?? []
+        metas = decoded.compactMap(\.value)
+    }
 }
 
-struct AddonMetaResponse: Decodable {
+nonisolated struct AddonMetaResponse: Decodable, Sendable {
     let meta: AddonMeta
 }
 
-struct AddonSubtitlesResponse: Decodable {
+nonisolated struct AddonSubtitlesResponse: Decodable, Sendable {
     let subtitles: [AddonSubtitle]
 }
 
-struct AddonCatalogAddonsResponse: Decodable {
+nonisolated struct AddonCatalogAddonsResponse: Decodable, Sendable {
     let addons: [AddonCatalogAddon]
 }
 
-struct AddonCatalogAddon: Decodable, Identifiable, Sendable {
+nonisolated struct AddonCatalogAddon: Decodable, Identifiable, Sendable {
     let transportURL: URL?
     let manifest: StremioAddonManifest?
 
@@ -371,7 +489,7 @@ struct AddonCatalogAddon: Decodable, Identifiable, Sendable {
     }
 }
 
-struct AddonSubtitle: Decodable, Identifiable, Hashable, Sendable {
+nonisolated struct AddonSubtitle: Decodable, Identifiable, Hashable, Sendable {
     let id: String
     let url: URL?
     let lang: String?
@@ -388,7 +506,7 @@ struct AddonSubtitle: Decodable, Identifiable, Hashable, Sendable {
     private enum CodingKeys: String, CodingKey { case id, url, lang }
 }
 
-struct AddonStream: Decodable {
+nonisolated struct AddonStream: Decodable, Sendable {
     let name: String?
     let title: String?
     let description: String?
@@ -421,7 +539,7 @@ struct AddonStream: Decodable {
     }
 }
 
-struct AddonStreamBehaviorHints: Decodable {
+nonisolated struct AddonStreamBehaviorHints: Decodable, Sendable {
     let notWebReady: Bool?
     let bingeGroup: String?
     let filename: String?
@@ -461,7 +579,7 @@ struct AddonStreamBehaviorHints: Decodable {
     }
 }
 
-struct AddonProxyHeaders: Decodable {
+nonisolated struct AddonProxyHeaders: Decodable, Sendable {
     let request: [String: String]?
     let response: [String: String]?
 
@@ -474,7 +592,7 @@ struct AddonProxyHeaders: Decodable {
     }
 }
 
-private struct LossyDecodable<Value: Decodable>: Decodable {
+private nonisolated struct LossyDecodable<Value: Decodable>: Decodable {
     let value: Value?
 
     init(from decoder: Decoder) throws {
@@ -482,16 +600,14 @@ private struct LossyDecodable<Value: Decodable>: Decodable {
     }
 }
 
-private extension KeyedDecodingContainer {
+private nonisolated extension KeyedDecodingContainer {
     func decodeLossy<Value: Decodable>(_ type: Value.Type, forKey key: Key) -> Value? {
         try? decodeIfPresent(type, forKey: key)
     }
 }
 
-private extension CharacterSet {
-    static let urlQueryValueAllowed: CharacterSet = {
-        var set = CharacterSet.urlQueryAllowed
-        set.remove(charactersIn: "&=+#?")
-        return set
-    }()
+private nonisolated extension CharacterSet {
+    static let addonUnreserved = CharacterSet(
+        charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
+    )
 }

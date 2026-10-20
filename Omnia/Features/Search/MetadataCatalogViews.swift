@@ -9,13 +9,14 @@ import SwiftUI
 /// regular navigation page lets every Home and Discover row expose the same
 /// simple affordance without manufacturing a second catalog model.
 struct MetadataCatalogView: View {
+    @Environment(\.displayPreferences) private var display
     let title: String
     let items: [MediaItem]
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVGrid(
-                columns: MediaBrowseMetrics.posterGridColumns,
+                columns: MediaBrowseMetrics.posterGridColumns(display),
                 alignment: .leading,
                 spacing: MediaBrowseMetrics.gridRowSpacing
             ) {
@@ -37,6 +38,7 @@ struct MetadataCatalogView: View {
 /// and extends it on demand, so this view never needs to preload thousands of
 /// images into memory.
 struct PagedMetadataCatalogView: View {
+    @Environment(\.displayPreferences) private var display
     @Environment(LiveMetadataStore.self) private var metadata
 
     let title: String
@@ -52,7 +54,7 @@ struct PagedMetadataCatalogView: View {
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVGrid(
-                columns: MediaBrowseMetrics.posterGridColumns,
+                columns: MediaBrowseMetrics.posterGridColumns(display),
                 alignment: .leading,
                 spacing: MediaBrowseMetrics.gridRowSpacing
             ) {

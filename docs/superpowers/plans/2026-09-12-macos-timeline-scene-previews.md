@@ -1,5 +1,7 @@
 # macOS Timeline Scene Previews Implementation Plan
 
+> **Automated-validation policy:** Follow the repository-root `AGENTS.md`. Instructions below that call for automated test targets, suites, fixtures, or scripts are historical and superseded; use builds, static checks, and focused manual evidence instead.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Show a timestamp-addressed 16:9 scene preview while hovering the macOS playback timeline without seeking or blocking the visible player.
@@ -150,8 +152,8 @@ final class PlaybackTimelinePreviewTests: XCTestCase {
 - [ ] **Step 2: Run the test and verify missing types fail compilation**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test \
-  -only-testing:OmniaTests/PlaybackTimelinePreviewTests
+[Automated validation command removed by repository policy.]
+
 ```
 
 Expected: compilation fails because the preview types do not exist.
@@ -295,8 +297,8 @@ init(
 - [ ] **Step 4: Run tests and commit the model slice**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test \
-  -only-testing:OmniaTests/PlaybackTimelinePreviewTests
+[Automated validation command removed by repository policy.]
+
 git diff --check
 git add Omnia/Domain/Playback/PlaybackTimelinePreview.swift \
   Omnia/Domain/Playback/PlaybackSource.swift \
@@ -570,10 +572,10 @@ Call `Task.checkCancellation()` before fetch, after fetch, and after decode. Use
 - [ ] **Step 7: Run security/parser/image tests and commit**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test \
-  -only-testing:OmniaTests/HTTPTransportTests \
-  -only-testing:OmniaTests/HLSImagePlaylistTests \
-  -only-testing:OmniaTests/StoryboardFrameLoaderTests
+[Automated validation command removed by repository policy.]
+
+
+
 git diff --check
 git add Omnia/Data/Networking/HTTPTransport.swift \
   Omnia/Data/Playback/HLSImagePlaylist.swift \
@@ -655,8 +657,8 @@ func testThumbnailGeneratorCancelsSupersededRequest() throws {
 - [ ] **Step 2: Run integration tests and verify the missing class fails compilation**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test \
-  -only-testing:OmniaTests/MPVPlaybackIntegrationTests
+[Automated validation command removed by repository policy.]
+
 ```
 
 Expected: compilation fails because `OMMpvThumbnailGenerator` is undefined.
@@ -753,8 +755,8 @@ Timeline preview was cancelled.
 - [ ] **Step 7: Run integration tests and commit the generator**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test \
-  -only-testing:OmniaTests/MPVPlaybackIntegrationTests
+[Automated validation command removed by repository policy.]
+
 git diff --check
 git add Omnia/Platform/Playback/MPVThumbnailGenerator.h \
   Omnia/Platform/Playback/MPVThumbnailGenerator.m \
@@ -1021,8 +1023,8 @@ Before assertions on actor-isolated counters, assign the awaited value to a loca
 - [ ] **Step 2: Run the service tests and verify missing types fail**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test \
-  -only-testing:OmniaTests/PlaybackTimelinePreviewServiceTests
+[Automated validation command removed by repository policy.]
+
 ```
 
 Expected: compilation fails because the service/protocols are undefined.
@@ -1165,11 +1167,11 @@ Compute decoded frame memory as `pixelsWide * pixelsHigh * 4`, insert it into `P
 - [ ] **Step 5: Run tests and commit the service**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test \
-  -only-testing:OmniaTests/PlaybackTimelinePreviewServiceTests \
-  -only-testing:OmniaTests/HLSImagePlaylistTests \
-  -only-testing:OmniaTests/StoryboardFrameLoaderTests \
-  -only-testing:OmniaTests/MPVPlaybackIntegrationTests
+[Automated validation command removed by repository policy.]
+
+
+
+
 git diff --check
 git add Omnia/Platform/macOS/PlaybackTimelinePreviewService.swift \
   OmniaTests/PlaybackTimelinePreviewServiceTests.swift
@@ -1289,9 +1291,9 @@ private actor TimelinePreviewSleeperStub {
 - [ ] **Step 2: Run focused tests and verify missing helpers fail**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test \
-  -only-testing:OmniaTests/PlaybackSessionTests \
-  -only-testing:OmniaTests/PlaybackChromePresentationTests
+[Automated validation command removed by repository policy.]
+
+
 ```
 
 Expected: compilation fails for the new helper names.
@@ -1509,10 +1511,10 @@ In `MacPlaybackChrome.onDisappear`, call `playback.endTimelinePreview()` before 
 - [ ] **Step 6: Run focused tests and a Mac build**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test \
-  -only-testing:OmniaTests/PlaybackSessionTests \
-  -only-testing:OmniaTests/PlaybackChromePresentationTests \
-  -only-testing:OmniaTests/PlaybackTimelinePreviewServiceTests
+[Automated validation command removed by repository policy.]
+
+
+
 xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' build
 ```
 
@@ -1544,7 +1546,7 @@ git commit -m "Show timeline previews on hover"
 - [ ] **Step 1: Run the complete macOS suite**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: all tests pass.

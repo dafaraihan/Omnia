@@ -1,5 +1,7 @@
 # Shared Poster Labels Implementation Plan
 
+> **Automated-validation policy:** Follow the repository-root `AGENTS.md`. Instructions below that call for automated test targets, suites, fixtures, or scripts are historical and superseded; use builds, static checks, and focused manual evidence instead.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Give every standard movie and series poster a consistent optional title/year/genre label, and remove genre browsing from the Anime page.
@@ -50,7 +52,7 @@ XCTAssertTrue(decoded.showMediaCardLabels)
 Run:
 
 ```sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' -only-testing:OmniaTests/SettingsPreferencesTests test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: compilation fails because `showMediaCardLabels` does not exist.
@@ -100,7 +102,7 @@ XCTAssertNil(neither.metadata)
 Run:
 
 ```sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' -only-testing:OmniaTests/MediaPosterLabelTests test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: compilation fails because `MediaPosterLabelContent` does not exist.
@@ -213,7 +215,7 @@ Expected: no matches.
 - [ ] **Step 1: Run the full macOS test suite**
 
 ```sh
-xcodebuild -quiet -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: exit 0 with no failed tests.

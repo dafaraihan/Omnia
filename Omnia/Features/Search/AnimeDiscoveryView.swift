@@ -10,6 +10,7 @@ import SwiftUI
 /// Omnia's shared poster cards. The selected source is informational chrome,
 /// never a parallel, custom-designed card.
 struct AnimeDiscoveryView: View {
+    @Environment(\.displayPreferences) private var display
     @Environment(OmniaStore.self) private var store
     @Environment(LiveMetadataStore.self) private var metadata
     @State private var query = ""
@@ -93,7 +94,7 @@ struct AnimeDiscoveryView: View {
         } else {
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVGrid(
-                    columns: MediaBrowseMetrics.posterGridColumns,
+                    columns: MediaBrowseMetrics.posterGridColumns(display),
                     alignment: .leading,
                     spacing: MediaBrowseMetrics.gridRowSpacing
                 ) {
@@ -114,6 +115,7 @@ struct AnimeDiscoveryView: View {
 }
 
 private struct AnimeCatalogShelf: View {
+    @Environment(\.displayPreferences) private var display
     let catalog: BuiltInAnimeCatalog
 
     var body: some View {
@@ -128,11 +130,12 @@ private struct AnimeCatalogShelf: View {
     }
 
     private var posterItemSpan: CGFloat {
-        MediaBrowseMetrics.shelfItemSpan
+        MediaBrowseMetrics.posterItemSpan(display)
     }
 }
 
 private struct PagedAnimeCatalogView: View {
+    @Environment(\.displayPreferences) private var display
     @Environment(LiveMetadataStore.self) private var metadata
 
     let title: String
@@ -146,7 +149,7 @@ private struct PagedAnimeCatalogView: View {
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVGrid(
-                columns: MediaBrowseMetrics.posterGridColumns,
+                columns: MediaBrowseMetrics.posterGridColumns(display),
                 alignment: .leading,
                 spacing: MediaBrowseMetrics.gridRowSpacing
             ) {

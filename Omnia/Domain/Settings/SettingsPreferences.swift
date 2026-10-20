@@ -34,20 +34,6 @@ enum UpcomingLookAhead: Int, Codable, CaseIterable, Sendable {
     case days90 = 90
 }
 
-enum UpNextLeadTime: Int, Codable, CaseIterable, Sendable {
-    case seconds15 = 15
-    case seconds30 = 30
-    case seconds60 = 60
-}
-
-enum SourceSelectionRetention: Int, Codable, CaseIterable, Sendable {
-    case hours24 = 1
-    case days3 = 3
-    case week1 = 7
-
-    var duration: TimeInterval { TimeInterval(rawValue * 24 * 60 * 60) }
-}
-
 enum WatchlistMode: String, Codable, CaseIterable, Sendable {
     case local
 }
@@ -132,6 +118,25 @@ enum MacNavigationStyle: String, Codable, CaseIterable, Identifiable, Sendable {
     var id: Self { self }
 }
 
+/// How Search opens on the Mac, chosen separately from the navigation
+/// style. Automatic keeps each style's original behavior: a page in the
+/// sidebar, a floating panel from the top bar.
+enum MacSearchStyle: String, Codable, CaseIterable, Identifiable, Sendable {
+    case automatic
+    case page
+    case floating
+
+    var id: Self { self }
+
+    func usesFloatingSearch(with navigationStyle: MacNavigationStyle) -> Bool {
+        switch self {
+        case .automatic: navigationStyle == .topBar
+        case .page: false
+        case .floating: true
+        }
+    }
+}
+
 nonisolated struct MDBListRatingPreferences: Codable, Equatable, Sendable {
     var discoveredProviderIDs: Set<String>
     var disabledProviderIDs: Set<String>
@@ -170,12 +175,7 @@ struct SettingsPreferences: Codable, Equatable, Sendable {
     var upcomingLookAhead: UpcomingLookAhead
     var upcomingItemLimit: BoundedItemLimit
     var showSkipIntro: Bool
-    var autoSkipIntro: Bool
     var autoplayNextEpisode: Bool
-    var upNextLeadTime: UpNextLeadTime
-    var rememberLastSelection: Bool
-    var sourceSelectionRetention: SourceSelectionRetention
-    var autoplayFirstCompatibleSource: Bool
     var directContinueWatchingPlayback: Bool
     var compatibleFormatsOnly: Bool
     var preferredAudioLanguage: PreferredLanguage
@@ -191,18 +191,26 @@ struct SettingsPreferences: Codable, Equatable, Sendable {
     var mdblistRatings: MDBListRatingPreferences
     var showMediaCardLabels: Bool
     var navigationStyle: MacNavigationStyle
+    var searchStyle: MacSearchStyle
+    var display: DisplayPreferences
+    var playbackBehavior: PlaybackBehaviorPreferences
 
     private enum CodingKeys: String, CodingKey {
         case addonTimeout, continueWatchingLimit, watchlistMode, showUpcoming
-        case upcomingLookAhead, upcomingItemLimit, showSkipIntro, autoSkipIntro
-        case autoplayNextEpisode, upNextLeadTime, rememberLastSelection
-        case sourceSelectionRetention, autoplayFirstCompatibleSource
+        case upcomingLookAhead, upcomingItemLimit, showSkipIntro
+        case autoplayNextEpisode
         case directContinueWatchingPlayback, compatibleFormatsOnly
         case preferredAudioLanguage, audioFallbackLanguage
         case preferredSubtitleLanguage, subtitleFallbackLanguage
         case subtitlesEnabled, playbackSubtitleStyle
         case sdhPreference, animeAudioPreference, subtitleAppearance
         case customSubtitleAppearance, mdblistRatings, showMediaCardLabels, navigationStyle
+        case searchStyle, display, playbackBehavior
+    }
+
+    /// Settings replaced by `playbackBehavior`, read once to carry choices over.
+    private enum LegacyCodingKeys: String, CodingKey {
+        case autoSkipIntro, autoplayFirstCompatibleSource
     }
 
     init(
@@ -213,12 +221,7 @@ struct SettingsPreferences: Codable, Equatable, Sendable {
         upcomingLookAhead: UpcomingLookAhead,
         upcomingItemLimit: BoundedItemLimit,
         showSkipIntro: Bool,
-        autoSkipIntro: Bool,
         autoplayNextEpisode: Bool,
-        upNextLeadTime: UpNextLeadTime,
-        rememberLastSelection: Bool,
-        sourceSelectionRetention: SourceSelectionRetention,
-        autoplayFirstCompatibleSource: Bool,
         directContinueWatchingPlayback: Bool,
         compatibleFormatsOnly: Bool,
         preferredAudioLanguage: PreferredLanguage,
@@ -233,7 +236,10 @@ struct SettingsPreferences: Codable, Equatable, Sendable {
         customSubtitleAppearance: SubtitleAppearance,
         mdblistRatings: MDBListRatingPreferences,
         showMediaCardLabels: Bool,
-        navigationStyle: MacNavigationStyle
+        navigationStyle: MacNavigationStyle,
+        searchStyle: MacSearchStyle = .automatic,
+        display: DisplayPreferences = .default,
+        playbackBehavior: PlaybackBehaviorPreferences = .default
     ) {
         self.addonTimeout = addonTimeout
         self.continueWatchingLimit = continueWatchingLimit
@@ -242,12 +248,7 @@ struct SettingsPreferences: Codable, Equatable, Sendable {
         self.upcomingLookAhead = upcomingLookAhead
         self.upcomingItemLimit = upcomingItemLimit
         self.showSkipIntro = showSkipIntro
-        self.autoSkipIntro = autoSkipIntro
         self.autoplayNextEpisode = autoplayNextEpisode
-        self.upNextLeadTime = upNextLeadTime
-        self.rememberLastSelection = rememberLastSelection
-        self.sourceSelectionRetention = sourceSelectionRetention
-        self.autoplayFirstCompatibleSource = autoplayFirstCompatibleSource
         self.directContinueWatchingPlayback = directContinueWatchingPlayback
         self.compatibleFormatsOnly = compatibleFormatsOnly
         self.preferredAudioLanguage = preferredAudioLanguage
@@ -263,6 +264,9 @@ struct SettingsPreferences: Codable, Equatable, Sendable {
         self.mdblistRatings = mdblistRatings
         self.showMediaCardLabels = showMediaCardLabels
         self.navigationStyle = navigationStyle
+        self.searchStyle = searchStyle
+        self.display = display
+        self.playbackBehavior = playbackBehavior
     }
 
     init(from decoder: Decoder) throws {
@@ -274,12 +278,7 @@ struct SettingsPreferences: Codable, Equatable, Sendable {
         upcomingLookAhead = try container.decode(UpcomingLookAhead.self, forKey: .upcomingLookAhead)
         upcomingItemLimit = try container.decode(BoundedItemLimit.self, forKey: .upcomingItemLimit)
         showSkipIntro = try container.decode(Bool.self, forKey: .showSkipIntro)
-        autoSkipIntro = try container.decode(Bool.self, forKey: .autoSkipIntro)
         autoplayNextEpisode = try container.decode(Bool.self, forKey: .autoplayNextEpisode)
-        upNextLeadTime = try container.decode(UpNextLeadTime.self, forKey: .upNextLeadTime)
-        rememberLastSelection = try container.decode(Bool.self, forKey: .rememberLastSelection)
-        sourceSelectionRetention = try container.decode(SourceSelectionRetention.self, forKey: .sourceSelectionRetention)
-        autoplayFirstCompatibleSource = try container.decode(Bool.self, forKey: .autoplayFirstCompatibleSource)
         directContinueWatchingPlayback = try container.decode(Bool.self, forKey: .directContinueWatchingPlayback)
         compatibleFormatsOnly = try container.decode(Bool.self, forKey: .compatibleFormatsOnly)
         preferredAudioLanguage = try container.decode(PreferredLanguage.self, forKey: .preferredAudioLanguage)
@@ -310,6 +309,30 @@ struct SettingsPreferences: Codable, Equatable, Sendable {
             MacNavigationStyle.self,
             forKey: .navigationStyle
         ) ?? .sidebar
+        searchStyle = try container.decodeIfPresent(
+            MacSearchStyle.self,
+            forKey: .searchStyle
+        ) ?? .automatic
+        display = (try? container.decodeIfPresent(
+            DisplayPreferences.self,
+            forKey: .display
+        )) ?? .default
+        if let behavior = try? container.decodeIfPresent(
+            PlaybackBehaviorPreferences.self,
+            forKey: .playbackBehavior
+        ) {
+            playbackBehavior = behavior
+        } else {
+            let legacy = try? decoder.container(keyedBy: LegacyCodingKeys.self)
+            var behavior = PlaybackBehaviorPreferences.default
+            if (try? legacy?.decodeIfPresent(Bool.self, forKey: .autoSkipIntro)) == true {
+                behavior.autoSkipSegments = [.intro]
+            }
+            if (try? legacy?.decodeIfPresent(Bool.self, forKey: .autoplayFirstCompatibleSource)) == true {
+                behavior.autoSelectionMode = .firstSource
+            }
+            playbackBehavior = behavior
+        }
     }
 
     static let `default` = SettingsPreferences(
@@ -320,12 +343,7 @@ struct SettingsPreferences: Codable, Equatable, Sendable {
         upcomingLookAhead: .days60,
         upcomingItemLimit: .unlimited,
         showSkipIntro: true,
-        autoSkipIntro: false,
         autoplayNextEpisode: false,
-        upNextLeadTime: .seconds30,
-        rememberLastSelection: true,
-        sourceSelectionRetention: .days3,
-        autoplayFirstCompatibleSource: false,
         directContinueWatchingPlayback: false,
         compatibleFormatsOnly: true,
         preferredAudioLanguage: .followSystem,
@@ -345,12 +363,6 @@ struct SettingsPreferences: Codable, Equatable, Sendable {
 
     var normalized: SettingsPreferences {
         var value = self
-        if !value.showSkipIntro {
-            value.autoSkipIntro = false
-        }
-        if !value.rememberLastSelection {
-            value.autoplayFirstCompatibleSource = false
-        }
         if value.audioFallbackLanguage == value.preferredAudioLanguage {
             value.audioFallbackLanguage = .none
         }
@@ -360,6 +372,8 @@ struct SettingsPreferences: Codable, Equatable, Sendable {
         value.customSubtitleAppearance = value.customSubtitleAppearance.normalized
         value.playbackSubtitleStyle = value.playbackSubtitleStyle.normalized
         value.mdblistRatings = value.mdblistRatings.normalized
+        value.display = value.display.normalized
+        value.playbackBehavior = value.playbackBehavior.normalized
         return value
     }
 

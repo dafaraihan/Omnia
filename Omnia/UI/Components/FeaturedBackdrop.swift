@@ -11,6 +11,7 @@ import SwiftUI
 struct FeaturedBackdrop: View {
     let item: MediaItem
     var artworkAlignment: Alignment = .center
+    @Environment(\.displayScale) private var displayScale
 
     var body: some View {
         GeometryReader { proxy in
@@ -20,7 +21,10 @@ struct FeaturedBackdrop: View {
                 // visible bar when the user selects Light appearance.
                 Color.clear
 
-                if let backdropURL = item.backdropURL {
+                if let backdropURL = MediaArtworkResolution.backdropURL(
+                    item.backdropURL,
+                    pixelWidth: proxy.size.width * displayScale
+                ) {
                     AsyncImage(url: backdropURL, transaction: .init(animation: .easeInOut)) { phase in
                         if let image = phase.image {
                             image
@@ -50,5 +54,20 @@ struct FeaturedBackdrop: View {
 
     private var emptyArtwork: some View {
         Color.clear
+    }
+}
+
+enum MediaArtworkResolution {
+    /// TMDB serves backdrops at w300, w780, w1280 and original. Catalog records
+    /// ask for w1280, which a full-width hero on a Retina display stretches
+    /// two to three times, so it looks soft. Ask for the original only when the
+    /// hero is wider than w1280 in pixels; cards keep the lighter size.
+    static func backdropURL(_ url: URL?, pixelWidth: CGFloat) -> URL? {
+        guard let url, pixelWidth > 1280, url.host() == "image.tmdb.org" else { return url }
+        let path = url.path()
+        guard let range = path.range(of: "/t/p/w1280/") else { return url }
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        components?.path = path.replacingCharacters(in: range, with: "/t/p/original/")
+        return components?.url ?? url
     }
 }

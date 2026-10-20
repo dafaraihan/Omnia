@@ -1,5 +1,7 @@
 # Add-on Reliability Private Build Implementation Plan
 
+> **Automated-validation policy:** Follow the repository-root `AGENTS.md`. Instructions below that call for automated test targets, suites, fixtures, or scripts are historical and superseded; use builds, static checks, and focused manual evidence instead.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Restore usable add-ons independently, report damaged secure configurations and malformed responses accurately, and produce a verified private macOS build.
@@ -40,7 +42,7 @@
 Focused command:
 
 ```sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' -only-testing:OmniaTests/InstalledAddonPersistenceTests test
+[Automated validation command removed by repository policy.]
 ```
 
 ### Task 2: Restore issue presentation
@@ -75,7 +77,7 @@ xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' 
 Focused command:
 
 ```sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' -only-testing:OmniaTests/StremioAddonClientTests -only-testing:OmniaTests/SourceIdentifierTests -only-testing:OmniaTests/LocalTorrentPlaybackTests test
+[Automated validation command removed by repository policy.]
 ```
 
 ### Task 4: Stabilize the macOS player integration test
@@ -90,7 +92,7 @@ xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' 
 - [ ] Run the focused test for ten iterations and confirm no crash.
 
 ```sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' -only-testing:OmniaTests/MPVPlaybackIntegrationTests/testLocalMultiTrackFixtureRendersAndSupportsExplicitTrackSelection -test-iterations 10 test
+[Automated validation command removed by repository policy.]
 ```
 
 ### Task 5: Full verification and smoke test
@@ -107,7 +109,7 @@ xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' 
 - [ ] Run `git diff --check`, inspect status, and review only intended paths.
 
 ```sh
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test
+[Automated validation command removed by repository policy.]
 xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' build
 xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'generic/platform=iOS Simulator' build
 ```

@@ -1,5 +1,7 @@
 # macOS Media Experience Corrections Implementation Plan
 
+> **Automated-validation policy:** Follow the repository-root `AGENTS.md`. Instructions below that call for automated test targets, suites, fixtures, or scripts are historical and superseded; use builds, static checks, and focused manual evidence instead.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Correct Omnia's macOS hero composition, browsing filters, Library and Settings layouts, subtitle persistence, resume behavior, and playback prompt placement without regressing the existing player or navigation.
@@ -34,7 +36,7 @@
 - Consumes: the existing `reportWindowHeroBackdrop` environment callback and `HeroAccentBackground`.
 
 - [ ] Add tests asserting macOS uses the root artwork only and title detail uses the artwork accent below its hero.
-- [ ] Run `xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test -only-testing:OmniaTests/HeroBackdropPresentationTests` and confirm the missing presentation contract fails.
+[Historical automated-validation command removed by repository policy.]
 - [ ] Add the presentation policy, replace macOS-local `FeaturedBackdrop` instances with transparent hero canvas content, keep iOS branches unchanged, and apply `HeroAccentBackground(item:)` beneath title details.
 - [ ] Re-run the focused test and confirm it passes.
 

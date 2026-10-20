@@ -40,7 +40,10 @@ enum LibraryCollectionPresentation {
             } else if isCompleted(snapshot) {
                 values[.rewatch, default: []].append(snapshot)
             } else if snapshot.isInWatchlist {
-                values[.myList, default: []].append(snapshot)
+                // A title saved twice under different IDs shows once.
+                if !values[.myList, default: []].contains(where: { $0.item.isSameTitle(as: snapshot.item) }) {
+                    values[.myList, default: []].append(snapshot)
+                }
             }
         }
 

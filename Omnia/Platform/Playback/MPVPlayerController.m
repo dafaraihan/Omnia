@@ -8,8 +8,43 @@
 #if TARGET_OS_OSX
 #import <mpv/client.h>
 #import <mpv/render_gl.h>
+#import <OpenGL/OpenGL.h>
 #import <OpenGL/gl.h>
+#import <QuartzCore/QuartzCore.h>
+#import <os/lock.h>
 #import <math.h>
+#import <stdatomic.h>
+
+/// mpv calls back on its own threads. Blocks dispatched to main hold this box
+/// rather than the player or view, so a block that runs after the player is
+/// gone finds a nil target instead of a freed object. The flag coalesces
+/// bursts of callbacks into a single main-queue hop.
+@interface OMMpvCallbackBox : NSObject {
+@public
+    atomic_bool _pending;
+}
+@property (nonatomic, weak, nullable) id target;
+- (instancetype)initWithTarget:(id)target;
+@end
+
+@implementation OMMpvCallbackBox
+- (instancetype)initWithTarget:(id)target {
+    self = [super init];
+    if (!self) return nil;
+    _target = target;
+    atomic_init(&_pending, false);
+    return self;
+}
+@end
+
+static dispatch_queue_t OMMpvTeardownQueue(void) {
+    static dispatch_queue_t queue;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        queue = dispatch_queue_create("Omnia.mpv.teardown", DISPATCH_QUEUE_SERIAL);
+    });
+    return queue;
+}
 
 static void *OMOpenGLProcedureAddress(void *context, const char *name) {
     CFStringRef symbolName = CFStringCreateWithCString(kCFAllocatorDefault, name, kCFStringEncodingASCII);
@@ -21,63 +56,235 @@ static void *OMOpenGLProcedureAddress(void *context, const char *name) {
     return address;
 }
 
-@interface OMMpvOpenGLView : NSOpenGLView
-@property (nonatomic, assign, nullable) mpv_render_context *renderContext;
-@property (nonatomic, assign) BOOL didRenderFrame;
+#ifndef GL_FRAMEBUFFER_BINDING
+#define GL_FRAMEBUFFER_BINDING 0x8CA6
+#endif
+
+/// Draws mpv frames on a private serial queue instead of the main thread.
+/// An NSOpenGLView only presents from the main thread, so every frame used to
+/// compete with SwiftUI layout, hover tracking and the playback chrome; a busy
+/// main thread showed up as dropped frames and sluggish controls. A
+/// CAOpenGLLayer can be displayed from any thread.
+@interface OMMpvVideoLayer : CAOpenGLLayer
+@property (nonatomic, readonly) CGLContextObj cglContext;
+@property (atomic, readonly) BOOL didRenderFrame;
+- (void)attachRenderContext:(mpv_render_context *)renderContext;
+/// Frees the render context with the GL context current, never while a frame
+/// is being drawn.
+- (void)freeRenderContext;
+- (void)scheduleRender;
 @end
 
-@implementation OMMpvOpenGLView
+@implementation OMMpvVideoLayer {
+    CGLPixelFormatObj _pixelFormat;
+    CGLContextObj _context;
+    mpv_render_context *_renderContext;
+    os_unfair_lock _renderLock;
+    dispatch_queue_t _renderQueue;
+    atomic_bool _renderPending;
+    atomic_bool _didRenderFrame;
+}
 
-- (instancetype)initWithFrame:(NSRect)frameRect {
-    NSOpenGLPixelFormatAttribute attributes[] = {
-        NSOpenGLPFADoubleBuffer,
-        NSOpenGLPFAAccelerated,
-        0,
-    };
-    NSOpenGLPixelFormat *pixelFormat = [[NSOpenGLPixelFormat alloc] initWithAttributes:attributes];
-    self = [super initWithFrame:frameRect pixelFormat:pixelFormat];
+- (instancetype)init {
+    self = [super init];
     if (!self) return nil;
 
-    self.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-    self.wantsBestResolutionOpenGLSurface = YES;
-    GLint swapInterval = 1;
-    [self.openGLContext setValues:&swapInterval forParameter:NSOpenGLCPSwapInterval];
+    _renderLock = OS_UNFAIR_LOCK_INIT;
+    atomic_init(&_renderPending, false);
+    atomic_init(&_didRenderFrame, false);
+    _renderQueue = dispatch_queue_create(
+        "Omnia.mpv.render",
+        dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_USER_INTERACTIVE, 0)
+    );
+
+    CGLPixelFormatAttribute attributes[] = {
+        kCGLPFAAccelerated,
+        kCGLPFADoubleBuffer,
+        kCGLPFAAllowOfflineRenderers,
+        (CGLPixelFormatAttribute)0,
+    };
+    GLint formatCount = 0;
+    if (CGLChoosePixelFormat(attributes, &_pixelFormat, &formatCount) != kCGLNoError || !_pixelFormat) {
+        CGLPixelFormatAttribute fallbackAttributes[] = {
+            kCGLPFADoubleBuffer,
+            kCGLPFAAllowOfflineRenderers,
+            (CGLPixelFormatAttribute)0,
+        };
+        CGLChoosePixelFormat(fallbackAttributes, &_pixelFormat, &formatCount);
+    }
+    if (_pixelFormat) {
+        CGLCreateContext(_pixelFormat, NULL, &_context);
+    }
+    if (_context) {
+        GLint swapInterval = 1;
+        CGLSetParameter(_context, kCGLCPSwapInterval, &swapInterval);
+    }
+
+    self.asynchronous = NO;
+    self.opaque = YES;
+    self.needsDisplayOnBoundsChange = YES;
+    CGColorRef black = CGColorCreateGenericRGB(0, 0, 0, 1);
+    self.backgroundColor = black;
+    CGColorRelease(black);
     return self;
 }
 
-- (void)drawRect:(NSRect)dirtyRect {
-    [self.openGLContext makeCurrentContext];
-    NSRect backingBounds = [self convertRectToBacking:self.bounds];
-    int width = MAX((int)llround(NSWidth(backingBounds)), 1);
-    int height = MAX((int)llround(NSHeight(backingBounds)), 1);
+- (void)dealloc {
+    if (_context) CGLReleaseContext(_context);
+    if (_pixelFormat) CGLReleasePixelFormat(_pixelFormat);
+}
 
-    if (self.renderContext) {
-        mpv_render_context_update(self.renderContext);
-        mpv_opengl_fbo framebuffer = {
-            .fbo = 0,
-            .w = width,
-            .h = height,
+- (CGLContextObj)cglContext {
+    return _context;
+}
+
+- (BOOL)didRenderFrame {
+    return atomic_load(&_didRenderFrame);
+}
+
+- (CGLPixelFormatObj)copyCGLPixelFormatForDisplayMask:(uint32_t)mask {
+    return _pixelFormat ? CGLRetainPixelFormat(_pixelFormat) : [super copyCGLPixelFormatForDisplayMask:mask];
+}
+
+- (CGLContextObj)copyCGLContextForPixelFormat:(CGLPixelFormatObj)pixelFormat {
+    return _context ? CGLRetainContext(_context) : [super copyCGLContextForPixelFormat:pixelFormat];
+}
+
+- (BOOL)canDrawInCGLContext:(CGLContextObj)context
+                pixelFormat:(CGLPixelFormatObj)pixelFormat
+               forLayerTime:(CFTimeInterval)layerTime
+                displayTime:(const CVTimeStamp *)displayTime {
+    return YES;
+}
+
+- (void)drawInCGLContext:(CGLContextObj)context
+             pixelFormat:(CGLPixelFormatObj)pixelFormat
+            forLayerTime:(CFTimeInterval)layerTime
+             displayTime:(const CVTimeStamp *)displayTime {
+    CGLSetCurrentContext(context);
+    os_unfair_lock_lock(&_renderLock);
+    mpv_render_context *renderContext = _renderContext;
+    if (renderContext) {
+        GLint framebuffer = 0;
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &framebuffer);
+        GLint viewport[4] = { 0, 0, 0, 0 };
+        glGetIntegerv(GL_VIEWPORT, viewport);
+
+        mpv_render_context_update(renderContext);
+        mpv_opengl_fbo target = {
+            .fbo = framebuffer,
+            .w = MAX(viewport[2], 1),
+            .h = MAX(viewport[3], 1),
             .internal_format = 0,
         };
         int flipY = 1;
+        // Never let mpv sleep on this queue waiting for a frame's
+        // presentation time; frame pacing comes from the update callback.
+        int blockForTargetTime = 0;
         mpv_render_param parameters[] = {
-            { MPV_RENDER_PARAM_OPENGL_FBO, &framebuffer },
+            { MPV_RENDER_PARAM_OPENGL_FBO, &target },
             { MPV_RENDER_PARAM_FLIP_Y, &flipY },
+            { MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME, &blockForTargetTime },
             { MPV_RENDER_PARAM_INVALID, NULL },
         };
-        if (mpv_render_context_render(self.renderContext, parameters) >= 0) {
-            self.didRenderFrame = YES;
+        if (mpv_render_context_render(renderContext, parameters) >= 0) {
+            atomic_store(&_didRenderFrame, true);
         }
     } else {
         glClearColor(0, 0, 0, 1);
         glClear(GL_COLOR_BUFFER_BIT);
     }
-    [self.openGLContext flushBuffer];
+    [super drawInCGLContext:context pixelFormat:pixelFormat forLayerTime:layerTime displayTime:displayTime];
+    if (renderContext) {
+        mpv_render_context_report_swap(renderContext);
+    }
+    os_unfair_lock_unlock(&_renderLock);
 }
 
-- (void)reshape {
-    [super reshape];
-    self.needsDisplay = YES;
+- (void)attachRenderContext:(mpv_render_context *)renderContext {
+    os_unfair_lock_lock(&_renderLock);
+    _renderContext = renderContext;
+    os_unfair_lock_unlock(&_renderLock);
+}
+
+- (void)freeRenderContext {
+    if (!_context) return;
+    // Core Animation holds the CGL lock while it draws, so taking it here
+    // (before the render lock, the same order as a draw) waits out any frame
+    // in progress on the render queue.
+    CGLLockContext(_context);
+    os_unfair_lock_lock(&_renderLock);
+    if (_renderContext) {
+        CGLContextObj previous = CGLGetCurrentContext();
+        CGLSetCurrentContext(_context);
+        mpv_render_context_free(_renderContext);
+        _renderContext = NULL;
+        CGLSetCurrentContext(previous);
+    }
+    os_unfair_lock_unlock(&_renderLock);
+    CGLUnlockContext(_context);
+}
+
+- (void)scheduleRender {
+    if (atomic_exchange(&_renderPending, true)) return;
+    dispatch_async(_renderQueue, ^{
+        atomic_store(&self->_renderPending, false);
+        [self display];
+        // A display outside the main thread opens an implicit transaction
+        // that nothing else would commit.
+        [CATransaction flush];
+    });
+}
+
+@end
+
+@interface OMMpvVideoView : NSView
+@property (nonatomic, readonly) OMMpvVideoLayer *videoLayer;
+@end
+
+@implementation OMMpvVideoView
+
+- (instancetype)initWithFrame:(NSRect)frameRect {
+    self = [super initWithFrame:frameRect];
+    if (!self) return nil;
+
+    _videoLayer = [OMMpvVideoLayer layer];
+    // Layer-hosting: assign the layer before turning on wantsLayer so AppKit
+    // uses ours instead of creating a backing layer.
+    self.layer = _videoLayer;
+    self.wantsLayer = YES;
+    self.layerContentsRedrawPolicy = NSViewLayerContentsRedrawDuringViewResize;
+    self.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    return self;
+}
+
+- (NSView *)hitTest:(NSPoint)point {
+    // Video is a display-only surface. Let SwiftUI's playback chrome and its
+    // gestures receive mouse events even when AppKit reorders native views
+    // during an exclusive full-screen transition.
+    return nil;
+}
+
+- (BOOL)isOpaque {
+    return YES;
+}
+
+- (void)viewDidMoveToWindow {
+    [super viewDidMoveToWindow];
+    [self updateContentsScale];
+}
+
+- (void)viewDidChangeBackingProperties {
+    [super viewDidChangeBackingProperties];
+    [self updateContentsScale];
+}
+
+- (void)updateContentsScale {
+    CGFloat scale = self.window.backingScaleFactor;
+    if (scale > 0 && _videoLayer.contentsScale != scale) {
+        _videoLayer.contentsScale = scale;
+        [_videoLayer scheduleRender];
+    }
 }
 
 @end
@@ -143,10 +350,11 @@ typedef NS_ENUM(NSInteger, OMMpvTrackSelectionKind) {
 @end
 
 static void OMMpvRequestRedraw(void *context) {
-    OMMpvOpenGLView *view = (__bridge OMMpvOpenGLView *)context;
-    dispatch_async(dispatch_get_main_queue(), ^{
-        view.needsDisplay = YES;
-    });
+    // Runs on an mpv thread. The layer coalesces requests and draws on its
+    // own queue, so new frames never wait for the main thread.
+    OMMpvCallbackBox *box = (__bridge OMMpvCallbackBox *)context;
+    OMMpvVideoLayer *layer = box.target;
+    [layer scheduleRender];
 }
 
 @interface OMMpvPlayerController () <NSWindowDelegate> {
@@ -165,18 +373,21 @@ static void OMMpvRequestRedraw(void *context) {
     NSArray<NSString *> *_preferredAudioLanguages;
     NSArray<NSString *> *_preferredSubtitleLanguages;
     BOOL _subtitlesDisabled;
+    NSDictionary<NSString *, NSString *> *_playerOptions;
     NSDictionary<NSString *, id> *_subtitleStyle;
     BOOL _tracksLoading;
     BOOL _fileLoaded;
-    __weak NSView *_inlineVideoHost;
+    NSView *_inlineVideoHost;
     NSPanel *_pictureInPicturePanel;
     BOOL _pictureInPictureActive;
     uint64_t _nextTrackSelectionRequestID;
     uint64_t _latestAudioTrackSelectionRequestID;
     uint64_t _latestSubtitleTrackSelectionRequestID;
     NSMutableDictionary<NSNumber *, OMMpvPendingTrackSelection *> *_pendingTrackSelections;
+    OMMpvCallbackBox *_wakeupBox;
+    OMMpvCallbackBox *_redrawBox;
 }
-@property (nonatomic, readwrite) OMMpvOpenGLView *videoView;
+@property (nonatomic, readwrite) OMMpvVideoView *videoView;
 @property (nonatomic, readwrite, nullable) NSString *errorMessage;
 - (void)drainEvents;
 - (void)emitSnapshot;
@@ -191,8 +402,13 @@ static void OMMpvRequestRedraw(void *context) {
 @end
 
 static void OMMpvWakeup(void *context) {
-    OMMpvPlayerController *controller = (__bridge OMMpvPlayerController *)context;
+    OMMpvCallbackBox *box = (__bridge OMMpvCallbackBox *)context;
+    if (atomic_exchange(&box->_pending, true)) return;
     dispatch_async(dispatch_get_main_queue(), ^{
+        // Clear before draining so events that arrive mid-drain schedule
+        // another pass instead of being dropped.
+        atomic_store(&box->_pending, false);
+        OMMpvPlayerController *controller = box.target;
         [controller drainEvents];
     });
 }
@@ -219,7 +435,7 @@ static void OMMpvWakeup(void *context) {
     _tracksLoading = YES;
     _nextTrackSelectionRequestID = 100;
     _pendingTrackSelections = [NSMutableDictionary dictionary];
-    _videoView = [[OMMpvOpenGLView alloc] initWithFrame:NSZeroRect];
+    _videoView = [[OMMpvVideoView alloc] initWithFrame:NSZeroRect];
     return self;
 }
 
@@ -230,9 +446,9 @@ static void OMMpvWakeup(void *context) {
 - (void)startIfNeeded {
     if (_didStart || _stopped || self.errorMessage) return;
 
-    // The render context must be created on the same main/OpenGL thread that
-    // draws it. SwiftUI calls again after mounting if the first update races
-    // with window attachment.
+    // Wait for a real window so the video layer has its backing scale before
+    // the first frame. SwiftUI calls again after mounting if the first update
+    // races with window attachment.
     if (!_videoView.window) return;
 
     _didStart = YES;
@@ -260,7 +476,30 @@ static void OMMpvWakeup(void *context) {
     mpv_set_option_string(_mpv, "osd-level", "0");
     mpv_set_option_string(_mpv, "vo", "libmpv");
     mpv_set_option_string(_mpv, "hwdec", "auto-safe");
-    mpv_set_option_string(_mpv, "video-sync", "display-resample");
+    // display-resample needs a swap reported on every display refresh. Frames
+    // are now drawn when mpv has one ready, not on each vsync, so let mpv time
+    // video to the audio clock instead.
+    mpv_set_option_string(_mpv, "video-sync", "audio");
+    // Add-on links usually point at debrid CDNs or AIOStreams/MediaFlow
+    // proxies. Some refuse mpv's own "libmpv" user agent, and their
+    // connections drop mid-stream, so present a browser agent (an add-on's
+    // own User-Agent header still wins), reconnect instead of failing, and
+    // keep a read-ahead cache like Stremio's player.
+    mpv_set_option_string(
+        _mpv,
+        "user-agent",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
+    );
+    mpv_set_option_string(_mpv, "network-timeout", "30");
+    mpv_set_option_string(
+        _mpv,
+        "stream-lavf-o",
+        "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=5"
+    );
+    mpv_set_option_string(_mpv, "cache", "yes");
+    mpv_set_option_string(_mpv, "demuxer-max-bytes", "150MiB");
+    mpv_set_option_string(_mpv, "demuxer-max-back-bytes", "50MiB");
+    mpv_set_option_string(_mpv, "demuxer-readahead-secs", "20");
     mpv_set_option_string(
         _mpv,
         "keepaspect",
@@ -295,6 +534,7 @@ static void OMMpvWakeup(void *context) {
     if (_subtitlesDisabled) {
         mpv_set_option_string(_mpv, "sid", "no");
     }
+    [self applyPlayerOptions];
     [self applySubtitleStyleOptions];
 
     if (mpv_initialize(_mpv) < 0) {
@@ -302,12 +542,17 @@ static void OMMpvWakeup(void *context) {
         return;
     }
 
-    mpv_set_wakeup_callback(_mpv, OMMpvWakeup, (__bridge void *)self);
+    _wakeupBox = [[OMMpvCallbackBox alloc] initWithTarget:self];
+    mpv_set_wakeup_callback(_mpv, OMMpvWakeup, (__bridge void *)_wakeupBox);
     mpv_observe_property(_mpv, 1, "track-list", MPV_FORMAT_NONE);
     mpv_observe_property(_mpv, 2, "aid", MPV_FORMAT_NONE);
     mpv_observe_property(_mpv, 3, "sid", MPV_FORMAT_NONE);
 
-    [_videoView.openGLContext makeCurrentContext];
+    CGLContextObj glContext = _videoView.videoLayer.cglContext;
+    if (!glContext) {
+        [self failWithMessage:@"libmpv could not create its OpenGL render context."];
+        return;
+    }
     mpv_opengl_init_params openGLParameters = {
         .get_proc_address = OMOpenGLProcedureAddress,
         .get_proc_address_ctx = NULL,
@@ -317,17 +562,24 @@ static void OMMpvWakeup(void *context) {
         { MPV_RENDER_PARAM_OPENGL_INIT_PARAMS, &openGLParameters },
         { MPV_RENDER_PARAM_INVALID, NULL },
     };
-    if (mpv_render_context_create(&_renderContext, _mpv, renderParameters) < 0) {
+    CGLLockContext(glContext);
+    CGLSetCurrentContext(glContext);
+    int createStatus = mpv_render_context_create(&_renderContext, _mpv, renderParameters);
+    CGLSetCurrentContext(NULL);
+    CGLUnlockContext(glContext);
+    if (createStatus < 0) {
+        _renderContext = NULL;
         [self failWithMessage:@"libmpv could not create its OpenGL render context."];
         return;
     }
-    _videoView.renderContext = _renderContext;
+    [_videoView.videoLayer attachRenderContext:_renderContext];
+    _redrawBox = [[OMMpvCallbackBox alloc] initWithTarget:_videoView.videoLayer];
     mpv_render_context_set_update_callback(
         _renderContext,
         OMMpvRequestRedraw,
-        (__bridge void *)_videoView
+        (__bridge void *)_redrawBox
     );
-    _videoView.needsDisplay = YES;
+    [_videoView.videoLayer scheduleRender];
 
     if (_requestHeaders.count > 0) {
         NSMutableArray<NSString *> *fields = [NSMutableArray arrayWithCapacity:_requestHeaders.count];
@@ -355,7 +607,7 @@ static void OMMpvWakeup(void *context) {
 - (double)volume { return _mpv ? [self doubleForProperty:"volume"] : _volume; }
 - (double)playbackRate { return _mpv ? [self doubleForProperty:"speed"] : _playbackRate; }
 - (BOOL)hasRenderedVideoFrame {
-    if (!_videoView.didRenderFrame || !_mpv) return NO;
+    if (!_videoView.videoLayer.didRenderFrame || !_mpv) return NO;
     int64_t videoWidth = 0;
     return mpv_get_property(_mpv, "video-params/w", MPV_FORMAT_INT64, &videoWidth) >= 0 && videoWidth > 0;
 }
@@ -428,6 +680,49 @@ static void OMMpvWakeup(void *context) {
 - (void)setSubtitlesDisabled:(BOOL)disabled {
     if (_didStart) return;
     _subtitlesDisabled = disabled;
+}
+
+- (void)setPlayerOptions:(NSDictionary<NSString *, NSString *> *)options {
+    if (_didStart) return;
+    _playerOptions = [options copy];
+}
+
+- (void)applyPlayerOptions {
+    // Settings may only change these; everything else stays as configured
+    // above.
+    NSSet<NSString *> *allowed = [NSSet setWithArray:@[
+        @"hwdec",
+        @"vd-lavc-software-fallback",
+        @"sub-filter-sdh",
+        @"sub-filter-sdh-harder",
+        @"subs-with-matching-audio",
+        @"subs-fallback-forced",
+    ]];
+    [_playerOptions enumerateKeysAndObjectsUsingBlock:^(NSString *option, NSString *value, BOOL *stop) {
+        if (![allowed containsObject:option] || ![value isKindOfClass:NSString.class] || value.length > 32) return;
+        mpv_set_option_string(self->_mpv, option.UTF8String, value.UTF8String);
+    }];
+}
+
+- (void)addSubtitleURL:(NSURL *)URL
+                 title:(NSString *)title
+              language:(NSString *)language
+                select:(BOOL)select {
+    if (!_mpv || _stopped || !URL) return;
+    NSString *scheme = URL.scheme.lowercaseString;
+    if (![scheme isEqualToString:@"https"] && ![scheme isEqualToString:@"http"]) return;
+    NSString *safeTitle = title.length > 0 && title.length <= 120 ? title : @"Add-on subtitle";
+    NSString *safeLanguage = language.length > 0 && language.length <= 16 ? language : @"";
+    // Async, so a slow subtitle server never stalls the main thread.
+    const char *command[] = {
+        "sub-add",
+        URL.absoluteString.UTF8String,
+        select ? "select" : "auto",
+        safeTitle.UTF8String,
+        safeLanguage.UTF8String,
+        NULL
+    };
+    mpv_command_async(_mpv, 0, command);
 }
 
 - (void)setSubtitleStyle:(NSDictionary<NSString *, id> *)style {
@@ -581,10 +876,29 @@ static void OMMpvWakeup(void *context) {
 }
 
 - (void)attachVideoViewToHost:(NSView *)hostView {
+    NSAssert(NSThread.isMainThread, @"The video surface must be attached on the main thread.");
+    if (_inlineVideoHost == hostView && _videoView.superview == hostView) {
+        _videoView.frame = hostView.bounds;
+        return;
+    }
+
+    if (!_pictureInPictureActive) {
+        [_videoView removeFromSuperview];
+    }
     _inlineVideoHost = hostView;
     if (!_pictureInPictureActive) {
         [self embedVideoViewInHost:hostView];
     }
+}
+
+- (void)detachVideoViewFromHost:(NSView *)hostView {
+    NSAssert(NSThread.isMainThread, @"The video surface must be detached on the main thread.");
+    if (_inlineVideoHost != hostView) return;
+
+    if (!_pictureInPictureActive && _videoView.superview == hostView) {
+        [_videoView removeFromSuperview];
+    }
+    _inlineVideoHost = nil;
 }
 
 - (void)enterPictureInPicture {
@@ -630,7 +944,7 @@ static void OMMpvWakeup(void *context) {
     _videoView.frame = hostView.bounds;
     _videoView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     [hostView addSubview:_videoView];
-    _videoView.needsDisplay = YES;
+    [_videoView.videoLayer scheduleRender];
 }
 
 - (NSPanel *)makePictureInPicturePanel {
@@ -686,6 +1000,16 @@ static void OMMpvWakeup(void *context) {
     [self destroyPlayer];
 }
 
+- (NSString *)subtitleBackgroundRGBForBackground:(NSString *)background {
+    NSString *rgb = _subtitleStyle[@"backgroundRGB"];
+    if (![background isKindOfClass:NSString.class] || [background isEqualToString:@"none"]
+        || ![rgb isKindOfClass:NSString.class] || rgb.length != 6) {
+        return @"000000";
+    }
+    NSCharacterSet *nonHex = [[NSCharacterSet characterSetWithCharactersInString:@"0123456789ABCDEFabcdef"] invertedSet];
+    return [rgb rangeOfCharacterFromSet:nonHex].location == NSNotFound ? rgb.uppercaseString : @"000000";
+}
+
 - (void)applySubtitleStyleOptions {
     if (_subtitleStyle.count == 0) return;
 
@@ -712,6 +1036,7 @@ static void OMMpvWakeup(void *context) {
         @"shadowBlur": @"sub-blur",
         @"position": @"sub-pos",
         @"margin": @"sub-margin-x",
+        @"delay": @"sub-delay",
     };
     [numberOptions enumerateKeysAndObjectsUsingBlock:^(NSString *key, NSString *option, BOOL *stop) {
         NSNumber *value = self->_subtitleStyle[key];
@@ -732,7 +1057,10 @@ static void OMMpvWakeup(void *context) {
             : ([background isEqualToString:@"translucent"]
                 ? 0.55
                 : MIN(MAX(shadowOpacity.doubleValue, 0), 1));
-        NSString *color = [NSString stringWithFormat:@"#%02X000000", (int)llround(alphaFraction * 255)];
+        // With a box, sub-back-color is the box; without one it is the
+        // shadow, which stays black.
+        NSString *rgb = [self subtitleBackgroundRGBForBackground:background];
+        NSString *color = [NSString stringWithFormat:@"#%02X%@", (int)llround(alphaFraction * 255), rgb];
         mpv_set_option_string(_mpv, "sub-back-color", color.UTF8String);
         mpv_set_option_string(
             _mpv,
@@ -772,6 +1100,7 @@ static void OMMpvWakeup(void *context) {
         @"shadowBlur": @"sub-blur",
         @"position": @"sub-pos",
         @"margin": @"sub-margin-x",
+        @"delay": @"sub-delay",
     };
     [numberProperties enumerateKeysAndObjectsUsingBlock:^(NSString *key, NSString *property, BOOL *stop) {
         NSNumber *value = self->_subtitleStyle[key];
@@ -792,7 +1121,10 @@ static void OMMpvWakeup(void *context) {
             : ([background isEqualToString:@"translucent"]
                 ? 0.55
                 : MIN(MAX(shadowOpacity.doubleValue, 0), 1));
-        NSString *color = [NSString stringWithFormat:@"#%02X000000", (int)llround(alphaFraction * 255)];
+        // With a box, sub-back-color is the box; without one it is the
+        // shadow, which stays black.
+        NSString *rgb = [self subtitleBackgroundRGBForBackground:background];
+        NSString *color = [NSString stringWithFormat:@"#%02X%@", (int)llround(alphaFraction * 255), rgb];
         mpv_set_property_string(_mpv, "sub-back-color", color.UTF8String);
         mpv_set_property_string(
             _mpv,
@@ -881,16 +1213,22 @@ static void OMMpvWakeup(void *context) {
 - (void)destroyPlayer {
     if (_renderContext) {
         mpv_render_context_set_update_callback(_renderContext, NULL, NULL);
-        [_videoView.openGLContext makeCurrentContext];
-        _videoView.renderContext = NULL;
-        mpv_render_context_free(_renderContext);
+        [_videoView.videoLayer freeRenderContext];
         _renderContext = NULL;
-        _videoView.needsDisplay = YES;
+        [_videoView.videoLayer scheduleRender];
     }
     if (_mpv) {
+        // Clearing the callback is synchronous, so mpv can't call into the box
+        // after this line. Blocks already queued hold the box, not self.
         mpv_set_wakeup_callback(_mpv, NULL, NULL);
-        mpv_terminate_destroy(_mpv);
+        mpv_handle *mpv = _mpv;
         _mpv = NULL;
+        // mpv_terminate_destroy waits for the demuxer and network stream to
+        // shut down, which can take seconds on a slow source. Do it off main
+        // so closing the player doesn't freeze the app.
+        dispatch_async(OMMpvTeardownQueue(), ^{
+            mpv_terminate_destroy(mpv);
+        });
     }
     self.stateChangeHandler = nil;
 }

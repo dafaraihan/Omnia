@@ -6,6 +6,7 @@
 import SwiftUI
 
 struct DiscoverView: View {
+    @Environment(\.displayPreferences) private var display
     @Environment(OmniaStore.self) private var store
     @Environment(LiveMetadataStore.self) private var metadata
     @AppStorage(HomeShelfPreferences.storageKey) private var disabledHomeShelfIDs = ""
@@ -21,6 +22,16 @@ struct DiscoverView: View {
                 .filter { store.isCatalogEnabled(for: addon, catalog: $0) }
                 .map { (store.catalogID(for: addon, catalog: $0), addon, $0) }
         }
+    }
+
+    private var hasBuiltInCatalogs: Bool {
+        !metadata.movieCatalog.isEmpty || !metadata.seriesCatalog.isEmpty
+    }
+
+    /// Catalogs with a required filter open on its first option, as in
+    /// Stremio; search-only catalogs stay in Search.
+    private var discoverAddonCatalogs: [(id: String, addon: InstalledAddon, catalog: AddonCatalog)] {
+        enabledAddonCatalogs.filter { $0.addon.isEnabled && $0.catalog.canLoadWithDefaults }
     }
 
     private var visibleBuiltInCatalogs: [BuiltInHomeCatalog] {
@@ -65,13 +76,15 @@ struct DiscoverView: View {
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(alignment: .leading, spacing: 36) {
-                if metadata.isLoadingCatalogs, metadata.movieCatalog.isEmpty, metadata.seriesCatalog.isEmpty {
+                // Add-on shelves don't depend on Omnia's own metadata, so
+                // Discover only gives up when neither has anything to show.
+                if hasBuiltInCatalogs || !discoverAddonCatalogs.isEmpty {
+                    discoverShelves
+                } else if metadata.isLoadingCatalogs {
                     ProgressView("Finding something good…")
                         .frame(maxWidth: .infinity, minHeight: 280)
-                } else if metadata.movieCatalog.isEmpty, metadata.seriesCatalog.isEmpty {
-                    unavailableState
                 } else {
-                    discoverShelves
+                    unavailableState
                 }
             }
             .padding(.horizontal, MediaBrowseMetrics.pageInset)
@@ -129,10 +142,10 @@ struct DiscoverView: View {
             catalogShelf(title: "Saved For You", items: saved)
         }
 
-        ForEach(enabledAddonCatalogs.indices, id: \.self) { index in
-            let source = enabledAddonCatalogs[index]
-            if source.catalog.canLoadWithoutExtra,
-               showsCatalog(id: source.id, kind: source.catalog.mediaKind) {
+        let addonCatalogs = discoverAddonCatalogs
+        ForEach(addonCatalogs.indices, id: \.self) { index in
+            let source = addonCatalogs[index]
+            if showsCatalog(id: source.id, kind: source.catalog.mediaKind) {
                 AddonCatalogShelf(addon: source.addon, catalog: source.catalog, filters: filters)
             }
         }
@@ -169,7 +182,7 @@ struct DiscoverView: View {
                     MetadataCatalogView(title: title, items: items)
                 }
             }
-            ShelfScrollView(items: items, itemSpan: MediaBrowseMetrics.shelfItemSpan, accessibilityLabel: title) { item in
+            ShelfScrollView(items: items, itemSpan: MediaBrowseMetrics.posterItemSpan(display), accessibilityLabel: title) { item in
                 MediaPoster(item: item)
             }
         }
@@ -182,57 +195,54 @@ struct DiscoverView: View {
             kindMenu
             sortMenu
         } label: {
-            Label {
-                Text("Filter and Sort")
-            } icon: {
-                Image(systemName: "line.3.horizontal.decrease.circle")
-                    .symbolRenderingMode(.monochrome)
-                    .foregroundStyle(.white)
-            }
+            Label("Filter and Sort", systemImage: "line.3.horizontal.decrease.circle")
         }
-        .tint(.white)
         .help("Filter and sort Discover")
     }
 
     private var catalogsMenu: some View {
         Menu("Catalogs", systemImage: "rectangle.stack") {
-            Button {
-                filters.selectedCatalogIDs.removeAll()
-            } label: {
-                Label("All Catalogs", systemImage: filters.selectedCatalogIDs.isEmpty ? "checkmark" : "rectangle.stack")
-            }
+            // Toggles draw the native menu checkmark.
+            Toggle("All Catalogs", isOn: Binding(
+                get: { filters.selectedCatalogIDs.isEmpty },
+                set: { if $0 { filters.selectedCatalogIDs.removeAll() } }
+            ))
             Divider()
             ForEach(catalogChoices, id: \.id) { choice in
-                Button {
-                    toggleCatalogFilter(choice.id)
-                } label: {
-                    Label(choice.title, systemImage: filters.selectedCatalogIDs.contains(choice.id) ? "checkmark" : "rectangle.stack")
-                }
+                Toggle(choice.title, isOn: Binding(
+                    get: { filters.selectedCatalogIDs.contains(choice.id) },
+                    set: { _ in toggleCatalogFilter(choice.id) }
+                ))
             }
             Divider()
             NavigationLink("Catalog Settings", destination: CatalogsSettingsView())
         }
     }
 
+    // In a menu, a Picker is already its own submenu titled with its label.
+    // Wrapping it in another Menu of the same name added a second level
+    // (Genre ▸ Genre ▸ list).
     private var genreMenu: some View {
-        Menu("Genre", systemImage: "theatermasks") {
-            Picker("Genre", selection: $filters.genre) {
-                Text("All Genres").tag(String?.none)
-                ForEach(availableGenres, id: \.self) { genre in
-                    Text(genre).tag(Optional(genre))
-                }
+        Picker(selection: $filters.genre) {
+            Text("All Genres").tag(String?.none)
+            ForEach(availableGenres, id: \.self) { genre in
+                Text(genre).tag(Optional(genre))
             }
+        } label: {
+            Label("Genre", systemImage: "theatermasks")
         }
+        .pickerStyle(.menu)
     }
 
     private var kindMenu: some View {
-        Menu("Kind", systemImage: "film.stack") {
-            Picker("Kind", selection: $filters.kind) {
-                Text("All Kinds").tag(MediaItem.Kind?.none)
-                Text("Movies").tag(Optional(MediaItem.Kind.movie))
-                Text("Series").tag(Optional(MediaItem.Kind.series))
-            }
+        Picker(selection: $filters.kind) {
+            Text("All Kinds").tag(MediaItem.Kind?.none)
+            Text("Movies").tag(Optional(MediaItem.Kind.movie))
+            Text("Series").tag(Optional(MediaItem.Kind.series))
+        } label: {
+            Label("Kind", systemImage: "film.stack")
         }
+        .pickerStyle(.menu)
     }
 
     private var sortMenu: some View {
@@ -242,6 +252,7 @@ struct DiscoverView: View {
                     Text(period.title).tag(period)
                 }
             }
+            .pickerStyle(.inline)
             if filters.releasePeriod == .chooseYear {
                 Picker("Year", selection: $filters.selectedYear) {
                     Text("Any Year").tag(Int?.none)
@@ -249,13 +260,15 @@ struct DiscoverView: View {
                         Text(String(year)).tag(Optional(year))
                     }
                 }
+                .pickerStyle(.menu)
             }
             Divider()
-            Picker("Sort", selection: $filters.sort) {
+            Picker("Order", selection: $filters.sort) {
                 ForEach(DiscoverDateSort.allCases) { order in
                     Text(order.title).tag(order)
                 }
             }
+            .pickerStyle(.inline)
         }
     }
 
@@ -270,10 +283,13 @@ struct DiscoverView: View {
     }
 }
 
-private struct AddonCatalogShelf: View {
+/// One add-on catalog as a shelf. Discover passes its filters; Home shows the
+/// catalog exactly as the add-on orders it.
+struct AddonCatalogShelf: View {
+    @Environment(\.displayPreferences) private var display
     let addon: InstalledAddon
     let catalog: AddonCatalog
-    let filters: DiscoverFilterState
+    var filters: DiscoverFilterState?
 
     @State private var items: [MediaItem] = []
     @State private var didFinishLoading = false
@@ -281,7 +297,8 @@ private struct AddonCatalogShelf: View {
 
     private var title: String { catalog.name?.trimmedNonEmpty ?? catalog.id }
     private var visibleItems: [MediaItem] {
-        DiscoverFilterPresentation.apply(filters, to: items)
+        guard let filters else { return items }
+        return DiscoverFilterPresentation.apply(filters, to: items)
     }
 
     var body: some View {
@@ -291,7 +308,7 @@ private struct AddonCatalogShelf: View {
                     SectionHeaderLink(title: title) {
                         AddonCatalogBrowseView(addon: addon, catalog: catalog)
                     }
-                    ShelfScrollView(items: visibleItems, itemSpan: MediaBrowseMetrics.shelfItemSpan, accessibilityLabel: title) { item in
+                    ShelfScrollView(items: visibleItems, itemSpan: MediaBrowseMetrics.posterItemSpan(display), accessibilityLabel: title) { item in
                         MediaPoster(item: item)
                     }
                 }
@@ -315,26 +332,62 @@ private struct AddonCatalogShelf: View {
         }
     }
 
+    /// The same saved copy Home and collection folders use.
+    private var cacheKey: String {
+        AddonCatalogCache.key(addon: addon, catalog: catalog, extra: catalog.resolvingExtras([:]) ?? [:])
+    }
+
     private func load() async {
-        didFinishLoading = false
+        // Shelves are rebuilt each time Discover opens and each time one
+        // scrolls back into view; reuse what was fetched this session.
+        if let fresh = AddonCatalogShelfCache.items(for: cacheKey) {
+            items = fresh
+            errorMessage = nil
+            didFinishLoading = true
+            return
+        }
         errorMessage = nil
+        // Draw the copy saved last time at once, then refresh it.
+        if items.isEmpty, let saved = await AddonCatalogCache.previews(for: [cacheKey])[cacheKey] {
+            guard !Task.isCancelled else { return }
+            items = saved.compactMap { $0.mediaItem(addon: addon) }
+        }
+        didFinishLoading = !items.isEmpty
         do {
             let metas = try await StremioAddonClient.fetchCatalog(from: addon, catalog: catalog)
             guard !Task.isCancelled else { return }
             items = metas.compactMap { $0.mediaItem(addon: addon) }
+            AddonCatalogShelfCache.store(items, for: cacheKey)
+            let key = cacheKey
+            Task { await AddonCatalogCache.save(metas, for: key) }
         } catch is CancellationError {
             return
         } catch {
-            items = []
-            errorMessage = "This add-on catalog is unavailable."
+            // Offline or a broken add-on: a saved copy beats an error.
+            if items.isEmpty { errorMessage = "This add-on catalog is unavailable." }
         }
         didFinishLoading = true
     }
 }
 
+/// Discover's add-on shelves for this session, kept for 30 minutes.
+private enum AddonCatalogShelfCache {
+    private static var entries: [String: (items: [MediaItem], storedAt: Date)] = [:]
+    private static let maximumAge: TimeInterval = 30 * 60
+
+    static func items(for key: String) -> [MediaItem]? {
+        guard let entry = entries[key], Date.now.timeIntervalSince(entry.storedAt) < maximumAge else { return nil }
+        return entry.items
+    }
+
+    static func store(_ items: [MediaItem], for key: String) {
+        entries[key] = (items, .now)
+    }
+}
+
 private extension AddonCatalog {
     var mediaKind: MediaItem.Kind {
-        type.lowercased() == "series" ? .series : .movie
+        MediaItem.Kind(stremioType: type) ?? .movie
     }
 }
 

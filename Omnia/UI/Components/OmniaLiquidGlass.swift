@@ -228,9 +228,14 @@ extension View {
                     Color.black.opacity(0.42)
                         .ignoresSafeArea()
                         .accessibilityHidden(true)
+                        // Clicking outside the panel dismisses it, like a
+                        // native popover.
+                        .contentShape(Rectangle())
+                        .onTapGesture { isPresented.wrappedValue = false }
 
                     content()
                         .padding(40)
+                        .onExitCommand { isPresented.wrappedValue = false }
                 }
                 .transition(.opacity)
                 .zIndex(100)

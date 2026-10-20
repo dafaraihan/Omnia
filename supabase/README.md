@@ -78,6 +78,6 @@ the normalized record plus a `cached` flag.
 3. Configure Apple, Google, and Facebook providers under Auth. Add the exact native URL `omnia://auth-callback` to the Redirect URLs allow list, and keep the `omnia` URL scheme registered in the Apple target's Info.plist. Configure each provider's callback URL from the Supabase Auth provider page; it is not the app's native redirect.
 4. Set the server-only secrets with `supabase secrets set --env-file supabase/.env` after creating a local file from `.env.example`. Required: `TMDB_READ_ACCESS_TOKEN`, `TVDB_API_KEY`, and a random `METADATA_SEED_TOKEN`. `TVDB_SUBSCRIBER_PIN` is optional. The hosted runtime supplies `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`; do not place either in the app or `.env`.
 5. Run `supabase db push`, then `supabase functions deploy metadata`.
-6. Configure the app with the project URL and publishable key only, then test each account provider, a metadata search, a detail request, and a second-device progress update.
+6. Configure the app with the project URL and publishable key only, then manually verify each account provider, a metadata search, a detail request, and a second-device progress update.
 
 Local verification requires Docker because `supabase start`, `supabase db lint --local`, and `supabase functions serve` run the local Supabase stack in containers.

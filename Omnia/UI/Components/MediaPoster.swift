@@ -15,20 +15,28 @@ struct MediaPoster: View {
     var style: Style = .poster
     var fillsAvailableWidth = false
     @Environment(\.showsMediaCardLabels) private var showsMediaCardLabels
+    @Environment(\.displayPreferences) private var display
+
+    /// Landscape Posters (Settings › Appearance › Poster Cards) turns a
+    /// standard poster into a backdrop card with the title logo.
+    private var usesBackdropCard: Bool {
+        style == .poster && display.landscapePosters
+    }
+
+    private var isLandscape: Bool { style == .landscape || usesBackdropCard }
+
+    private var cornerRadius: CGFloat {
+        isLandscape ? display.landscapeCornerRadius : display.posterCornerRadius
+    }
 
     var body: some View {
-        NavigationLink(value: item) {
+        MediaDetailLink(item: item) {
             VStack(alignment: .leading, spacing: 8) {
-                ArtworkView(item: item)
-                    .aspectRatio(style == .landscape ? 1.72 : 2 / 3, contentMode: .fit)
+                ArtworkView(item: item, prefersBackdrop: usesBackdropCard)
+                    .aspectRatio(isLandscape ? 1.72 : 2 / 3, contentMode: .fit)
                     .frame(maxWidth: fillsAvailableWidth ? .infinity : nil)
                     .frame(width: fillsAvailableWidth ? nil : cardWidth)
-                    .clipShape(.rect(
-                        cornerRadius: style == .landscape
-                            ? MediaBrowseMetrics.landscapeCornerRadius
-                            : MediaBrowseMetrics.posterCornerRadius,
-                        style: .continuous
-                    ))
+                    .clipShape(.rect(cornerRadius: cornerRadius, style: .continuous))
                     .overlay {
                         if style == .landscape {
                             ZStack {
@@ -55,6 +63,8 @@ struct MediaPoster: View {
                                 .padding(.bottom, 8)
                         }
                     }
+                    .cardDepth(.posters, cornerRadius: cornerRadius)
+                    .mediaHoverPreview(item)
 
                 if showsMediaCardLabels {
                     MediaPosterLabel(item: item)
@@ -69,15 +79,7 @@ struct MediaPoster: View {
     }
 
     private var cardWidth: CGFloat {
-        if style == .landscape {
-            #if os(iOS)
-            return 248
-            #else
-            return 304
-            #endif
-        }
-
-        return MediaBrowseMetrics.posterWidth
+        isLandscape ? MediaBrowseMetrics.landscapeCardWidth : display.posterCardWidth
     }
 }
 
@@ -88,16 +90,22 @@ struct RankedMediaPoster: View {
     let item: MediaItem
     let rank: Int
     @Environment(\.showsMediaCardLabels) private var showsMediaCardLabels
+    @Environment(\.displayPreferences) private var display
 
     var body: some View {
-        NavigationLink(value: item) {
+        MediaDetailLink(item: item) {
             VStack(alignment: .leading, spacing: 8) {
-                ArtworkView(item: item)
-                    .frame(width: cardWidth, height: MediaBrowseMetrics.posterHeight)
+                ArtworkView(item: item, prefersBackdrop: display.landscapePosters)
+                    .frame(width: cardWidth, height: cardHeight)
                     .overlay(alignment: .topLeading) {
                         RankBadge(rank: rank)
                             .padding(10)
                     }
+                    .cardDepth(
+                        .posters,
+                        cornerRadius: display.landscapePosters ? display.landscapeCornerRadius : display.posterCornerRadius
+                    )
+                    .mediaHoverPreview(item)
 
                 if showsMediaCardLabels {
                     MediaPosterLabel(item: item)
@@ -111,7 +119,11 @@ struct RankedMediaPoster: View {
     }
 
     private var cardWidth: CGFloat {
-        return MediaBrowseMetrics.posterWidth
+        display.landscapePosters ? MediaBrowseMetrics.landscapeCardWidth : display.posterCardWidth
+    }
+
+    private var cardHeight: CGFloat {
+        display.landscapePosters ? MediaBrowseMetrics.landscapeCardWidth / 1.72 : display.posterCardHeight
     }
 }
 

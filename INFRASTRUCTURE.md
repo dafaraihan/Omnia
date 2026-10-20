@@ -1,5 +1,7 @@
 # Infrastructure and Operations
 
+> **Automated-validation policy:** Follow the repository-root `AGENTS.md`. Instructions below that call for automated test targets, suites, fixtures, or scripts are historical and superseded; use builds, static checks, and focused manual evidence instead.
+
 This document is the operational source of truth for Omnia's Apple clients and
 Supabase backend. It describes the repository snapshot as of 2026-08-10. It is
 not evidence that a setting exists in a hosted project or that a deployment has
@@ -207,10 +209,6 @@ deno check --config supabase/functions/metadata/deno.json \
   --lock supabase/functions/metadata/deno.lock \
   --frozen \
   supabase/functions/metadata/index.ts
-deno test --config supabase/functions/metadata/deno.json \
-  --lock supabase/functions/metadata/deno.lock \
-  --frozen \
-  supabase/functions/metadata
 git diff --quiet -- supabase/functions/metadata/deno.lock
 git diff --cached --quiet -- supabase/functions/metadata/deno.lock
 supabase functions serve metadata --env-file supabase/.env
@@ -222,23 +220,18 @@ fails at the seed step because `supabase/config.toml` enables
 disposable local stack and either add the intended deterministic seed or obtain
 explicit approval to disable seeding.
 
-Build and test the Apple app after the backend checks:
+Build the Apple app after the backend checks:
 
 ```sh
 xcodebuild -project Omnia.xcodeproj -scheme Omnia \
   -destination 'platform=macOS' build
 xcodebuild -project Omnia.xcodeproj -scheme Omnia \
-  -destination 'platform=macOS' test
-xcodebuild -project Omnia.xcodeproj -scheme Omnia \
   -destination 'generic/platform=iOS Simulator' build
 ```
 
-In the current working snapshot, the test target uses the signed Omnia app as
-its host and the macOS app build requires a locally installed libmpv. The
-`OmniaTests/` target, embed script, and related project changes are not all in
-this documentation branch's history. A release candidate must integrate them
-together before relying on these commands. A documentation-only change need
-not mutate or rebuild the dirty application snapshot; release candidates do.
+The macOS app build requires a locally installed libmpv. A documentation-only
+change need not mutate or rebuild the dirty application snapshot; release
+candidates do.
 
 ## Database migration runbook
 
@@ -327,10 +320,6 @@ Pre-deploy checks:
      --lock supabase/functions/metadata/deno.lock \
      --frozen \
      supabase/functions/metadata/index.ts
-   deno test --config supabase/functions/metadata/deno.json \
-     --lock supabase/functions/metadata/deno.lock \
-     --frozen \
-     supabase/functions/metadata
    git diff --quiet -- supabase/functions/metadata/deno.lock
    git diff --cached --quiet -- supabase/functions/metadata/deno.lock
    supabase functions serve metadata --env-file supabase/.env
@@ -353,10 +342,6 @@ deno check --config supabase/functions/metadata/deno.json \
   --lock supabase/functions/metadata/deno.lock \
   --frozen \
   supabase/functions/metadata/index.ts
-deno test --config supabase/functions/metadata/deno.json \
-  --lock supabase/functions/metadata/deno.lock \
-  --frozen \
-  supabase/functions/metadata
 git diff --quiet -- supabase/functions/metadata/deno.lock
 git diff --cached --quiet -- supabase/functions/metadata/deno.lock
 supabase functions deploy metadata
@@ -398,7 +383,7 @@ Afterward, repeat the smoke checks and preserve the failed deployment logs.
    controlled builder and compare the complete pre-signing artifact inventory.
    Homebrew discovery is permitted only for Debug builds and is not release
    evidence.
-4. Build/test macOS and build the iOS Simulator target using the commands above;
+4. Build macOS and the iOS Simulator target using the commands above;
    then archive each shipping destination with the intended distribution
    identity.
 5. Inspect the macOS archive before upload:

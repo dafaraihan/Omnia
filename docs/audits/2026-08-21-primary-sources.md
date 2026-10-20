@@ -1,5 +1,7 @@
 # Omnia Product-Readiness Audit Primary Sources
 
+> **Automated-validation policy:** Follow the repository-root `AGENTS.md`. Instructions below that call for automated test targets, suites, fixtures, or scripts are historical and superseded; use builds, static checks, and focused manual evidence instead.
+
 Date: 2026-08-21
 
 Repository note: the repo currently keeps planning and design notes under `docs/superpowers/`; there was no existing audit-notes convention, so this brief lives in `docs/audits/`.

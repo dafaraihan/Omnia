@@ -116,7 +116,7 @@ static int64_t OMRemainingDownloadBytes(
     return selectedBytes - existingBytes;
 }
 
-static NSString *const OMLocalTorrentErrorDomain = @"PrimeDeca.Omnia.LocalTorrent";
+static NSString *const OMLocalTorrentErrorDomain = @"Dafa-Raihan.Omnia.LocalTorrent";
 
 typedef NS_ENUM(NSInteger, OMLocalTorrentErrorCode) {
     OMLocalTorrentErrorUnavailable = 1,
@@ -238,7 +238,7 @@ static bool OMDetectBluRayRoot(lt::file_storage const& files, fs::path& detected
     _minimumFreeBytes = minimumFreeBytes;
     _downloadLimitBytesPerSecond = downloadLimitBytesPerSecond;
     _uploadLimitBytesPerSecond = uploadLimitBytesPerSecond;
-    _workQueue = dispatch_queue_create("PrimeDeca.Omnia.LocalTorrent", DISPATCH_QUEUE_SERIAL);
+    _workQueue = dispatch_queue_create("Dafa-Raihan.Omnia.LocalTorrent", DISPATCH_QUEUE_SERIAL);
     _cancelled.store(false);
     _completedMediaKind = OMLocalTorrentMediaKindFile;
     _completedBytes = 0;

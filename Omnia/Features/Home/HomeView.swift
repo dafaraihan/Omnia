@@ -9,30 +9,102 @@ struct HomeView: View {
     @Environment(OmniaStore.self) private var store
     @Environment(LiveMetadataStore.self) private var metadata
     @Environment(SettingsPreferencesStore.self) private var settings
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(AddonCatalogStore.self) private var addonCatalogs
+    @Environment(HomeLayoutStore.self) private var homeLayout
+    @Environment(CollectionsStore.self) private var collections
+    @Environment(\.isActiveDestination) private var isActiveDestination
+    @Environment(\.displayPreferences) private var display
     @State private var resolvedFeatured: MediaItem?
     @State private var upcomingResult: UpcomingResult?
     @State private var isLoadingUpcoming = false
     @State private var heroIndex = 0
     @State private var heroCandidates: [MediaItem] = []
     @State private var sourcePlaybackItem: MediaItem?
-    @AppStorage("home-show-continue-watching") private var showsContinueWatching = true
+    @AppStorage(HomeView.continueWatchingVisibilityKey) private var showsContinueWatching = true
+    /// Settings › Home › Continue Watching › Show on Home.
+    static let continueWatchingVisibilityKey = "home-show-continue-watching"
     @AppStorage(HomeShelfPreferences.storageKey) private var disabledHomeShelfIDs = ""
 
     private var continuing: [MediaItem] {
         let values = store.localMediaSnapshots
             .filter { $0.progress != nil }
             .map(\.item)
-        return settings.preferences.continueWatchingLimit.value.map { Array(values.prefix($0)) } ?? values
+        let limited = settings.preferences.continueWatchingLimit.value.map { Array(values.prefix($0)) } ?? values
+        return display.continueWatchingSort.sorted(limited)
     }
     /// The pager is deliberately drawn from the live discovery response, not
     /// hard-coded feature art. Prefer titles that can present a proper
     /// cinematic treatment, while retaining useful fallbacks when a provider
     /// has incomplete artwork.
     private var heroCatalogItems: [MediaItem] {
-        visibleHomeCatalogs.flatMap(\.items)
+        if isAddonMode { return addonHeroItems }
+        return visibleHomeCatalogs.flatMap(\.items)
             + metadata.movieCatalog
             + metadata.seriesCatalog
             + store.library
+    }
+
+    // MARK: Add-on mode
+
+    /// Every add-on catalog that can be a Home row, in the user's Home Layout
+    /// order. When there is at least one, Home is built from add-ons only.
+    private var addonHomeCatalogs: [AddonHomeCatalog] {
+        homeLayout.ordered(AddonCatalogStore.catalogs(in: store))
+    }
+
+    private var isAddonMode: Bool { !addonHomeCatalogs.isEmpty }
+
+    private var visibleAddonCatalogs: [AddonHomeCatalog] {
+        addonHomeCatalogs.filter { store.isCatalogEnabled(for: $0.addon, catalog: $0.catalog) }
+    }
+
+    /// Visible catalogs and collections in Home order.
+    private var visibleHomeEntries: [HomeRowEntry] {
+        homeLayout.entries(catalogs: addonHomeCatalogs, collections: collections.collections).filter { entry in
+            switch entry {
+            case let .catalog(catalog):
+                store.isCatalogEnabled(for: catalog.addon, catalog: catalog.catalog)
+            case let .collection(collection):
+                collections.isVisible(collection)
+            }
+        }
+    }
+
+    private var heroSourceKeys: [String] {
+        homeLayout.preferences.heroSources(
+            orderedVisibleKeys: visibleAddonCatalogs.map(\.key),
+            allKeys: addonHomeCatalogs.map(\.key)
+        )
+    }
+
+    /// Titles to load: visible rows plus hidden hero sources.
+    private var addonCatalogsToLoad: [AddonHomeCatalog] {
+        let keys = Set(visibleAddonCatalogs.map(\.key) + (homeLayout.preferences.showsHero ? heroSourceKeys : []))
+        return addonHomeCatalogs.filter { keys.contains($0.key) }
+    }
+
+    private var addonLoadKey: String {
+        addonCatalogsToLoad.map { "\($0.key)@\($0.addon.manifestURL.absoluteString)" }.joined(separator: "|")
+    }
+
+    /// Nuvio's hero: titles from up to two hero-source catalogs, merged,
+    /// de-duplicated, shuffled with a seed that changes only when catalogs
+    /// reload, and capped at eight. Only each source's first titles are
+    /// used, so later pages arriving never reshuffle the hero.
+    private var addonHeroItems: [MediaItem] {
+        guard homeLayout.preferences.showsHero else { return [] }
+        let hidesUnreleased = homeLayout.preferences.hidesUnreleasedContent
+        var seen = Set<String>()
+        let merged = heroSourceKeys
+            .flatMap { addonCatalogs.items(for: $0, hidingUnreleased: hidesUnreleased).prefix(20) }
+            .filter { seen.insert($0.id).inserted }
+        var generator = SeededRandomNumberGenerator(seed: UInt64(addonCatalogs.generation + 1))
+        return Array(merged.shuffled(using: &generator).prefix(HomeLayoutPreferences.heroItemLimit))
+    }
+
+    private var showsHeroSlot: Bool {
+        !isAddonMode || homeLayout.preferences.showsHero
     }
 
     private var visibleHomeCatalogs: [BuiltInHomeCatalog] {
@@ -55,11 +127,17 @@ struct HomeView: View {
             LazyVStack(alignment: .leading, spacing: 0) {
                 if let featured = displayFeatured {
                     hero(featured)
-                } else {
+                } else if showsHeroSlot {
                     loadingHero
+                } else {
+                    // No hero: keep the first row clear of the floating
+                    // toolbar.
+                    Color.clear.frame(height: herolessTopInset)
                 }
 
-                VStack(alignment: .leading, spacing: 34) {
+                // Lazy so only the rows on screen are built. An add-on such as
+                // Xperience adds dozens of rows, each with its own posters.
+                LazyVStack(alignment: .leading, spacing: 34) {
                     if showsContinueWatching, !continuing.isEmpty {
                         continueWatchingShelf(continuing)
                     }
@@ -73,7 +151,31 @@ struct HomeView: View {
                         }
                     }
 
-                    if metadata.isLoadingCatalogs, metadata.homeCatalogs.isEmpty {
+                    if isAddonMode {
+                        let hidesUnreleased = homeLayout.preferences.hidesUnreleasedContent
+                        ForEach(visibleHomeEntries) { entry in
+                            switch entry {
+                            case let .catalog(catalog):
+                                AddonHomeCatalogRow(
+                                    catalog: catalog,
+                                    title: homeLayout.title(for: catalog),
+                                    items: addonCatalogs.items(for: catalog.key, hidingUnreleased: hidesUnreleased),
+                                    state: addonCatalogs.state(for: catalog.key),
+                                    retry: { addonCatalogs.retry(catalog) }
+                                )
+                            case let .collection(collection):
+                                CollectionHomeRow(collection: collection)
+                            }
+                        }
+                        if visibleHomeEntries.isEmpty {
+                            ContentUnavailableView(
+                                "All Catalogs Are Hidden",
+                                systemImage: "rectangle.stack",
+                                description: Text("Choose what appears on Home in Settings › Home › Catalogs.")
+                            )
+                            .frame(maxWidth: .infinity, minHeight: 220)
+                        }
+                    } else if metadata.isLoadingCatalogs, metadata.homeCatalogs.isEmpty {
                         ProgressView("Loading your cinema…")
                             .frame(maxWidth: .infinity, minHeight: 180)
                     } else if metadata.homeCatalogs.isEmpty, continuing.isEmpty {
@@ -102,11 +204,21 @@ struct HomeView: View {
                 .padding(.bottom, 56)
                 .background {
                     if let featured = displayFeatured {
+                        #if os(macOS)
+                        // The window backdrop already draws the accent behind
+                        // the shelves. Drawing it here too blurred a layer as
+                        // tall as every row on Home.
+                        Color.clear
+                        #else
                         HeroAccentBackground(item: featured)
+                        #endif
                     } else {
                         pageBackground
                     }
                 }
+                // Shelves sit on the dark artwork accent, so their primary
+                // text must stay light even in Light appearance.
+                .environment(\.colorScheme, displayFeatured == nil ? colorScheme : .dark)
             }
         }
         .background {
@@ -116,12 +228,16 @@ struct HomeView: View {
         // Home's first section owns the area behind the stable transparent
         // toolbar; shelves below remain an opaque content surface.
         .ignoresSafeArea(edges: .top)
+        .modifier(TopBarScrollReporting(destination: .home, hasHero: displayFeatured != nil || showsHeroSlot))
         #endif
         #if os(iOS)
         .toolbarBackground(.hidden, for: .navigationBar)
         #endif
         .omniaNavigationTitle("Home", screen: .home)
         .navigationDestination(for: MediaItem.self) { MediaDetailView(item: $0) }
+        .navigationDestination(for: CollectionFolderRoute.self) { route in
+            CollectionFolderView(collection: route.collection, folder: route.folder)
+        }
         .omniaGlassModal(isPresented: showsSourcePicker) {
             if let sourcePlaybackItem {
                 PlaybackSourceSheet(
@@ -137,15 +253,30 @@ struct HomeView: View {
                 resolvedFeatured = nil
                 return
             }
-            let resolved = await metadata.details(for: featured)
+            let resolved: MediaItem
+            if isAddonMode {
+                // Add-on mode: the hero's logo, synopsis and genres come from
+                // the add-on that listed the title.
+                // Not tied to this task: the hero rotates every few seconds,
+                // and a cancelled lookup never reached the cache, so slow
+                // add-ons left every slide without artwork or logo.
+                let addons = store.installedAddons
+                resolved = await Task { await AddonMetadataResolver.resolve(featured, addons: addons) }.value ?? featured
+            } else {
+                resolved = await metadata.details(for: featured)
+            }
             guard !Task.isCancelled else { return }
             resolvedFeatured = resolved
         }
-        .task(id: "\(heroCandidateKey)-\(heroIndex)") {
-            guard heroCandidates.count > 1 else { return }
+        .task(id: addonLoadKey) {
+            addonCatalogs.load(addonCatalogsToLoad)
+        }
+        .task(id: "\(heroCandidateKey)-\(heroIndex)-\(isActiveDestination)") {
+            // The carousel pauses while Home sits in a hidden tab.
+            guard isActiveDestination, heroCandidates.count > 1 else { return }
 
             do {
-                try await Task.sleep(nanoseconds: 9_000_000_000)
+                try await Task.sleep(for: .seconds(isAddonMode ? 8 : 9))
                 guard !Task.isCancelled else { return }
                 advanceHero()
             } catch {
@@ -160,8 +291,16 @@ struct HomeView: View {
             heroIndex = 0
         }
         .onChange(of: heroCatalogItems, initial: true) { _, items in
-            heroCandidates = Self.selectHeroCandidates(from: items)
+            // Add-on hero items are already chosen and shuffled; the built-in
+            // pager ranks titles by artwork quality.
+            heroCandidates = isAddonMode ? items : Self.selectHeroCandidates(from: items)
         }
+        #if os(macOS)
+        // Match MediaDetailView: the scroll container owns the top safe area.
+        // This ensures the hero artwork meets the translucent Floating Top Bar
+        // seamlessly without an empty offset band.
+        .ignoresSafeArea(edges: .top)
+        #endif
     }
 
     private func hero(_ featured: MediaItem) -> some View {
@@ -169,7 +308,6 @@ struct HomeView: View {
             HeroArtworkCanvas(item: featured, source: .home, artworkAlignment: .topTrailing)
                 .id(featured.id)
                 .transition(.opacity)
-                .frame(height: heroHeight)
 
             // FeaturedBackdrop correctly opts out of hit-testing so it can be
             // reused behind detail content. Give Home a separate clear link
@@ -195,6 +333,21 @@ struct HomeView: View {
                             maximumHeight: CinematicHeroLayout.logoHeight,
                             alignment: .center
                         )
+                    } else if resolvedFeatured?.id == featured.id {
+                        // Details have loaded and there is no logo: show the
+                        // title, as Nuvio does, instead of an empty gap.
+                        Text(featured.title)
+                            .font(.system(size: 44, weight: .bold))
+                            .foregroundStyle(.white)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.6)
+                            .shadow(color: .black.opacity(0.35), radius: 8, y: 3)
+                            .frame(
+                                width: CinematicHeroLayout.logoWidth,
+                                height: CinematicHeroLayout.logoHeight,
+                                alignment: .center
+                            )
                     } else {
                         // A basic catalog item can arrive before the detail
                         // request has supplied its transparent logo. Preserve
@@ -243,7 +396,6 @@ struct HomeView: View {
             .padding(.leading, CinematicHeroLayout.horizontalInset)
                 .padding(.bottom, 38)
         }
-        .frame(height: heroHeight)
         .overlay {
             if heroCandidates.count > 1 {
                 HStack {
@@ -273,9 +425,12 @@ struct HomeView: View {
             }
         }
         .frame(maxWidth: .infinity)
+        .frame(height: heroHeight)
         .clipped()
         .animation(.easeInOut(duration: 0.45), value: featured.id)
-        .accessibilityElement(children: .combine)
+        // `.contain` keeps the hero's Play, info and paging buttons reachable
+        // by VoiceOver; `.combine` merged them into one unactionable element.
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("Featured: \(featured.title)")
     }
 
@@ -355,7 +510,7 @@ struct HomeView: View {
             SectionHeader(title: "Upcoming")
             ShelfScrollView(
                 items: result.items,
-                itemSpan: continueWatchingCardSpan,
+                itemSpan: upcomingCardSpan,
                 accessibilityLabel: "Upcoming episodes"
             ) { item in
                 UpcomingEpisodeCard(item: item)
@@ -403,6 +558,10 @@ struct HomeView: View {
     }
 
     private var continueWatchingCardSpan: CGFloat {
+        ContinueWatchingCard.itemSpan(for: display)
+    }
+
+    private var upcomingCardSpan: CGFloat {
         #if os(iOS)
         264
         #else
@@ -428,21 +587,13 @@ struct HomeView: View {
             cardWidth = 304
             #endif
         case .poster:
-            #if os(iOS)
-            cardWidth = 132
-            #else
-            cardWidth = 154
-            #endif
+            return MediaBrowseMetrics.posterItemSpan(display)
         }
         return cardWidth + 16
     }
 
-    private var pageBackground: Color {
-        #if os(iOS)
-        Color(uiColor: .systemBackground)
-        #else
-        Color(nsColor: .windowBackgroundColor)
-        #endif
+    private var pageBackground: some View {
+        OmniaPageBackground()
     }
 
     @ViewBuilder
@@ -462,6 +613,14 @@ struct HomeView: View {
         700
         #else
         820
+        #endif
+    }
+
+    private var herolessTopInset: CGFloat {
+        #if os(iOS)
+        24
+        #else
+        96
         #endif
     }
 
@@ -572,6 +731,28 @@ struct ContinueWatchingCard: View {
 
     @Environment(OmniaStore.self) private var store
     @Environment(SettingsPreferencesStore.self) private var settings
+    @Environment(\.displayPreferences) private var display
+
+    /// Home and Library rows space Continue Watching by the card style
+    /// chosen in Settings › Home › Continue Watching.
+    static func itemSpan(for display: DisplayPreferences) -> CGFloat {
+        switch display.continueWatchingStyle {
+        case .poster:
+            display.posterCardWidth + MediaBrowseMetrics.shelfSpacing
+        case .wide:
+            #if os(iOS)
+            264
+            #else
+            320
+            #endif
+        }
+    }
+
+    private var isPoster: Bool { display.continueWatchingStyle == .poster }
+
+    private var cornerRadius: CGFloat {
+        isPoster ? display.posterCornerRadius : 16
+    }
 
     var body: some View {
         Group {
@@ -615,21 +796,20 @@ struct ContinueWatchingCard: View {
                 if let resumePresentation {
                     VStack(spacing: 9) {
                         Text(resumePresentation.continueWatchingMetadataText)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
                             .frame(maxWidth: .infinity, alignment: .trailing)
                         ResumeProgressBar(progress: resumePresentation.progress)
                     }
-                    .font(.subheadline.weight(.semibold))
+                    .font(isPoster ? .caption.weight(.semibold) : .subheadline.weight(.semibold))
                     .foregroundStyle(.white)
-                    .padding(.horizontal, 14)
+                    .padding(.horizontal, isPoster ? 10 : 14)
                     .padding(.bottom, 10)
                 }
             }
             .frame(width: cardWidth, height: cardHeight)
-            .clipShape(.rect(cornerRadius: 16, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(.white.opacity(0.24))
-            }
+            .clipShape(.rect(cornerRadius: cornerRadius, style: .continuous))
+            .cardDepth(.continueWatching, cornerRadius: cornerRadius, fallbackBorderOpacity: 0.24)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(cardPresentation.primaryText)
@@ -647,9 +827,13 @@ struct ContinueWatchingCard: View {
 
     @ViewBuilder
     private var resumeArtwork: some View {
-        let url = item.kind == .series
-            ? item.resumeEpisodeStillURL ?? item.backdropURL ?? item.artworkURL
-            : item.backdropURL ?? item.artworkURL
+        let url: URL? = if isPoster {
+            item.artworkURL ?? item.backdropURL
+        } else if item.kind == .series, display.continueWatchingEpisodeThumbnails {
+            item.resumeEpisodeStillURL ?? item.backdropURL ?? item.artworkURL
+        } else {
+            item.backdropURL ?? item.artworkURL
+        }
 
         ZStack {
             LinearGradient(colors: item.artworkColors, startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -674,19 +858,35 @@ struct ContinueWatchingCard: View {
     }
 
     private var cardWidth: CGFloat {
+        if isPoster { return display.posterCardWidth }
         #if os(iOS)
-        248
+        return 248
         #else
-        304
+        return 304
         #endif
     }
 
     private var cardHeight: CGFloat {
+        if isPoster { return display.posterCardHeight }
         #if os(iOS)
-        140
+        return 140
         #else
-        172
+        return 172
         #endif
+    }
+}
+
+extension ContinueWatchingSort {
+    /// Recently Watched keeps the stored order, newest first.
+    func sorted(_ items: [MediaItem]) -> [MediaItem] {
+        switch self {
+        case .recent:
+            items
+        case .title:
+            items.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+        case .nearlyFinished:
+            items.sorted { ($0.progress ?? 0) > ($1.progress ?? 0) }
+        }
     }
 }
 
@@ -769,4 +969,7 @@ private struct HeroPageControl: View {
         .environment(OmniaStore.preview)
         .environment(LiveMetadataStore.preview)
         .environment(SettingsPreferencesStore())
+        .environment(AddonCatalogStore())
+        .environment(HomeLayoutStore())
+        .environment(CollectionsStore(fileURL: nil))
 }

@@ -1,5 +1,7 @@
 # MDBList Rating Provider Mark Provenance
 
+> **Automated-validation policy:** Follow the repository-root `AGENTS.md`. Instructions below that call for automated test targets, suites, fixtures, or scripts are historical and superseded; use builds, static checks, and focused manual evidence instead.
+
 Reviewed 2026-08-11. Omnia displays these values from MDBList title responses; it does not imply a direct rating-data integration or endorsement by each named source.
 
 The product owner explicitly accepted community or first-party web artwork for this feature after being informed that several providers restrict trademark use or do not publish a redistribution license. This is a product decision, not a claim that the marks are licensed. Remove an affected asset and restore the adjacent text-only fallback if a rights holder objects.

@@ -1,5 +1,7 @@
 # Native Settings Hierarchy Implementation Plan
 
+> **Automated-validation policy:** Follow the repository-root `AGENTS.md`. Instructions below that call for automated test targets, suites, fixtures, or scripts are historical and superseded; use builds, static checks, and focused manual evidence instead.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Rebuild every Omnia Settings screen as a searchable, Apple-native typed navigation hierarchy with system Back behavior on iPhone, iPad, and Mac.
@@ -118,9 +120,7 @@ final class SettingsRouteTests: XCTestCase {
 Run:
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia \
-  -destination 'platform=macOS' \
-  -only-testing:OmniaTests/SettingsRouteTests test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: compile failure because `SettingsRoute`, `SettingsSection`, and `SettingsRouteGroup` do not exist.
@@ -344,9 +344,7 @@ final class SettingsConfirmationTests: XCTestCase {
 Run:
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia \
-  -destination 'platform=macOS' \
-  -only-testing:OmniaTests/SettingsConfirmationTests test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: compile failure because `SettingsConfirmation` does not exist.
@@ -448,9 +446,7 @@ final class AboutSettingsTests: XCTestCase {
 Run:
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia \
-  -destination 'platform=macOS' \
-  -only-testing:OmniaTests/AboutSettingsTests test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: compile failure because the About registry types do not exist.
@@ -549,7 +545,7 @@ Read `CFBundleShortVersionString` and `CFBundleVersion` with a small pure fallba
 - [ ] **Step 5: Run focused tests and the macOS build**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' -only-testing:OmniaTests/AboutSettingsTests test
+[Automated validation command removed by repository policy.]
 xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' build
 ```
 
@@ -604,9 +600,7 @@ static func filteredRootGroups(query: String) -> [SettingsRouteGroup] {
 Run:
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia \
-  -destination 'platform=macOS' \
-  -only-testing:OmniaTests/SettingsPresentationTests/testFilteringPreservesApprovedSectionAndRouteOrder test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: compile failure because `filteredRootGroups(query:)` is missing.
@@ -661,8 +655,8 @@ Keep `summary(for:)` limited to current state already available in `OmniaStore` 
 Do not yet delete legacy child views that Tasks 5–8 still migrate. Run:
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' -only-testing:OmniaTests/SettingsRouteTests test
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' -only-testing:OmniaTests/SettingsPresentationTests test
+[Automated validation command removed by repository policy.]
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: both suites pass.
@@ -710,9 +704,7 @@ func testAppearanceChoicesRemainSystemLightDark() {
 Run:
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia \
-  -destination 'platform=macOS' \
-  -only-testing:OmniaTests/SettingsPresentationTests test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: the provider/appearance assertions pass against current domain behavior. Preserve this green characterization before moving presentation code.
@@ -743,7 +735,7 @@ Delete only `CatalogsSettingsView`, `AccountSettingsView`, `AppearanceSettingsVi
 - [ ] **Step 7: Run tests and both platform builds**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' -only-testing:OmniaTests/SettingsPresentationTests test
+[Automated validation command removed by repository policy.]
 xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' build
 xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'generic/platform=iOS Simulator' build
 ```
@@ -806,9 +798,7 @@ final class MetadataRoutingTests: XCTestCase {
 Run:
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia \
-  -destination 'platform=macOS' \
-  -only-testing:OmniaTests/MetadataRoutingTests test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: compile failure because `MetadataFallbackMoveDirection` and the directional overload do not exist.
@@ -853,7 +843,7 @@ Move `ProviderMark` into `MetadataSettingsView.swift`. Delete `MetadataSettingsV
 - [ ] **Step 6: Run metadata tests and both platform builds**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' -only-testing:OmniaTests/MetadataRoutingTests test
+[Automated validation command removed by repository policy.]
 xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' build
 xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'generic/platform=iOS Simulator' build
 ```
@@ -898,9 +888,7 @@ func testVideoPlayerNestedRoutesRemainDiscoverable() {
 Run:
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia \
-  -destination 'platform=macOS' \
-  -only-testing:OmniaTests/SettingsPresentationTests/testVideoPlayerNestedRoutesRemainDiscoverable test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: FAIL until resolver search terms include endpoint, bearer token, approved add-ons, and approved HTTPS hosts.
@@ -929,8 +917,8 @@ Remove `LegacyPlaybackSettingsView` and inline `PlaybackResolverSettingsView`. D
 - [ ] **Step 6: Run presentation/subtitle tests and both builds**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' -only-testing:OmniaTests/SettingsPresentationTests test
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' -only-testing:OmniaTests/SubtitleAppearanceSettingsModelTests test
+[Automated validation command removed by repository policy.]
+[Automated validation command removed by repository policy.]
 xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' build
 xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'generic/platform=iOS Simulator' build
 ```
@@ -988,9 +976,7 @@ func testSettingsSourcesDoNotHideNativeBackOrUseLegacySurfaceTypes() throws {
 Run:
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia \
-  -destination 'platform=macOS' \
-  -only-testing:OmniaTests/SettingsPresentationTests/testSettingsSourcesDoNotHideNativeBackOrUseLegacySurfaceTypes test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: FAIL because legacy custom Settings types remain in `SettingsView.swift`.
@@ -1022,9 +1008,9 @@ Do not delete a reachable behavior; migrate it to the owning native screen first
 - [ ] **Step 7: Run the source audit, full Settings tests, and diff checks**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' -only-testing:OmniaTests/SettingsPresentationTests test
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' -only-testing:OmniaTests/SettingsPreferencesTests test
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' -only-testing:OmniaTests/SettingsConfirmationTests test
+[Automated validation command removed by repository policy.]
+[Automated validation command removed by repository policy.]
+[Automated validation command removed by repository policy.]
 git diff --check -- Omnia/Features/Settings OmniaTests
 ```
 
@@ -1068,7 +1054,7 @@ Retain any accessibility/device check as a Requirement or Current gap until manu
 - [ ] **Step 2: Run the full signed macOS test suite**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: the entire XCTest bundle passes with the signed Omnia host and bundled libmpv.

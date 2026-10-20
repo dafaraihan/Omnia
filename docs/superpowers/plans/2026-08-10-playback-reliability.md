@@ -1,5 +1,7 @@
 # Playback Reliability Implementation Plan
 
+> **Automated-validation policy:** Follow the repository-root `AGENTS.md`. Instructions below that call for automated test targets, suites, fixtures, or scripts are historical and superseded; use builds, static checks, and focused manual evidence instead.
+
 **Goal:** Restore reliable source discovery and macOS video playback, then expose selectable audio and subtitle tracks.
 
 **Root causes:** TVDB detail normalization discards `remoteIds`, so IMDb-oriented add-ons cannot match many series. The source sheet can also query before provider details finish loading. macOS playback embeds mpv through the older `wid` path, which mpv documents as fragile on macOS. Finally, the bridge and SwiftUI surface have cycle commands but no track-list state or selection API.

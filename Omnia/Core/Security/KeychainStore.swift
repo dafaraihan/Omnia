@@ -7,7 +7,14 @@ import Foundation
 import Security
 
 enum KeychainStore {
-    nonisolated static func save(_ value: String, account: String, service: String = "PrimeDeca.Omnia") throws {
+    nonisolated static let defaultService = "Dafa-Raihan.Omnia"
+    nonisolated static let legacyService = "PrimeDeca.Omnia"
+
+    nonisolated static func save(
+        _ value: String,
+        account: String,
+        service: String = KeychainStore.defaultService
+    ) throws {
         let data = Data(value.utf8)
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
@@ -25,7 +32,12 @@ enum KeychainStore {
         #endif
 
         let updateStatus = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
-        if updateStatus == errSecSuccess { return }
+        if updateStatus == errSecSuccess {
+            if service == defaultService {
+                try? deleteItem(account: account, service: legacyService)
+            }
+            return
+        }
         guard updateStatus == errSecItemNotFound else {
             throw KeychainError.unhandled(updateStatus)
         }
@@ -33,9 +45,38 @@ enum KeychainStore {
         let addQuery = query.merging(attributes) { _, latest in latest }
         let status = SecItemAdd(addQuery as CFDictionary, nil)
         guard status == errSecSuccess else { throw KeychainError.unhandled(status) }
+
+        if service == defaultService {
+            try? deleteItem(account: account, service: legacyService)
+        }
     }
 
-    nonisolated static func value(account: String, service: String = "PrimeDeca.Omnia") throws -> String? {
+    nonisolated static func value(
+        account: String,
+        service: String = KeychainStore.defaultService
+    ) throws -> String? {
+        if let value = try storedValue(account: account, service: service) {
+            return value
+        }
+        guard service == defaultService,
+              let legacyValue = try storedValue(account: account, service: legacyService)
+        else { return nil }
+
+        try save(legacyValue, account: account, service: defaultService)
+        return legacyValue
+    }
+
+    nonisolated static func delete(
+        account: String,
+        service: String = KeychainStore.defaultService
+    ) throws {
+        try deleteItem(account: account, service: service)
+        if service == defaultService {
+            try deleteItem(account: account, service: legacyService)
+        }
+    }
+
+    nonisolated private static func storedValue(account: String, service: String) throws -> String? {
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: service,
@@ -52,7 +93,7 @@ enum KeychainStore {
         return value
     }
 
-    nonisolated static func delete(account: String, service: String = "PrimeDeca.Omnia") throws {
+    nonisolated private static func deleteItem(account: String, service: String) throws {
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: service,

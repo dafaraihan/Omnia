@@ -14,6 +14,9 @@ struct ShelfScrollView<Item: Identifiable, Content: View>: View {
     let accessibilityLabel: String
     @ViewBuilder let content: (Item) -> Content
 
+    /// Enough for a 1.03 hover scale on a wide card plus its 2 pt stroke.
+    private static var hoverRoom: CGFloat { 12 }
+
     @State private var leadingItemID: Item.ID?
     @State private var controlsVisible = false
     @State private var concealTask: Task<Void, Never>?
@@ -29,8 +32,15 @@ struct ShelfScrollView<Item: Identifiable, Content: View>: View {
                         }
                     }
                     .scrollTargetLayout()
-                    .padding(.vertical, 2)
+                    .padding(.vertical, Self.hoverRoom)
                 }
+                // Room around the cards for their hover scale and glow,
+                // taken back outside so the first card still lines up with
+                // the row title. Without it the scroll view clipped the
+                // first card's left edge and the top and bottom of every card.
+                .contentMargins(.horizontal, Self.hoverRoom, for: .scrollContent)
+                .padding(.horizontal, -Self.hoverRoom)
+                .padding(.vertical, 2 - Self.hoverRoom)
                 .scrollPosition(id: $leadingItemID, anchor: .leading)
                 .onScrollPhaseChange { _, newPhase in
                     handleScrollPhase(newPhase)

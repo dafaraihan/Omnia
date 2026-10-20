@@ -23,17 +23,7 @@ struct VideoPlayerSettingsModel: Equatable, Sendable {
 
     var isAutoSkipEnabled: Bool { preferences.showSkipIntro }
     var autoSkipDisabledExplanation: String? {
-        isAutoSkipEnabled ? nil : "Turn on Show Skip Intro to enable automatic skipping."
-    }
-
-    var isUpNextTimingEnabled: Bool { preferences.autoplayNextEpisode }
-    var upNextTimingDisabledExplanation: String? {
-        isUpNextTimingEnabled ? nil : "Turn on Autoplay Next Episode to choose when Up Next appears."
-    }
-
-    var isRetentionEnabled: Bool { preferences.rememberLastSelection }
-    var retentionDisabledExplanation: String? {
-        isRetentionEnabled ? nil : "Turn on Remember Last Selection to choose its retention period."
+        isAutoSkipEnabled ? nil : "Turn on Skip Intro, Recap and Credits to skip segments automatically."
     }
 }
 
@@ -99,18 +89,55 @@ extension SettingsPreferencesStore {
     }
 }
 
-/// Settings use wide grouped cards on macOS so rows follow the detail column
-/// instead of inheriting SwiftUI Form's centered readable-width cap. Mobile
-/// platforms retain Form and their existing layout.
+/// The Settings root keeps Omnia's own grouped cards on macOS. Every
+/// sub-page is a native grouped `Form`, as Apple's macOS 26 guidance asks:
+/// leading labels, trailing controls, system section headers and footers,
+/// and a readable, centered column. Mobile platforms use Form throughout.
 struct OmniaSettingsForm<Content: View>: View {
     private let content: Content
+    private let tint: Color?
+    private let isRoot: Bool
+    @Environment(\.displayPreferences) private var display
+    @Environment(\.colorScheme) private var colorScheme
 
-    init(@ViewBuilder content: () -> Content) {
+    /// Forms follow the accent chosen in Settings › Appearance unless a
+    /// page passes its own tint.
+    init(tint: Color? = nil, isRoot: Bool = false, @ViewBuilder content: () -> Content) {
+        self.tint = tint
+        self.isRoot = isRoot
         self.content = content()
     }
 
     var body: some View {
         #if os(macOS)
+        if isRoot {
+            rootCards
+        } else {
+            Form {
+                content
+            }
+            .formStyle(.grouped)
+            .modifier(AmoledFormBackground(isActive: usesAmoledBackground))
+            .environment(\.settingsUsesNativeForm, true)
+            .tint(resolvedTint)
+        }
+        #else
+        Form {
+            content
+        }
+        .modifier(AmoledFormBackground(isActive: usesAmoledBackground))
+        .tint(resolvedTint)
+        #endif
+    }
+
+    private var resolvedTint: Color { tint ?? display.accentColor }
+
+    private var usesAmoledBackground: Bool {
+        display.amoledBlack && colorScheme == .dark
+    }
+
+    #if os(macOS)
+    private var rootCards: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 20) {
                 Group(sections: content) { sections in
@@ -156,13 +183,55 @@ struct OmniaSettingsForm<Content: View>: View {
             .padding(.bottom, MacSettingsLayout.minimumOuterMargin)
         }
         .scrollIndicators(.automatic)
-        .tint(.blue)
+        .modifier(TopBarScrollReporting(destination: .settings))
+        .tint(resolvedTint)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        #else
-        Form {
+    }
+    #endif
+}
+
+/// AMOLED Black draws Settings pages on true black in Dark appearance.
+private struct AmoledFormBackground: ViewModifier {
+    let isActive: Bool
+
+    func body(content: Content) -> some View {
+        if isActive {
+            content
+                .scrollContentBackground(.hidden)
+                .background(Color.black)
+        } else {
             content
         }
-        #endif
+    }
+}
+
+/// A Form row whose switch shares the row with other controls, such as a
+/// drag handle and a menu: the label fills the row and the switch sits at its
+/// trailing edge, as a plain Toggle in a grouped Form does.
+struct TrailingSwitchToggleStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 12) {
+            configuration.label
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Toggle(isOn: configuration.$isOn) {
+                configuration.label
+            }
+            .toggleStyle(.switch)
+            .labelsHidden()
+        }
+    }
+}
+
+private struct SettingsUsesNativeFormKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    /// True inside a settings sub-page's native Form, where links and rows
+    /// take the system's own styling.
+    var settingsUsesNativeForm: Bool {
+        get { self[SettingsUsesNativeFormKey.self] }
+        set { self[SettingsUsesNativeFormKey.self] = newValue }
     }
 }
 
@@ -187,17 +256,10 @@ enum MacSettingsPresentation {
     static let containerStyle: MacSettingsContainerStyle = .groupedCards
     static let hoverTreatment: MacSettingsInteractionTreatment = .neutralGray
     static let pressedTreatment: MacSettingsInteractionTreatment = .neutralGray
+    static let searchWidth: CGFloat = 320
 
     static func symbolTreatment(isHovered: Bool, isPressed: Bool) -> MacSettingsSymbolTreatment {
         .whiteMonochrome
-    }
-
-    static func searchPlacement(for navigationStyle: MacNavigationStyle) -> SearchFieldPlacement {
-        .toolbar
-    }
-
-    static func searchWidth(proposedWidth: CGFloat) -> CGFloat {
-        min(max(0, proposedWidth), 320)
     }
 }
 

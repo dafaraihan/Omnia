@@ -1,5 +1,7 @@
 # Omnia Security Guide
 
+> **Automated-validation policy:** Follow the repository-root `AGENTS.md`. Instructions below that call for automated test targets, suites, fixtures, or scripts are historical and superseded; use builds, static checks, and focused manual evidence instead.
+
 This document is the authoritative security model, release checklist, and
 hardening register for Omnia. It covers the native SwiftUI client, its
 AVPlayer/libmpv playback boundary, Supabase Auth and data access, the metadata

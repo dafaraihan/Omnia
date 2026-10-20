@@ -1,5 +1,7 @@
 # Repository Documentation Design
 
+> **Automated-validation policy:** Follow the repository-root `AGENTS.md`. Instructions below that call for automated test targets, suites, fixtures, or scripts are historical and superseded; use builds, static checks, and focused manual evidence instead.
+
 ## Objective
 
 Create a small, authoritative documentation set for Omnia that explains how to build, design, secure, operate, measure, and extend the product. Every statement must be traceable to repository evidence, an official platform reference, or a clearly labeled intended direction. The documents must not present unfinished work as implemented.

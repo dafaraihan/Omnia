@@ -27,6 +27,17 @@ struct TitleLogoView: View {
                     .frame(width: maximumWidth, height: maximumHeight, alignment: alignment)
                     .shadow(color: .black.opacity(0.35), radius: 8, y: 3)
                     .accessibilityLabel(title)
+            } else if case .failure = phase {
+                // The logo URL is dead or unreachable; fall back to the title
+                // so the hero never loses its identity.
+                Text(title)
+                    .font(.system(size: 44, weight: .bold, design: .default))
+                    .foregroundStyle(.white)
+                    .multilineTextAlignment(alignment == .center ? .center : .leading)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.6)
+                    .shadow(color: .black.opacity(0.35), radius: 8, y: 3)
+                    .frame(width: maximumWidth, height: maximumHeight, alignment: alignment)
             } else {
                 // Keep the hero's identity column stable while the transparent
                 // artwork arrives. Showing a temporary plain-text title makes

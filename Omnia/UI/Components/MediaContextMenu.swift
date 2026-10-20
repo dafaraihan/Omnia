@@ -132,11 +132,11 @@ private struct MediaContextMenuModifier: ViewModifier {
     private func menuItem(for command: MediaContextCommand) -> some View {
         switch command {
         case .goToMovie:
-            NavigationLink(value: item) {
+            MediaDetailLink(item: item) {
                 menuLabel("Go to Movie", systemImage: "info.circle")
             }
         case .goToShow:
-            NavigationLink(value: item) {
+            MediaDetailLink(item: item) {
                 menuLabel("Go to Show", systemImage: "info.circle")
             }
         case .separator:
@@ -189,33 +189,9 @@ private struct MediaContextMenuModifier: ViewModifier {
     }
 
     private func menuLabel(_ title: String, systemImage: String) -> some View {
-        Label {
-            Text(title)
-        } icon: {
-            contextMenuSymbol(named: systemImage)
-        }
-        // The SwiftUI-to-NSMenu bridge applies tint after constructing the
-        // label, so scope white to the menu label itself as well as its image.
-        .tint(.white)
-    }
-
-    private func contextMenuSymbol(named systemImage: String) -> Image {
-        guard case .white = MediaContextMenuPresentation.symbolTreatment,
-              let symbol = NSImage(
-                systemSymbolName: systemImage,
-                accessibilityDescription: nil
-              )?.withSymbolConfiguration(
-                NSImage.SymbolConfiguration(paletteColors: [.white])
-              )
-        else {
-            return Image(systemName: systemImage)
-        }
-
-        // NSMenu applies the app accent to template images. Marking this
-        // configured SF Symbol as original preserves white at rest while the
-        // menu's native selected row remains Apple system blue.
-        symbol.isTemplate = false
-        return Image(nsImage: symbol)
+        // Template symbols let NSMenu color icons for light and dark menus and
+        // for the highlighted row. Forced white icons vanished in light mode.
+        Label(title, systemImage: systemImage)
     }
 
     private func perform(_ command: MediaContextCommand) async {

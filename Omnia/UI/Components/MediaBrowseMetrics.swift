@@ -42,6 +42,38 @@ enum MediaBrowseMetrics {
     static let genreCornerRadius: CGFloat = 16
     static let genreGridSpacing: CGFloat = 14
 
+    /// Poster cards follow Settings › Appearance › Poster Cards. Landscape
+    /// posters swap every poster row and grid to backdrop cards.
+    static func posterItemSpan(_ display: DisplayPreferences) -> CGFloat {
+        (display.landscapePosters ? landscapeCardWidth : display.posterCardWidth) + shelfSpacing
+    }
+
+    static func posterGridLayout(containerWidth: CGFloat, display: DisplayPreferences) -> MediaGridLayout {
+        if display.landscapePosters {
+            return landscapeGridLayout(containerWidth: containerWidth)
+        }
+        return MediaGridLayout.fitting(
+            containerWidth: containerWidth,
+            horizontalInset: pageInset,
+            minimumItemWidth: display.posterCardWidth,
+            maximumItemWidth: display.posterCardWidth * posterMaximumGridWidth / posterWidth,
+            spacing: gridSpacing
+        )
+    }
+
+    /// As many columns as fit at the poster width, then stretched so the
+    /// grid fills the row instead of leaving a gap on the trailing side.
+    static func posterGridColumns(_ display: DisplayPreferences) -> [GridItem] {
+        [GridItem(
+            .adaptive(
+                minimum: display.landscapePosters ? landscapeCardWidth : display.posterCardWidth,
+                maximum: .infinity
+            ),
+            spacing: gridSpacing,
+            alignment: .top
+        )]
+    }
+
     static func posterGridLayout(containerWidth: CGFloat) -> MediaGridLayout {
         MediaGridLayout.fitting(
             containerWidth: containerWidth,
@@ -70,14 +102,6 @@ enum MediaBrowseMetrics {
             maximumItemWidth: landscapeCardMaximumGridWidth,
             spacing: gridSpacing
         )
-    }
-
-    static var posterGridColumns: [GridItem] {
-        [GridItem(
-            .adaptive(minimum: posterWidth, maximum: posterWidth),
-            spacing: gridSpacing,
-            alignment: .top
-        )]
     }
 
     static var genreGridColumns: [GridItem] {

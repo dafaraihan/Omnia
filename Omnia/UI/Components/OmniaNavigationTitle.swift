@@ -44,7 +44,12 @@ extension View {
         screen: MacToolbarScreen? = nil
     ) -> some View {
         #if os(macOS)
-        if let screen {
+        if screen == .mediaDetail {
+            // Title pages always draw their own Back button. The system one
+            // goes missing when the page before hid it, such as a collection
+            // folder.
+            self.modifier(MacPushedToolbarTitleModifier(title: nil))
+        } else if let screen {
             self.navigationTitle(MacToolbarPresentation.navigationTitle(title, for: screen))
                 .toolbarTitleDisplayMode(.inline)
         } else {
@@ -58,7 +63,8 @@ extension View {
 
 #if os(macOS)
 private struct MacPushedToolbarTitleModifier: ViewModifier {
-    let title: String
+    /// Nil shows the Back button alone.
+    let title: String?
     @Environment(\.dismiss) private var dismiss
 
     func body(content: Content) -> some View {
@@ -77,14 +83,16 @@ private struct MacPushedToolbarTitleModifier: ViewModifier {
                     .help("Back")
                 }
 
-                ToolbarSpacer(.fixed, placement: .navigation)
+                if let title {
+                    ToolbarSpacer(.fixed, placement: .navigation)
 
-                ToolbarItem(placement: .navigation) {
-                    Text(title)
-                        .font(.headline)
-                        .accessibilityAddTraits(.isHeader)
+                    ToolbarItem(placement: .navigation) {
+                        Text(title)
+                            .font(.headline)
+                            .accessibilityAddTraits(.isHeader)
+                    }
+                    .sharedBackgroundVisibility(.hidden)
                 }
-                .sharedBackgroundVisibility(.hidden)
             }
     }
 }

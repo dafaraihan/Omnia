@@ -55,9 +55,9 @@ struct AddonStreamCandidate: Identifiable, Hashable, Sendable {
 
         id = "\(addon.id)::\(streamIdentifier)::\(position)::\(stream.url ?? stream.infoHash ?? stream.externalURL ?? stream.ytId ?? "unknown")"
         addonID = addon.id
-        addonName = addon.manifest.name
+        addonName = addon.displayName
         self.streamIdentifier = streamIdentifier
-        displayName = stream.name?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty ?? addon.manifest.name
+        displayName = stream.name?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty ?? addon.displayName
         displayDescription = (stream.description ?? stream.title)?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
         filename = stream.behaviorHints?.filename?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
         videoSize = stream.behaviorHints?.videoSize
@@ -273,6 +273,8 @@ struct AddonSourceResolution: Identifiable, Equatable, Sendable {
         case invalidPayload
         case secureConnectionRequired
         case cancelled
+        /// A plugin failed; its message says why.
+        case plugin(String)
 
         init(error: Error) {
             if let transportError = error as? HTTPTransportError {
@@ -311,7 +313,7 @@ struct AddonSourceResolution: Identifiable, Equatable, Sendable {
                 self = switch clientError {
                 case .requiresHTTPS:
                     .secureConnectionRequired
-                case .invalidResponse, .invalidManifest:
+                case .invalidResponse, .invalidManifest, .notAManifest:
                     .invalidPayload
                 }
                 return
@@ -346,6 +348,8 @@ struct AddonSourceResolution: Identifiable, Equatable, Sendable {
                 "The add-on request did not meet Omnia’s secure connection policy."
             case .cancelled:
                 "The add-on request was cancelled."
+            case let .plugin(message):
+                message
             }
         }
     }
@@ -462,14 +466,14 @@ enum PlaybackSourceResolver {
             )
             return AddonSourceResolution(
                 addonID: addon.id,
-                addonName: addon.manifest.name,
+                addonName: addon.displayName,
                 candidates: candidates,
                 state: candidates.isEmpty ? .empty : .loaded
             )
         } catch {
             return AddonSourceResolution(
                 addonID: addon.id,
-                addonName: addon.manifest.name,
+                addonName: addon.displayName,
                 candidates: [],
                 state: .failed,
                 failure: .init(error: error)
@@ -477,35 +481,36 @@ enum PlaybackSourceResolver {
         }
     }
 
+    /// `onUpdate` receives the sources found so far each time an add-on or
+    /// the plugins finish, so the list can fill in before the slowest one
+    /// answers. The returned value is the complete result.
     static func resolve(
         for item: MediaItem,
         episode: MediaEpisode? = nil,
         addons: [InstalledAddon],
-        timeout: AddonTimeout = .seconds20
+        plugins: PluginStreamPlan = .empty,
+        timeout: AddonTimeout = .seconds20,
+        onUpdate: ((PlaybackSourceResolution, _ pendingCount: Int) -> Void)? = nil
     ) async -> PlaybackSourceResolution {
         let identifiers = item.streamIdentifierCandidates(for: episode)
         let mediaTypes = item.streamMediaTypes
         let enabledAddons = addons.filter { $0.isEnabled && $0.manifest.supportsStreams }
-        guard !identifiers.isEmpty else {
-            return .init(
-                addonResults: enabledAddons.map {
-                    AddonSourceResolution(
-                        addonID: $0.id,
-                        addonName: $0.manifest.name,
-                        candidates: [],
-                        state: .empty
-                    )
-                },
-                attemptedIdentifiers: []
-            )
-        }
+        let hasPlugins = !plugins.entries.isEmpty
 
         return await withTaskGroup(
-            of: (Int, AddonSourceResolution).self,
+            of: (Int, [AddonSourceResolution]).self,
             returning: PlaybackSourceResolution.self
         ) { group in
             for (position, addon) in enabledAddons.enumerated() {
                 group.addTask {
+                    guard !identifiers.isEmpty else {
+                        return (position, [AddonSourceResolution(
+                            addonID: addon.id,
+                            addonName: addon.displayName,
+                            candidates: [],
+                            state: .empty
+                        )])
+                    }
                     let result = await resolve(
                         addon: addon,
                         mediaTypes: mediaTypes,
@@ -513,19 +518,44 @@ enum PlaybackSourceResolver {
                         timeout: timeout,
                         transport: HTTPTransport()
                     )
-                    return (position, result)
+                    return (position, [result])
+                }
+            }
+            // Plugins search by TMDB ID, so they run alongside the add-ons and
+            // their sources are listed after them.
+            // Each plugin is listed as soon as it answers; the TMDB ID they
+            // search by is looked up once.
+            let tmdbLookup: Task<String?, Never>? = hasPlugins
+                ? Task { await PluginStreamResolver.tmdbID(for: item, apiKey: plugins.tmdbAPIKey) }
+                : nil
+            for (offset, entry) in plugins.entries.enumerated() {
+                group.addTask {
+                    let tmdbID = await tmdbLookup?.value
+                    let result = await PluginStreamResolver.resolve(
+                        entry,
+                        tmdbID: tmdbID,
+                        plan: plugins,
+                        item: item,
+                        episode: episode
+                    )
+                    return (enabledAddons.count + offset, [result])
                 }
             }
 
-            var batches: [(Int, AddonSourceResolution)] = []
+            var pending = enabledAddons.count + plugins.entries.count
+            var batches: [(Int, [AddonSourceResolution])] = []
+            func current() -> PlaybackSourceResolution {
+                PlaybackSourceResolution(
+                    addonResults: batches.sorted { $0.0 < $1.0 }.flatMap(\.1),
+                    attemptedIdentifiers: identifiers
+                )
+            }
             for await batch in group {
                 batches.append(batch)
+                pending -= 1
+                if pending > 0 { onUpdate?(current(), pending) }
             }
-            let ordered = batches.sorted { $0.0 < $1.0 }
-            return .init(
-                addonResults: ordered.map(\.1),
-                attemptedIdentifiers: identifiers
-            )
+            return current()
         }
     }
 }

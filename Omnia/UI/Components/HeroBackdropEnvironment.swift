@@ -32,18 +32,31 @@ final class HeroBackdropState {
         detailPresentation ?? homePresentation
     }
 
-    func report(_ item: MediaItem, frame: CGRect, from source: HeroBackdropSource, owner: UUID? = nil) {
+    func activate(_ source: HeroBackdropSource, owner: UUID) {
         switch source {
         case .home:
             homeOwner = owner
+        case .detail:
+            detailOwner = owner
+        }
+    }
+
+    func report(_ item: MediaItem, frame: CGRect, from source: HeroBackdropSource, owner: UUID? = nil) {
+        switch source {
+        case .home:
+            if let owner {
+                guard owner == homeOwner else { return }
+            }
             homePresentation = updatedPresentation(homePresentation, item: item, frame: frame)
         case .detail:
+            if let owner {
+                guard owner == detailOwner else { return }
+            }
             // A detail request replaces its lightweight catalog model with
             // richer metadata while the page is already visible. Keep the
             // first artwork resource for that title so the full-window image
             // does not visibly recrop during the async handoff; only its
             // scrolling frame is allowed to change.
-            detailOwner = owner
             detailPresentation = updatedPresentation(detailPresentation, item: item, frame: frame)
         }
     }
@@ -122,15 +135,37 @@ private struct HeroBackdropReporterKey: EnvironmentKey {
     static let defaultValue: (HeroBackdropSource, UUID, MediaItem?, CGRect) -> Void = { _, _, _, _ in }
 }
 
+private struct HeroBackdropActivationKey: EnvironmentKey {
+    static let defaultValue: (HeroBackdropSource, UUID) -> Void = { _, _ in }
+}
+
+private struct ActiveDestinationKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
 extension EnvironmentValues {
     var reportWindowHeroBackdrop: (HeroBackdropSource, UUID, MediaItem?, CGRect) -> Void {
         get { self[HeroBackdropReporterKey.self] }
         set { self[HeroBackdropReporterKey.self] = newValue }
     }
+
+    var activateWindowHeroBackdrop: (HeroBackdropSource, UUID) -> Void {
+        get { self[HeroBackdropActivationKey.self] }
+        set { self[HeroBackdropActivationKey.self] = newValue }
+    }
+
+    /// False while a destination's stack is kept alive in a hidden tab. Its
+    /// hero must not drive the shared window backdrop, and its timers pause.
+    var isActiveDestination: Bool {
+        get { self[ActiveDestinationKey.self] }
+        set { self[ActiveDestinationKey.self] = newValue }
+    }
 }
 
 struct HeroAccentBackground: View {
     let item: MediaItem
+
+    fileprivate static let downscale: CGFloat = 8
 
     var body: some View {
         ZStack {
@@ -141,15 +176,33 @@ struct HeroAccentBackground: View {
             )
 
             if let url = item.backdropURL ?? item.artworkURL {
-                AsyncImage(url: url) { phase in
-                    if let image = phase.image {
-                        image
-                            .resizable()
-                            .scaledToFill()
-                            .blur(radius: 72)
-                            .scaleEffect(1.18)
+                // The fill image is laid out as an overlay so its aspect-fill size
+                // never feeds back into the ZStack. Otherwise the stack grows past
+                // the frame it was given and spills up over the hero above it.
+                Color.clear
+                    .overlay {
+                        GeometryReader { proxy in
+                            AsyncImage(url: url) { phase in
+                                if let image = phase.image {
+                                    // Blurring at full window size is costly and
+                                    // was redone while scrolling. Blur a copy an
+                                    // eighth of the size instead and scale it up:
+                                    // a heavy blur looks the same either way.
+                                    let scale = HeroAccentBackground.downscale
+                                    image
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: proxy.size.width / scale, height: proxy.size.height / scale)
+                                        .clipped()
+                                        .blur(radius: 72 / scale)
+                                        .drawingGroup()
+                                        .scaleEffect(scale * 1.18)
+                                        .frame(width: proxy.size.width, height: proxy.size.height)
+                                }
+                            }
+                        }
                     }
-                }
+                    .clipped()
             }
 
             Color.black.opacity(0.64)
@@ -165,11 +218,23 @@ struct HeroAccentBackground: View {
     }
 }
 
+extension HeroAccentBackground: Equatable {
+    /// Only the artwork matters; richer metadata for the same title must not
+    /// re-render the blur.
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.item.backdropURL == rhs.item.backdropURL
+            && lhs.item.artworkURL == rhs.item.artworkURL
+            && lhs.item.artworkColors == rhs.item.artworkColors
+    }
+}
+
 struct HeroArtworkCanvas: View {
     let item: MediaItem
     var source: HeroBackdropSource?
     var artworkAlignment: Alignment = .topTrailing
+    @Environment(\.activateWindowHeroBackdrop) private var activateWindowHeroBackdrop
     @Environment(\.reportWindowHeroBackdrop) private var reportWindowHeroBackdrop
+    @Environment(\.isActiveDestination) private var isActiveDestination
     @State private var measuredFrame = CGRect.zero
     @State private var owner = UUID()
 
@@ -192,6 +257,15 @@ struct HeroArtworkCanvas: View {
             report(item: item, frame: measuredFrame)
         }
         .onAppear {
+            guard let source, isActiveDestination else { return }
+            activateWindowHeroBackdrop(source, owner)
+            report(item: item, frame: measuredFrame)
+        }
+        // A hero in a hidden tab (the Home carousel keeps rotating there)
+        // claims the window backdrop again only when its tab is shown.
+        .onChange(of: isActiveDestination) { _, isActive in
+            guard let source, isActive else { return }
+            activateWindowHeroBackdrop(source, owner)
             report(item: item, frame: measuredFrame)
         }
         .onDisappear {
@@ -207,7 +281,7 @@ struct HeroArtworkCanvas: View {
     }
 
     private func report(item: MediaItem, frame: CGRect) {
-        guard let source, frame.width > 0, frame.height > 0 else { return }
+        guard let source, isActiveDestination, frame.width > 0, frame.height > 0 else { return }
         reportWindowHeroBackdrop(source, owner, item, frame)
     }
     #endif
@@ -241,7 +315,7 @@ struct WindowHeroBackdrop: View {
     var body: some View {
         GeometryReader { proxy in
             ZStack(alignment: .topLeading) {
-                Color(nsColor: .windowBackgroundColor)
+                OmniaPageBackground()
 
                 if let presentation = state.presentation {
                     let globalFrame = proxy.frame(in: .global)
@@ -250,15 +324,13 @@ struct WindowHeroBackdrop: View {
                         measuredHeroFrame: presentation.frame,
                         backdropGlobalFrame: globalFrame
                     )
-                    let accentFrame = WindowHeroBackdropLayout.accentFrame(
-                        windowSize: proxy.size,
-                        measuredHeroFrame: presentation.frame,
-                        backdropGlobalFrame: globalFrame
-                    )
 
+                    // The accent covers the whole window and depends only on
+                    // the item, so scrolling, which moves the hero frame, never
+                    // re-renders the blur. The artwork below draws over it.
                     HeroAccentBackground(item: presentation.item)
-                        .frame(width: accentFrame.width, height: accentFrame.height)
-                        .offset(x: accentFrame.minX, y: accentFrame.minY)
+                        .equatable()
+                        .frame(width: proxy.size.width, height: proxy.size.height)
 
                     ZStack {
                         LinearGradient(

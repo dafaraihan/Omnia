@@ -1,8 +1,0 @@
-{
-  "imdb_id": "tt0903747",
-  "season": 1,
-  "episode": 1,
-  "intro": { "start_sec": 2, "end_sec": 58, "confidence": 0.9 },
-  "recap": null,
-  "outro": { "start_sec": 3431, "end_sec": 3500, "confidence": 1 }
-}

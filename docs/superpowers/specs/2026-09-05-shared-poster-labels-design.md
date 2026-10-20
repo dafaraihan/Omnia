@@ -1,5 +1,7 @@
 # Shared Poster Labels and Anime Card Consistency
 
+> **Automated-validation policy:** Follow the repository-root `AGENTS.md`. Instructions below that call for automated test targets, suites, fixtures, or scripts are historical and superseded; use builds, static checks, and focused manual evidence instead.
+
 ## Goal
 
 Make movie and series poster cards consistent across Omnia, ensure Anime cards identify their titles, and let the user hide or show poster metadata from Settings → Appearance. The implementation retains native SwiftUI presentation and the existing navigation behavior.

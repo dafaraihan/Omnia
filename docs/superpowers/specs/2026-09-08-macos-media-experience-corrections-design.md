@@ -1,5 +1,7 @@
 # macOS Media Experience Corrections Design
 
+> **Automated-validation policy:** Follow the repository-root `AGENTS.md`. Instructions below that call for automated test targets, suites, fixtures, or scripts are historical and superseded; use builds, static checks, and focused manual evidence instead.
+
 ## Scope
 
 This change is macOS-only. It must preserve the existing Omnia navigation,

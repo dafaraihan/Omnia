@@ -11,6 +11,12 @@ nonisolated struct HTTPRequestPolicy: Sendable {
     var maximumResponseBytes: Int
     let acceptedContentTypes: Set<String>
     let requestHeaders: [String: String]
+    /// Stremio clients follow an add-on's redirects to any HTTPS host, such
+    /// as a CDN or a moved server. Off unless a caller opts in.
+    var allowsCrossOriginRedirects = false
+    /// Add-on servers label JSON loosely or not at all; the body is still
+    /// validated by decoding it. Off unless a caller opts in.
+    var acceptsAnyContentType = false
 
     init(
         url: URL,
@@ -109,33 +115,53 @@ nonisolated enum HTTPTransportError: Error, Equatable, LocalizedError {
     }
 }
 
-actor HTTPTransport: HTTPTransporting {
-    private let configuration: URLSessionConfiguration
+/// Requests made with the default configuration share one session, so the
+/// connection and TLS handshake to an add-on are reused instead of being set
+/// up again for every catalog. Redirects are still checked per request.
+nonisolated final class HTTPTransport: HTTPTransporting, Sendable {
+    private static let sharedSession = URLSession(configuration: hardened(.ephemeral))
 
-    init(configuration: URLSessionConfiguration = .ephemeral) {
+    private let session: URLSession
+    private let ownsSession: Bool
+
+    init(configuration: URLSessionConfiguration? = nil) {
+        if let configuration {
+            session = URLSession(configuration: Self.hardened(configuration))
+            ownsSession = true
+        } else {
+            session = Self.sharedSession
+            ownsSession = false
+        }
+    }
+
+    deinit {
+        if ownsSession { session.finishTasksAndInvalidate() }
+    }
+
+    private static func hardened(_ configuration: URLSessionConfiguration) -> URLSessionConfiguration {
         let copied = configuration.copy() as? URLSessionConfiguration ?? .ephemeral
         copied.urlCache = nil
         copied.requestCachePolicy = .reloadIgnoringLocalCacheData
         copied.httpCookieStorage = nil
         copied.httpShouldSetCookies = false
-        self.configuration = copied
+        copied.httpMaximumConnectionsPerHost = 8
+        return copied
     }
 
     func data(for policy: HTTPRequestPolicy) async throws -> Data {
+        try await Self.perform(policy, session: session)
+    }
+
+    /// Runs away from the caller's actor, so reading a large reply never
+    /// holds up the interface.
+    @concurrent
+    private static func perform(_ policy: HTTPRequestPolicy, session: URLSession) async throws -> Data {
         guard policy.url.scheme?.lowercased() == "https" else {
             throw HTTPTransportError.httpsRequired
         }
         guard policy.allowedOrigin.permits(policy.url) else {
             throw HTTPTransportError.originRejected
         }
-
-        let redirectDelegate = RedirectDelegate(allowedOrigin: policy.allowedOrigin)
-        let session = URLSession(
-            configuration: configuration,
-            delegate: redirectDelegate,
-            delegateQueue: nil
-        )
-        defer { session.invalidateAndCancel() }
 
         var request = URLRequest(url: policy.url)
         request.httpMethod = "GET"
@@ -146,31 +172,42 @@ actor HTTPTransport: HTTPTransporting {
         }
 
         do {
-            let (bytes, response) = try await session.bytes(for: request)
+            // Read the reply in one go. Reading it a byte at a time took
+            // seconds for the multi-megabyte stream lists aggregators send.
+            let (data, response) = try await session.data(
+                for: request,
+                delegate: RedirectDelegate(
+                    allowedOrigin: policy.allowedOrigin,
+                    allowsAnySecureOrigin: policy.allowsCrossOriginRedirects
+                )
+            )
             guard let response = response as? HTTPURLResponse else {
                 throw HTTPTransportError.invalidResponse
+            }
+            // The delegate refuses redirects elsewhere; this confirms where
+            // the answer actually came from.
+            guard let finalURL = response.url,
+                  policy.allowsCrossOriginRedirects
+                    ? finalURL.scheme?.lowercased() == "https"
+                    : policy.allowedOrigin.permits(finalURL)
+            else {
+                throw HTTPTransportError.redirectRejected
             }
             guard (200...299).contains(response.statusCode) else {
                 throw HTTPTransportError.unsuccessfulStatus(response.statusCode)
             }
-            guard let mimeType = response.mimeType?.lowercased(),
-                  policy.acceptedContentTypes.contains(mimeType) else {
-                throw HTTPTransportError.unsupportedContentType
+            if !policy.acceptsAnyContentType {
+                guard let mimeType = response.mimeType?.lowercased(),
+                      policy.acceptedContentTypes.contains(mimeType) else {
+                    throw HTTPTransportError.unsupportedContentType
+                }
             }
             if response.expectedContentLength > Int64(policy.maximumResponseBytes) {
                 throw HTTPTransportError.responseTooLarge
             }
 
-            var data = Data()
-            data.reserveCapacity(min(
-                max(Int(response.expectedContentLength), 0),
-                policy.maximumResponseBytes
-            ))
-            for try await byte in bytes {
-                guard data.count < policy.maximumResponseBytes else {
-                    throw HTTPTransportError.responseTooLarge
-                }
-                data.append(byte)
+            guard data.count <= policy.maximumResponseBytes else {
+                throw HTTPTransportError.responseTooLarge
             }
             return data
         } catch let error as HTTPTransportError {
@@ -189,11 +226,13 @@ actor HTTPTransport: HTTPTransporting {
     }
 }
 
-private final class RedirectDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+private nonisolated final class RedirectDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     private let allowedOrigin: NormalizedOrigin
+    private let allowsAnySecureOrigin: Bool
 
-    init(allowedOrigin: NormalizedOrigin) {
+    init(allowedOrigin: NormalizedOrigin, allowsAnySecureOrigin: Bool = false) {
         self.allowedOrigin = allowedOrigin
+        self.allowsAnySecureOrigin = allowsAnySecureOrigin
     }
 
     func urlSession(
@@ -203,7 +242,9 @@ private final class RedirectDelegate: NSObject, URLSessionTaskDelegate, @uncheck
         newRequest request: URLRequest,
         completionHandler: @escaping (URLRequest?) -> Void
     ) {
-        guard let url = request.url, allowedOrigin.permits(url) else {
+        guard let url = request.url,
+              allowsAnySecureOrigin ? url.scheme?.lowercased() == "https" : allowedOrigin.permits(url)
+        else {
             completionHandler(nil)
             return
         }

@@ -1,5 +1,7 @@
 # macOS Settings Layout Design
 
+> **Automated-validation policy:** Follow the repository-root `AGENTS.md`. Instructions below that call for automated test targets, suites, fixtures, or scripts are historical and superseded; use builds, static checks, and focused manual evidence instead.
+
 ## Status
 
 Approved direction: **Integrated centered pane**. Settings remains a destination in Omnia's main macOS sidebar. The macOS presentation changes; the iPhone and iPad hierarchy remains unchanged.

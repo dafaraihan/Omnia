@@ -1,5 +1,7 @@
 # macOS Disc Materialization Implementation Plan
 
+> **Automated-validation policy:** Follow the repository-root `AGENTS.md`. Instructions below that call for automated test targets, suites, fixtures, or scripts are historical and superseded; use builds, static checks, and focused manual evidence instead.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Materialize bounded unencrypted Blu-ray ISO and Blu-ray directory sources into Omnia's resolver cache and open them through libmpv on macOS, while identifying DVD layouts and reporting the distribution-license boundary truthfully.
@@ -52,8 +54,7 @@ Add tests for one ISO, multiple ISOs requiring choice, mixed unrelated roots, tr
 - [ ] **Step 2: Run detection tests and witness RED**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' \
-  -only-testing:OmniaTests/DiscDetectionPolicyTests test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: compile failure because disc types do not exist.
@@ -124,8 +125,7 @@ Add tests for byte-count mismatch, source failure, cancellation during the secon
 - [ ] **Step 2: Run materializer tests and witness RED**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' \
-  -only-testing:OmniaTests/DiscMaterializerTests test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: compile failure because `DiscMaterializer` does not exist.
@@ -163,9 +163,7 @@ Reserve the complete declared total first. For each file, create parent director
 - [ ] **Step 4: Run materializer and cache tests**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' \
-  -only-testing:OmniaTests/DiscMaterializerTests \
-  -only-testing:OmniaTests/ResolverCacheTests test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: pass.
@@ -195,8 +193,7 @@ Test: valid HTTPS with Content-Length; missing/invalid length rejection; over-qu
 - [ ] **Step 2: Run HTTPS source tests and witness RED**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' \
-  -only-testing:OmniaTests/HTTPSDiscByteSourceTests test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: compile failure because the byte source does not exist.
@@ -208,9 +205,7 @@ Do not reuse whole-body `HTTPTransport.data`. Add a bounded streaming abstractio
 - [ ] **Step 4: Run HTTPS and existing transport tests**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' \
-  -only-testing:OmniaTests/HTTPSDiscByteSourceTests \
-  -only-testing:OmniaTests/HTTPTransportTests test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: pass.
@@ -242,8 +237,7 @@ For a minimal reviewed Blu-ray fixture, initialize the session with `.disc`, wai
 - [ ] **Step 2: Run disc integration and witness RED**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' \
-  -only-testing:OmniaTests/MPVDiscPlaybackIntegrationTests test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: compile failure because typed disc input does not exist.
@@ -261,9 +255,7 @@ Translate Blu-ray directory markers directly to `bd://longest` plus `bluray-devi
 - [ ] **Step 4: Run disc and multi-track integration tests**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' \
-  -only-testing:OmniaTests/MPVDiscPlaybackIntegrationTests \
-  -only-testing:OmniaTests/MPVPlaybackIntegrationTests test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: unencrypted fixture loads, invalid path is rejected, existing MKV playback remains green.
@@ -297,9 +289,7 @@ Assert `.detectingDisc`, `.materializingDisc(completedBytes:totalBytes:)`, `.fai
 - [ ] **Step 2: Run presentation/resolver tests and witness RED**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' \
-  -only-testing:OmniaTests/LocalPlaybackResolverTests \
-  -only-testing:OmniaTests/PlaybackSourcePresentationTests test
+[Automated validation command removed by repository policy.]
 ```
 
 Expected: failure because disc states are absent.
@@ -323,7 +313,7 @@ Offer "Prepare Disc" only for a detected torrent Blu-ray layout or an explicitly
 - [ ] **Step 4: Run full tests, builds, hygiene, and smoke checks**
 
 ```bash
-xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test
+[Automated validation command removed by repository policy.]
 xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'generic/platform=iOS Simulator' build
 /bin/bash Scripts/verify-playback-manifest.sh NativeDependencies/playback-dependencies.json
 git diff --check

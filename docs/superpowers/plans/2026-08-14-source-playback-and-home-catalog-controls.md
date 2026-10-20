@@ -1,5 +1,7 @@
 # Source Playback and Home Catalog Controls Implementation Plan
 
+> **Automated-validation policy:** Follow the repository-root `AGENTS.md`. Instructions below that call for automated test targets, suites, fixtures, or scripts are historical and superseded; use builds, static checks, and focused manual evidence instead.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make configured MediaFusion results recoverable, make Torrentio locally playable in macOS Debug development, expose add-on removal, and provide per-shelf Home controls.
@@ -31,7 +33,7 @@
 - Produces: `AddonSourceResolution` with `addonID`, `candidates`, and an optional redacted failure; `PlaybackSourceResolution.addonResults`; merge-by-add-on retry behavior.
 
 - [ ] **Step 1: Write failing tests** proving one malformed/failed add-on cannot erase another add-on's candidates, and replacing one add-on result preserves every other batch.
-- [ ] **Step 2: Run** `xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' -only-testing:OmniaTests/PlaybackSourcePresentationTests -only-testing:OmniaTests/StremioAddonClientTests test` and confirm the new assertions fail because per-add-on results/replacement do not exist.
+[Historical automated-validation command removed by repository policy.]
 - [ ] **Step 3: Implement** the minimal result value, ordered flattening, replacement helper, status row, and retry task. Keep error strings redacted and reuse the existing bounded client.
 - [ ] **Step 4: Rerun the focused command** and require zero failures.
 
@@ -41,14 +43,14 @@
 - Modify: `Omnia.xcodeproj/project.pbxproj`
 - Modify: `Omnia/Platform/Playback/stage-native-playback.sh`
 - Modify: `README.md`
-- Test: `Scripts/Tests/stage-native-playback-tests.sh`
+[Historical automated-validation reference removed by repository policy.]
 
 **Interfaces:**
 - Consumes: Homebrew Debug headers/libraries for libmpv, libtorrent-rasterbar, and OpenSSL 3.
 - Produces: a macOS Debug app where `OMLocalTorrentEngine.isAvailable == true`; Release staging behavior is unchanged.
 
 - [ ] **Step 1: Extend the staging contract test** so macOS Debug requires and copies the local torrent/OpenSSL runtime closure while iOS exits without native staging.
-- [ ] **Step 2: Run** `/bin/bash Scripts/Tests/stage-native-playback-tests.sh` and confirm failure because Debug currently embeds only libmpv.
+[Historical automated-validation reference removed by repository policy.]
 - [ ] **Step 3: Install the already-reviewed development formula if missing** with `brew install libtorrent-rasterbar`, then add macOS Debug compiler definitions, header/library search paths, linker inputs, and known runtime-copy rules. Do not alter Release’s strict manifest path.
 - [ ] **Step 4: Run the shell test and** `xcodebuild -project Omnia.xcodeproj -scheme Omnia -configuration Debug -destination 'platform=macOS' build`; require the app binary to link libtorrent and the staged dylibs to exist in `Contents/Frameworks`.
 
@@ -96,7 +98,7 @@
 - Produces: fresh evidence for supported platforms and server-side metadata checks.
 
 - [ ] **Step 1: Run focused XCTest** for source resolution, source presentation, local torrent, add-on registry, settings presentation, and shelf preferences.
-- [ ] **Step 2: Run full macOS XCTest** with `xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'platform=macOS' test`.
+[Historical automated-validation command removed by repository policy.]
 - [ ] **Step 3: Build iOS Simulator** with `xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'generic/platform=iOS Simulator' build`.
 - [ ] **Step 4: Run Deno checks** using the frozen commands in `AGENTS.md`.
 - [ ] **Step 5: Run** `git diff --check`, inspect `git status --short`, and confirm no private endpoint or credential entered the diff.

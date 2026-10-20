@@ -24,6 +24,7 @@ enum LibrarySortOrder: String, CaseIterable, Identifiable {
 }
 
 struct LibraryView: View {
+    @Environment(\.displayPreferences) private var display
     @Environment(OmniaStore.self) private var store
     @State private var selectedKind: MediaItem.Kind?
     @State private var sourcePlaybackItem: MediaItem?
@@ -92,7 +93,7 @@ struct LibraryView: View {
             case .continueWatching:
                 ShelfScrollView(
                     items: section.items,
-                    itemSpan: 320,
+                    itemSpan: ContinueWatchingCard.itemSpan(for: display),
                     accessibilityLabel: section.kind.title
                 ) { item in
                     ContinueWatchingCard(item: item) {
@@ -102,7 +103,7 @@ struct LibraryView: View {
             case .myList, .rewatch:
                 ShelfScrollView(
                     items: section.items,
-                    itemSpan: MediaBrowseMetrics.shelfItemSpan,
+                    itemSpan: MediaBrowseMetrics.posterItemSpan(display),
                     accessibilityLabel: section.kind.title
                 ) { item in
                     MediaPoster(item: item)
@@ -126,15 +127,8 @@ struct LibraryView: View {
                 }
             }
         } label: {
-            Label {
-                Text("Filter and Sort")
-            } icon: {
-                Image(systemName: "line.3.horizontal.decrease.circle")
-                    .symbolRenderingMode(.monochrome)
-                    .foregroundStyle(.white)
-            }
+            Label("Filter and Sort", systemImage: "line.3.horizontal.decrease.circle")
         }
-        .tint(.white)
         .help("Filter and sort every Library shelf")
     }
 
@@ -147,15 +141,16 @@ struct LibraryView: View {
 }
 
 private struct LibrarySectionGridView: View {
+    @Environment(\.displayPreferences) private var display
     let kind: LibrarySectionKind
     let items: [MediaItem]
     @State private var sourcePlaybackItem: MediaItem?
 
     var body: some View {
         GeometryReader { proxy in
-            let layout = kind == .continueWatching
+            let layout = kind == .continueWatching && display.continueWatchingStyle == .wide
                 ? MediaBrowseMetrics.landscapeGridLayout(containerWidth: proxy.size.width)
-                : MediaBrowseMetrics.posterGridLayout(containerWidth: proxy.size.width)
+                : MediaBrowseMetrics.posterGridLayout(containerWidth: proxy.size.width, display: display)
             ScrollView {
                 LazyVGrid(columns: layout.columns, alignment: .leading, spacing: 18) {
                     ForEach(items) { item in

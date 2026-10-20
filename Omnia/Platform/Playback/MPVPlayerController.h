@@ -94,6 +94,14 @@ typedef void (^OMMpvTrackSelectionCompletion)(
 - (void)setPreferredSubtitleLanguages:(NSArray<NSString *> *)languages;
 - (void)setSubtitlesDisabled:(BOOL)disabled;
 - (void)setSubtitleStyle:(NSDictionary<NSString *, id> *)style;
+/// Player options from Settings (decoder, subtitle filters), applied when
+/// playback starts. Only options Omnia knows are accepted.
+- (void)setPlayerOptions:(NSDictionary<NSString *, NSString *> *)options;
+/// Adds an add-on's subtitle file as a track without blocking playback.
+- (void)addSubtitleURL:(NSURL *)URL
+                 title:(nullable NSString *)title
+              language:(nullable NSString *)language
+                select:(BOOL)select NS_SWIFT_NAME(addSubtitleURL(_:title:language:select:));
 - (uint64_t)selectAudioTrackWithID:(NSInteger)trackID
                         completion:(nullable OMMpvTrackSelectionCompletion)completion
     NS_SWIFT_NAME(selectAudioTrack(id:completion:));
@@ -103,6 +111,7 @@ typedef void (^OMMpvTrackSelectionCompletion)(
 - (void)cycleSubtitles;
 - (void)cycleAudioTrack;
 - (void)attachVideoViewToHost:(NSView *)hostView;
+- (void)detachVideoViewFromHost:(NSView *)hostView;
 - (void)enterPictureInPicture;
 - (void)exitPictureInPicture;
 - (void)togglePictureInPicture;

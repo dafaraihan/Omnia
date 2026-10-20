@@ -1,5 +1,7 @@
 # Omnia Product-Readiness Audit
 
+> **Automated-validation policy:** Follow the repository-root `AGENTS.md`. Instructions below that call for automated test targets, suites, fixtures, or scripts are historical and superseded; use builds, static checks, and focused manual evidence instead.
+
 Date: 2026-08-21  
 Snapshot: `native/settings-capability-overhaul` at `7a0eccb`, including the uncommitted working tree  
 Scope: read-only build, test, architecture, infrastructure, visual/accessibility, performance, and security review
@@ -24,7 +26,7 @@ The right direction is a focused productization program, not a rewrite. Preserve
 | macOS Release build without artifact root | Fail: exit 65 | The expected pinned native input is unavailable; compilation stops at missing `mpv/client.h` before producing a distributable. |
 | macOS XCTest | Pass | The signed app-hosted suite, including libmpv and disc integration tests, completes successfully. |
 | Deno frozen check | Pass | `supabase/functions/metadata/index.ts` type-checks against the committed lock. |
-| Deno tests | Pass: 2, fail: 0 | The two TVDB identifier tests pass. This is very narrow Edge Function coverage. |
+[Historical automated-validation command removed by repository policy.]
 | Native repository scripts | 8 pass, 1 fail | Artifact, manifest, entitlement, staging, configuration, SBOM, and build-plan checks pass; the standalone torrent descriptor test no longer compiles. |
 | Local Supabase status/lint | Not run | Docker is not running, so local database health, reset, migrations, lint, and RLS behavior were not exercised. |
 
@@ -68,11 +70,11 @@ Evidence: `supabase/migrations/20260728174215_omnia_sync_and_metadata_contract.s
 
 #### 4. Repair the broken standalone regression gate
 
-`Scripts/Tests/local-torrent-descriptor-tests.sh` compiles `LocalTorrentPlayback.swift` in isolation, but that file now references `DiscPlaybackRequest` and `MaterializedDisc`; the script does not include the files defining those types. The full XCTest suite passes because the app target supplies them, so this is specifically a stale standalone test harness.
+[Historical automated-validation reference removed by repository policy.]
 
 Direction: either add the required domain/data sources to the standalone compilation or reduce the smoke fixture to the descriptor policy it intends to verify. Keep this gate in CI so future dependency drift is visible.
 
-Evidence: `Scripts/Tests/local-torrent-descriptor-tests.sh:1-24`, compiler errors at `Omnia/Domain/Playback/LocalTorrentPlayback.swift:612-618`.
+[Historical automated-validation reference removed by repository policy.]
 
 #### 5. Establish an owned vulnerability and incident path
 

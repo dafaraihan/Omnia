@@ -251,6 +251,16 @@ enum PlaybackAspectRatioMode: String, CaseIterable, Sendable {
     }
 }
 
+nonisolated struct PlaybackPeriodicState: Equatable, Sendable {
+    let errorMessage: String?
+    let positionSeconds: Double
+    let durationSeconds: Double?
+    let isPaused: Bool
+    let playbackRate: Double
+    let isPictureInPictureActive: Bool
+    let isPictureInPictureAvailable: Bool
+}
+
 @Observable
 @MainActor
 final class PlaybackSession {
@@ -266,6 +276,8 @@ final class PlaybackSession {
     private(set) var positionSeconds: Double = 0
     private(set) var durationSeconds: Double?
     private(set) var isPaused = false
+    /// False until the first video frame is on screen, for the loading overlay.
+    private(set) var hasRenderedVideoFrame = false
     private(set) var volume: Double = 1
     private(set) var playbackRate: Double = 1
     private(set) var aspectRatioMode: PlaybackAspectRatioMode = .original
@@ -282,6 +294,10 @@ final class PlaybackSession {
     private(set) var timelinePreviewImage: NSImage?
     #endif
     var isPresentingPlayer = false
+    /// The add-on stream now playing, for binge groups and Reuse Last Link.
+    private(set) var currentCandidate: AddonStreamCandidate?
+    /// The Reuse Last Link entry for what is playing, dropped if it fails.
+    private(set) var currentLinkKey: MediaPlaybackKey?
 
     @ObservationIgnored private var progressHandler: (@MainActor (Double, Double?) -> Void)?
     @ObservationIgnored private var subtitlePreferencesHandler: (@MainActor (PlaybackSubtitlePreferenceUpdate) -> Void)?
@@ -294,9 +310,11 @@ final class PlaybackSession {
     @ObservationIgnored private var trackSelectionGate = PlaybackTrackSelectionGate()
     @ObservationIgnored private var pendingSubtitlePreference: (id: Int?, tracks: [PlaybackTrack])?
     @ObservationIgnored private var timelinePreviewService: PlaybackTimelinePreviewService?
+    @ObservationIgnored private var addonSubtitleTask: Task<Void, Never>?
     @ObservationIgnored private let timelinePreviewScheduler = PlaybackTimelinePreviewRequestScheduler()
     #endif
     @ObservationIgnored private var lastPersistedPosition: Double = 0
+    @ObservationIgnored private var preloadedSources: (key: MediaPlaybackKey, resolution: PlaybackSourceResolution, loadedAt: Date)?
     @ObservationIgnored private var sourceSelectionID: UUID?
 
     /// A new episode choice supersedes pending work from every older picker,
@@ -319,6 +337,28 @@ final class PlaybackSession {
         guard sourceSelectionID == id else { return false }
         sourceSelectionID = nil
         return true
+    }
+
+    /// Records which add-on stream `start` is playing. Call after `start`,
+    /// which clears it.
+    func setCurrentSource(_ candidate: AddonStreamCandidate?, linkKey: MediaPlaybackKey?) {
+        currentCandidate = candidate
+        currentLinkKey = linkKey
+    }
+
+    /// Nuvio's Preload Next Episode Sources: one lookup kept for the next
+    /// episode so its source list opens without waiting.
+    func storePreloadedSources(_ resolution: PlaybackSourceResolution, for key: MediaPlaybackKey) {
+        guard !resolution.candidates.isEmpty else { return }
+        preloadedSources = (key, resolution, Date())
+    }
+
+    /// The preloaded lookup for `key`, used once, while under 15 minutes old.
+    func takePreloadedSources(for key: MediaPlaybackKey) -> PlaybackSourceResolution? {
+        guard let preloadedSources, preloadedSources.key == key else { return nil }
+        self.preloadedSources = nil
+        guard Date().timeIntervalSince(preloadedSources.loadedAt) < 15 * 60 else { return nil }
+        return preloadedSources.resolution
     }
 
     #if os(macOS)
@@ -368,6 +408,7 @@ final class PlaybackSession {
         progressHandler = onProgress
         playbackError = nil
         isPaused = false
+        hasRenderedVideoFrame = false
         positionSeconds = 0
         durationSeconds = nil
         lastPersistedPosition = 0
@@ -409,6 +450,7 @@ final class PlaybackSession {
         mpv.setPreferredAudioLanguages(mediaPolicy.audioLanguages ?? [])
         mpv.setPreferredSubtitleLanguages(mediaPolicy.subtitleLanguages ?? [])
         mpv.setSubtitlesDisabled(mediaPolicy.disablesSubtitles)
+        mpv.setPlayerOptions(Self.mpvPlayerOptions(for: preferences))
         subtitleStyle = preferences.playbackSubtitleStyle.normalized
         var mpvStyle = preferences.subtitleAppearance == .followSystem
             ? [String: Any]()
@@ -536,7 +578,10 @@ final class PlaybackSession {
     @discardableResult
     func synchronizeOutputVolume() -> Bool {
         guard let currentVolume = outputVolumeController.currentVolume else { return false }
-        volume = min(max(currentVolume, 0), 1)
+        let nextVolume = min(max(currentVolume, 0), 1)
+        if volume != nextVolume {
+            volume = nextVolume
+        }
         return true
     }
     #endif
@@ -715,6 +760,8 @@ final class PlaybackSession {
         mediaSelectionTask = nil
         #endif
         #if os(macOS)
+        addonSubtitleTask?.cancel()
+        addonSubtitleTask = nil
         trackSelectionGate.reset()
         pendingSubtitlePreference = nil
         let cacheProtection = cacheProtection
@@ -733,10 +780,13 @@ final class PlaybackSession {
         source = nil
         mediaItem = nil
         episode = nil
+        currentCandidate = nil
+        currentLinkKey = nil
         progressHandler = nil
         positionSeconds = 0
         durationSeconds = nil
         isPaused = false
+        hasRenderedVideoFrame = false
         audioTracks = []
         subtitleTracks = []
         areTracksLoading = false
@@ -746,6 +796,132 @@ final class PlaybackSession {
         aspectRatioMode = .original
         isPresentingPlayer = false
     }
+
+    /// Nuvio's Decoder Priority, Strip SDH and Use Forced Subtitles, as mpv
+    /// options.
+    static func mpvPlayerOptions(for preferences: SettingsPreferences) -> [String: String] {
+        let behavior = preferences.playbackBehavior
+        var options: [String: String] = [:]
+        switch behavior.decoderPriority {
+        case .deviceOnly:
+            options["hwdec"] = "auto-safe"
+            options["vd-lavc-software-fallback"] = "no"
+        case .preferDevice:
+            options["hwdec"] = "auto-safe"
+        case .preferApp:
+            options["hwdec"] = "no"
+        }
+        if behavior.stripSDHSubtitles {
+            options["sub-filter-sdh"] = "yes"
+            options["sub-filter-sdh-harder"] = "yes"
+        }
+        if behavior.useForcedSubtitles {
+            // When the audio is already in the subtitle language, only a
+            // forced track is picked, and otherwise none.
+            options["subs-with-matching-audio"] = "forced"
+        }
+        return options
+    }
+
+    /// Asks every subtitle add-on for this title and adds what they return
+    /// as tracks, as Nuvio does. Embedded tracks load first, so one in the
+    /// preferred language stays selected; otherwise the first add-on track in
+    /// the preferred language is selected, then one in the fallback language.
+    func loadAddonSubtitles(
+        addons: [InstalledAddon],
+        item: MediaItem,
+        episode: MediaEpisode?,
+        videoSize: Int64?,
+        preferences: SettingsPreferences
+    ) {
+        #if os(macOS)
+        addonSubtitleTask?.cancel()
+        let subtitleAddons = addons.filter { $0.isEnabled && $0.manifest.supportsSubtitles }
+        let identifiers = item.streamIdentifierCandidates(for: episode)
+        guard !subtitleAddons.isEmpty,
+              let player,
+              let videoID = identifiers.first(where: { $0.hasPrefix("tt") }) ?? identifiers.first
+        else { return }
+        let mediaType = item.kind == .series ? "series" : "movie"
+        let policy = PlaybackMediaSelectionPolicy.resolve(
+            preferences: preferences,
+            isAnime: item.hasAnimeIdentity
+        )
+        let behavior = preferences.playbackBehavior
+        let targets = policy.disablesSubtitles ? [] : (policy.subtitleLanguages ?? Locale.preferredLanguages)
+        addonSubtitleTask = Task { [weak self] in
+            // Let embedded tracks load so an embedded match wins.
+            for _ in 0 ..< 60 {
+                guard let self, !Task.isCancelled else { return }
+                if !self.areTracksLoading { break }
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+            var didSelect = false
+            var fallbacks: [(subtitle: AddonSubtitle, addonName: String)] = []
+            await withTaskGroup(of: (String, [AddonSubtitle]).self) { group in
+                for addon in subtitleAddons {
+                    group.addTask {
+                        let subtitles = (try? await StremioAddonClient.fetchSubtitles(
+                            from: addon,
+                            mediaType: mediaType,
+                            videoID: videoID,
+                            videoSize: videoSize
+                        )) ?? []
+                        return (addon.displayName, subtitles)
+                    }
+                }
+                for await (addonName, subtitles) in group {
+                    guard let self, !Task.isCancelled, self.player === player else { return }
+                    for subtitle in subtitles.prefix(80) {
+                        guard let url = subtitle.url else { continue }
+                        let match = targets.firstIndex { PlaybackLanguageMatching.matches(subtitle.lang, $0) }
+                        if behavior.showOnlyPreferredSubtitleLanguages, !targets.isEmpty, match == nil { continue }
+                        let isForced = "\(subtitle.id) \(url.absoluteString)".lowercased().contains("forced")
+                        let canSelect = !didSelect
+                            && isForced == behavior.useForcedSubtitles
+                            && !self.subtitleTracks.contains(where: \.isSelected)
+                        if match == 0, canSelect {
+                            didSelect = true
+                            self.addSubtitle(subtitle, url: url, addonName: addonName, select: true, to: player)
+                        } else if let match, match > 0, canSelect {
+                            fallbacks.append((subtitle, addonName))
+                        } else {
+                            self.addSubtitle(subtitle, url: url, addonName: addonName, select: false, to: player)
+                        }
+                    }
+                }
+            }
+            guard let self, !Task.isCancelled, self.player === player else { return }
+            let selectsFallback = !didSelect && !self.subtitleTracks.contains(where: \.isSelected)
+            for (index, fallback) in fallbacks.enumerated() {
+                guard let url = fallback.subtitle.url else { continue }
+                self.addSubtitle(
+                    fallback.subtitle,
+                    url: url,
+                    addonName: fallback.addonName,
+                    select: selectsFallback && index == 0,
+                    to: player
+                )
+            }
+        }
+        #endif
+    }
+
+    #if os(macOS)
+    private func addSubtitle(
+        _ subtitle: AddonSubtitle,
+        url: URL,
+        addonName: String,
+        select: Bool,
+        to player: OMMpvPlayerController
+    ) {
+        let language = PlaybackLanguageMatching.normalized(subtitle.lang)
+        let languageName = language.flatMap { Locale.current.localizedString(forLanguageCode: $0) }
+            ?? subtitle.lang
+            ?? "Unknown"
+        player.addSubtitleURL(url, title: "\(languageName) · \(addonName)", language: language, select: select)
+    }
+    #endif
 
     func flushProgress() {
         refreshState()
@@ -831,6 +1007,13 @@ final class PlaybackSession {
             "shadowOpacity": style.shadowOpacity,
             "shadowBlur": style.shadowBlurRadius,
             "background": style.background.rawValue,
+            "backgroundRGB": style.backgroundColorHex,
+            "textColor": "#" + style.textColorHex,
+            "outlineColor": "#" + style.outlineColorHex,
+            "outlineSize": style.outlineEnabled ? style.outlineSize : 0,
+            "bold": style.isBold,
+            "italic": style.isItalic,
+            "delay": style.delaySeconds,
         ]
     }
 
@@ -898,25 +1081,62 @@ final class PlaybackSession {
     private func refreshState() {
         #if os(macOS)
         guard let player else { return }
-        playbackError = player.errorMessage
-        positionSeconds = max(player.position, 0)
         let duration = player.duration
-        durationSeconds = duration.isFinite && duration > 0 ? duration : nil
-        isPaused = player.isPaused
-        if !synchronizeOutputVolume() {
-            volume = min(max(player.volume / 100, 0), 1)
+        if player.hasRenderedVideoFrame != hasRenderedVideoFrame {
+            hasRenderedVideoFrame = player.hasRenderedVideoFrame
         }
-        playbackRate = player.playbackRate.isFinite && player.playbackRate > 0 ? player.playbackRate : 1
-        isPictureInPictureActive = player.pictureInPictureActive
-        isPictureInPictureAvailable = player.pictureInPicturePossible
+        if !synchronizeOutputVolume() {
+            let nextVolume = min(max(player.volume / 100, 0), 1)
+            if volume != nextVolume {
+                volume = nextVolume
+            }
+        }
+        applyPeriodicState(
+            PlaybackPeriodicState(
+                errorMessage: player.errorMessage,
+                positionSeconds: max(player.position, 0),
+                durationSeconds: duration.isFinite && duration > 0 ? duration : nil,
+                isPaused: player.isPaused,
+                playbackRate: player.playbackRate.isFinite && player.playbackRate > 0
+                    ? player.playbackRate
+                    : 1,
+                isPictureInPictureActive: player.pictureInPictureActive,
+                isPictureInPictureAvailable: player.pictureInPicturePossible
+            )
+        )
         #else
         guard let player else { return }
         positionSeconds = max(player.currentTime().seconds, 0)
         let duration = player.currentItem?.duration.seconds ?? 0
         durationSeconds = duration.isFinite && duration > 0 ? duration : nil
         isPaused = player.timeControlStatus != .playing
+        if !hasRenderedVideoFrame, positionSeconds > 0 { hasRenderedVideoFrame = true }
         #endif
         persistProgress(force: false)
+    }
+
+    func applyPeriodicState(_ state: PlaybackPeriodicState) {
+        if playbackError != state.errorMessage {
+            playbackError = state.errorMessage
+        }
+        if positionSeconds != state.positionSeconds {
+            positionSeconds = state.positionSeconds
+        }
+        if durationSeconds != state.durationSeconds {
+            durationSeconds = state.durationSeconds
+        }
+        if isPaused != state.isPaused {
+            isPaused = state.isPaused
+        }
+        if playbackRate != state.playbackRate {
+            playbackRate = state.playbackRate
+        }
+        if isPictureInPictureActive != state.isPictureInPictureActive {
+            isPictureInPictureActive = state.isPictureInPictureActive
+        }
+        if isPictureInPictureAvailable != state.isPictureInPictureAvailable {
+            isPictureInPictureAvailable = state.isPictureInPictureAvailable
+        }
     }
 
     #if os(macOS)
