@@ -45,17 +45,17 @@ extension PluginStore {
 /// sources add-ons produce, so the source list shows both. Plugins come after
 /// add-ons, as in Nuvio.
 enum PluginStreamResolver {
-    static let sourcePrefix = "plugin:"
+    nonisolated static let sourcePrefix = "plugin:"
 
-    static func sourceID(for scraper: PluginScraper) -> String {
+    nonisolated static func sourceID(for scraper: PluginScraper) -> String {
         sourcePrefix + scraper.id
     }
 
-    static func isPluginSource(_ id: String) -> Bool {
+    nonisolated static func isPluginSource(_ id: String) -> Bool {
         id.hasPrefix(sourcePrefix)
     }
 
-    static func mediaType(for item: MediaItem, episode: MediaEpisode?) -> String {
+    nonisolated static func mediaType(for item: MediaItem, episode: MediaEpisode?) -> String {
         episode == nil && item.kind == .movie ? "movie" : "tv"
     }
 

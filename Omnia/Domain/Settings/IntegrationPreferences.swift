@@ -93,7 +93,17 @@ extension MediaItem {
                 recommendations: modules.useMoreLikeThis ? details.recommendations : [],
                 seasons: modules.useEpisodes ? details.seasons : [],
                 trailers: modules.useTrailers ? details.trailers : [],
-                bonusContent: modules.useTrailers ? details.bonusContent : []
+                bonusContent: modules.useTrailers ? details.bonusContent : [],
+                productionCompanies: modules.useProductions ? details.productionCompanies : [],
+                networks: modules.useProductions ? details.networks : [],
+                creators: modules.useCredits ? details.creators : [],
+                originCountries: modules.useDetails ? details.originCountries : [],
+                originalLanguage: modules.useDetails ? details.originalLanguage : nil,
+                releaseDate: modules.useDetails ? details.releaseDate : nil,
+                similar: modules.useMoreLikeThis ? details.similar : [],
+                recommendationsHaveMore: modules.useMoreLikeThis && details.recommendationsHaveMore,
+                similarHaveMore: modules.useMoreLikeThis && details.similarHaveMore,
+                tmdbID: details.tmdbID
             )
         }
 

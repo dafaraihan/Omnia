@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Settings › Layout › Home Layout, as in Nuvio: the hero, how rows are
 /// titled, and the catalog order. Collections, Continue Watching and the
@@ -181,6 +182,7 @@ struct HomeSettingsView: View {
 /// sections appear.
 struct DetailPageSettingsView: View {
     @Environment(SettingsPreferencesStore.self) private var settings
+    @State private var draggedSection: DetailSection?
 
     var body: some View {
         OmniaSettingsForm {
@@ -230,7 +232,7 @@ struct DetailPageSettingsView: View {
             } header: {
                 Text("Sections")
             } footer: {
-                Text("Turned-off sections are left out of every title page. Use the arrows to change the order they appear in.")
+                Text("Turned-off sections are left out of every title page. Drag a section to change the order they appear in.")
             }
         }
         .omniaNavigationTitle("Detail Page")
@@ -240,29 +242,31 @@ struct DetailPageSettingsView: View {
         DisplayPreferences.completeOrder(settings.preferences.display.detailSectionOrder)
     }
 
+    /// Drag a row onto another to reorder, as on the Add-ons page.
     private func sectionRow(_ section: DetailSection, index: Int) -> some View {
-        HStack(spacing: 12) {
-            Toggle(section.title, isOn: sectionBinding(section))
-
-            Button {
+        Toggle(section.title, isOn: sectionBinding(section))
+            .opacity(draggedSection == section ? 0.72 : 1)
+            .onDrag {
+                draggedSection = section
+                return NSItemProvider(object: section.rawValue as NSString)
+            }
+            .onDrop(
+                of: [.text],
+                delegate: DetailSectionDropDelegate(
+                    target: section,
+                    order: { sectionOrder },
+                    draggedSection: $draggedSection,
+                    move: { source, destination in
+                        settings.update { $0.display.moveDetailSections(fromOffsets: source, toOffset: destination) }
+                    }
+                )
+            )
+            .accessibilityAction(named: "Move earlier") {
                 settings.update { $0.display.moveDetailSection(section, by: -1) }
-            } label: {
-                Image(systemName: "chevron.up")
             }
-            .disabled(index == 0)
-            .help("Move Up")
-            .accessibilityLabel("Move \(section.title) up")
-
-            Button {
+            .accessibilityAction(named: "Move later") {
                 settings.update { $0.display.moveDetailSection(section, by: 1) }
-            } label: {
-                Image(systemName: "chevron.down")
             }
-            .disabled(index == sectionOrder.count - 1)
-            .help("Move Down")
-            .accessibilityLabel("Move \(section.title) down")
-        }
-        .buttonStyle(.borderless)
     }
 
     private func sectionBinding(_ section: DetailSection) -> Binding<Bool> {
@@ -278,5 +282,33 @@ struct DetailPageSettingsView: View {
                 }
             }
         )
+    }
+}
+
+private struct DetailSectionDropDelegate: DropDelegate {
+    let target: DetailSection
+    let order: () -> [DetailSection]
+    @Binding var draggedSection: DetailSection?
+    let move: (IndexSet, Int) -> Void
+
+    func dropEntered(info: DropInfo) {
+        guard let draggedSection,
+              draggedSection != target,
+              let source = order().firstIndex(of: draggedSection),
+              let destination = order().firstIndex(of: target).flatMap({ AddonReorder.destination(from: source, over: $0) }) else {
+            return
+        }
+        withAnimation(.easeInOut(duration: 0.16)) {
+            move(IndexSet(integer: source), destination)
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggedSection = nil
+        return true
     }
 }

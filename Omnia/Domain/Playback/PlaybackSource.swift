@@ -253,7 +253,7 @@ struct PlaybackSource: Identifiable, Hashable, Sendable {
     #endif
 }
 
-struct AddonSourceResolution: Identifiable, Equatable, Sendable {
+nonisolated struct AddonSourceResolution: Identifiable, Equatable, Sendable {
     enum State: Equatable, Sendable {
         case loaded
         case empty

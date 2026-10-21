@@ -6,7 +6,7 @@
 import CommonCrypto
 import CryptoKit
 import Foundation
-import JavaScriptCore
+@preconcurrency import JavaScriptCore
 import os
 
 nonisolated enum PluginRuntimeError: LocalizedError, Equatable {
@@ -69,7 +69,7 @@ nonisolated enum PluginRuntime {
     }
 
     private static func run(_ configuration: Configuration, call: String, argumentsJSON: String) async throws -> PluginRunOutput {
-        try await limiter.acquire()
+        await limiter.acquire()
         defer { Task { await limiter.release() } }
         try Task.checkCancellation()
 
@@ -123,14 +123,8 @@ private nonisolated final class PluginSession: @unchecked Sendable {
     private let call: String
     private let argumentsJSON: String
     private let queue = DispatchQueue(label: "omnia.plugin.run", qos: .userInitiated)
-    private let redirects = RedirectPolicy()
-    private lazy var urlSession: URLSession = {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = 30
-        configuration.httpCookieAcceptPolicy = .always
-        configuration.waitsForConnectivity = false
-        return URLSession(configuration: configuration, delegate: redirects, delegateQueue: nil)
-    }()
+    private let redirects: RedirectPolicy
+    private let urlSession: URLSession
 
     private var context: JSContext?
     private var documents: [Int: PluginHTMLDocument] = [:]
@@ -145,6 +139,13 @@ private nonisolated final class PluginSession: @unchecked Sendable {
         self.configuration = configuration
         self.call = call
         self.argumentsJSON = argumentsJSON
+        let sessionConfiguration = URLSessionConfiguration.ephemeral
+        sessionConfiguration.timeoutIntervalForRequest = 30
+        sessionConfiguration.httpCookieAcceptPolicy = .always
+        sessionConfiguration.waitsForConnectivity = false
+        let redirects = RedirectPolicy()
+        self.redirects = redirects
+        urlSession = URLSession(configuration: sessionConfiguration, delegate: redirects, delegateQueue: nil)
     }
 
     func start(completion: @escaping (Result<PluginRunOutput, Error>) -> Void) {

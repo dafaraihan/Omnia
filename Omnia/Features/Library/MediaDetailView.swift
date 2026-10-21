@@ -13,6 +13,9 @@ struct MediaDetailView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
     @Environment(\.displayPreferences) private var display
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isActiveDestination) private var isActiveDestination
+    @Environment(PlaybackSession.self) private var playback
     @State private var resolvedItem: MediaItem?
     @State private var sourceRequest: PlaybackRequest?
     @State private var showsSynopsis = false
@@ -27,6 +30,10 @@ struct MediaDetailView: View {
     /// Settings › Layout › Detail Page › Poster Transition.
     @State private var posterTransition: PosterTransitionCenter.Anchor?
     @State private var hasTakenPosterTransition = false
+    /// The Home hero's trailer, played in this page's hero with the same
+    /// Settings › Home Layout › Hero Trailer options.
+    @State private var heroTrailer = HomeHeroTrailerModel()
+    @State private var trailerToken = UUID()
 
     private var displayItem: MediaItem { resolvedItem ?? item }
 
@@ -127,14 +134,43 @@ struct MediaDetailView: View {
         .task(id: shuffleKey) {
             shufflePrimary = isShuffleActive ? pickShuffleEpisode() : nil
         }
+        .task(id: heroTrailerKey) {
+            // Wait for the page's own details so the trailer matches what
+            // the page shows instead of fetching them a second time.
+            guard resolvedItem != nil else { return }
+            await heroTrailer.load(
+                displayItem,
+                preferences: settings.preferences.heroTrailer,
+                metadata: metadata,
+                autoplayAllowed: !reduceMotion
+            )
+        }
+        .onAppear {
+            HeroTrailerFocus.shared.appear(trailerToken)
+        }
         .onDisappear {
             ratingsLoader.cancel()
+            HeroTrailerFocus.shared.disappear(trailerToken)
         }
+    }
+
+    private var heroTrailerKey: String {
+        let preferences = settings.preferences.heroTrailer
+        return "\(item.id)-\(resolvedItem != nil)-\(displayItem.details?.heroTrailer?.id ?? "")-\(preferences.autoplay)-\(preferences.startDelaySeconds)-\(preferences.startsWithSound)-\(reduceMotion)"
+    }
+
+    /// Paused while the streams page is open, while something is playing,
+    /// and while another title page is on top of this one.
+    private var heroTrailerIsPlaying: Bool {
+        isActiveDestination && sourceRequest == nil && playback.source == nil
+            && HeroTrailerFocus.shared.titlePageMayPlay(trailerToken)
     }
 
     private var detailHero: some View {
         ZStack(alignment: .bottomLeading) {
             HeroArtworkCanvas(item: displayItem, source: .detail, artworkAlignment: .topTrailing)
+
+            HomeHeroTrailerLayer(model: heroTrailer, isPlaying: heroTrailerIsPlaying)
 
             VStack(alignment: .leading, spacing: 0) {
                 Spacer(minLength: 0)
@@ -163,6 +199,12 @@ struct MediaDetailView: View {
             .accessibilityLabel("Back")
         }
         #endif
+        .overlay(alignment: .topTrailing) {
+            HomeHeroTrailerMuteButton(model: heroTrailer)
+                .padding(.trailing, 28)
+                .padding(.top, HomeHeroTrailerMuteButton.fullBleedTopInset)
+                .animation(.snappy(duration: 0.25), value: heroTrailer.isVisible)
+        }
         .frame(maxWidth: .infinity, minHeight: detailHeroHeight, maxHeight: detailHeroHeight)
         // The hero owns the top safe area on every platform. On macOS the
         // compact system Back control floats above this artwork; it must not
@@ -284,7 +326,7 @@ struct MediaDetailView: View {
             }
         case .facts:
             if let details = displayItem.details {
-                TitleFactsView(details: details)
+                TitleFactsView(details: details, isSeries: displayItem.kind == .series)
             }
         case .episodes:
             if let details = displayItem.details, displayItem.kind == .series, !details.seasons.isEmpty {
@@ -311,17 +353,39 @@ struct MediaDetailView: View {
             if let details = displayItem.details, !displayPeople(for: details).isEmpty {
                 peopleSection(details: details)
             }
+        case .production:
+            if let details = displayItem.details, !productionEntities(details).isEmpty {
+                productionSection(details: details)
+            }
         case .studio:
             if let details = displayItem.details, !details.studioTitles.isEmpty {
-                detailShelf(title: studioShelfTitle(details), items: details.studioTitles)
+                if let studio = details.studios.first, studio.hasTMDBPage {
+                    detailShelf(title: studioShelfTitle(details), items: details.studioTitles) {
+                        EntityTitlesView(
+                            kind: .company,
+                            entityID: studio.id,
+                            name: studio.name,
+                            logoURL: studio.logoURL,
+                            initialType: mediaType
+                        )
+                    }
+                } else {
+                    detailShelf(title: studioShelfTitle(details), items: details.studioTitles)
+                }
             }
         case .collection:
             if let collection = displayItem.details?.collection, !collection.members.isEmpty {
-                detailShelf(title: collection.name, items: collection.members)
+                detailShelf(title: collection.name, items: collection.members) {
+                    TitleListView(title: collection.name, items: collection.members)
+                }
             }
         case .recommendations:
             if let details = displayItem.details, !details.recommendations.isEmpty {
-                detailShelf(title: "More Like This", items: details.recommendations)
+                relatedShelf(.recommendations, title: "More Like This", items: details.recommendations, details: details)
+            }
+        case .similar:
+            if let details = displayItem.details, !details.similar.isEmpty {
+                relatedShelf(.similar, title: "Similar Titles", items: details.similar, details: details)
             }
         }
     }
@@ -534,7 +598,21 @@ struct MediaDetailView: View {
                 itemSpan: 126,
                 accessibilityLabel: "People"
             ) { person in
-                CreditCard(person: person)
+                if Int(person.id) != nil {
+                    NavigationLink {
+                        PersonDetailView(
+                            personID: person.id,
+                            name: person.name,
+                            photoURL: person.profileURL,
+                            prefersCrew: creditSection != .cast
+                        )
+                    } label: {
+                        CreditCard(person: person)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    CreditCard(person: person)
+                }
             }
         }
     }
@@ -544,6 +622,84 @@ struct MediaDetailView: View {
             SectionHeader(title: title)
             ShelfScrollView(items: items, itemSpan: posterItemSpan, accessibilityLabel: title) { related in
                 MediaPoster(item: related)
+            }
+        }
+    }
+
+    /// A shelf whose header opens the section's own page, as in Nuvio.
+    private func detailShelf<Destination: View>(
+        title: String,
+        items: [MediaItem],
+        @ViewBuilder destination: @escaping () -> Destination
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionHeaderLink(title: title, destination: destination)
+            ShelfScrollView(items: items, itemSpan: posterItemSpan, accessibilityLabel: title) { related in
+                MediaPoster(item: related)
+            }
+        }
+    }
+
+    /// More Like This and Similar open every TMDB title on their own page;
+    /// a list from an add-on shows on a page as it is.
+    @ViewBuilder
+    private func relatedShelf(
+        _ kind: MetadataRelatedKind,
+        title: String,
+        items: [MediaItem],
+        details: MediaTitleDetails
+    ) -> some View {
+        if let tmdbID = details.tmdbID {
+            detailShelf(title: title, items: items) {
+                RelatedTitlesView(kind: kind, tmdbID: tmdbID, type: mediaType, title: "\(title) · \(displayItem.title)")
+            }
+        } else {
+            detailShelf(title: title, items: items) {
+                TitleListView(title: "\(title) · \(displayItem.title)", items: items)
+            }
+        }
+    }
+
+    private var mediaType: MediaType {
+        displayItem.kind == .series ? .series : .movie
+    }
+
+    /// Nuvio's Production section: a show's networks, or a film's studios,
+    /// as logo chips that open the company's or network's page.
+    private func productionEntities(_ details: MediaTitleDetails) -> [(studio: MediaStudio, kind: MetadataEntityKind)] {
+        let networks = details.networks.map { ($0, MetadataEntityKind.network) }
+        let companies = (details.productionCompanies.isEmpty ? details.studios : details.productionCompanies)
+            .map { ($0, MetadataEntityKind.company) }
+        let entities = displayItem.kind == .series
+            ? (networks.isEmpty ? companies : networks)
+            : (companies.isEmpty ? networks : companies)
+        return Array(entities.prefix(8))
+    }
+
+    private func productionSection(details: MediaTitleDetails) -> some View {
+        let isNetworks = productionEntities(details).first?.kind == .network
+        return VStack(alignment: .leading, spacing: 12) {
+            SectionHeader(title: isNetworks ? "Networks" : "Production")
+            FlowLayout(spacing: 10) {
+                ForEach(productionEntities(details), id: \.studio.id) { entity in
+                    if entity.studio.hasTMDBPage {
+                        NavigationLink {
+                            EntityTitlesView(
+                                kind: entity.kind,
+                                entityID: entity.studio.id,
+                                name: entity.studio.name,
+                                logoURL: entity.studio.logoURL,
+                                initialType: mediaType
+                            )
+                        } label: {
+                            ProductionChip(studio: entity.studio)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Show titles from \(entity.studio.name)")
+                    } else {
+                        ProductionChip(studio: entity.studio)
+                    }
+                }
             }
         }
     }
@@ -1128,17 +1284,19 @@ private struct VideoCard: View {
     }
 }
 
+/// Nuvio's Movie Details / Show Details: who made it, then the facts.
 private struct TitleFactsView: View {
     let details: MediaTitleDetails
+    let isSeries: Bool
 
     var body: some View {
         let facts = facts
         if !facts.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Details")
+                Text(isSeries ? "Show Details" : "Movie Details")
                     .font(.title3.weight(.semibold))
                     .foregroundStyle(.primary)
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 145), spacing: 18)], alignment: .leading, spacing: 14) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 18)], alignment: .leading, spacing: 14) {
                     ForEach(facts, id: \.title) { fact in
                         VStack(alignment: .leading, spacing: 3) {
                             Text(fact.title.uppercased())
@@ -1148,6 +1306,7 @@ private struct TitleFactsView: View {
                             Text(fact.value)
                                 .font(.subheadline.weight(.medium))
                                 .foregroundStyle(.primary)
+                                .lineLimit(3)
                         }
                     }
                 }
@@ -1156,22 +1315,67 @@ private struct TitleFactsView: View {
     }
 
     private var facts: [(title: String, value: String)] {
-        var result: [(String, String)] = []
-        if !details.studios.isEmpty { result.append(("Studio", details.studios.map(\.name).joined(separator: ", "))) }
-        if let runtime = details.runtimeMinutes { result.append(("Runtime", "\(runtime) min")) }
+        var result: [(title: String, value: String)] = []
+        func names(_ credits: [MediaCredit]) -> String? {
+            var seen = Set<String>()
+            let unique = credits.map(\.name).filter { seen.insert($0).inserted }
+            return unique.isEmpty ? nil : unique.prefix(4).joined(separator: ", ")
+        }
+        func crew(_ matches: (String) -> Bool) -> [MediaCredit] {
+            details.crew.filter { $0.role.map { matches($0.lowercased()) } ?? false }
+        }
+        if let creators = names(details.creators) { result.append(("Created By", creators)) }
+        if let directors = names(crew { $0 == "director" }) { result.append(("Director", directors)) }
+        if let writers = names(crew { $0.contains("writer") || $0.contains("screenplay") }) { result.append(("Writer", writers)) }
         if let status = details.status { result.append(("Status", status)) }
-        if let budget = details.budget, budget > 0 { result.append(("Budget", Self.currency.string(from: NSNumber(value: budget)) ?? "—")) }
-        if let revenue = details.revenue, revenue > 0 { result.append(("Revenue", Self.currency.string(from: NSNumber(value: revenue)) ?? "—")) }
+        if let release = details.releaseDate.flatMap(TitleFactFormat.date) {
+            result.append((isSeries ? "First Aired" : "Release Date", release))
+        }
+        if let runtime = details.runtimeMinutes { result.append(("Runtime", Self.runtime(runtime))) }
+        if let rating = details.ageRating { result.append(("Certification", rating)) }
+        if !details.originCountries.isEmpty {
+            result.append(("Origin Country", details.originCountries.map(TitleFactFormat.country).joined(separator: ", ")))
+        }
+        if let language = details.originalLanguage { result.append(("Original Language", TitleFactFormat.language(language))) }
+        if !details.studios.isEmpty { result.append(("Studio", details.studios.map(\.name).joined(separator: ", "))) }
+        if let budget = details.budget, budget > 0 { result.append(("Budget", TitleFactFormat.usd(budget))) }
+        if let revenue = details.revenue, revenue > 0 { result.append(("Revenue", TitleFactFormat.usd(revenue))) }
         return result
     }
 
-    private static let currency: NumberFormatter = {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .currency
-        formatter.currencyCode = "USD"
-        formatter.maximumFractionDigits = 0
-        return formatter
-    }()
+    private static func runtime(_ minutes: Int) -> String {
+        minutes >= 60 ? "\(minutes / 60)h \(minutes % 60)m" : "\(minutes)m"
+    }
+}
+
+/// A company's or network's logo on a light chip, or its name when TMDB has
+/// no logo.
+private struct ProductionChip: View {
+    let studio: MediaStudio
+
+    var body: some View {
+        Group {
+            if let logoURL = studio.logoURL {
+                AsyncImage(url: logoURL) { image in
+                    image.resizable().scaledToFit()
+                } placeholder: {
+                    Text(studio.name)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color(white: 0.2))
+                }
+                .frame(width: 72, height: 26)
+            } else {
+                Text(studio.name)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color(white: 0.2))
+                    .frame(height: 26)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color(white: 0.96, opacity: 0.9), in: .rect(cornerRadius: 12, style: .continuous))
+        .accessibilityLabel(studio.name)
+    }
 }
 
 private struct CreditCard: View {

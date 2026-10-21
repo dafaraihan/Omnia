@@ -378,7 +378,7 @@ enum StremioAddonClient {
     }
 
     /// Percent-encodes everything but RFC 3986 unreserved characters.
-    private static func encodeComponent(_ value: String) -> String {
+    nonisolated private static func encodeComponent(_ value: String) -> String {
         value.addingPercentEncoding(withAllowedCharacters: .addonUnreserved) ?? value
     }
 
@@ -398,7 +398,7 @@ enum StremioAddonClient {
         "application/json", "text/json", "text/plain", "application/javascript", "text/javascript"
     ]
 
-    enum AddonClientError: LocalizedError, Equatable {
+    nonisolated enum AddonClientError: LocalizedError, Equatable, Sendable {
         case requiresHTTPS
         case invalidResponse
         case invalidManifest

@@ -477,7 +477,18 @@ nonisolated extension MediaTitleDetails {
             recommendations: primary.recommendations.isEmpty ? fallback.recommendations : primary.recommendations,
             seasons: primary.seasons.isEmpty ? fallback.seasons : primary.seasons,
             trailers: primary.trailers.isEmpty ? fallback.trailers : primary.trailers,
-            bonusContent: primary.bonusContent.isEmpty ? fallback.bonusContent : primary.bonusContent
+            bonusContent: primary.bonusContent.isEmpty ? fallback.bonusContent : primary.bonusContent,
+            productionCompanies: primary.productionCompanies.isEmpty ? fallback.productionCompanies : primary.productionCompanies,
+            networks: primary.networks.isEmpty ? fallback.networks : primary.networks,
+            creators: primary.creators.isEmpty ? fallback.creators : primary.creators,
+            originCountries: primary.originCountries.isEmpty ? fallback.originCountries : primary.originCountries,
+            originalLanguage: primary.originalLanguage ?? fallback.originalLanguage,
+            releaseDate: primary.releaseDate ?? fallback.releaseDate,
+            similar: primary.similar.isEmpty ? fallback.similar : primary.similar,
+            // View All belongs to whichever list is shown.
+            recommendationsHaveMore: primary.recommendations.isEmpty ? fallback.recommendationsHaveMore : primary.recommendationsHaveMore,
+            similarHaveMore: primary.similar.isEmpty ? fallback.similarHaveMore : primary.similarHaveMore,
+            tmdbID: primary.tmdbID ?? fallback.tmdbID
         )
     }
 }

@@ -74,6 +74,32 @@ final class HomeHeroTrailerModel {
     }
 }
 
+/// Which hero trailer may play. Title pages play the same trailer as the
+/// Home hero; only the page on top plays, and Home pauses while any title
+/// page is open, so two trailers never play at once.
+@Observable
+@MainActor
+final class HeroTrailerFocus {
+    static let shared = HeroTrailerFocus()
+
+    private(set) var titlePages: [UUID] = []
+
+    private init() {}
+
+    var homeMayPlay: Bool { titlePages.isEmpty }
+
+    func titlePageMayPlay(_ token: UUID) -> Bool { titlePages.last == token }
+
+    func appear(_ token: UUID) {
+        titlePages.removeAll { $0 == token }
+        titlePages.append(token)
+    }
+
+    func disappear(_ token: UUID) {
+        titlePages.removeAll { $0 == token }
+    }
+}
+
 /// The trailer drawn over the hero artwork, with the scrim the artwork uses
 /// so the logo and synopsis stay readable.
 struct HomeHeroTrailerLayer: View {
@@ -118,6 +144,16 @@ struct HomeHeroTrailerLayer: View {
 /// Nuvio's speaker button for the hero trailer.
 struct HomeHeroTrailerMuteButton: View {
     @Bindable var model: HomeHeroTrailerModel
+
+    /// Distance from the top of a hero that runs beneath the window's top
+    /// bar, so the button sits just below the bar.
+    static var fullBleedTopInset: CGFloat {
+        #if os(macOS)
+        88
+        #else
+        64
+        #endif
+    }
 
     var body: some View {
         if model.isVisible {

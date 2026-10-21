@@ -257,7 +257,12 @@ nonisolated struct MediaItem: Identifiable, Hashable, Sendable {
             metadataProviderID: metadataProviderID ?? tmdbItem.metadataProviderID,
             metadataRecordID: metadataRecordID ?? tmdbItem.metadataRecordID,
             externalIDs: externalIDs.merging(tmdbItem.externalIDs) { current, _ in current },
-            details: useTMDBDetails ? (tmdbItem.details ?? details) : details,
+            // An add-on's own details still win field by field, but TMDB
+            // fills what they leave out (cast photos, production, similar
+            // titles, budget), so the title page isn't limited to the add-on.
+            details: useTMDBDetails
+                ? (tmdbItem.details ?? details)
+                : MediaTitleDetails.filling(details, from: tmdbItem.details),
             progress: progress,
             positionSeconds: positionSeconds,
             durationSeconds: durationSeconds,
@@ -345,6 +350,10 @@ nonisolated struct MediaCredit: Identifiable, Codable, Hashable, Sendable {
 nonisolated struct MediaStudio: Identifiable, Codable, Hashable, Sendable {
     let id: String
     let name: String
+    var logoURL: URL? = nil
+
+    /// TMDB company and network IDs are numeric; only those open a page.
+    var hasTMDBPage: Bool { Int(id) != nil }
 }
 
 nonisolated struct MediaCollection: Hashable, Sendable {
@@ -397,6 +406,18 @@ nonisolated struct MediaTitleDetails: Hashable, Sendable {
     let seasons: [MediaSeason]
     let trailers: [MediaVideo]
     let bonusContent: [MediaVideo]
+    // Nuvio Enhanced's detail page: Production / Networks chips, creators,
+    // extra facts, Similar titles and the TMDB ID behind View All pages.
+    var productionCompanies: [MediaStudio] = []
+    var networks: [MediaStudio] = []
+    var creators: [MediaCredit] = []
+    var originCountries: [String] = []
+    var originalLanguage: String? = nil
+    var releaseDate: String? = nil
+    var similar: [MediaItem] = []
+    var recommendationsHaveMore = false
+    var similarHaveMore = false
+    var tmdbID: String? = nil
 }
 
 extension MediaItem {

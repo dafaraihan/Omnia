@@ -345,6 +345,64 @@ final class LiveMetadataStore {
         }
     }
 
+    /// A person's page (Nuvio's PersonDetailScreen). Throws so the page can
+    /// offer Try Again.
+    func person(id: String) async throws -> PersonPage {
+        guard let client else { throw SupabaseMetadataError.invalidResponse }
+        let person = try await client.person(id: id).person
+        func credits(_ entries: [OmniaPersonDetails.Credit]) -> [PersonPage.Credit] {
+            entries.compactMap { entry in
+                Self.displayableItem(from: entry.item).map {
+                    PersonPage.Credit(item: $0, role: entry.character ?? entry.job)
+                }
+            }
+        }
+        return PersonPage(
+            id: person.id,
+            name: person.name,
+            biography: person.biography,
+            birthday: person.birthday,
+            deathday: person.deathday,
+            placeOfBirth: person.placeOfBirth,
+            knownForDepartment: person.knownForDepartment,
+            profileURL: Self.artworkURL(for: person.profilePath, provider: MetadataProviderIdentifier.tmdb.rawValue, width: "h632"),
+            cast: credits(person.cast),
+            crew: credits(person.crew)
+        )
+    }
+
+    /// One page of a company's or network's titles.
+    func entityPage(
+        kind: MetadataEntityKind,
+        id: String,
+        type: MediaType,
+        page: Int
+    ) async throws -> TitleListPage {
+        guard let client else { throw SupabaseMetadataError.invalidResponse }
+        let response = try await client.entity(kind: kind, id: id, type: type, page: page)
+        return TitleListPage(
+            items: response.results.compactMap(Self.displayableItem(from:)),
+            hasMore: response.page < response.totalPages,
+            entityName: response.entity?.name,
+            entityLogoURL: Self.artworkURL(for: response.entity?.logoPath, provider: MetadataProviderIdentifier.tmdb.rawValue, width: "w500")
+        )
+    }
+
+    /// One page behind More Like This or Similar's View All.
+    func relatedPage(
+        kind: MetadataRelatedKind,
+        tmdbID: String,
+        type: MediaType,
+        page: Int
+    ) async throws -> TitleListPage {
+        guard let client else { throw SupabaseMetadataError.invalidResponse }
+        let response = try await client.related(kind: kind, id: tmdbID, type: type, page: page)
+        return TitleListPage(
+            items: response.results.compactMap(Self.displayableItem(from:)),
+            hasMore: response.page < response.totalPages
+        )
+    }
+
     /// Fetches a single browse page through the user's ordered anime route.
     /// Each provider is attempted in turn, so a primary outage or empty page
     /// naturally advances to the enabled fallback without mixing sources.
@@ -725,7 +783,7 @@ final class LiveMetadataStore {
             metadataProviderID: record.providerID,
             metadataRecordID: record.metadataRecordID,
             externalIDs: record.externalIDs,
-            details: titleDetails(from: record.details),
+            details: titleDetails(from: record.details, record: record),
             progress: progress,
             positionSeconds: positionSeconds,
             durationSeconds: durationSeconds
@@ -741,7 +799,7 @@ final class LiveMetadataStore {
         return item.artworkURL == nil ? nil : item
     }
 
-    private static func titleDetails(from details: OmniaTitleDetails?) -> MediaTitleDetails? {
+    private static func titleDetails(from details: OmniaTitleDetails?, record: OmniaMetadataRecord) -> MediaTitleDetails? {
         guard let details else { return nil }
         return MediaTitleDetails(
             ageRating: details.ageRating,
@@ -749,7 +807,7 @@ final class LiveMetadataStore {
             status: details.status,
             budget: details.budget,
             revenue: details.revenue,
-            studios: details.studios.map { .init(id: $0.id, name: $0.name) },
+            studios: details.studios.map(studio(from:)),
             cast: credits(from: details.cast),
             crew: credits(from: details.crew),
             studioTitles: details.studioTitles.compactMap(displayableItem(from:)),
@@ -759,7 +817,25 @@ final class LiveMetadataStore {
             recommendations: details.recommendations.compactMap(displayableItem(from:)),
             seasons: details.seasons.map { season(from: $0) },
             trailers: details.trailers.compactMap { video(from: $0) },
-            bonusContent: details.bonusContent.compactMap { video(from: $0) }
+            bonusContent: details.bonusContent.compactMap { video(from: $0) },
+            productionCompanies: (details.productionCompanies ?? []).map(studio(from:)),
+            networks: (details.networks ?? []).map(studio(from:)),
+            creators: credits(from: details.creators ?? []),
+            originCountries: details.originCountries ?? [],
+            originalLanguage: details.originalLanguage,
+            releaseDate: details.releaseDate,
+            similar: (details.similar ?? []).compactMap(displayableItem(from:)),
+            recommendationsHaveMore: details.recommendationsHaveMore ?? false,
+            similarHaveMore: details.similarHaveMore ?? false,
+            tmdbID: record.provider == MetadataProviderIdentifier.tmdb.rawValue ? record.providerID : nil
+        )
+    }
+
+    private static func studio(from record: OmniaMetadataStudio) -> MediaStudio {
+        MediaStudio(
+            id: record.id,
+            name: record.name,
+            logoURL: artworkURL(for: record.logoPath, provider: MetadataProviderIdentifier.tmdb.rawValue, width: "w300")
         )
     }
 
@@ -824,6 +900,32 @@ final class LiveMetadataStore {
         guard provider == MetadataProviderIdentifier.tmdb.rawValue else { return nil }
         return URL(string: "https://image.tmdb.org/t/p/\(width)\(path)")
     }
+}
+
+struct PersonPage: Sendable {
+    struct Credit: Identifiable, Sendable {
+        let item: MediaItem
+        let role: String?
+        var id: String { item.id }
+    }
+
+    let id: String
+    let name: String
+    let biography: String?
+    let birthday: String?
+    let deathday: String?
+    let placeOfBirth: String?
+    let knownForDepartment: String?
+    let profileURL: URL?
+    let cast: [Credit]
+    let crew: [Credit]
+}
+
+struct TitleListPage: Sendable {
+    let items: [MediaItem]
+    let hasMore: Bool
+    var entityName: String? = nil
+    var entityLogoURL: URL? = nil
 }
 
 struct BuiltInHomeCatalog: Identifiable, Sendable {

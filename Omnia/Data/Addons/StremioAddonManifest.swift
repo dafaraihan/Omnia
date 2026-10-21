@@ -242,7 +242,7 @@ nonisolated extension AddonCatalog {
     }
 }
 
-extension StremioAddonManifest {
+nonisolated extension StremioAddonManifest {
     /// Real manifests vary a lot. Only `id` and `name` are required; anything
     /// malformed or unknown (for example AIOMetadata's `watch_state` resource
     /// or a catalog without an id) is skipped instead of failing the install.

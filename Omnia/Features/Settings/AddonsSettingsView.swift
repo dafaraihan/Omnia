@@ -60,7 +60,6 @@ struct AddonsSettingsView: View {
     @Environment(\.openURL) private var openURL
     @Environment(OmniaStore.self) private var store
     @Environment(SettingsPreferencesStore.self) private var settings
-    @State private var showsAddSheet = false
     @State private var addonToRemove: InstalledAddon?
     @State private var addonToRename: InstalledAddon?
     @State private var renameDraft = ""
@@ -86,6 +85,8 @@ struct AddonsSettingsView: View {
             } footer: {
                 Text("Omnia cancels an add-on request when this limit is reached.")
             }
+
+            AddAddonSection(timeout: settings.preferences.addonTimeout)
 
             if !store.installedAddonRestoreIssues.isEmpty {
                 Section {
@@ -202,29 +203,8 @@ struct AddonsSettingsView: View {
         .navigationDestination(item: $detailAddonID) { addonID in
             AddonDetailView(addonID: addonID)
         }
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                #if os(macOS)
-                Button {
-                    showsAddSheet = true
-                } label: {
-                    Image(systemName: "plus")
-                }
-                .accessibilityLabel("Add Add-on")
-                .help("Add Add-on")
-                #else
-                Button("Add Add-on", systemImage: "plus") { showsAddSheet = true }
-                #endif
-            }
-        }
         .task(id: store.installedAddonsAreLoading) {
             await refreshMissingAddonLogos()
-        }
-        .omniaGlassModal(isPresented: $showsAddSheet) {
-            AddManifestView(
-                timeout: settings.preferences.addonTimeout,
-                onClose: { showsAddSheet = false }
-            )
         }
         .confirmationDialog(
             "Remove \(addonToRemove?.displayName ?? "add-on")?",
@@ -397,13 +377,12 @@ private struct AddonSettingsRow: View {
                 Text(capabilities(for: addon)).font(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength: 8)
-            Button(action: showDetails) {
-                Image(systemName: "info.circle")
-            }
-            .buttonStyle(.borderless)
-            .help("Show status and errors")
-            .accessibilityLabel("Show details for \(addon.displayName)")
-            Toggle("Enabled", isOn: $isEnabled).labelsHidden()
+            // An explicit switch, so the Settings row style doesn't draw the
+            // label as text beside it.
+            Toggle(isOn: $isEnabled) { EmptyView() }
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .accessibilityLabel("Enabled")
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 8)
@@ -485,11 +464,11 @@ private struct AddonReorderDropDelegate: DropDelegate {
     }
 }
 
-private struct AddManifestView: View {
+/// Add an add-on by pasting its address, laid out like Plugins' Add
+/// Repository field.
+private struct AddAddonSection: View {
     @Environment(OmniaStore.self) private var store
-    @Environment(\.displayPreferences) private var display
     let timeout: AddonTimeout
-    let onClose: () -> Void
     @State private var address = ""
     @State private var isInstalling = false
     @State private var errorMessage: String?
@@ -501,154 +480,35 @@ private struct AddManifestView: View {
     }
 
     var body: some View {
-        #if os(macOS)
-        macSheet
-        #else
-        mobileSheet
-        #endif
-    }
-
-    #if os(macOS)
-    private var macSheet: some View {
-        VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 20) {
-                Text("Add Add-on")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.white)
-
-                VStack(alignment: .leading, spacing: 7) {
-                    Text("Manifest URL")
-                        .font(.headline)
-                        .foregroundStyle(.white)
-
-                    ZStack(alignment: .leading) {
-                        if address.isEmpty {
-                            Text("https://example.com/manifest.json")
-                                .foregroundStyle(.white.opacity(0.5))
-                                .allowsHitTesting(false)
-                        }
-
-                        TextField("Manifest URL", text: $address)
-                            .labelsHidden()
-                            .textContentType(.URL)
-                            .textFieldStyle(.plain)
-                            .foregroundColor(.white)
-                            .tint(display.accentColor)
-                            .accentColor(display.accentColor)
-                    }
-                    .padding(.horizontal, 12)
-                    .frame(height: 44)
-                    .background(
-                        .white.opacity(0.08),
-                        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    )
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .stroke(.white.opacity(0.22), lineWidth: 1)
-                    }
-                    .controlSize(.large)
-
-                    Text("Paste an install link, a stremio:// link or the add-on's address. HTTPS is required. Add only sources you trust.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
+        Section {
+            HStack {
+                // Verbatim, so the example address isn't styled as a link.
+                TextField("Add-on URL", text: $address, prompt: Text(verbatim: "https://example.com/manifest.json"))
+                    .labelsHidden()
+                    .textContentType(.URL)
+                    .autocorrectionDisabled()
+                    #if os(iOS)
+                    .textInputAutocapitalization(.never)
+                    #endif
+                    .onSubmit(install)
                 if isInstalling {
-                    ProgressView("Validating manifest…")
-                        .controlSize(.small)
-                }
-
-                if let errorMessage {
-                    Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
-                        .font(.callout)
-                        .foregroundStyle(.red)
-                        .fixedSize(horizontal: false, vertical: true)
+                    ProgressView().controlSize(.small)
+                } else {
+                    Button("Add", action: install)
+                        .disabled(manifestURL == nil)
                 }
             }
-            .padding(24)
-
-            Divider()
-
-            HStack(spacing: 10) {
-                Spacer()
-                Button("Cancel", action: onClose)
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 12)
-                    .frame(minHeight: 36)
-                    .keyboardShortcut(.cancelAction)
-                Button(action: install) {
-                    Text("Done")
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 16)
-                        .frame(minHeight: 36)
-                        .contentShape(Capsule())
-                }
-                    .keyboardShortcut(.defaultAction)
-                    .omniaCapsuleGlassButton()
-                    .disabled(manifestURL == nil || isInstalling)
+            if let errorMessage {
+                Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
             }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 16)
+        } header: {
+            Text("Add Add-on")
+        } footer: {
+            Text("Paste an install link, a stremio:// link or the add-on's address. HTTPS is required. Add only sources you trust.")
         }
-        .frame(width: 500)
-        .fixedSize(horizontal: false, vertical: true)
-        .foregroundStyle(.white)
-        .tint(display.accentColor)
-        .omniaModalGlass(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
-    #endif
-
-    #if os(iOS)
-    private var mobileSheet: some View {
-        NavigationStack {
-            OmniaSettingsForm {
-                Section {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Manifest URL")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        TextField(
-                            "Manifest URL",
-                            text: $address,
-                            prompt: Text("https://example.com/manifest.json")
-                        )
-                        .labelsHidden()
-                        .textContentType(.URL)
-                        #if os(iOS)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        #endif
-                    }
-                } header: {
-                    Text("Add-on Address")
-                } footer: {
-                    Text("Paste an install link, a stremio:// link or the add-on's address. HTTPS is required. Add only sources you trust.")
-                }
-                if isInstalling { ProgressView("Validating manifest…") }
-                if let errorMessage {
-                    Label(errorMessage, systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.red)
-                }
-            }
-            .omniaNavigationTitle("Add Add-on")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel", action: onClose)
-                        .foregroundStyle(.white)
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { install() }
-                        .foregroundStyle(.white)
-                        .disabled(manifestURL == nil || isInstalling)
-                }
-            }
-        }
-        .tint(display.accentColor)
-    }
-    #endif
 
     static func installErrorMessage(for error: Error) -> String {
         let reason = (error as? LocalizedError)?.errorDescription ?? "The add-on couldn't be reached."
@@ -656,7 +516,7 @@ private struct AddManifestView: View {
     }
 
     private func install() {
-        guard let manifestURL else { return }
+        guard let manifestURL, !isInstalling else { return }
         isInstalling = true
         errorMessage = nil
         Task {
@@ -668,7 +528,7 @@ private struct AddManifestView: View {
                     transport: HTTPTransport()
                 )
                 store.add(InstalledAddon(manifest: manifest, manifestURL: manifestURL, isEnabled: true, addedAt: .now))
-                onClose()
+                address = ""
             } catch {
                 errorMessage = Self.installErrorMessage(for: error)
             }

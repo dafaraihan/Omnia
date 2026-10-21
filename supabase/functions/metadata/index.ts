@@ -15,6 +15,14 @@ type MetadataRequest =
   | { action: "reindex_catalog"; type: MediaType; seed_token: string }
   | { action: "genres"; type: MediaType; language?: string }
   | { action: "details"; id: string; provider: Provider; type: MediaType; language?: string }
+  | { action: "person"; id: string; language?: string }
+  | { action: "entity"; kind: EntityKind; id: string; type: MediaType; page?: number; language?: string }
+  | { action: "related"; id: string; type: MediaType; kind: RelatedKind; page?: number; language?: string }
+
+/// Nuvio's company and network pages (TmdbEntityBrowseScreen).
+type EntityKind = "company" | "network"
+/// More Like This uses TMDB recommendations; Similar uses TMDB similar.
+type RelatedKind = "recommendations" | "similar"
 
 type NormalizedMetadata = {
   canonicalKey: string
@@ -43,7 +51,7 @@ type MetadataCredit = {
   profilePath?: string
 }
 
-type MetadataStudio = { id: string; name: string }
+type MetadataStudio = { id: string; name: string; logoPath?: string }
 type MetadataGenre = { id: number; name: string }
 
 type MetadataCollection = {
@@ -100,6 +108,36 @@ type TitleDetails = {
   seasons: MetadataSeason[]
   trailers: MetadataVideo[]
   bonusContent: MetadataVideo[]
+  // Added with detail payload version 5 (Nuvio detail page parity).
+  productionCompanies?: MetadataStudio[]
+  networks?: MetadataStudio[]
+  creators?: MetadataCredit[]
+  originCountries?: string[]
+  originalLanguage?: string
+  releaseDate?: string
+  similar?: NormalizedMetadata[]
+  recommendationsHaveMore?: boolean
+  similarHaveMore?: boolean
+}
+
+type PersonCredit = {
+  item: NormalizedMetadata
+  character?: string
+  job?: string
+}
+
+type PersonDetails = {
+  id: string
+  name: string
+  biography?: string
+  birthday?: string
+  deathday?: string
+  placeOfBirth?: string
+  knownForDepartment?: string
+  profilePath?: string
+  imdbID?: string
+  cast: PersonCredit[]
+  crew: PersonCredit[]
 }
 
 const cacheLifetimeMilliseconds = 1000 * 60 * 60 * 24
@@ -165,7 +203,24 @@ function isRequest(value: unknown): value is MetadataRequest {
   if (request.action === "seed_status") return typeof request.seed_token === "string" && request.seed_token.length >= 24
   if (request.action === "reindex_catalog") return isMediaType(request.type) && typeof request.seed_token === "string" && request.seed_token.length >= 24
   if (request.action === "genres") return isMediaType(request.type)
+  if (request.action === "person") return isTMDBIdentifier(request.id)
+  if (request.action === "entity") {
+    return (request.kind === "company" || request.kind === "network")
+      && isTMDBIdentifier(request.id) && isMediaType(request.type) && isPage(request.page)
+  }
+  if (request.action === "related") {
+    return (request.kind === "recommendations" || request.kind === "similar")
+      && isTMDBIdentifier(request.id) && isMediaType(request.type) && isPage(request.page)
+  }
   return request.action === "details" && typeof request.id === "string" && isProvider(request.provider) && isMediaType(request.type)
+}
+
+function isTMDBIdentifier(value: unknown): value is string {
+  return typeof value === "string" && /^\d{1,12}$/.test(value)
+}
+
+function isPage(value: unknown): boolean {
+  return value === undefined || (typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 500)
 }
 
 function requestedProviders(request: { providers?: Provider[] }): Provider[] {
@@ -440,11 +495,32 @@ function tmdbCredits(value: Record<string, unknown>, type: MediaType) {
 function tmdbStudios(value: Record<string, unknown>): MetadataStudio[] {
   const sources = records(value.production_companies)
   const fallback = sources.length > 0 ? sources : records(value.networks)
-  return fallback.flatMap((company) => {
+  return tmdbCompanies(fallback).slice(0, 4)
+}
+
+function tmdbCompanies(values: Record<string, unknown>[]): MetadataStudio[] {
+  return values.flatMap((company) => {
     const id = company.id
     const name = optionalText(company.name)
-    return (typeof id === "number" || typeof id === "string") && name ? [{ id: String(id), name }] : []
-  }).slice(0, 4)
+    return (typeof id === "number" || typeof id === "string") && name
+      ? [{ id: String(id), name, logoPath: optionalText(company.logo_path) }]
+      : []
+  })
+}
+
+function tmdbCreators(value: Record<string, unknown>): MetadataCredit[] {
+  return records(value.created_by).flatMap((person) => {
+    const id = person.id
+    const name = optionalText(person.name)
+    if ((typeof id !== "number" && typeof id !== "string") || !name) return []
+    return [{ id: String(id), name, role: "Creator", profilePath: optionalText(person.profile_path) }]
+  })
+}
+
+function tmdbHasMore(value: unknown): boolean {
+  const container = value && typeof value === "object" ? value as Record<string, unknown> : {}
+  const totalPages = positiveInteger(container.total_pages) ?? 1
+  return totalPages > 1
 }
 
 function tmdbResultList(value: unknown, type: MediaType): NormalizedMetadata[] {
@@ -586,6 +662,107 @@ async function tmdbTitleDetails(value: Record<string, unknown>, type: MediaType,
     seasons,
     trailers: videos.trailers,
     bonusContent: videos.bonusContent,
+    productionCompanies: tmdbCompanies(records(value.production_companies)).slice(0, 8),
+    networks: tmdbCompanies(records(value.networks)).slice(0, 8),
+    creators: tmdbCreators(value),
+    originCountries: originCountries(value),
+    originalLanguage: optionalText(value.original_language),
+    releaseDate: isoDate(type === "movie" ? value.release_date : value.first_air_date),
+    similar: tmdbResultList(value.similar, type).filter((item) => item.providerID !== providerID).slice(0, 20),
+    recommendationsHaveMore: tmdbHasMore(value.recommendations),
+    similarHaveMore: tmdbHasMore(value.similar),
+  }
+}
+
+function originCountries(value: Record<string, unknown>): string[] {
+  const named = records(value.production_countries)
+    .flatMap((country) => optionalText(country.iso_3166_1) ?? [])
+  const codes = Array.isArray(value.origin_country)
+    ? value.origin_country.filter((code): code is string => typeof code === "string" && code.length > 0)
+    : []
+  return [...new Set([...codes, ...named])].slice(0, 4)
+}
+
+/// A person's page (Nuvio's PersonDetailScreen): biography and every title
+/// they acted in or worked on, most popular first.
+async function tmdbPerson(id: string, language: string): Promise<PersonDetails> {
+  const value = await tmdb(`/person/${id}`, language, {
+    append_to_response: "combined_credits,external_ids",
+  }) as Record<string, unknown>
+  const name = optionalText(value.name)
+  if (!name) throw new Error("Provider response did not contain a person.")
+  const credits = value.combined_credits && typeof value.combined_credits === "object"
+    ? value.combined_credits as Record<string, unknown>
+    : {}
+  const personCredits = (entries: Record<string, unknown>[], roleKey: "character" | "job") => {
+    const seen = new Set<string>()
+    return entries
+      .filter((entry) => entry.media_type === "movie" || entry.media_type === "tv")
+      .sort((lhs, rhs) => (Number(rhs.popularity) || 0) - (Number(lhs.popularity) || 0))
+      .flatMap((entry) => {
+        const item = normalizeTMDB(entry, entry.media_type === "tv" ? "series" : "movie")
+        if (!item || !item.posterPath || seen.has(item.canonicalKey)) return []
+        seen.add(item.canonicalKey)
+        const role = optionalText(entry[roleKey])
+        return [roleKey === "character" ? { item, character: role } : { item, job: role }]
+      })
+      .slice(0, 60)
+  }
+  const external = value.external_ids && typeof value.external_ids === "object"
+    ? value.external_ids as Record<string, unknown>
+    : {}
+  return {
+    id,
+    name,
+    biography: optionalText(value.biography),
+    birthday: isoDate(value.birthday),
+    deathday: isoDate(value.deathday),
+    placeOfBirth: optionalText(value.place_of_birth),
+    knownForDepartment: optionalText(value.known_for_department),
+    profilePath: optionalText(value.profile_path),
+    imdbID: optionalText(external.imdb_id),
+    cast: personCredits(records(credits.cast), "character"),
+    crew: personCredits(records(credits.crew), "job"),
+  }
+}
+
+/// A production company's or TV network's titles (Nuvio's entity browse).
+async function tmdbEntity(kind: EntityKind, id: string, type: MediaType, page: number, language: string) {
+  const [info, listing] = await Promise.all([
+    tmdb(`/${kind}/${id}`, language) as Promise<Record<string, unknown>>,
+    tmdb(type === "movie" ? "/discover/movie" : "/discover/tv", language, {
+      [kind === "network" ? "with_networks" : "with_companies"]: id,
+      sort_by: "popularity.desc",
+      include_adult: "false",
+      page: String(page),
+    }) as Promise<Record<string, unknown>>,
+  ])
+  return {
+    entity: {
+      id,
+      kind,
+      name: optionalText(info.name) ?? "",
+      logoPath: optionalText(info.logo_path),
+      headquarters: optionalText(info.headquarters),
+      originCountry: optionalText(info.origin_country),
+    },
+    results: tmdbResultList(listing, type),
+    page,
+    totalPages: positiveInteger(listing.total_pages) ?? 1,
+    providers: ["tmdb"],
+  }
+}
+
+/// The full More Like This or Similar list behind a section's View All.
+async function tmdbRelated(id: string, type: MediaType, kind: RelatedKind, page: number, language: string) {
+  const listing = await tmdb(`/${type === "movie" ? "movie" : "tv"}/${id}/${kind}`, language, {
+    page: String(page),
+  }) as Record<string, unknown>
+  return {
+    results: tmdbResultList(listing, type),
+    page,
+    totalPages: positiveInteger(listing.total_pages) ?? 1,
+    providers: ["tmdb"],
   }
 }
 
@@ -655,7 +832,7 @@ function normalizedRecord(row: MetadataRecordRow): NormalizedMetadata {
     logoPath: payload.logoPath,
     genres: Array.isArray(payload.genres) ? payload.genres.filter((genre): genre is string => typeof genre === "string") : [],
     metadataRecordID: row.id,
-    details: payload.detailVersion === 4 ? payload.detail : undefined,
+    details: payload.detailVersion === 5 ? payload.detail : undefined,
   }
 }
 
@@ -686,7 +863,7 @@ async function cacheRecord(item: NormalizedMetadata): Promise<NormalizedMetadata
     poster_path: item.posterPath ?? null,
     backdrop_path: item.backdropPath ?? null,
     external_ids: item.externalIDs,
-    payload: { sourceURL: item.sourceURL, logoPath: item.logoPath, genres: item.genres, detailVersion: 4, detail: item.details },
+    payload: { sourceURL: item.sourceURL, logoPath: item.logoPath, genres: item.genres, detailVersion: 5, detail: item.details },
     source_updated_at: now.toISOString(),
     expires_at: new Date(now.getTime() + cacheLifetimeMilliseconds).toISOString(),
     updated_at: now.toISOString(),
@@ -949,6 +1126,19 @@ export default {
       if (request.action === "genres") {
         const genres = await tmdbGenres(request.type, request.language ?? "en-US")
         return response({ genres, providers: ["tmdb"] })
+      }
+
+      if (request.action === "person") {
+        return response({ person: await tmdbPerson(request.id, request.language ?? "en-US") })
+      }
+
+      if (request.action === "entity") {
+        if (request.kind === "network" && request.type === "movie") return errorResponse("Networks list series only.", 400)
+        return response(await tmdbEntity(request.kind, request.id, request.type, request.page ?? 1, request.language ?? "en-US"))
+      }
+
+      if (request.action === "related") {
+        return response(await tmdbRelated(request.id, request.type, request.kind, request.page ?? 1, request.language ?? "en-US"))
       }
 
       return response(await details(request))

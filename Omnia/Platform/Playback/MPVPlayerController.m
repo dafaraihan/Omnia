@@ -6,8 +6,15 @@
 #import "MPVPlayerController.h"
 
 #if TARGET_OS_OSX
+// mpv's render API needs OpenGL, which macOS still ships but marks as
+// deprecated. libmpv's headers also use @deprecated doc tags without the
+// matching attribute. Neither is something Omnia can change.
+#define GL_SILENCE_DEPRECATION 1
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdocumentation-deprecated-sync"
 #import <mpv/client.h>
 #import <mpv/render_gl.h>
+#pragma clang diagnostic pop
 #import <OpenGL/OpenGL.h>
 #import <OpenGL/gl.h>
 #import <QuartzCore/QuartzCore.h>

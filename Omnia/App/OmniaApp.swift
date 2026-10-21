@@ -24,6 +24,9 @@ struct OmniaApp: App {
     @State private var plugins = PluginStore()
 
     init() {
+        #if os(macOS)
+        UniformScrollers.install()
+        #endif
         // Posters and backdrops load through AsyncImage, which uses the
         // shared cache. The default is small enough that artwork downloaded
         // again on every launch; this keeps it on disk between sessions.

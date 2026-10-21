@@ -407,9 +407,11 @@ nonisolated enum DetailSection: String, Codable, CaseIterable, Identifiable, Sen
     case trailers
     case bonusContent
     case people
+    case production
     case studio
     case collection
     case recommendations
+    case similar
 
     var id: Self { self }
 
@@ -421,9 +423,11 @@ nonisolated enum DetailSection: String, Codable, CaseIterable, Identifiable, Sen
         case .trailers: "Trailers"
         case .bonusContent: "Bonus Content"
         case .people: "People"
+        case .production: "Production"
         case .studio: "More from the Studio"
         case .collection: "Collection"
         case .recommendations: "More Like This"
+        case .similar: "Similar Titles"
         }
     }
 }
@@ -609,6 +613,12 @@ nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
     /// Visible sections in the chosen order.
     var orderedDetailSections: [DetailSection] {
         Self.completeOrder(detailSectionOrder).filter(shows)
+    }
+
+    mutating func moveDetailSections(fromOffsets source: IndexSet, toOffset destination: Int) {
+        var order = Self.completeOrder(detailSectionOrder)
+        order.move(fromOffsets: source, toOffset: destination)
+        detailSectionOrder = order
     }
 
     mutating func moveDetailSection(_ section: DetailSection, by offset: Int) {

@@ -34,7 +34,7 @@ struct PluginsSettingsView: View {
 
             Section {
                 HStack {
-                    TextField("Repository URL", text: $repositoryInput, prompt: Text("https://example.com/manifest.json"))
+                    TextField("Repository URL", text: $repositoryInput, prompt: Text(verbatim: "https://example.com/manifest.json"))
                         .autocorrectionDisabled()
                         .onSubmit(addRepository)
                     if isAdding {

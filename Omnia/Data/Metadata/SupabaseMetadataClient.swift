@@ -81,6 +81,7 @@ nonisolated struct OmniaMetadataCredit: Codable, Hashable, Sendable {
 nonisolated struct OmniaMetadataStudio: Codable, Hashable, Sendable {
     let id: String
     let name: String
+    let logoPath: String?
 }
 
 nonisolated struct OmniaMetadataCollection: Codable, Hashable, Sendable {
@@ -134,6 +135,69 @@ nonisolated struct OmniaTitleDetails: Codable, Hashable, Sendable {
     let seasons: [OmniaMetadataSeason]
     let trailers: [OmniaMetadataVideo]
     let bonusContent: [OmniaMetadataVideo]
+    // Detail payload version 5 (Nuvio detail page parity); absent in
+    // responses from an older metadata function.
+    let productionCompanies: [OmniaMetadataStudio]?
+    let networks: [OmniaMetadataStudio]?
+    let creators: [OmniaMetadataCredit]?
+    let originCountries: [String]?
+    let originalLanguage: String?
+    let releaseDate: String?
+    let similar: [OmniaMetadataRecord]?
+    let recommendationsHaveMore: Bool?
+    let similarHaveMore: Bool?
+}
+
+/// A person's page: biography and the titles they worked on.
+nonisolated struct OmniaPersonDetails: Codable, Hashable, Sendable {
+    struct Credit: Codable, Hashable, Sendable {
+        let item: OmniaMetadataRecord
+        let character: String?
+        let job: String?
+    }
+
+    let id: String
+    let name: String
+    let biography: String?
+    let birthday: String?
+    let deathday: String?
+    let placeOfBirth: String?
+    let knownForDepartment: String?
+    let profilePath: String?
+    let imdbID: String?
+    let cast: [Credit]
+    let crew: [Credit]
+}
+
+nonisolated struct MetadataPersonResponse: Codable, Sendable {
+    let person: OmniaPersonDetails
+}
+
+nonisolated enum MetadataEntityKind: String, Codable, Sendable {
+    case company
+    case network
+}
+
+nonisolated enum MetadataRelatedKind: String, Codable, Sendable {
+    case recommendations
+    case similar
+}
+
+nonisolated struct OmniaMetadataEntity: Codable, Hashable, Sendable {
+    let id: String
+    let kind: MetadataEntityKind
+    let name: String
+    let logoPath: String?
+    let headquarters: String?
+    let originCountry: String?
+}
+
+/// One page of a company's, network's or related list.
+nonisolated struct MetadataPagedResponse: Codable, Sendable {
+    let entity: OmniaMetadataEntity?
+    let results: [OmniaMetadataRecord]
+    let page: Int
+    let totalPages: Int
 }
 
 nonisolated struct MetadataSearchResponse: Codable, Sendable {
@@ -239,6 +303,30 @@ actor SupabaseMetadataClient {
         return try await invoke(request, accessToken: accessToken)
     }
 
+    func person(id: String, language: String = "en-US") async throws -> MetadataPersonResponse {
+        try await invoke(.person(id: id, language: language), accessToken: nil)
+    }
+
+    func entity(
+        kind: MetadataEntityKind,
+        id: String,
+        type: MediaType,
+        page: Int,
+        language: String = "en-US"
+    ) async throws -> MetadataPagedResponse {
+        try await invoke(.entity(kind: kind, id: id, type: type, page: page, language: language), accessToken: nil)
+    }
+
+    func related(
+        kind: MetadataRelatedKind,
+        id: String,
+        type: MediaType,
+        page: Int,
+        language: String = "en-US"
+    ) async throws -> MetadataPagedResponse {
+        try await invoke(.related(kind: kind, id: id, type: type, page: page, language: language), accessToken: nil)
+    }
+
     private func invoke<Response: Decodable>(
         _ body: MetadataRequest,
         accessToken: String?
@@ -288,13 +376,16 @@ nonisolated private enum MetadataRequest: Encodable, Sendable {
     case catalog(type: MediaType, category: MetadataCatalogCategory, genreID: Int?, page: Int, providers: [String]?, language: String)
     case genres(type: MediaType, language: String)
     case details(provider: MetadataProviderIdentifier, id: String, type: MediaType, language: String)
+    case person(id: String, language: String)
+    case entity(kind: MetadataEntityKind, id: String, type: MediaType, page: Int, language: String)
+    case related(kind: MetadataRelatedKind, id: String, type: MediaType, page: Int, language: String)
 
     private enum CodingKeys: String, CodingKey {
-        case action, query, type, language, provider, providers, id, category, genreID = "genre_id", page
+        case action, query, type, language, provider, providers, id, category, genreID = "genre_id", page, kind
     }
 
     private enum Action: String, Encodable {
-        case search, catalog, genres, details
+        case search, catalog, genres, details, person, entity, related
     }
 
     func encode(to encoder: Encoder) throws {
@@ -323,6 +414,24 @@ nonisolated private enum MetadataRequest: Encodable, Sendable {
             try container.encode(provider, forKey: .provider)
             try container.encode(id, forKey: .id)
             try container.encode(type, forKey: .type)
+            try container.encode(language, forKey: .language)
+        case let .person(id, language):
+            try container.encode(Action.person, forKey: .action)
+            try container.encode(id, forKey: .id)
+            try container.encode(language, forKey: .language)
+        case let .entity(kind, id, type, page, language):
+            try container.encode(Action.entity, forKey: .action)
+            try container.encode(kind, forKey: .kind)
+            try container.encode(id, forKey: .id)
+            try container.encode(type, forKey: .type)
+            try container.encode(page, forKey: .page)
+            try container.encode(language, forKey: .language)
+        case let .related(kind, id, type, page, language):
+            try container.encode(Action.related, forKey: .action)
+            try container.encode(kind, forKey: .kind)
+            try container.encode(id, forKey: .id)
+            try container.encode(type, forKey: .type)
+            try container.encode(page, forKey: .page)
             try container.encode(language, forKey: .language)
         }
     }

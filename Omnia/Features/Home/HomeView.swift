@@ -465,10 +465,12 @@ struct HomeView: View {
                 .padding(.horizontal, 20)
             }
         }
-        .overlay(alignment: .bottomTrailing) {
+        .overlay(alignment: .topTrailing) {
+            // Top right, clear of the window's top bar when the hero runs
+            // full-bleed beneath it.
             HomeHeroTrailerMuteButton(model: heroTrailer)
                 .padding(.trailing, 28)
-                .padding(.bottom, 24)
+                .padding(.top, isCardHero ? 20 : HomeHeroTrailerMuteButton.fullBleedTopInset)
                 .animation(.snappy(duration: 0.25), value: heroTrailer.isVisible)
         }
         .overlay(alignment: .bottom) {
@@ -511,9 +513,10 @@ struct HomeView: View {
     }
 
     /// The trailer pauses in a hidden tab, while the streams page is open,
-    /// and while something else is playing.
+    /// while something else is playing, and while a title page is open.
     private var heroTrailerIsPlaying: Bool {
         isActiveDestination && sourcePlaybackItem == nil && playback.source == nil
+            && HeroTrailerFocus.shared.homeMayPlay
     }
 
     private var loadingHero: some View {
