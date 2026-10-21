@@ -70,7 +70,7 @@ struct LibraryView: View {
             }
         }
         .navigationDestination(for: MediaItem.self) { MediaDetailView(item: $0) }
-        .omniaGlassModal(isPresented: showsSourcePicker) {
+        .omniaStreamsPage(isPresented: showsSourcePicker) {
             if let sourcePlaybackItem {
                 PlaybackSourceSheet(
                     item: sourcePlaybackItem,
@@ -169,7 +169,7 @@ private struct LibrarySectionGridView: View {
         }
         .omniaNavigationTitle(kind.title)
         .navigationDestination(for: MediaItem.self) { MediaDetailView(item: $0) }
-        .omniaGlassModal(isPresented: showsSourcePicker) {
+        .omniaStreamsPage(isPresented: showsSourcePicker) {
             if let sourcePlaybackItem {
                 PlaybackSourceSheet(
                     item: sourcePlaybackItem,

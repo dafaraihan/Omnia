@@ -3,22 +3,24 @@ import SwiftUI
 struct AppearanceSettingsView: View {
     @Environment(OmniaStore.self) private var store
     @Environment(SettingsPreferencesStore.self) private var settings
+    @Environment(CollectionsStore.self) private var collections
+    @AppStorage(HomeView.continueWatchingVisibilityKey) private var showsContinueWatching = true
 
+    /// Settings › Layout, laid out like Nuvio's: Theme, Display, Home and
+    /// Detail Page.
     var body: some View {
         OmniaSettingsForm {
             Section {
-                Picker(
+                SettingsDropdown(
                     "Appearance",
                     selection: Binding(
                         get: { store.appearance },
                         set: { store.appearance = $0 }
-                    )
-                ) {
-                    ForEach(AppAppearance.allCases) { appearance in
-                        Text(appearance.title).tag(appearance)
-                    }
-                }
-                .pickerStyle(.inline)
+                    ),
+                    options: AppAppearance.allCases
+                ) { $0.title }
+            } header: {
+                Text("Theme")
             } footer: {
                 Text("Match System follows the appearance selected for this device.")
             }
@@ -27,12 +29,11 @@ struct AppearanceSettingsView: View {
                 AccentSwatchGrid(selection: settings.binding(\.display.accentTheme))
                     .padding(.vertical, 4)
                 if settings.preferences.display.accentTheme == .custom {
-                    Picker("Style", selection: settings.binding(\.display.customAccentMode)) {
-                        ForEach(CustomAccentMode.allCases) { mode in
-                            Text(mode.title).tag(mode)
-                        }
-                    }
-                    .pickerStyle(.segmented)
+                    SettingsDropdown(
+                        "Style",
+                        selection: settings.binding(\.display.customAccentMode),
+                        options: CustomAccentMode.allCases
+                    ) { $0.title }
                     switch settings.preferences.display.customAccentMode {
                     case .single:
                         ColorPicker(
@@ -58,10 +59,6 @@ struct AppearanceSettingsView: View {
                         .accessibilityHidden(true)
                     }
                 }
-                Toggle(isOn: settings.binding(\.display.amoledBlack)) {
-                    Text("AMOLED Black")
-                    Text("Use true black behind pages in Dark appearance.")
-                }
             } header: {
                 Text("Accent Color")
             } footer: {
@@ -69,60 +66,25 @@ struct AppearanceSettingsView: View {
             }
 
             Section {
-                SettingsRouteLink(route: .posterCards, summary: posterCardsSummary)
-                Toggle(
-                    "Show Details Under Posters",
-                    isOn: settings.binding(\.showMediaCardLabels)
-                )
-            } header: {
-                Text("Media Cards")
-            } footer: {
-                Text("Shows each title, release year, and primary genre below standard posters.")
-            }
-
-            #if os(macOS)
-            Section {
-                Toggle("Hover Preview", isOn: settings.binding(\.display.hoverPreviewEnabled))
-                if settings.preferences.display.hoverPreviewEnabled {
-                    Picker("Delay", selection: settings.binding(\.display.hoverPreviewDelay)) {
-                        ForEach(HoverPreviewDelay.allCases) { delay in
-                            Text(delay.title).tag(delay)
-                        }
-                    }
+                Toggle(isOn: settings.binding(\.display.amoledBlack)) {
+                    Text("AMOLED Black")
+                    Text("Use true black behind pages in Dark appearance.")
                 }
-            } header: {
-                Text("Hover Preview")
-            } footer: {
-                Text("Rest the pointer on a poster to see its backdrop and synopsis.")
-            }
-            #endif
-
-            #if os(macOS)
-            Section {
-                Picker(
+                #if os(macOS)
+                SettingsDropdown(
                     "Navigation Style",
-                    selection: settings.binding(\.navigationStyle)
-                ) {
-                    ForEach(MacNavigationStyle.allCases) { style in
-                        Label(style.title, systemImage: style.systemImage)
-                            .tag(style)
-                    }
-                }
-                .pickerStyle(.inline)
+                    selection: settings.binding(\.navigationStyle),
+                    options: MacNavigationStyle.allCases,
+                    systemImage: \.systemImage
+                ) { $0.title }
 
                 if settings.preferences.navigationStyle == .topBar {
-                    Picker("Top Bar Style", selection: settings.binding(\.display.topBarStyle)) {
-                        ForEach(TopBarStyle.allCases) { style in
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(style.title)
-                                Text(style.detail)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            .tag(style)
-                        }
-                    }
-                    .pickerStyle(.inline)
+                    SettingsDropdown(
+                        "Top Bar Style",
+                        subtitle: settings.preferences.display.topBarStyle.detail,
+                        selection: settings.binding(\.display.topBarStyle),
+                        options: TopBarStyle.allCases
+                    ) { $0.title }
 
                     if settings.preferences.display.topBarStyle.isNuvio {
                         Toggle(isOn: settings.binding(\.display.topBarGlow)) {
@@ -132,22 +94,91 @@ struct AppearanceSettingsView: View {
                     }
                 }
 
-                Picker(
+                SettingsDropdown(
                     "Search",
-                    selection: settings.binding(\.searchStyle)
-                ) {
-                    ForEach(MacSearchStyle.allCases) { style in
-                        Text(style.title).tag(style)
-                    }
+                    selection: settings.binding(\.searchStyle),
+                    options: MacSearchStyle.allCases
+                ) { $0.title }
+                Toggle("Hover Preview", isOn: settings.binding(\.display.hoverPreviewEnabled))
+                if settings.preferences.display.hoverPreviewEnabled {
+                    SettingsDropdown(
+                        "Hover Preview Delay",
+                        selection: settings.binding(\.display.hoverPreviewDelay),
+                        options: HoverPreviewDelay.allCases
+                    ) { $0.title }
                 }
+                #endif
             } header: {
-                Text("Navigation")
+                Text("Display")
             } footer: {
-                Text("Choose whether Omnia’s main sections appear in a sidebar or a floating top tab bar, and whether Search opens as its own page or floats over the current one.")
+                #if os(macOS)
+                Text("Choose a sidebar or a top tab bar, whether Search opens as a page or floats over the current one, and whether resting the pointer on a poster previews it.")
+                #else
+                Text("AMOLED Black uses true black behind pages in Dark appearance.")
+                #endif
             }
-            #endif
+
+            Section {
+                SettingsRouteLink(route: .home, summary: homeLayoutSummary)
+                SettingsRouteLink(route: .collections, summary: collectionsSummary)
+                SettingsRouteLink(route: .continueWatching, summary: continueWatchingSummary)
+                SettingsRouteLink(route: .upcoming, summary: upcomingSummary)
+                SettingsRouteLink(route: .posterCards, summary: posterCardsSummary)
+            } header: {
+                Text("Home")
+            }
+
+            Section {
+                SettingsRouteLink(route: .detailPage, summary: detailPageSummary)
+            } header: {
+                Text("Detail Page")
+            }
+
+            Section {
+                SettingsRouteLink(route: .streams, summary: streamsSummary)
+            } header: {
+                Text("Streams")
+            }
         }
-        .omniaNavigationTitle("Appearance")
+        .omniaNavigationTitle("Layout")
+    }
+
+    private var homeLayoutSummary: String {
+        let catalogs = AddonCatalogStore.catalogs(in: store)
+        guard !catalogs.isEmpty else { return "Built-in rows" }
+        let visible = catalogs.filter { store.isCatalogEnabled(for: $0.addon, catalog: $0.catalog) }.count
+        return "\(visible) of \(catalogs.count) catalogs visible"
+    }
+
+    private var collectionsSummary: String {
+        let all = collections.collections
+        guard !all.isEmpty else { return "None" }
+        let visible = all.filter { collections.isVisible($0) }.count
+        return visible == all.count ? "\(all.count) on Home" : "\(visible) of \(all.count) on Home"
+    }
+
+    private var continueWatchingSummary: String {
+        guard showsContinueWatching else { return "Hidden from Home" }
+        return "\(settings.preferences.display.continueWatchingStyle.title) cards"
+    }
+
+    private var upcomingSummary: String {
+        settings.preferences.showUpcoming ? "Shown on Home" : "Hidden from Home"
+    }
+
+    private var detailPageSummary: String {
+        let hidden = settings.preferences.display.hiddenDetailSections.count
+        return hidden == 0 ? "All sections shown" : "\(hidden) hidden"
+    }
+
+    private var streamsSummary: String {
+        let streams = settings.preferences.streams
+        var parts = [streams.background.title]
+        if let active = StreamBadgeStore.shared.activeImport {
+            parts.append("Badges from \(active.displayHost)")
+        }
+        if streams.showsSearchBar { parts.append("Search") }
+        return parts.joined(separator: " · ")
     }
 
     private var posterCardsSummary: String {
@@ -204,24 +235,33 @@ struct AppearanceSettingsView: View {
     }
 }
 
-/// Nuvio's theme swatches. Each circle shows its colour; the chosen one has
-/// a ring.
+/// Nuvio's theme swatches, centred. Each circle shows its colour; the
+/// chosen one has a ring and a checkmark.
 private struct AccentSwatchGrid: View {
     @Binding var selection: AccentTheme
 
     var body: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 30, maximum: 30), spacing: 12)], alignment: .leading, spacing: 12) {
-            ForEach(AccentTheme.allCases) { theme in
-                Button {
-                    selection = theme
-                } label: {
-                    swatch(for: theme)
-                }
-                .buttonStyle(.plain)
-                .help(theme.title)
-                .accessibilityLabel(theme.title)
-                .accessibilityAddTraits(selection == theme ? .isSelected : [])
+        // One centred row when it fits, otherwise centred wrapping rows.
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) { swatches }
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 30, maximum: 30), spacing: 12)], alignment: .center, spacing: 12) {
+                swatches
             }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var swatches: some View {
+        ForEach(AccentTheme.allCases) { theme in
+            Button {
+                selection = theme
+            } label: {
+                swatch(for: theme)
+            }
+            .buttonStyle(.plain)
+            .help(theme.title)
+            .accessibilityLabel(theme.title)
+            .accessibilityAddTraits(selection == theme ? .isSelected : [])
         }
     }
 
@@ -241,12 +281,29 @@ private struct AccentSwatchGrid: View {
         }
     }
 
+    /// Dark on light swatches (White, Gold), white on the rest.
+    private func checkmarkColor(for theme: AccentTheme) -> Color {
+        guard theme != .custom else { return .white }
+        let color = theme.gradientHexes?.first.flatMap(Color.init(omniaHex:))
+            ?? theme.hex.flatMap(Color.init(omniaHex:))
+            ?? .blue
+        return color.prefersDarkForeground ? .black : .white
+    }
+
     private func swatch(for theme: AccentTheme) -> some View {
         Circle()
             .fill(fill(for: theme))
             .frame(width: 24, height: 24)
             .overlay {
                 Circle().strokeBorder(.primary.opacity(0.15))
+            }
+            .overlay {
+                if selection == theme {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(checkmarkColor(for: theme))
+                        .shadow(color: .black.opacity(0.25), radius: 1)
+                }
             }
             .padding(3)
             .overlay {

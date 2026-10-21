@@ -15,7 +15,30 @@ nonisolated struct HomeLayoutPreferences: Codable, Equatable, Sendable {
     static let heroSourceLimit = 2
     static let heroItemLimit = 8
 
+    /// Nuvio Enhanced's Hero Style.
+    enum HeroStyle: String, Codable, CaseIterable, Identifiable, Sendable {
+        case fullBleed, card
+        var id: Self { self }
+        var title: String {
+            switch self {
+            case .fullBleed: "Full-bleed"
+            case .card: "Card"
+            }
+        }
+        var detail: String {
+            switch self {
+            case .fullBleed: "Artwork fills the width of the window."
+            case .card: "Artwork sits in a rounded card."
+            }
+        }
+    }
+
     var showsHero = true
+    var heroStyle: HeroStyle = .fullBleed
+    /// Nuvio Enhanced's Dynamic Background Color: Home below the hero is
+    /// tinted with the featured artwork's colours. Omnia always did this,
+    /// so it stays on unless turned off.
+    var dynamicBackground = true
     var showsCatalogType = true
     var hidesUnreleasedContent = false
     /// Catalog keys in display order. Keys of add-ons that are temporarily
@@ -31,6 +54,7 @@ nonisolated struct HomeLayoutPreferences: Codable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case showsHero, showsCatalogType, hidesUnreleasedContent, order, customTitles, heroSourceKeys, hasCustomHeroSources
+        case heroStyle, dynamicBackground
     }
 
     init(from decoder: Decoder) throws {
@@ -42,6 +66,8 @@ nonisolated struct HomeLayoutPreferences: Codable, Equatable, Sendable {
         customTitles = try container.decodeIfPresent([String: String].self, forKey: .customTitles) ?? [:]
         heroSourceKeys = try container.decodeIfPresent([String].self, forKey: .heroSourceKeys) ?? []
         hasCustomHeroSources = try container.decodeIfPresent(Bool.self, forKey: .hasCustomHeroSources) ?? false
+        heroStyle = (try? container.decodeIfPresent(HeroStyle.self, forKey: .heroStyle)) ?? .fullBleed
+        dynamicBackground = (try? container.decodeIfPresent(Bool.self, forKey: .dynamicBackground)) ?? true
     }
 
     /// Known keys keep their saved position; catalogs that appeared since are

@@ -143,14 +143,16 @@ nonisolated struct ContinueWatchingCardPresentation: Equatable {
 
 struct ResumeProgressBar: View {
     let progress: Double
+    @Environment(\.displayPreferences) private var display
 
     var body: some View {
         GeometryReader { geometry in
             Capsule()
                 .fill(.white.opacity(0.28))
                 .overlay(alignment: .leading) {
+                    // The watched part takes the accent, or its gradient.
                     Capsule()
-                        .fill(.white.opacity(0.92))
+                        .fill(display.accentStyle)
                         .frame(width: geometry.size.width * min(max(progress, 0), 1))
                 }
         }

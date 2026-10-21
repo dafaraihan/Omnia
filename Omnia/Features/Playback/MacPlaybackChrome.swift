@@ -581,6 +581,7 @@ private struct MacPlaybackExpandedSlider: View {
 
 struct MacPlaybackChrome: View {
     @Environment(PlaybackSession.self) private var playback
+    @Environment(\.displayPreferences) private var display
     @Binding var isInteracting: Bool
     let close: () -> Void
     let showsSkipIntro: Bool
@@ -776,7 +777,7 @@ struct MacPlaybackChrome: View {
                                 )
                             }
                         )
-                        .tint(.white)
+                        .tint(display.accentColor)
                         .accessibilityLabel("Volume")
                     }
                     .padding(.horizontal, 18)
@@ -851,7 +852,7 @@ struct MacPlaybackChrome: View {
                         )
                     }
                 )
-                .tint(.white)
+                .tint(display.accentColor)
                 .accessibilityLabel("Playback position")
                 .disabled(duration <= 0)
 
@@ -1451,7 +1452,7 @@ struct MacPlaybackChrome: View {
             }
             .font(.subheadline.weight(.medium))
             Slider(value: value, in: range)
-                .tint(.white)
+                .tint(display.accentColor)
                 .accessibilityLabel(title)
                 .accessibilityValue(valueText)
         }

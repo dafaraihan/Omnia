@@ -68,6 +68,8 @@ struct SettingsView: View {
         switch route {
         case .account:
             return account.user?.provider?.capitalized ?? (account.user == nil ? "Not signed in" : "Signed in")
+        case .contentDiscovery:
+            return "Add-ons and plugins"
         case .addons:
             if store.installedAddonsAreLoading {
                 return "Loading…"
@@ -89,20 +91,21 @@ struct SettingsView: View {
         case .collections:
             return "Folders of catalogs on Home"
         case .metadata:
-            return "Providers and fallback order"
+            return "TMDB enrichment, MDBList ratings and metadata sources"
         case .progress:
             return "Stored only on this device"
         case .upcoming:
             return settings.preferences.showUpcoming ? "Shown on Home" : "Hidden from Home"
         case .videoPlayer:
-            return "Always plays inside Omnia"
+            return "Player, subtitles, and auto-play"
         case .subtitle:
             return "Language and appearance"
         case .appearance:
-            return store.appearance.title
+            return "Home, collections, and detail pages"
         case .about:
             return "Resources, attributions, and licenses"
-        case .streamSelection, .playbackResolver, .metadataProvider, .aboutSection, .posterCards, .continueWatching, .detailPage:
+        case .streamSelection, .playbackResolver, .metadataProvider, .aboutSection, .posterCards, .streams, .continueWatching, .detailPage,
+             .tmdbEnrichment, .metadataSources:
             return nil
         }
     }
@@ -116,6 +119,8 @@ struct SettingsDestinationView: View {
             switch route {
             case .account:
                 AccountSettingsView()
+            case .contentDiscovery:
+                ContentDiscoverySettingsView()
             case .addons:
                 AddonsSettingsView()
             case .plugins:
@@ -128,6 +133,10 @@ struct SettingsDestinationView: View {
                 CollectionsSettingsView()
             case .metadata:
                 MetadataSettingsView()
+            case .tmdbEnrichment:
+                TMDBEnrichmentSettingsView()
+            case .metadataSources:
+                MetadataSourcesSettingsView()
             case .progress:
                 ProgressSettingsView()
             case .upcoming:
@@ -144,6 +153,8 @@ struct SettingsDestinationView: View {
                 AppearanceSettingsView()
             case .posterCards:
                 PosterCardSettingsView()
+            case .streams:
+                StreamsSettingsView()
             case .continueWatching:
                 ContinueWatchingSettingsView()
             case .detailPage:

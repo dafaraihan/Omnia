@@ -78,11 +78,11 @@ struct AddonsSettingsView: View {
 
         OmniaSettingsForm {
             Section {
-                Picker("Request timeout", selection: settings.binding(\.addonTimeout)) {
-                    ForEach(AddonTimeout.allCases, id: \.self) { timeout in
-                        Text("\(timeout.rawValue) seconds").tag(timeout)
-                    }
-                }
+                SettingsDropdown(
+                    "Request timeout",
+                    selection: settings.binding(\.addonTimeout),
+                    options: Array(AddonTimeout.allCases)
+                ) { timeout in "\(timeout.rawValue) seconds" }
             } footer: {
                 Text("Omnia cancels an add-on request when this limit is reached.")
             }
@@ -487,6 +487,7 @@ private struct AddonReorderDropDelegate: DropDelegate {
 
 private struct AddManifestView: View {
     @Environment(OmniaStore.self) private var store
+    @Environment(\.displayPreferences) private var display
     let timeout: AddonTimeout
     let onClose: () -> Void
     @State private var address = ""
@@ -532,8 +533,8 @@ private struct AddManifestView: View {
                             .textContentType(.URL)
                             .textFieldStyle(.plain)
                             .foregroundColor(.white)
-                            .tint(.white)
-                            .accentColor(.white)
+                            .tint(display.accentColor)
+                            .accentColor(display.accentColor)
                     }
                     .padding(.horizontal, 12)
                     .frame(height: 44)
@@ -595,7 +596,7 @@ private struct AddManifestView: View {
         .frame(width: 500)
         .fixedSize(horizontal: false, vertical: true)
         .foregroundStyle(.white)
-        .tint(.white)
+        .tint(display.accentColor)
         .omniaModalGlass(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
     #endif
@@ -645,7 +646,7 @@ private struct AddManifestView: View {
                 }
             }
         }
-        .tint(.white)
+        .tint(display.accentColor)
     }
     #endif
 

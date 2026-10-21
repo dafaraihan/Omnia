@@ -1,10 +1,13 @@
 import SwiftUI
 
-/// Home › Catalogs. Add-on catalogs and collections that can be Home rows are
+/// Layout › Home Layout › Catalogs. Add-on catalogs and collections that can be Home rows are
 /// listed in Home order: drag to reorder, switch on or off, rename. Pinned
 /// collections stay at the top. Catalogs that only work in Discover (search,
 /// or a required filter) and Omnia's built-in shelves follow below.
 struct CatalogsSettingsView: View {
+    /// Home Layout shows these rows inline, folded away until opened.
+    var isEmbedded = false
+
     @Environment(OmniaStore.self) private var store
     @Environment(HomeLayoutStore.self) private var homeLayout
     @Environment(CollectionsStore.self) private var collections
@@ -14,6 +17,7 @@ struct CatalogsSettingsView: View {
     @State private var renameDraft = ""
     @State private var showsResetConfirmation = false
     @State private var dropTargetKey: String?
+    @State private var isExpanded = false
 
     private var homeCatalogs: [AddonHomeCatalog] {
         homeLayout.ordered(AddonCatalogStore.catalogs(in: store))
@@ -42,98 +46,160 @@ struct CatalogsSettingsView: View {
     }
 
     var body: some View {
-        OmniaSettingsForm {
-            if catalogAddons.isEmpty {
-                Section("Add-on Catalogs") {
-                    ContentUnavailableView(
-                        "No Add-on Catalogs",
-                        systemImage: "rectangle.stack.badge.plus",
-                        description: Text("Catalogs declared by installed add-ons appear here for individual control.")
-                    )
+        if isEmbedded {
+            withDialogs(
+                Group {
+                    foldedRowsSection
+                    if isExpanded {
+                        otherSections
+                    }
                 }
-            }
+            )
+        } else {
+            withDialogs(
+                OmniaSettingsForm {
+                    if !homeCatalogs.isEmpty {
+                        homeRowsSection
+                    }
+                    otherSections
+                }
+                .omniaNavigationTitle("Catalogs")
+            )
+        }
+    }
 
-            if !homeCatalogs.isEmpty {
-                homeRowsSection
+    /// Catalogs that aren't Home rows, and the built-in shelves.
+    @ViewBuilder
+    private var otherSections: some View {
+        if catalogAddons.isEmpty {
+            Section("Add-on Catalogs") {
+                ContentUnavailableView(
+                    "No Add-on Catalogs",
+                    systemImage: "rectangle.stack.badge.plus",
+                    description: Text("Catalogs declared by installed add-ons appear here for individual control.")
+                )
             }
+        }
 
-            ForEach(catalogAddons) { addon in
-                let catalogs = discoverOnlyCatalogs(of: addon)
-                if !catalogs.isEmpty {
-                    Section {
-                        ForEach(catalogs) { catalog in
-                            Toggle(isOn: discoverBinding(addon: addon, catalog: catalog)) {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(catalog.name ?? catalog.id)
-                                    Text(discoverDetail(for: catalog))
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
+        ForEach(catalogAddons) { addon in
+            let catalogs = discoverOnlyCatalogs(of: addon)
+            if !catalogs.isEmpty {
+                Section {
+                    ForEach(catalogs) { catalog in
+                        Toggle(isOn: discoverBinding(addon: addon, catalog: catalog)) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(catalog.name ?? catalog.id)
+                                Text(discoverDetail(for: catalog))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
                             }
-                            .disabled(!addon.isEnabled)
                         }
-                    } header: {
-                        Text(homeCatalogs.isEmpty ? addon.displayName : "\(addon.displayName) in Discover")
-                    } footer: {
-                        if !addon.isEnabled {
-                            Text("Enable this add-on before its catalogs can appear on Home and in Discover.")
-                        }
+                        .disabled(!addon.isEnabled)
+                    }
+                } header: {
+                    Text(homeCatalogs.isEmpty ? addon.displayName : "\(addon.displayName) in Discover")
+                } footer: {
+                    if !addon.isEnabled {
+                        Text("Enable this add-on before its catalogs can appear on Home and in Discover.")
                     }
                 }
             }
+        }
 
-            Section {
-                ForEach(BuiltInHomeShelf.allCases) { shelf in
-                    Toggle(isOn: homeShelfBinding(for: shelf)) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(shelf.title)
-                            Text("TMDB \(shelf.kind.rawValue.lowercased()) shelf")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
+        Section {
+            ForEach(BuiltInHomeShelf.allCases) { shelf in
+                Toggle(isOn: homeShelfBinding(for: shelf)) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(shelf.title)
+                        Text("TMDB \(shelf.kind.rawValue.lowercased()) shelf")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
-                    .accessibilityLabel(shelf.title)
-                    .accessibilityHint("Show or hide this TMDB shelf")
                 }
-            } header: {
-                Text("Built-in Discovery Shelves")
-            } footer: {
-                if homeCatalogs.isEmpty {
-                    Text("Choose which built-in TMDB rows appear on Home and Discover. Changes apply immediately.")
-                } else {
-                    Text("These rows appear in Discover. Home uses your add-on catalogs while any are installed.")
-                }
+                .accessibilityLabel(shelf.title)
+                .accessibilityHint("Show or hide this TMDB shelf")
+            }
+        } header: {
+            Text("Built-in Discovery Shelves")
+        } footer: {
+            if homeCatalogs.isEmpty {
+                Text("Choose which built-in TMDB rows appear on Home and Discover. Changes apply immediately.")
+            } else {
+                Text("These rows appear in Discover. Home uses your add-on catalogs while any are installed.")
             }
         }
-        .omniaNavigationTitle("Catalogs")
-        .alert("Rename Catalog", isPresented: isRenaming) {
-            TextField("Name", text: $renameDraft)
-            Button("Save") {
+    }
+
+    /// Home Layout's Catalogs: one row that opens to the Home rows.
+    private var foldedRowsSection: some View {
+        Section {
+            DisclosureGroup(isExpanded: $isExpanded) {
+                ForEach(homeEntries) { entry in
+                    switch entry {
+                    case let .catalog(catalog):
+                        homeRow(catalog)
+                    case let .collection(collection):
+                        collectionRow(collection)
+                    }
+                }
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(homeCatalogs.isEmpty ? "Built-in Rows" : "Home Rows")
+                    Text(homeCatalogs.isEmpty ? "Omnia's TMDB shelves" : homeRowsSummary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        } header: {
+            HStack {
+                Text("Catalogs")
+                Spacer()
+                if !homeCatalogs.isEmpty {
+                    Button("Reset to Default") { showsResetConfirmation = true }
+                        .buttonStyle(.borderless)
+                        .font(.caption)
+                }
+            }
+        } footer: {
+            if homeCatalogs.isEmpty {
+                Text("Home shows Omnia's built-in rows. Install an add-on that provides catalogs, such as Xperience or AIOMetadata, and its catalogs replace them.")
+            } else if isExpanded {
+                Text("Drag a row to change its place on Home.")
+            }
+        }
+    }
+
+    /// The rename alert and the reset confirmation, on either layout.
+    private func withDialogs<V: View>(_ view: V) -> some View {
+        view
+            .alert("Rename Catalog", isPresented: isRenaming) {
+                TextField("Name", text: $renameDraft)
+                Button("Save") {
+                    if let renamingCatalog {
+                        homeLayout.rename(renamingCatalog, to: renameDraft)
+                    }
+                    renamingCatalog = nil
+                }
+                .keyboardShortcut(.defaultAction)
+                Button("Cancel", role: .cancel) { renamingCatalog = nil }
+            } message: {
                 if let renamingCatalog {
-                    homeLayout.rename(renamingCatalog, to: renameDraft)
+                    Text("Leave the name empty to use “\(renamingCatalog.defaultTitle(showsCatalogType: homeLayout.preferences.showsCatalogType))”.")
                 }
-                renamingCatalog = nil
             }
-            .keyboardShortcut(.defaultAction)
-            Button("Cancel", role: .cancel) { renamingCatalog = nil }
-        } message: {
-            if let renamingCatalog {
-                Text("Leave the name empty to use “\(renamingCatalog.defaultTitle(showsCatalogType: homeLayout.preferences.showsCatalogType))”.")
+            .confirmationDialog(
+                "Reset Home Rows?",
+                isPresented: $showsResetConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Reset to Default", role: .destructive) {
+                    homeLayout.reset()
+                    store.enableAllCatalogs()
+                    collections.showAll()
+                }
+            } message: {
+                Text("All catalogs and collections become visible in their default order, custom names are removed and the first two catalogs feed the hero.")
             }
-        }
-        .confirmationDialog(
-            "Reset Home Rows?",
-            isPresented: $showsResetConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Reset to Default", role: .destructive) {
-                homeLayout.reset()
-                store.enableAllCatalogs()
-                collections.showAll()
-            }
-        } message: {
-            Text("All catalogs and collections become visible in their default order, custom names are removed and the first two catalogs feed the hero.")
-        }
     }
 
     // MARK: Home rows
@@ -159,6 +225,10 @@ struct CatalogsSettingsView: View {
         } footer: {
             Text(homeRowsFooter)
         }
+    }
+
+    private var homeRowsSummary: String {
+        "\(homeCatalogs.filter(isVisible).count) of \(homeCatalogs.count) visible"
     }
 
     private var homeRowsFooter: String {
@@ -274,7 +344,7 @@ struct CatalogsSettingsView: View {
         .overlay(alignment: .top) {
             if dropTargetKey == key {
                 Rectangle()
-                    .fill(Color.accentColor)
+                    .fill(.tint)
                     .frame(height: 2)
                     .offset(y: -9)
             }

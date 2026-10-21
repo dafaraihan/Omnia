@@ -47,6 +47,9 @@ struct PlaybackSourceSheet: View {
     @State private var autoSelectionStatus: String?
     @State private var lastLinkTask: Task<Void, Never>?
     @State private var choosesManually = false
+    /// The title with its artwork and logo, for the page's backdrop.
+    @State private var pageItem: MediaItem?
+    @State private var searchText = ""
     #if os(macOS)
     @State private var localTorrentEngine: OMLocalTorrentEngine?
     @State private var localTorrentTask: Task<Void, Never>?
@@ -57,144 +60,7 @@ struct PlaybackSourceSheet: View {
     #endif
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("Choose Source")
-                    .font(.headline)
-                Spacer()
-                Button("Cancel") { closePresentation() }
-                    .keyboardShortcut(.cancelAction)
-            }
-            .padding(.horizontal, 20)
-            .frame(height: 52)
-
-            Divider()
-
-            if let autoSelectionStatus {
-                HStack(spacing: 10) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text(autoSelectionStatus)
-                        .font(.callout)
-                        .lineLimit(2)
-                    Spacer(minLength: 12)
-                    Button("Choose Manually", action: chooseManually)
-                        .accessibilityHint("Stops automatic selection so you can pick a source")
-                }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 10)
-                .background(.thinMaterial)
-                .transition(.opacity)
-            }
-
-            Group {
-                if isResolving {
-                    ProgressView("Finding sources…")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if candidates.isEmpty {
-                    VStack(spacing: 0) {
-                        ContentUnavailableView(
-                            "No Sources Found",
-                            systemImage: "play.slash",
-                            description: Text(emptyStateDescription)
-                        )
-                        .frame(maxWidth: .infinity)
-
-                        if !addonStatusResults.isEmpty {
-                            List {
-                                Section("Add-on Status") {
-                                    ForEach(addonStatusResults) { result in
-                                        addonStatusRow(result)
-                                    }
-                                }
-                            }
-                            .listStyle(.plain)
-                            .scrollContentBackground(.hidden)
-                            .background(.clear)
-                            .frame(minHeight: 180)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    VStack(spacing: 0) {
-                        sourceFilters
-                        Divider()
-                        List {
-                            if pendingSourceCount > 0 {
-                                HStack(spacing: 8) {
-                                    ProgressView()
-                                        .controlSize(.small)
-                                    Text(pendingSourceCount == 1
-                                         ? "Still checking 1 more source…"
-                                         : "Still checking \(pendingSourceCount) more sources…")
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-
-                            if !sourceSections.direct.isEmpty {
-                                Section {
-                                    ForEach(sourceSections.direct) { candidate in
-                                        playbackButton(candidate)
-                                    }
-                                }
-                            }
-
-                            if !sourceSections.resolverRequired.isEmpty {
-                                Section {
-                                    ForEach(sourceSections.resolverRequired) { candidate in
-                                        resolverRequiredRow(candidate)
-                                    }
-                                } header: {
-                                    Text("Local Peer-to-Peer Sources")
-                                } footer: {
-                                    Text("On macOS, Omnia resolves these locally into its bounded cache, then opens the completed file or a validated single BDMV tree with libmpv. Peer activity never starts through autoplay.")
-                                }
-                            }
-
-                            if !hidesIncompatibleSources, !sourceSections.external.isEmpty {
-                                Section {
-                                    ForEach(sourceSections.external) { candidate in
-                                        unavailableRow(candidate)
-                                    }
-                                } header: {
-                                    Text("External Pages")
-                                }
-                            }
-
-                            if !hidesIncompatibleSources, !sourceSections.unavailable.isEmpty {
-                                Section {
-                                    ForEach(sourceSections.unavailable) { candidate in
-                                        unavailableRow(candidate)
-                                    }
-                                } header: {
-                                    Text("Unavailable Sources")
-                                }
-                            }
-
-                            if hidesIncompatibleSources, hiddenIncompatibleCount > 0 {
-                                Text(hiddenIncompatibleCount == 1
-                                     ? "1 source that can't play in Omnia is hidden. Turn off Show Only Compatible Formats in Settings to see it."
-                                     : "\(hiddenIncompatibleCount) sources that can't play in Omnia are hidden. Turn off Show Only Compatible Formats in Settings to see them.")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-
-                            // Sources come first; add-ons and plugins that
-                            // found nothing are listed after them.
-                            if !addonStatusResults.isEmpty {
-                                Section("Add-on Status") {
-                                    ForEach(addonStatusResults) { result in
-                                        addonStatusRow(result)
-                                    }
-                                }
-                            }
-                        }
-                        .listStyle(.plain)
-                        .scrollContentBackground(.hidden)
-                        .background(.clear)
-                    }
-                }
-            }
+        sourcePage
             .task(id: mediaKey) {
                 let selectionID = playback.beginSourceSelection()
                 self.selectionID = selectionID
@@ -205,6 +71,7 @@ struct PlaybackSourceSheet: View {
                 resolution = nil
                 preparedPlaybackItem = nil
                 selectedAddonID = nil
+                searchText = ""
                 resolverFailures = [:]
                 choosesManually = false
                 autoSelection?.cancel()
@@ -212,6 +79,7 @@ struct PlaybackSourceSheet: View {
                 autoSelectionStatus = nil
                 let enrichedItem = await metadata.details(for: item)
                 guard !Task.isCancelled, playback.isCurrentSourceSelection(selectionID) else { return }
+                pageItem = enrichedItem
                 let lookupItem = PlaybackSourceHandoff.preparedItem(
                     original: item,
                     enriched: enrichedItem
@@ -286,17 +154,172 @@ struct PlaybackSourceSheet: View {
                 discMaterializer = nil
                 #endif
             }
-        }
+    }
+
+    /// Nuvio's streams page: the backdrop and the title's logo or episode
+    /// on the left, the sources in a glass panel on the right.
+    @ViewBuilder
+    private var sourcePage: some View {
         #if os(macOS)
-        // `List` has no useful intrinsic height in an automatically sized
-        // macOS sheet. Without an explicit content size AppKit may collapse
-        // the list to zero points, leaving only the navigation title and
-        // Cancel button even when the resolver returned source rows.
-        .frame(width: 700, height: 560)
-        .omniaModalGlass(in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        StreamsPageLayout(
+            item: pageItem ?? item,
+            episode: episode,
+            resumeAt: resumeAt,
+            background: streamPreferences.background,
+            onClose: { closePresentation() }
+        ) {
+            sourcePanel
+        }
+        .tint(settings.preferences.display.accentColor)
         #else
+        VStack(spacing: 0) {
+            HStack {
+                Spacer()
+                Button("Cancel") { closePresentation() }
+                    .keyboardShortcut(.cancelAction)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
+            sourcePanel
+        }
+        .tint(settings.preferences.display.accentColor)
         .presentationDetents([.medium, .large])
         #endif
+    }
+
+    private var streamPreferences: StreamPagePreferences {
+        settings.preferences.streams
+    }
+
+    private var sourcePanel: some View {
+        VStack(spacing: 0) {
+            panelHeader
+
+            if let autoSelectionStatus {
+                HStack(spacing: 10) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text(autoSelectionStatus)
+                        .font(.callout.weight(.medium))
+                        .lineLimit(2)
+                    Spacer(minLength: 12)
+                    Button("Choose Manually", action: chooseManually)
+                        .buttonStyle(.borderless)
+                        .fontWeight(.semibold)
+                        .accessibilityHint("Stops automatic selection so you can pick a source")
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(.tint.opacity(0.16), in: .rect(cornerRadius: 14, style: .continuous))
+                .padding(.horizontal, 18)
+                .padding(.bottom, 8)
+                .transition(.opacity)
+            }
+
+            if isResolving {
+                VStack(spacing: 12) {
+                    ProgressView()
+                    Text("Finding sources…")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if candidates.isEmpty {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        ContentUnavailableView(
+                            "No Sources Found",
+                            systemImage: "play.slash",
+                            description: Text(emptyStateDescription)
+                        )
+                        .frame(maxWidth: .infinity)
+                        if !addonStatusResults.isEmpty {
+                            addonStatusList
+                        }
+                    }
+                    .padding(18)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                sourceFilters
+                if streamPreferences.showsSearchBar {
+                    searchField
+                }
+                sourceList
+            }
+        }
+        .animation(.snappy(duration: 0.2), value: autoSelectionStatus)
+    }
+
+    private var panelHeader: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Streams")
+                    .font(.title2.weight(.bold))
+                Text(headerSubtitle)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 12)
+            if pendingSourceCount > 0 {
+                HStack(spacing: 6) {
+                    ProgressView()
+                        .controlSize(.mini)
+                    Text(pendingSourceCount == 1
+                         ? "Checking 1 more"
+                         : "Checking \(pendingSourceCount) more")
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(.white.opacity(0.08), in: .capsule)
+                .accessibilityLabel(pendingSourceCount == 1
+                                    ? "Still checking 1 more source"
+                                    : "Still checking \(pendingSourceCount) more sources")
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 20)
+        .padding(.bottom, 12)
+    }
+
+    private var headerSubtitle: String {
+        let title = (pageItem ?? item).title
+        guard let episode else { return title }
+        return "\(title) · S\(episode.seasonNumber) · E\(episode.episodeNumber)"
+    }
+
+    /// Nuvio Enhanced's stream search: every word must appear somewhere in
+    /// the stream's name, description, file name or add-on.
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField("Search streams", text: $searchText)
+                .textFieldStyle(.plain)
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.white.opacity(0.07), in: .rect(cornerRadius: 10, style: .continuous))
+        .padding(.horizontal, 18)
+        .padding(.bottom, 8)
+    }
+
+    private var searchTerms: [String] {
+        guard streamPreferences.showsSearchBar else { return [] }
+        return searchText.split(whereSeparator: \.isWhitespace).map(String.init)
     }
 
     private var emptyStateDescription: String {
@@ -325,6 +348,19 @@ struct PlaybackSourceSheet: View {
 
     private var addonStatusResults: [AddonSourceResolution] {
         resolution?.addonResults.filter { $0.state != .loaded } ?? []
+    }
+
+    private var addonStatusList: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Add-on Status")
+                .font(.subheadline.weight(.bold))
+                .padding(.top, 10)
+            ForEach(addonStatusResults) { result in
+                addonStatusRow(result)
+                    .padding(12)
+                    .background(.white.opacity(0.05), in: .rect(cornerRadius: 12, style: .continuous))
+            }
+        }
     }
 
     private func addonStatusRow(_ result: AddonSourceResolution) -> some View {
@@ -417,10 +453,24 @@ struct PlaybackSourceSheet: View {
         }
     }
 
+    /// Nuvio's provider row: refresh, All, then one chip per add-on and
+    /// plugin repository.
     private var sourceFilters: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                sourceFilter(
+                StreamFilterChip(
+                    title: "",
+                    count: nil,
+                    systemImage: "arrow.clockwise",
+                    isSelected: false,
+                    isLoading: !retryingAddonIDs.isEmpty,
+                    accessibilityText: "Refresh sources",
+                    action: refreshAllSources
+                )
+                .disabled(resolution == nil || !retryingAddonIDs.isEmpty)
+                .help("Refresh")
+
+                StreamFilterChip(
                     title: "All",
                     count: candidates.count,
                     isSelected: selectedAddonID == nil
@@ -429,54 +479,190 @@ struct PlaybackSourceSheet: View {
                 }
 
                 ForEach(enabledStreamAddons) { addon in
-                    sourceFilter(
+                    StreamFilterChip(
                         title: addon.displayName,
                         count: candidates.filter { $0.addonID == addon.id }.count,
-                        isSelected: selectedAddonID == addon.id
+                        logoURL: addon.manifest.presentationLogoURL,
+                        isSelected: selectedAddonID == addon.id,
+                        isLoading: retryingAddonIDs.contains(addon.id)
                     ) {
                         selectedAddonID = addon.id
                     }
                 }
 
                 ForEach(pluginRepositories, id: \.filterID) { repository in
-                    sourceFilter(
+                    StreamFilterChip(
                         title: repository.name,
                         count: candidates.filter { repository.sourceIDs.contains($0.addonID) }.count,
+                        systemImage: "puzzlepiece.extension",
                         isSelected: selectedAddonID == repository.filterID
                     ) {
                         selectedAddonID = repository.filterID
                     }
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 6)
         }
+        .padding(.bottom, 6)
         .accessibilityLabel("Add-on source filters")
     }
 
-    private func sourceFilter(
-        title: String,
-        count: Int,
-        isSelected: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Text(title)
-                Text("\(count)")
-                    .foregroundStyle(.secondary)
-            }
-            .font(.subheadline.weight(isSelected ? .semibold : .regular))
-            .lineLimit(1)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
+    /// Asks every add-on and plugin again, without restarting automatic
+    /// selection or Reuse Last Link.
+    private func refreshAllSources() {
+        guard let resolution else { return }
+        for result in resolution.addonResults {
+            retryAddon(result.addonID)
         }
-        #if os(macOS)
-        .omniaRoundedGlassButton(cornerRadius: 14, role: .control)
-        #else
-        .buttonStyle(.plain)
-        #endif
-        .accessibilityLabel("\(title), \(count) sources")
+    }
+
+    private struct StreamSourceGroup: Identifiable {
+        let id: String
+        let title: String
+        let logoURL: URL?
+        let isPinned: Bool
+        var candidates: [AddonStreamCandidate]
+    }
+
+    private enum StreamRowKind {
+        case direct, resolverRequired, unavailable
+    }
+
+    private var sourceList: some View {
+        let sections = sourceSections
+        let groups = sourceGroups(from: sections)
+        let directIDs = Set(sections.direct.map(\.id))
+        let resolverIDs = Set(sections.resolverRequired.map(\.id))
+        // A single add-on needs no headings; All and plugin repositories,
+        // which hold several sources, are grouped like Nuvio.
+        let showsHeaders = selectedAddonID == nil || pluginRepositories.contains { $0.filterID == selectedAddonID }
+
+        return ScrollView {
+            LazyVStack(alignment: .leading, spacing: 8) {
+                if groups.isEmpty, !searchTerms.isEmpty {
+                    Text("No streams match \u{201C}\(searchText)\u{201D}.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 24)
+                }
+
+                ForEach(groups) { group in
+                    if showsHeaders {
+                        StreamSectionHeader(
+                            title: group.title,
+                            count: group.candidates.count,
+                            logoURL: group.logoURL,
+                            isPinned: group.isPinned,
+                            isLoading: retryingAddonIDs.contains(group.id)
+                        )
+                        .contentShape(.rect)
+                        .contextMenu { pinButton(sourceID: group.id, name: group.title) }
+                    }
+                    ForEach(group.candidates) { candidate in
+                        let kind: StreamRowKind = directIDs.contains(candidate.id)
+                            ? .direct
+                            : resolverIDs.contains(candidate.id) ? .resolverRequired : .unavailable
+                        streamRow(candidate, kind: kind)
+                            .contextMenu { pinButton(sourceID: candidate.addonID, name: group.title) }
+                    }
+                }
+
+                if !sections.resolverRequired.isEmpty {
+                    Text("Peer-to-peer sources are resolved locally into Omnia's bounded cache, then the completed file or a validated single BDMV tree opens with libmpv. Peer activity never starts through autoplay.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 8)
+                }
+
+                if hidesIncompatibleSources, hiddenIncompatibleCount > 0 {
+                    Text(hiddenIncompatibleCount == 1
+                         ? "1 source that can't play in Omnia is hidden. Turn off Show Only Compatible Formats in Settings to see it."
+                         : "\(hiddenIncompatibleCount) sources that can't play in Omnia are hidden. Turn off Show Only Compatible Formats in Settings to see them.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 8)
+                }
+
+                // Sources come first; add-ons and plugins that found
+                // nothing are listed after them.
+                if !addonStatusResults.isEmpty {
+                    addonStatusList
+                }
+            }
+            .padding(.horizontal, 18)
+            .padding(.bottom, 18)
+        }
+    }
+
+    @ViewBuilder
+    private func streamRow(_ candidate: AddonStreamCandidate, kind: StreamRowKind) -> some View {
+        switch kind {
+        case .direct: playbackButton(candidate)
+        case .resolverRequired: resolverRequiredRow(candidate)
+        case .unavailable: unavailableRow(candidate)
+        }
+    }
+
+    /// The visible streams grouped by add-on in result order, with pinned
+    /// add-ons first in the order they were pinned (Nuvio Enhanced).
+    private func sourceGroups(from sections: PlaybackSourceSections) -> [StreamSourceGroup] {
+        var ordered = sections.direct + sections.resolverRequired
+        if !hidesIncompatibleSources {
+            ordered += sections.external + sections.unavailable
+        }
+        let terms = searchTerms
+        if !terms.isEmpty {
+            ordered = ordered.filter { candidate in
+                let text = [
+                    candidate.displayName,
+                    candidate.displayDescription ?? "",
+                    candidate.filename ?? "",
+                    candidate.addonName
+                ].joined(separator: " ")
+                return terms.allSatisfy { text.localizedCaseInsensitiveContains($0) }
+            }
+        }
+
+        let preferences = streamPreferences
+        var groups: [StreamSourceGroup] = []
+        var indexByID: [String: Int] = [:]
+        for candidate in ordered {
+            if let index = indexByID[candidate.addonID] {
+                groups[index].candidates.append(candidate)
+            } else {
+                indexByID[candidate.addonID] = groups.count
+                let addon = enabledStreamAddons.first { $0.id == candidate.addonID }
+                groups.append(StreamSourceGroup(
+                    id: candidate.addonID,
+                    title: addon?.displayName ?? candidate.addonName,
+                    logoURL: addon?.manifest.presentationLogoURL,
+                    isPinned: preferences.isPinned(candidate.addonID),
+                    candidates: [candidate]
+                ))
+            }
+        }
+        let pinOrder = Dictionary(
+            preferences.pinnedSourceIDs.enumerated().map { ($1, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let pinned = groups.filter(\.isPinned).sorted { (pinOrder[$0.id] ?? 0) < (pinOrder[$1.id] ?? 0) }
+        return pinned + groups.filter { !$0.isPinned }
+    }
+
+    private func pinButton(sourceID: String, name: String) -> some View {
+        let isPinned = streamPreferences.isPinned(sourceID)
+        return Button(
+            isPinned ? "Unpin \(name)" : "Pin \(name) to Top",
+            systemImage: isPinned ? "pin.slash" : "pin"
+        ) {
+            settings.update { $0.streams.togglePin(sourceID) }
+        }
+    }
+
+    private func addonLogoURL(for addonID: String) -> URL? {
+        enabledStreamAddons.first { $0.id == addonID }?.manifest.presentationLogoURL
     }
 
     @ViewBuilder
@@ -503,13 +689,11 @@ struct PlaybackSourceSheet: View {
                         candidate,
                         symbol: rowState.action == .prepareDisc
                             ? "opticaldisc.fill"
-                            : "play.circle.fill",
-                        tint: .accentColor,
-                        status: preparationStatus,
-                        showsDisclosure: false
+                            : "play.fill",
+                        status: preparationStatus
                     )
                 }
-                .omniaMenuRowButton()
+                .buttonStyle(.plain)
                 .disabled(
                     rowState.isPrimaryActionDisabled(
                         isLocalPreparationActive: isLocalPreparationActive
@@ -542,7 +726,7 @@ struct PlaybackSourceSheet: View {
             Button {
                 beginPlayback(source, candidate: candidate)
             } label: {
-                candidateRow(candidate, symbol: "play.circle.fill", tint: .accentColor)
+                candidateRow(candidate, symbol: "play.fill")
             }
             .buttonStyle(.plain)
             .accessibilityHint("Starts native playback")
@@ -557,15 +741,11 @@ struct PlaybackSourceSheet: View {
         } label: {
             candidateRow(
                 candidate,
-                symbol: resolvingCandidateID == candidate.id ? "arrow.down.circle" : "play.circle.fill",
-                tint: .accentColor,
+                symbol: resolvingCandidateID == candidate.id ? "arrow.down" : "play.fill",
                 status: status
             )
         }
         .buttonStyle(.plain)
-        #if os(macOS)
-        .omniaMenuRowButton()
-        #endif
         .disabled(isLocalPreparationActive || !localTorrentIsAvailable)
         .accessibilityHint("Downloads the selected torrent file locally, then starts native playback")
     }
@@ -582,8 +762,8 @@ struct PlaybackSourceSheet: View {
         return candidateRow(
             candidate,
             symbol: "exclamationmark.triangle",
-            tint: .secondary,
-            status: reason
+            status: reason,
+            isEnabled: false
         )
             .accessibilityElement(children: .combine)
     }
@@ -591,59 +771,22 @@ struct PlaybackSourceSheet: View {
     private func candidateRow(
         _ candidate: AddonStreamCandidate,
         symbol: String,
-        tint: Color,
         status: String? = nil,
-        showsDisclosure: Bool = true
+        isEnabled: Bool = true
     ) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: symbol)
-                .font(.title3)
-                .foregroundStyle(tint)
-                .frame(width: 26)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(candidate.displayName)
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(nil)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(candidate.displayDescription ?? candidate.addonName)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                HStack(spacing: 6) {
-                    Text(candidate.sourceTypeLabel)
-                    if let technicalSummary = candidate.technicalSummary {
-                        Text("·")
-                        Text(technicalSummary)
-                    }
-                }
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .fixedSize(horizontal: false, vertical: true)
-                if let sourceIndexDetail = candidate.sourceIndexDetail {
-                    Text(sourceIndexDetail)
-                        .font(.caption2.monospaced())
-                        .foregroundStyle(.tertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .textSelection(.enabled)
-                }
-                if let status {
-                    Text(status)
-                        .font(.caption2)
-                        .foregroundStyle(status.localizedCaseInsensitiveContains("ready") ? .green : .orange)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            Spacer(minLength: 0)
-            if showsDisclosure, case .nativeHTTPS = candidate.delivery {
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-                    .padding(.top, 4)
-            }
-        }
-        .contentShape(.rect)
+        StreamCardView(
+            candidate: candidate,
+            badges: StreamBadgeStore.shared.badges(for: candidate),
+            preferences: streamPreferences,
+            addonLogoURL: addonLogoURL(for: candidate.addonID),
+            symbol: symbol,
+            detail: [candidate.sourceTypeLabel, candidate.technicalSummary]
+                .compactMap { $0 }
+                .joined(separator: " · "),
+            status: status,
+            isPinned: streamPreferences.isPinned(candidate.addonID),
+            isEnabled: isEnabled
+        )
     }
 
     private var localTorrentConsentPresentation: Binding<Bool> {
@@ -1487,7 +1630,7 @@ struct PlaybackExperienceView: View {
                 restartSkipPromptTimer()
             }
         }
-        .omniaGlassModal(isPresented: showsNextSourceSheet) {
+        .omniaStreamsPage(isPresented: showsNextSourceSheet) {
             if let request = nextSourceRequest {
                 PlaybackSourceSheet(
                     item: request.item,
@@ -1977,6 +2120,7 @@ private struct PlaybackChrome: View {
 /// low-profile player layout in the supplied reference.
 private struct PlaybackControlSurface: View {
     @Environment(PlaybackSession.self) private var playback
+    @Environment(\.displayPreferences) private var display
     @Binding var isScrubbing: Bool
 
     private var duration: Double { playback.durationSeconds ?? 0 }
@@ -2101,7 +2245,7 @@ private struct PlaybackControlSurface: View {
                 in: 0...max(duration, 0.001),
                 onEditingChanged: { isScrubbing = $0 }
             )
-            .tint(.white)
+            .tint(display.accentColor)
             .accessibilityLabel("Playback position")
             .disabled(duration <= 0)
 

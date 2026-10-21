@@ -89,10 +89,11 @@ extension SettingsPreferencesStore {
     }
 }
 
-/// The Settings root keeps Omnia's own grouped cards on macOS. Every
-/// sub-page is a native grouped `Form`, as Apple's macOS 26 guidance asks:
-/// leading labels, trailing controls, system section headers and footers,
-/// and a readable, centered column. Mobile platforms use Form throughout.
+/// On macOS every Settings page, the root and its sub-pages, draws Omnia's
+/// own grouped cards across the full width of the window, because a grouped
+/// `Form` keeps a narrow centered column. Rows keep the Form layout: label
+/// leading, control trailing, details under the label. Mobile platforms use
+/// Form throughout.
 struct OmniaSettingsForm<Content: View>: View {
     private let content: Content
     private let tint: Color?
@@ -113,13 +114,7 @@ struct OmniaSettingsForm<Content: View>: View {
         if isRoot {
             rootCards
         } else {
-            Form {
-                content
-            }
-            .formStyle(.grouped)
-            .modifier(AmoledFormBackground(isActive: usesAmoledBackground))
-            .environment(\.settingsUsesNativeForm, true)
-            .tint(resolvedTint)
+            pageCards
         }
         #else
         Form {
@@ -187,6 +182,65 @@ struct OmniaSettingsForm<Content: View>: View {
         .tint(resolvedTint)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
+
+    /// Sub-pages: the root's cards, with Form-style rows for switches,
+    /// values and pickers, at the root's width and margins.
+    private var pageCards: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 20) {
+                Group(sections: content) { sections in
+                    ForEach(sections) { section in
+                        VStack(alignment: .leading, spacing: 8) {
+                            section.header
+                                .font(.caption.weight(.semibold))
+                                .textCase(.uppercase)
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 12)
+
+                            Group(subviews: section.content) { rows in
+                                if !rows.isEmpty {
+                                    VStack(spacing: 0) {
+                                        ForEach(rows) { row in
+                                            MacSettingsInteractiveRow {
+                                                row
+                                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                                    .padding(.horizontal, 12)
+                                                    .padding(.vertical, 9)
+                                                    .focusEffectDisabled()
+                                            }
+
+                                            if row.id != rows.last?.id {
+                                                Divider()
+                                                    .padding(.leading, 12)
+                                            }
+                                        }
+                                    }
+                                    .background {
+                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                            .fill(Color.primary.opacity(0.065))
+                                    }
+                                    .clipShape(.rect(cornerRadius: 12, style: .continuous))
+                                }
+                            }
+
+                            section.footer
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 12)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(MacSettingsLayout.minimumOuterMargin)
+        }
+        .scrollIndicators(.automatic)
+        .toggleStyle(MacSettingsRowToggleStyle())
+        .labeledContentStyle(MacSettingsRowLabeledContentStyle())
+        .background(usesAmoledBackground ? Color.black : Color.clear)
+        .tint(resolvedTint)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
     #endif
 }
 
@@ -232,6 +286,19 @@ extension EnvironmentValues {
     var settingsUsesNativeForm: Bool {
         get { self[SettingsUsesNativeFormKey.self] }
         set { self[SettingsUsesNativeFormKey.self] = newValue }
+    }
+}
+
+extension View {
+    /// A NavigationLink drawn as a full Settings row with a trailing
+    /// chevron, as Form draws it. Only macOS needs it; elsewhere the Form
+    /// draws the row.
+    func settingsLinkRow() -> some View {
+        #if os(macOS)
+        buttonStyle(MacSettingsLinkRowStyle())
+        #else
+        self
+        #endif
     }
 }
 
@@ -282,6 +349,62 @@ struct MacSettingsSymbolImage: View {
         Image(systemName: systemName)
             .symbolRenderingMode(.monochrome)
             .foregroundStyle(treatment.color)
+    }
+}
+
+private struct MacSettingsLinkRowStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 12) {
+            configuration.label
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Image(systemName: "chevron.forward")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
+        }
+        .contentShape(Rectangle())
+        .opacity(configuration.isPressed ? 0.6 : 1)
+    }
+}
+/// A Form-style switch row outside a Form: the first line of the label as
+/// the title, any further lines as caption details, the switch trailing.
+struct MacSettingsRowToggleStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Group(subviews: configuration.label) { lines in
+                    ForEach(Array(lines.enumerated()), id: \.element.id) { index, line in
+                        if index == 0 {
+                            line
+                        } else {
+                            line
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Toggle(isOn: configuration.$isOn) {
+                configuration.label
+            }
+            .toggleStyle(.switch)
+            .labelsHidden()
+        }
+    }
+}
+
+/// Label leading and value trailing, as a grouped Form draws it.
+struct MacSettingsRowLabeledContentStyle: LabeledContentStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 12) {
+            configuration.label
+            Spacer(minLength: 12)
+            configuration.content
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.trailing)
+        }
     }
 }
 

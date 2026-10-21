@@ -2,9 +2,7 @@ import Foundation
 
 enum SettingsSection: Int, CaseIterable, Identifiable, Sendable {
     case account
-    case media
-    case playback
-    case app
+    case general
     case about
 
     var id: Int { rawValue }
@@ -12,9 +10,7 @@ enum SettingsSection: Int, CaseIterable, Identifiable, Sendable {
     var title: String {
         switch self {
         case .account: "Account"
-        case .media: "Media"
-        case .playback: "Playback"
-        case .app: "App"
+        case .general: "General"
         case .about: "About"
         }
     }
@@ -71,12 +67,15 @@ struct SettingsRouteGroup: Identifiable, Equatable, Sendable {
 
 enum SettingsRoute: Hashable, Sendable {
     case account
+    case contentDiscovery
     case addons
     case plugins
     case home
     case catalogs
     case collections
     case metadata
+    case tmdbEnrichment
+    case metadataSources
     case progress
     case upcoming
     case videoPlayer
@@ -85,29 +84,45 @@ enum SettingsRoute: Hashable, Sendable {
     case playbackResolver
     case appearance
     case posterCards
+    case streams
     case continueWatching
     case detailPage
     case about
     case metadataProvider(String)
     case aboutSection(AboutSection)
 
+    /// Nuvio's Settings tree: Layout, Content & Discovery, Playback and
+    /// Integrations under General. Omnia's own Progress page opens from
+    /// Layout › Continue Watching.
     static let rootGroups: [SettingsRouteGroup] = [
         .init(section: .account, routes: [.account]),
-        .init(section: .media, routes: [.addons, .plugins, .home, .metadata, .progress]),
-        .init(section: .playback, routes: [.videoPlayer, .subtitle]),
-        .init(section: .app, routes: [.appearance]),
+        .init(section: .general, routes: [.appearance, .contentDiscovery, .videoPlayer, .metadata]),
         .init(section: .about, routes: [.about])
     ]
 
+    /// The pages each root page opens, so search finds them from the root.
+    var children: [SettingsRoute] {
+        switch self {
+        case .appearance: [.home, .catalogs, .collections, .continueWatching, .progress, .upcoming, .posterCards, .detailPage, .streams]
+        case .contentDiscovery: [.addons, .plugins]
+        case .videoPlayer: [.streamSelection, .subtitle, .playbackResolver]
+        case .metadata: [.tmdbEnrichment, .metadataProvider("mdblist"), .metadataSources]
+        default: []
+        }
+    }
+
     static let allVerificationRoutes: [SettingsRoute] =
         rootGroups.flatMap(\.routes)
-        + [.catalogs, .collections, .upcoming, .streamSelection, .playbackResolver, .posterCards, .continueWatching, .detailPage]
-        + MetadataProvider.supported.map { .metadataProvider($0.id) }
+        + rootGroups.flatMap(\.routes).flatMap(\.children)
+        + MetadataProvider.supported.filter { $0.id != "mdblist" }.map { .metadataProvider($0.id) }
         + AboutSection.allCases.map { .aboutSection($0) }
 
     static func filteredRootGroups(query: String) -> [SettingsRouteGroup] {
         rootGroups.compactMap { group in
-            let routes = group.routes.filter { $0.matches(query) }
+            let candidates = query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? group.routes
+                : group.routes.flatMap { [$0] + $0.children }
+            let routes = candidates.filter { $0.matches(query) }
             return routes.isEmpty ? nil : .init(section: group.section, routes: routes)
         }
     }
@@ -115,23 +130,28 @@ enum SettingsRoute: Hashable, Sendable {
     var title: String {
         switch self {
         case .account: "Account"
+        case .contentDiscovery: "Content & Discovery"
         case .addons: "Add-ons"
         case .plugins: "Plugins"
-        case .home: "Home"
+        case .home: "Home Layout"
         case .catalogs: "Catalogs"
         case .collections: "Collections"
-        case .metadata: "Metadata"
+        case .metadata: "Integrations"
+        case .tmdbEnrichment: "TMDB Enrichment"
+        case .metadataSources: "Metadata Sources"
         case .progress: "Progress"
         case .upcoming: "Upcoming"
-        case .videoPlayer: "Video Player"
+        case .videoPlayer: "Playback"
         case .streamSelection: "Stream Selection"
         case .subtitle: "Subtitle"
         case .playbackResolver: "Playback Resolver"
-        case .appearance: "Appearance"
-        case .posterCards: "Poster Cards"
+        case .appearance: "Layout"
+        case .posterCards: "Poster Card Style"
+        case .streams: "Streams"
         case .continueWatching: "Continue Watching"
         case .detailPage: "Detail Page"
         case .about: "About Omnia"
+        case .metadataProvider("mdblist"): "MDBList Ratings"
         case let .metadataProvider(id):
             MetadataProvider.supported.first { $0.id == id }?.name ?? "Metadata Provider"
         case let .aboutSection(section):
@@ -142,12 +162,14 @@ enum SettingsRoute: Hashable, Sendable {
     var systemImage: String {
         switch self {
         case .account: "person.crop.circle"
+        case .contentDiscovery: "magnifyingglass"
         case .addons: "puzzlepiece.extension"
         case .plugins: "shippingbox"
         case .home: "house"
         case .catalogs: "rectangle.stack"
         case .collections: "square.stack.3d.up"
-        case .metadata, .metadataProvider: "rectangle.3.group"
+        case .metadata, .metadataProvider, .metadataSources: "rectangle.3.group"
+        case .tmdbEnrichment: "sparkles.rectangle.stack"
         case .progress: "clock.arrow.circlepath"
         case .upcoming: "calendar"
         case .videoPlayer: "play.rectangle"
@@ -156,6 +178,7 @@ enum SettingsRoute: Hashable, Sendable {
         case .playbackResolver: "lock.shield"
         case .appearance: "circle.lefthalf.filled"
         case .posterCards: "rectangle.portrait.on.rectangle.portrait"
+        case .streams: "play.square.stack"
         case .continueWatching: "play.circle"
         case .detailPage: "doc.richtext"
         case .about: "info.circle"
@@ -166,19 +189,23 @@ enum SettingsRoute: Hashable, Sendable {
     var searchTerms: [String] {
         switch self {
         case .account: ["Apple", "Google", "Facebook", "sign in", "sign out"]
+        case .contentDiscovery: ["add-ons", "addons", "plugins", "sources", "discovery"]
         case .addons: ["sources", "manifest", "timeout", "import", "export"]
         case .plugins: ["Nuvio", "scrapers", "providers", "repository", "JavaScript", "streams", "TMDB"]
-        case .home: ["layout", "hero", "rows", "catalogs", "collections", "order", "rename", "unreleased", "catalog type", "upcoming", "discover", "TMDB", "TVDB"]
+        case .home: ["layout", "hero", "hero style", "card", "full-bleed", "dynamic background", "hero trailer", "trailer", "autoplay", "sound", "delay", "rows", "catalogs", "collections", "order", "rename", "unreleased", "catalog type", "upcoming", "discover", "TMDB", "TVDB"]
         case .catalogs: ["catalog", "discover", "TMDB", "TVDB"]
         case .collections: ["collections", "folders", "Nuvio", "Xperience", "import", "export", "pin"]
-        case .metadata: ["TMDB", "TVDB", "MDBList", "AniList", "providers", "fallback"]
+        case .metadata: ["metadata", "TMDB", "TVDB", "MDBList", "AniList", "providers", "fallback", "ratings", "enrichment"]
+        case .tmdbEnrichment: ["TMDB", "enrichment", "trailers", "artwork", "logo", "backdrop", "cast", "credits", "episodes", "more like this", "collections", "productions"]
+        case .metadataSources: ["metadata", "TMDB", "TVDB", "AniList", "fallback", "anime", "primary source"]
         case .progress: ["local progress", "continue watching", "watchlist", "backup"]
         case .upcoming: ["episodes", "look ahead", "Home"]
-        case .videoPlayer: ["skip intro", "auto skip", "recap", "credits", "up next", "next episode", "threshold", "decoder", "hardware", "overlay", "audio", "subtitles", "SDH", "forced", "source selection", "auto play"]
+        case .videoPlayer: ["video player", "player", "skip intro", "auto skip", "recap", "credits", "up next", "next episode", "threshold", "decoder", "hardware", "overlay", "audio", "subtitles", "SDH", "forced", "source selection", "auto play"]
         case .streamSelection: ["auto play", "autoplay", "first source", "regex", "reuse last link", "binge group", "timeout", "allowed add-ons", "plugins"]
         case .subtitle: ["subtitles", "captions", "SDH", "appearance"]
         case .playbackResolver: ["endpoint", "bearer token", "approved add-ons", "approved HTTPS hosts"]
-        case .appearance: ["theme", "system", "light", "dark", "accent", "color", "AMOLED", "black", "hover preview", "poster", "glow", "gradient", "top bar style", "glass glow", "adaptive", "compact", "expanded", "iPadOS"]
+        case .appearance: ["appearance", "theme", "system", "light", "dark", "accent", "color", "AMOLED", "black", "hover preview", "poster", "glow", "gradient", "top bar style", "glass glow", "adaptive", "compact", "expanded", "iPadOS", "standard"]
+        case .streams: ["streams", "sources", "badges", "Fusion", "size", "add-on logo", "background", "cinematic", "search bar", "pin"]
         case .posterCards: ["poster", "card", "width", "size", "corner", "radius", "landscape", "depth", "glow", "sheen", "edge"]
         case .continueWatching: ["continue watching", "resume", "style", "sort", "thumbnails", "finished"]
         case .detailPage: ["detail", "title page", "background", "episodes", "blur", "spoiler", "sections", "cast", "trailers"]

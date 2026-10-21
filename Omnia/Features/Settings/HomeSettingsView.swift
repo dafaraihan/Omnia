@@ -5,17 +5,15 @@
 
 import SwiftUI
 
-/// Everything that shapes Home in one place: the hero, how rows are titled,
-/// and links to Catalogs, Collections and Upcoming. Continue Watching and the
-/// title page join this list as they arrive.
+/// Settings › Layout › Home Layout, as in Nuvio: the hero, how rows are
+/// titled, and the catalog order. Collections, Continue Watching and the
+/// Detail Page have their own rows on the Layout page.
 struct HomeSettingsView: View {
     @Environment(OmniaStore.self) private var store
     @Environment(HomeLayoutStore.self) private var homeLayout
     @Environment(SettingsPreferencesStore.self) private var settings
-    @Environment(CollectionsStore.self) private var collections
 
     @State private var showsHeroCatalogs = false
-    @AppStorage(HomeView.continueWatchingVisibilityKey) private var showsContinueWatching = true
 
     private var catalogs: [AddonHomeCatalog] {
         homeLayout.ordered(AddonCatalogStore.catalogs(in: store))
@@ -37,33 +35,34 @@ struct HomeSettingsView: View {
     }
 
     var body: some View {
+        // Nuvio's order: Hero Catalogs and Catalogs, both folded until
+        // opened, then the Layout switches.
         OmniaSettingsForm {
-            if catalogs.isEmpty {
-                Section {
-                    SettingsRouteLink(route: .catalogs, summary: "Built-in rows")
-                    SettingsRouteLink(route: .collections, summary: collectionsSummary)
-                    SettingsRouteLink(route: .continueWatching, summary: continueWatchingSummary)
-                    SettingsRouteLink(route: .upcoming, summary: upcomingSummary)
-                    SettingsRouteLink(route: .detailPage, summary: detailPageSummary)
-                } header: {
-                    Text("Home")
-                } footer: {
-                    Text("Home shows Omnia's built-in rows. Install an add-on that provides catalogs, such as Xperience or AIOMetadata, and its catalogs replace them.")
-                }
-            } else {
-                Section {
-                    SettingsRouteLink(route: .catalogs, summary: catalogsSummary)
-                    SettingsRouteLink(route: .collections, summary: collectionsSummary)
-                    SettingsRouteLink(route: .continueWatching, summary: continueWatchingSummary)
-                    SettingsRouteLink(route: .upcoming, summary: upcomingSummary)
-                    SettingsRouteLink(route: .detailPage, summary: detailPageSummary)
-                } header: {
-                    Text("Home")
-                }
+            if !catalogs.isEmpty && homeLayout.preferences.showsHero {
+                heroSection
+            }
 
+            CatalogsSettingsView(isEmbedded: true)
+
+            heroTrailerSection
+
+            if !catalogs.isEmpty {
                 Section {
                     Toggle(isOn: preferenceBinding(\.showsHero)) {
                         settingLabel("Show Hero", detail: "Display the featured carousel at the top of Home.")
+                    }
+                    SettingsDropdown(
+                        "Hero Style",
+                        subtitle: homeLayout.preferences.heroStyle.detail,
+                        selection: Binding(
+                            get: { homeLayout.preferences.heroStyle },
+                            set: { style in homeLayout.update { $0.heroStyle = style } }
+                        ),
+                        options: HomeLayoutPreferences.HeroStyle.allCases
+                    ) { $0.title }
+                    .disabled(!homeLayout.preferences.showsHero)
+                    Toggle(isOn: preferenceBinding(\.dynamicBackground)) {
+                        settingLabel("Dynamic Background Color", detail: "Tint Home below the hero with colours from the featured artwork.")
                     }
                     Toggle(isOn: preferenceBinding(\.showsCatalogType)) {
                         settingLabel("Show Catalog Type", detail: "Add the type after each catalog name, as in “Popular - Movies”.")
@@ -74,13 +73,9 @@ struct HomeSettingsView: View {
                 } header: {
                     Text("Layout")
                 }
-
-                if homeLayout.preferences.showsHero {
-                    heroSection
-                }
             }
         }
-        .omniaNavigationTitle("Home")
+        .omniaNavigationTitle("Home Layout")
     }
 
     private var heroSection: some View {
@@ -107,32 +102,40 @@ struct HomeSettingsView: View {
         }
     }
 
+    /// Nuvio Enhanced's hero trailer options.
+    private var heroTrailerSection: some View {
+        Section {
+            Toggle(isOn: settings.binding(\.heroTrailer.autoplay)) {
+                settingLabel(
+                    "Hero Trailer Playback",
+                    detail: "Autoplay trailers in the hero. While one plays, the hero only moves to the next title when you change it."
+                )
+            }
+            if settings.preferences.heroTrailer.autoplay {
+                Toggle(isOn: settings.binding(\.heroTrailer.startsWithSound)) {
+                    settingLabel(
+                        "Start with Sound",
+                        detail: "Play the trailer unmuted. You can still mute it with the speaker button."
+                    )
+                }
+                SettingsDropdown(
+                    "Trailer Start Delay",
+                    subtitle: "Wait this long after a title appears before its trailer starts.",
+                    selection: settings.binding(\.heroTrailer.startDelaySeconds),
+                    options: Array(HeroTrailerPreferences.delayRange)
+                ) { HeroTrailerPreferences.delayTitle($0) }
+            }
+        } header: {
+            Text("Hero Trailer")
+        } footer: {
+            Text(homeLayout.preferences.showsHero
+                 ? "Trailers play in YouTube's own player. Titles without a trailer keep their artwork."
+                 : "Turn on Show Hero below to use hero trailers.")
+        }
+        .disabled(!homeLayout.preferences.showsHero)
+    }
+
     // MARK: Helpers
-
-    private var catalogsSummary: String {
-        "\(visibleCatalogs.count) of \(catalogs.count) visible"
-    }
-
-    private var collectionsSummary: String {
-        let all = collections.collections
-        guard !all.isEmpty else { return "None" }
-        let visible = all.filter { collections.isVisible($0) }.count
-        return visible == all.count ? "\(all.count) on Home" : "\(visible) of \(all.count) on Home"
-    }
-
-    private var continueWatchingSummary: String {
-        guard showsContinueWatching else { return "Hidden from Home" }
-        return "\(settings.preferences.display.continueWatchingStyle.title) cards"
-    }
-
-    private var detailPageSummary: String {
-        let hidden = settings.preferences.display.hiddenDetailSections.count
-        return hidden == 0 ? "All sections shown" : "\(hidden) hidden"
-    }
-
-    private var upcomingSummary: String {
-        settings.preferences.showUpcoming ? "Shown on Home" : "Hidden from Home"
-    }
 
     private var heroSourceTitles: String {
         heroSourceKeys
@@ -174,7 +177,7 @@ struct HomeSettingsView: View {
     }
 }
 
-/// Settings › Home › Detail Page: how a title's page looks, and which of its
+/// Settings › Layout › Detail Page: how a title's page looks, and which of its
 /// sections appear.
 struct DetailPageSettingsView: View {
     @Environment(SettingsPreferencesStore.self) private var settings
@@ -182,11 +185,11 @@ struct DetailPageSettingsView: View {
     var body: some View {
         OmniaSettingsForm {
             Section {
-                Picker("Background", selection: settings.binding(\.display.detailBackground)) {
-                    ForEach(DetailBackgroundMode.allCases) { mode in
-                        Text(mode.title).tag(mode)
-                    }
-                }
+                SettingsDropdown(
+                    "Background",
+                    selection: settings.binding(\.display.detailBackground),
+                    options: Array(DetailBackgroundMode.allCases)
+                ) { mode in mode.title }
             } header: {
                 Text("Page")
             } footer: {
@@ -194,17 +197,22 @@ struct DetailPageSettingsView: View {
             }
 
             Section {
-                Picker("Layout", selection: settings.binding(\.display.episodeLayout)) {
-                    ForEach(EpisodeCardLayout.allCases) { layout in
-                        Text(layout.title).tag(layout)
-                    }
+                SettingsStyleTilePicker(
+                    options: EpisodeCardLayout.allCases,
+                    selection: settings.binding(\.display.episodeLayout),
+                    title: \.title,
+                    detail: \.detail
+                ) { layout in
+                    EpisodeCardLayoutPreview(layout: layout)
                 }
                 Toggle(isOn: settings.binding(\.display.blurUnwatchedEpisodes)) {
                     Text("Blur Unwatched Episodes")
                     Text("Hide the stills of episodes you haven't watched or started, to avoid spoilers.")
                 }
             } header: {
-                Text("Episodes")
+                Text("Episode Cards")
+            } footer: {
+                Text("Choose how episodes are drawn on a show's page.")
             }
 
             Section {

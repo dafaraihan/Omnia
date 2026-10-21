@@ -32,11 +32,11 @@ struct SubtitleAppearanceSettingsView: View {
             }
 
             Section {
-                Picker("Appearance", selection: settings.binding(\.subtitleAppearance)) {
-                    ForEach(SubtitleAppearanceMode.allCases, id: \.self) { mode in
-                        Text(mode.title).tag(mode)
-                    }
-                }
+                SettingsDropdown(
+                    "Appearance",
+                    selection: settings.binding(\.subtitleAppearance),
+                    options: Array(SubtitleAppearanceMode.allCases)
+                ) { mode in mode.title }
             } header: {
                 Text("Style")
             } footer: {
@@ -127,11 +127,11 @@ struct SubtitleAppearanceSettingsView: View {
             }
 
             Section("Style") {
-                Picker("Background", selection: styleBinding(\.background)) {
-                    ForEach(PlaybackSubtitleBackground.allCases) { background in
-                        Text(background.settingsTitle).tag(background)
-                    }
-                }
+                SettingsDropdown(
+                    "Background",
+                    selection: styleBinding(\.background),
+                    options: Array(PlaybackSubtitleBackground.allCases)
+                ) { background in background.settingsTitle }
                 SubtitleDoubleSlider(
                     title: "Size",
                     value: styleBinding(\.fontSize),
@@ -268,11 +268,11 @@ struct SubtitleAppearanceSettingsView: View {
             )
             Toggle("Bold", isOn: customBinding(\.isBold))
             Toggle("Italic", isOn: customBinding(\.isItalic))
-            Picker("Text color", selection: customBinding(\.textColor)) {
-                ForEach(SubtitleAppearance.SemanticColor.allCases, id: \.self) { color in
-                    Text(color.title).tag(color)
-                }
-            }
+            SettingsDropdown(
+                "Text color",
+                selection: customBinding(\.textColor),
+                options: Array(SubtitleAppearance.SemanticColor.allCases)
+            ) { color in color.title }
         }
 
         Section("Background & Edge") {
@@ -283,24 +283,24 @@ struct SubtitleAppearanceSettingsView: View {
                 step: 5,
                 valueLabel: { "\($0)%" }
             )
-            Picker("Edge style", selection: customBinding(\.edgeStyle)) {
-                ForEach(SubtitleAppearance.EdgeStyle.allCases, id: \.self) { style in
-                    Text(style.title).tag(style)
-                }
-            }
+            SettingsDropdown(
+                "Edge style",
+                selection: customBinding(\.edgeStyle),
+                options: Array(SubtitleAppearance.EdgeStyle.allCases)
+            ) { style in style.title }
         }
 
         Section("Position") {
-            Picker("Vertical position", selection: customBinding(\.position)) {
-                ForEach(SubtitleAppearance.Position.allCases, id: \.self) { position in
-                    Text(position.title).tag(position)
-                }
-            }
-            Picker("Alignment", selection: customBinding(\.alignment)) {
-                ForEach(SubtitleAppearance.Alignment.allCases, id: \.self) { alignment in
-                    Text(alignment.title).tag(alignment)
-                }
-            }
+            SettingsDropdown(
+                "Vertical position",
+                selection: customBinding(\.position),
+                options: Array(SubtitleAppearance.Position.allCases)
+            ) { position in position.title }
+            SettingsDropdown(
+                "Alignment",
+                selection: customBinding(\.alignment),
+                options: Array(SubtitleAppearance.Alignment.allCases)
+            ) { alignment in alignment.title }
             SettingsIntSlider(
                 title: "Horizontal margin",
                 value: customBinding(\.horizontalMarginPercent),
@@ -372,14 +372,18 @@ private struct SubtitleSettingsLanguagePicker: View {
     }
 
     var body: some View {
-        Picker(title, selection: $selection) {
-            Text("Follow System").tag(PreferredLanguage.followSystem)
-            if includesNone {
-                Text("Off / No preference").tag(PreferredLanguage.none)
-            }
-            Divider()
-            ForEach(PlaybackLanguageCatalog.codes, id: \.self) { code in
-                Text(PlaybackLanguageCatalog.name(for: code)).tag(PreferredLanguage.language(code))
+        SettingsDropdown(
+            title,
+            selection: $selection,
+            sections: [
+                includesNone ? [.followSystem, PreferredLanguage.none] : [.followSystem],
+                PlaybackLanguageCatalog.codes.map { PreferredLanguage.language($0) }
+            ]
+        ) { language in
+            switch language {
+            case .followSystem: "Follow System"
+            case .none: "Off / No preference"
+            case let .language(code): PlaybackLanguageCatalog.name(for: code)
             }
         }
     }

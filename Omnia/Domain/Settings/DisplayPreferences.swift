@@ -88,7 +88,7 @@ nonisolated enum CustomAccentMode: String, Codable, CaseIterable, Identifiable, 
     }
 }
 
-/// The top bar used when Navigation Style is Top Bar. iPadOS Native is
+/// The top bar used when Navigation Style is Top Bar. Standard is
 /// Omnia's system tab bar; the others are Nuvio's floating bar.
 nonisolated enum TopBarStyle: String, Codable, CaseIterable, Identifiable, Sendable {
     case native
@@ -100,7 +100,7 @@ nonisolated enum TopBarStyle: String, Codable, CaseIterable, Identifiable, Senda
 
     var title: String {
         switch self {
-        case .native: "iPadOS Native"
+        case .native: "Standard"
         case .adaptive: "Adaptive"
         case .expanded: "Always Expanded"
         case .compact: "Always Compact"

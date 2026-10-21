@@ -1,6 +1,85 @@
 import SwiftUI
 
+/// Settings › Integrations, laid out like Nuvio's: TMDB Enrichment and
+/// MDBList Ratings. Omnia's own metadata routing, which Nuvio doesn't have,
+/// sits below them under Metadata Sources.
 struct MetadataSettingsView: View {
+    @Environment(SettingsPreferencesStore.self) private var settings
+
+    var body: some View {
+        OmniaSettingsForm {
+            Section {
+                IntegrationLinkRow(
+                    route: .tmdbEnrichment,
+                    providerID: "tmdb",
+                    title: "TMDB Enrichment",
+                    detail: tmdbSummary
+                )
+                IntegrationLinkRow(
+                    route: .metadataProvider("mdblist"),
+                    providerID: "mdblist",
+                    title: "MDBList Ratings",
+                    detail: mdblistSummary
+                )
+            } header: {
+                Text("Integrations")
+            }
+
+            Section {
+                IntegrationLinkRow(
+                    route: .metadataSources,
+                    providerID: nil,
+                    title: "Metadata Sources",
+                    detail: "Where built-in catalogs, search and anime come from"
+                )
+            } header: {
+                Text("Omnia")
+            } footer: {
+                Text("Add-ons describe the titles they list. Metadata Sources choose TMDB, TVDB or AniList for Omnia's built-in rows and fill in titles no add-on describes.")
+            }
+        }
+        .omniaNavigationTitle("Integrations")
+    }
+
+    private var tmdbSummary: String {
+        let tmdb = settings.preferences.integrations.tmdb
+        guard tmdb.enabled else { return "Off: add-on data only" }
+        return "\(tmdb.enabledModuleCount) of \(TMDBEnrichmentPreferences.moduleCount) modules on"
+    }
+
+    private var mdblistSummary: String {
+        guard settings.preferences.integrations.mdblistEnabled else { return "Off" }
+        return ProviderCredentialStore.isConfigured(.mdblist) ? "On" : "Needs an API key"
+    }
+}
+
+private struct IntegrationLinkRow: View {
+    let route: SettingsRoute
+    let providerID: String?
+    let title: String
+    let detail: String
+
+    var body: some View {
+        NavigationLink {
+            SettingsDestinationView(route: route)
+        } label: {
+            HStack(spacing: 12) {
+                MetadataProviderMark(providerID: providerID ?? "")
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .settingsLinkRow()
+    }
+}
+
+/// Omnia's per-type metadata routing and its providers. Nuvio has no
+/// equivalent: it reads metadata from add-ons and fills gaps from TMDB.
+struct MetadataSourcesSettingsView: View {
     var body: some View {
         OmniaSettingsForm {
             ForEach(MetadataContentClass.allCases) { contentClass in
@@ -8,7 +87,7 @@ struct MetadataSettingsView: View {
             }
 
             Section("Providers") {
-                ForEach(MetadataProvider.supported) { provider in
+                ForEach(MetadataProvider.supported.filter { $0.id != "mdblist" }) { provider in
                     NavigationLink {
                         SettingsDestinationView(route: .metadataProvider(provider.id))
                     } label: {
@@ -22,10 +101,63 @@ struct MetadataSettingsView: View {
                             }
                         }
                     }
+                    .settingsLinkRow()
                 }
             }
         }
-        .omniaNavigationTitle("Metadata")
+        .omniaNavigationTitle("Metadata Sources")
+    }
+}
+
+/// Nuvio's TMDB Enrichment page. With an add-on's title open, TMDB fills only
+/// the parts the add-on left empty, and only for the modules turned on here.
+struct TMDBEnrichmentSettingsView: View {
+    @Environment(SettingsPreferencesStore.self) private var settings
+
+    private var enabled: Bool { settings.preferences.integrations.tmdb.enabled }
+
+    var body: some View {
+        OmniaSettingsForm {
+            Section {
+                Toggle(isOn: settings.binding(\.integrations.tmdb.enabled)) {
+                    Text("Enable TMDB Enrichment")
+                    Text("Use TMDB to fill in what your add-ons leave out.")
+                }
+            } header: {
+                Text("TMDB Enrichment")
+            } footer: {
+                Text("When no add-on describes a title, Omnia still shows TMDB's page for it.")
+            }
+
+            Section {
+                module("Trailers", "Trailers and extras for the detail page.", \.useTrailers)
+                module("Artwork", "Logo and backdrop images.", \.useArtwork)
+                module("Basic Info", "Description and genres.", \.useBasicInfo)
+                module("Details", "Runtime, status, age rating, budget and revenue.", \.useDetails)
+                module("Credits", "Cast with photos, directors and writers.", \.useCredits)
+                module("Productions", "Studios and networks, and more titles from them.", \.useProductions)
+                module("Episodes", "Seasons with episode titles, overviews, stills and runtimes.", \.useEpisodes)
+                module("More Like This", "Recommendations on the detail page.", \.useMoreLikeThis)
+                module("Collections", "Movie collections in release order.", \.useCollections)
+            } header: {
+                Text("Modules")
+            } footer: {
+                Text("A turned-off module leaves that part to your add-on. Language and a personal API key aren't offered because Omnia's TMDB data comes through its own server.")
+            }
+            .disabled(!enabled)
+        }
+        .omniaNavigationTitle("TMDB Enrichment")
+    }
+
+    private func module(
+        _ title: String,
+        _ detail: String,
+        _ keyPath: WritableKeyPath<TMDBEnrichmentPreferences, Bool>
+    ) -> some View {
+        Toggle(isOn: settings.binding((\SettingsPreferences.integrations.tmdb).appending(path: keyPath))) {
+            Text(title)
+            Text(detail)
+        }
     }
 }
 
@@ -42,11 +174,11 @@ private struct MetadataRouteSection: View {
 
     var body: some View {
         Section {
-            Picker("Primary Source", selection: primaryBinding) {
-                ForEach(allowedSources) { provider in
-                    Text(provider.title).tag(provider)
-                }
-            }
+            SettingsDropdown(
+                "Primary Source",
+                selection: primaryBinding,
+                options: Array(allowedSources)
+            ) { provider in provider.title }
 
             Toggle("Enable Fallback", isOn: fallbackEnabledBinding)
 
@@ -204,8 +336,25 @@ struct MetadataProviderDetailView: View {
 
     var body: some View {
         OmniaSettingsForm {
-            Section("About") {
-                Text(provider.summary)
+            if isMDBList {
+                // Nuvio's MDBList Ratings page: switch, API key, providers.
+                Section {
+                    Toggle(isOn: settings.binding(\.integrations.mdblistEnabled)) {
+                        Text("Enable MDBList Ratings")
+                        Text("Show ratings from external providers on title pages.")
+                    }
+                    if !hasStoredCredential {
+                        Text("Add your MDBList API key below to see ratings.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } header: {
+                    Text("MDBList Ratings")
+                }
+            } else {
+                Section("About") {
+                    Text(provider.summary)
+                }
             }
 
             Section {
@@ -264,7 +413,7 @@ struct MetadataProviderDetailView: View {
                     LabeledContent("Credential source", value: "Not configured")
                 }
             } header: {
-                Text("Connection")
+                Text(isMDBList ? "API Key" : "Connection")
             } footer: {
                 if provider.credentialStrategy == .userManaged {
                     Text("Credentials stay in the local Keychain and are never displayed after saving.")
@@ -288,13 +437,14 @@ struct MetadataProviderDetailView: View {
                         }
                     }
                 } header: {
-                    Text("Ratings on Title Details")
+                    Text("External Ratings Providers")
                 } footer: {
                     Text("New rating sources discovered from MDBList are enabled by default. The MDBList score is always shown when available.")
                 }
+                .disabled(!settings.preferences.integrations.mdblistEnabled)
             }
         }
-        .omniaNavigationTitle(provider.name)
+        .omniaNavigationTitle(isMDBList ? "MDBList Ratings" : provider.name)
         .onAppear { loadStoredCredentialState() }
         .confirmationDialog(
             "Remove \(provider.name) Credential?",
@@ -308,6 +458,8 @@ struct MetadataProviderDetailView: View {
             Button("Cancel", role: .cancel) { confirmation.cancel() }
         }
     }
+
+    private var isMDBList: Bool { provider.id == "mdblist" }
 
     private var confirmationPresentation: Binding<Bool> {
         Binding(

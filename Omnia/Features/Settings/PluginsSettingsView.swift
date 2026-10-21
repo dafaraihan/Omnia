@@ -348,10 +348,12 @@ private struct PluginSettingsSheet: View {
                 }
             }
         case let .select(options):
-            Picker(field.label, selection: textBinding(field)) {
-                ForEach(options, id: \.value) { option in
-                    Text(option.label).tag(option.value)
-                }
+            SettingsDropdown(
+                field.label,
+                selection: textBinding(field),
+                options: options.map(\.value)
+            ) { value in
+                options.first { $0.value == value }?.label ?? value
             }
         case .toggle:
             Toggle(isOn: Binding(get: { toggles[field.key] ?? false }, set: { toggles[field.key] = $0 })) {

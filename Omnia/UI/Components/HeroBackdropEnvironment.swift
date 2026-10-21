@@ -18,6 +18,7 @@ enum HeroBackdropSource: Equatable {
 struct WindowHeroPresentation {
     let item: MediaItem
     let frame: CGRect
+    let source: HeroBackdropSource
 }
 
 @Observable
@@ -47,7 +48,7 @@ final class HeroBackdropState {
             if let owner {
                 guard owner == homeOwner else { return }
             }
-            homePresentation = updatedPresentation(homePresentation, item: item, frame: frame)
+            homePresentation = updatedPresentation(homePresentation, item: item, frame: frame, source: .home)
         case .detail:
             if let owner {
                 guard owner == detailOwner else { return }
@@ -57,19 +58,19 @@ final class HeroBackdropState {
             // first artwork resource for that title so the full-window image
             // does not visibly recrop during the async handoff; only its
             // scrolling frame is allowed to change.
-            detailPresentation = updatedPresentation(detailPresentation, item: item, frame: frame)
+            detailPresentation = updatedPresentation(detailPresentation, item: item, frame: frame, source: .detail)
         }
     }
 
     private func updatedPresentation(
-        _ current: WindowHeroPresentation?, item: MediaItem, frame: CGRect
+        _ current: WindowHeroPresentation?, item: MediaItem, frame: CGRect, source: HeroBackdropSource
     ) -> WindowHeroPresentation {
         // Metadata enrichment must not discard or replace artwork that is
         // already visible. A missing initial backdrop can still be filled in.
         if let current, current.item.backdropURL != nil, representsSameDetail(current.item, item) {
-            return WindowHeroPresentation(item: current.item, frame: frame)
+            return WindowHeroPresentation(item: current.item, frame: frame, source: source)
         }
-        return WindowHeroPresentation(item: item, frame: frame)
+        return WindowHeroPresentation(item: item, frame: frame, source: source)
     }
 
     private func representsSameDetail(_ current: MediaItem, _ incoming: MediaItem) -> Bool {
@@ -232,6 +233,9 @@ struct HeroArtworkCanvas: View {
     let item: MediaItem
     var source: HeroBackdropSource?
     var artworkAlignment: Alignment = .topTrailing
+    /// Draws the artwork in place even on macOS, for Home's Card hero. The
+    /// window then draws only the accent behind it.
+    var drawsArtworkLocally = false
     @Environment(\.activateWindowHeroBackdrop) private var activateWindowHeroBackdrop
     @Environment(\.reportWindowHeroBackdrop) private var reportWindowHeroBackdrop
     @Environment(\.isActiveDestination) private var isActiveDestination
@@ -240,7 +244,7 @@ struct HeroArtworkCanvas: View {
 
     var body: some View {
         Group {
-            if HeroBackdropPresentation.drawsLocalHeroArtwork {
+            if HeroBackdropPresentation.drawsLocalHeroArtwork || drawsArtworkLocally {
                 FeaturedBackdrop(item: item, artworkAlignment: artworkAlignment)
             } else {
                 Color.clear
@@ -311,6 +315,7 @@ enum WindowHeroBackdropLayout {
 
 struct WindowHeroBackdrop: View {
     let state: HeroBackdropState
+    @Environment(HomeLayoutStore.self) private var homeLayout
 
     var body: some View {
         GeometryReader { proxy in
@@ -328,31 +333,37 @@ struct WindowHeroBackdrop: View {
                     // The accent covers the whole window and depends only on
                     // the item, so scrolling, which moves the hero frame, never
                     // re-renders the blur. The artwork below draws over it.
-                    HeroAccentBackground(item: presentation.item)
-                        .equatable()
-                        .frame(width: proxy.size.width, height: proxy.size.height)
-
-                    ZStack {
-                        LinearGradient(
-                            colors: presentation.item.artworkColors,
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-
-                        FeaturedBackdrop(
-                            item: presentation.item,
-                            artworkAlignment: .topTrailing
-                        )
-
-                        LinearGradient(
-                            colors: [.clear, .black.opacity(0.22), .black.opacity(0.68)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
+                    let isHome = presentation.source == .home
+                    if !isHome || homeLayout.preferences.dynamicBackground {
+                        HeroAccentBackground(item: presentation.item)
+                            .equatable()
+                            .frame(width: proxy.size.width, height: proxy.size.height)
                     }
-                    .frame(width: artworkFrame.width, height: artworkFrame.height)
-                    .clipped()
-                    .offset(x: artworkFrame.minX, y: artworkFrame.minY)
+
+                    // Home's Card hero draws its own artwork inside the card.
+                    if !isHome || homeLayout.preferences.heroStyle == .fullBleed {
+                        ZStack {
+                            LinearGradient(
+                                colors: presentation.item.artworkColors,
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+
+                            FeaturedBackdrop(
+                                item: presentation.item,
+                                artworkAlignment: .topTrailing
+                            )
+
+                            LinearGradient(
+                                colors: [.clear, .black.opacity(0.22), .black.opacity(0.68)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        }
+                        .frame(width: artworkFrame.width, height: artworkFrame.height)
+                        .clipped()
+                        .offset(x: artworkFrame.minX, y: artworkFrame.minY)
+                    }
                 }
             }
             .frame(width: proxy.size.width, height: proxy.size.height)

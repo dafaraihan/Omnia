@@ -20,6 +20,7 @@ struct VideoPlayerSettingsView: View {
                 } label: {
                     LabeledContent("Stream Selection", value: streamSelectionSummary)
                 }
+                .settingsLinkRow()
                 Toggle("Play Continue Watching Directly", isOn: settings.binding(\.directContinueWatchingPlayback))
                 Toggle(isOn: settings.binding(\.compatibleFormatsOnly)) {
                     Text("Show Only Compatible Formats")
@@ -30,6 +31,7 @@ struct VideoPlayerSettingsView: View {
                 } label: {
                     LabeledContent("Local Playback Resolver", value: resolverSummary)
                 }
+                .settingsLinkRow()
             } header: {
                 Text("Sources")
             }
@@ -43,24 +45,24 @@ struct VideoPlayerSettingsView: View {
                     }
                     .disabled(!behavior.preferBingeGroup)
                 }
-                Picker("Show Up Next", selection: settings.binding(\.playbackBehavior.nextEpisodeThresholdMode)) {
-                    ForEach(NextEpisodeThresholdMode.allCases) { mode in
-                        Text(mode.title).tag(mode)
-                    }
-                }
+                SettingsDropdown(
+                    "Show Up Next",
+                    selection: settings.binding(\.playbackBehavior.nextEpisodeThresholdMode),
+                    options: Array(NextEpisodeThresholdMode.allCases)
+                ) { mode in mode.title }
                 switch behavior.nextEpisodeThresholdMode {
                 case .percentage:
-                    Picker("Threshold", selection: settings.binding(\.playbackBehavior.nextEpisodeThresholdPercent)) {
-                        ForEach(PlaybackBehaviorPreferences.thresholdPercentOptions, id: \.self) { value in
-                            Text("\(value.formatted(.number.precision(.fractionLength(0 ... 1))))% watched").tag(value)
-                        }
-                    }
+                    SettingsDropdown(
+                        "Threshold",
+                        selection: settings.binding(\.playbackBehavior.nextEpisodeThresholdPercent),
+                        options: Array(PlaybackBehaviorPreferences.thresholdPercentOptions)
+                    ) { value in "\(value.formatted(.number.precision(.fractionLength(0 ... 1))))% watched" }
                 case .minutesBeforeEnd:
-                    Picker("Threshold", selection: settings.binding(\.playbackBehavior.nextEpisodeThresholdMinutes)) {
-                        ForEach(PlaybackBehaviorPreferences.thresholdMinuteOptions, id: \.self) { value in
-                            Text(minutesTitle(value)).tag(value)
-                        }
-                    }
+                    SettingsDropdown(
+                        "Threshold",
+                        selection: settings.binding(\.playbackBehavior.nextEpisodeThresholdMinutes),
+                        options: Array(PlaybackBehaviorPreferences.thresholdMinuteOptions)
+                    ) { value in minutesTitle(value) }
                 }
                 Toggle(isOn: settings.binding(\.playbackBehavior.preloadNextEpisodeSources)) {
                     Text("Preload Next Episode Sources")
@@ -97,11 +99,11 @@ struct VideoPlayerSettingsView: View {
                 LabeledContent("Default player", value: "Omnia (in-app)")
                 #if os(macOS)
                 LabeledContent("Playback engine", value: "libmpv")
-                Picker("Decoder", selection: settings.binding(\.playbackBehavior.decoderPriority)) {
-                    ForEach(DecoderPriority.allCases) { priority in
-                        Text(priority.title).tag(priority)
-                    }
-                }
+                SettingsDropdown(
+                    "Decoder",
+                    selection: settings.binding(\.playbackBehavior.decoderPriority),
+                    options: Array(DecoderPriority.allCases)
+                ) { priority in priority.title }
                 #else
                 LabeledContent("Playback engine", value: "AVPlayer")
                 #endif
@@ -131,10 +133,16 @@ struct VideoPlayerSettingsView: View {
             Section("Audio") {
                 LanguagePicker("Preferred audio", selection: settings.binding(\.preferredAudioLanguage), includesNone: false)
                 LanguagePicker("Audio fallback", selection: settings.binding(\.audioFallbackLanguage), includesNone: true)
-                Picker("Anime audio", selection: settings.binding(\.animeAudioPreference)) {
-                    Text("Follow preferred audio").tag(AnimeAudioPreference.followPreferred)
-                    Text("Sub (Japanese audio)").tag(AnimeAudioPreference.sub)
-                    Text("Dub").tag(AnimeAudioPreference.dub)
+                SettingsDropdown(
+                    "Anime audio",
+                    selection: settings.binding(\.animeAudioPreference),
+                    options: AnimeAudioPreference.allCases
+                ) { value in
+                    switch value {
+                    case .followPreferred: "Follow preferred audio"
+                    case .sub: "Sub (Japanese audio)"
+                    case .dub: "Dub"
+                    }
                 }
             }
 
@@ -164,13 +172,14 @@ struct VideoPlayerSettingsView: View {
                 NavigationLink("Subtitle") {
                     SettingsDestinationView(route: .subtitle)
                 }
+                .settingsLinkRow()
             } header: {
                 Text("Subtitles")
             } footer: {
                 Text("Subtitles from add-ons such as OpenSubtitles are added to the player's list as they arrive.")
             }
         }
-        .omniaNavigationTitle("Video Player")
+        .omniaNavigationTitle("Playback")
     }
 
     private var streamSelectionSummary: String {
@@ -231,11 +240,11 @@ struct StreamSelectionSettingsView: View {
                     Text("Reuse Last Link")
                     Text("Plays the stream you last watched for a movie or episode again, without asking the add-ons.")
                 }
-                Picker("Keep Links For", selection: settings.binding(\.playbackBehavior.lastLinkCacheHours)) {
-                    ForEach(PlaybackBehaviorPreferences.lastLinkCacheHourOptions, id: \.self) { hours in
-                        Text(hoursTitle(hours)).tag(hours)
-                    }
-                }
+                SettingsDropdown(
+                    "Keep Links For",
+                    selection: settings.binding(\.playbackBehavior.lastLinkCacheHours),
+                    options: Array(PlaybackBehaviorPreferences.lastLinkCacheHourOptions)
+                ) { hours in hoursTitle(hours) }
                 .disabled(!behavior.reuseLastLink)
             } header: {
                 Text("Last Link")
@@ -244,11 +253,11 @@ struct StreamSelectionSettingsView: View {
             }
 
             Section {
-                Picker("Auto-play", selection: settings.binding(\.playbackBehavior.autoSelectionMode)) {
-                    ForEach(AutoStreamSelectionMode.allCases) { mode in
-                        Text(mode.title).tag(mode)
-                    }
-                }
+                SettingsDropdown(
+                    "Auto-play",
+                    selection: settings.binding(\.playbackBehavior.autoSelectionMode),
+                    options: Array(AutoStreamSelectionMode.allCases)
+                ) { mode in mode.title }
                 if behavior.autoSelectionMode == .regexMatch {
                     TextField("Regex Pattern", text: settings.binding(\.playbackBehavior.autoSelectionRegex), prompt: Text("(2160p|4k|1080p)"))
                         .font(.body.monospaced())
@@ -267,16 +276,16 @@ struct StreamSelectionSettingsView: View {
                     }
                 }
                 if behavior.autoSelectionMode != .manual {
-                    Picker("Wait for Add-ons", selection: settings.binding(\.playbackBehavior.selectionTimeoutSeconds)) {
-                        ForEach(StreamSelectionTimeout.options, id: \.self) { seconds in
-                            Text(StreamSelectionTimeout.title(seconds)).tag(seconds)
-                        }
-                    }
-                    Picker("Pick From", selection: settings.binding(\.playbackBehavior.selectionScope)) {
-                        ForEach(AutoStreamSelectionScope.allCases) { scope in
-                            Text(scope.title).tag(scope)
-                        }
-                    }
+                    SettingsDropdown(
+                        "Wait for Add-ons",
+                        selection: settings.binding(\.playbackBehavior.selectionTimeoutSeconds),
+                        options: Array(StreamSelectionTimeout.options)
+                    ) { seconds in StreamSelectionTimeout.title(seconds) }
+                    SettingsDropdown(
+                        "Pick From",
+                        selection: settings.binding(\.playbackBehavior.selectionScope),
+                        options: Array(AutoStreamSelectionScope.allCases)
+                    ) { scope in scope.title }
                 }
             } header: {
                 Text("Auto Stream Selection")
@@ -416,12 +425,18 @@ private struct LanguagePicker: View {
     }
 
     var body: some View {
-        Picker(title, selection: $selection) {
-            Text("Follow System").tag(PreferredLanguage.followSystem)
-            if includesNone { Text("Off / No preference").tag(PreferredLanguage.none) }
-            Divider()
-            ForEach(PlaybackLanguageCatalog.codes, id: \.self) { code in
-                Text(PlaybackLanguageCatalog.name(for: code)).tag(PreferredLanguage.language(code))
+        SettingsDropdown(
+            title,
+            selection: $selection,
+            sections: [
+                includesNone ? [.followSystem, PreferredLanguage.none] : [.followSystem],
+                PlaybackLanguageCatalog.codes.map { PreferredLanguage.language($0) }
+            ]
+        ) { language in
+            switch language {
+            case .followSystem: "Follow System"
+            case .none: "Off / No preference"
+            case let .language(code): PlaybackLanguageCatalog.name(for: code)
             }
         }
     }

@@ -60,6 +60,8 @@ struct MediaDetailView: View {
                 resolved = await loadProviderFirstDetails()
             }
             guard !Task.isCancelled else { return }
+            // Settings › Integrations › MDBList Ratings.
+            guard settings.preferences.integrations.mdblistEnabled else { return }
 
             await ratingsLoader.load(
                 for: resolved,
@@ -69,7 +71,7 @@ struct MediaDetailView: View {
                 settings.recordMDBListRatingProviders(presentation.discoveredProviderIDs)
             }
         }
-        .omniaGlassModal(isPresented: showsSourceSelector) {
+        .omniaStreamsPage(isPresented: showsSourceSelector) {
             if let request = sourceRequest {
                 PlaybackSourceSheet(
                     item: request.item,
@@ -173,12 +175,14 @@ struct MediaDetailView: View {
 
             HeroMetadataLine(item: displayItem)
 
-            MDBListRatingsView(
-                state: currentRatingsState,
-                retry: retryRatings,
-                openSettings: { showsMDBListSettings = true }
-            )
-            .frame(width: CinematicHeroLayout.logoWidth, alignment: .leading)
+            if settings.preferences.integrations.mdblistEnabled {
+                MDBListRatingsView(
+                    state: currentRatingsState,
+                    retry: retryRatings,
+                    openSettings: { showsMDBListSettings = true }
+                )
+                .frame(width: CinematicHeroLayout.logoWidth, alignment: .leading)
+            }
 
             Button {
                 showsSynopsis = true
@@ -279,19 +283,24 @@ struct MediaDetailView: View {
 
     /// Add-on mode (Nuvio's model): the add-on that listed the title is the
     /// source of truth. TMDB/TVDB only fills what the add-on left empty, such
-    /// as cast photos or recommendations.
+    /// as cast photos or recommendations, limited to the modules turned on in
+    /// Settings › Integrations › TMDB Enrichment. When no add-on answers,
+    /// TMDB supplies the whole page, as in Nuvio.
     private func loadAddonFirstDetails() async -> MediaItem {
         let fromAddon = await AddonMetadataResolver.resolve(item, addons: store.installedAddons)
         guard !Task.isCancelled else { return fromAddon ?? item }
         let addonFirst = fromAddon ?? item
+        let enrichment = settings.preferences.integrations.tmdb
         if fromAddon != nil {
             resolvedItem = addonFirst
             selectedSeasonNumber = addonFirst.details?.seasons.first(where: { $0.seasonNumber > 0 })?.seasonNumber
                 ?? addonFirst.details?.seasons.first?.seasonNumber ?? 1
+            guard enrichment.enabled else { return addonFirst }
         }
 
-        let provider = await metadata.details(for: addonFirst)
+        let fetched = await metadata.details(for: addonFirst)
         guard !Task.isCancelled else { return addonFirst }
+        let provider = fromAddon == nil ? fetched : fetched.restricted(to: enrichment)
         let resolved = addonFirst.fillingGaps(from: provider)
         resolvedItem = resolved
         if addonFirst.details?.seasons.isEmpty != false {

@@ -12,16 +12,16 @@ struct UpcomingSettingsView: View {
             }
 
             Section("Range") {
-                Picker("Days to look ahead", selection: settings.binding(\.upcomingLookAhead)) {
-                    ForEach(UpcomingLookAhead.allCases, id: \.self) { value in
-                        Text("\(value.rawValue) days").tag(value)
-                    }
-                }
-                Picker("Items", selection: settings.binding(\.upcomingItemLimit)) {
-                    ForEach(BoundedItemLimit.allCases, id: \.self) { limit in
-                        Text(limit.value.map(String.init) ?? "No limit").tag(limit)
-                    }
-                }
+                SettingsDropdown(
+                    "Days to look ahead",
+                    selection: settings.binding(\.upcomingLookAhead),
+                    options: Array(UpcomingLookAhead.allCases)
+                ) { value in "\(value.rawValue) days" }
+                SettingsDropdown(
+                    "Items",
+                    selection: settings.binding(\.upcomingItemLimit),
+                    options: Array(BoundedItemLimit.allCases)
+                ) { limit in limit.value.map(String.init) ?? "No limit" }
             }
             .disabled(!settings.preferences.showUpcoming)
 

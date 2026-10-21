@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Settings › Appearance › Poster Cards: Nuvio's Poster Card Style and Card
+/// Settings › Layout › Poster Card Style: Nuvio's Poster Card Style and Card
 /// Depth Effect. Every poster row, grid and card reads these values.
 struct PosterCardSettingsView: View {
     @Environment(SettingsPreferencesStore.self) private var settings
@@ -16,19 +16,23 @@ struct PosterCardSettingsView: View {
             }
 
             Section {
-                Picker("Size", selection: settings.binding(\.display.posterWidth)) {
-                    ForEach(PosterWidthPreset.allCases) { preset in
-                        Text("\(preset.title) (\(Int(preset.width)) pt)").tag(preset)
-                    }
-                }
-                Picker("Corners", selection: settings.binding(\.display.posterCorner)) {
-                    ForEach(PosterCornerPreset.allCases) { preset in
-                        Text(preset.title).tag(preset)
-                    }
-                }
+                SettingsDropdown(
+                    "Size",
+                    selection: settings.binding(\.display.posterWidth),
+                    options: Array(PosterWidthPreset.allCases)
+                ) { preset in "\(preset.title) (\(Int(preset.width)) pt)" }
+                SettingsDropdown(
+                    "Corners",
+                    selection: settings.binding(\.display.posterCorner),
+                    options: Array(PosterCornerPreset.allCases)
+                ) { preset in preset.title }
                 Toggle(isOn: settings.binding(\.display.landscapePosters)) {
                     Text("Landscape Posters")
                     Text("Show backdrops with the title logo instead of portrait posters.")
+                }
+                Toggle(isOn: settings.binding(\.showMediaCardLabels)) {
+                    Text("Show Details Under Posters")
+                    Text("Shows each title, release year, and primary genre below standard posters.")
                 }
             } header: {
                 Text("Poster Card Style")
@@ -38,20 +42,41 @@ struct PosterCardSettingsView: View {
                 Toggle("Card Depth Effect", isOn: settings.binding(\.display.cardDepth.isEnabled))
 
                 if display.cardDepth.isEnabled {
-                    Picker("Edge Glow", selection: settings.binding(\.display.cardDepth.edgeStrength)) {
-                        Text("Subtle").tag(28)
-                        Text("Medium").tag(42)
-                        Text("Strong").tag(56)
+                    SettingsDropdown(
+                        "Edge Glow",
+                        selection: settings.binding(\.display.cardDepth.edgeStrength),
+                        options: [28, 42, 56]
+                    ) { value in
+                        switch value {
+                        case 28: "Subtle"
+                        case 42: "Medium"
+                        case 56: "Strong"
+                        default: "\(value)"
+                        }
                     }
-                    Picker("Top Sheen", selection: settings.binding(\.display.cardDepth.sheenStrength)) {
-                        Text("Off").tag(0)
-                        Text("Soft").tag(10)
-                        Text("Bright").tag(16)
+                    SettingsDropdown(
+                        "Top Sheen",
+                        selection: settings.binding(\.display.cardDepth.sheenStrength),
+                        options: [0, 10, 16]
+                    ) { value in
+                        switch value {
+                        case 0: "Off"
+                        case 10: "Soft"
+                        case 16: "Bright"
+                        default: "\(value)"
+                        }
                     }
-                    Picker("Edge Coverage", selection: settings.binding(\.display.cardDepth.edgeCoverage)) {
-                        Text("Top Edge").tag(0)
-                        Text("Half").tag(50)
-                        Text("Full Border").tag(100)
+                    SettingsDropdown(
+                        "Edge Coverage",
+                        selection: settings.binding(\.display.cardDepth.edgeCoverage),
+                        options: [0, 50, 100]
+                    ) { value in
+                        switch value {
+                        case 0: "Top Edge"
+                        case 50: "Half"
+                        case 100: "Full Border"
+                        default: "\(value)"
+                        }
                     }
                 }
             } header: {
@@ -77,19 +102,19 @@ struct PosterCardSettingsView: View {
                 }
 
                 if display.cardHover.isEnabled {
-                    Picker("Color", selection: settings.binding(\.display.cardHover.colorSource)) {
-                        ForEach(CardHoverPreferences.ColorSource.allCases) { source in
-                            Text(source.title).tag(source)
-                        }
-                    }
+                    SettingsDropdown(
+                        "Color",
+                        selection: settings.binding(\.display.cardHover.colorSource),
+                        options: Array(CardHoverPreferences.ColorSource.allCases)
+                    ) { source in source.title }
                     if display.cardHover.colorSource == .custom {
                         ColorPicker("Custom Color", selection: hoverColorBinding, supportsOpacity: false)
                     }
-                    Picker("Intensity", selection: settings.binding(\.display.cardHover.intensity)) {
-                        ForEach(CardHoverPreferences.Intensity.allCases) { intensity in
-                            Text(intensity.title).tag(intensity)
-                        }
-                    }
+                    SettingsDropdown(
+                        "Intensity",
+                        selection: settings.binding(\.display.cardHover.intensity),
+                        options: Array(CardHoverPreferences.Intensity.allCases)
+                    ) { intensity in intensity.title }
                     Toggle(isOn: settings.binding(\.display.cardHover.outerGlow)) {
                         Text("Outer Glow")
                         Text("Adds a soft light around the card in the same color.")

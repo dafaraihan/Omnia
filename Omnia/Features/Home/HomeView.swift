@@ -21,6 +21,8 @@ struct HomeView: View {
     @State private var heroIndex = 0
     @State private var heroCandidates: [MediaItem] = []
     @State private var sourcePlaybackItem: MediaItem?
+    @State private var heroTrailer = HomeHeroTrailerModel()
+    @Environment(PlaybackSession.self) private var playback
     @AppStorage(HomeView.continueWatchingVisibilityKey) private var showsContinueWatching = true
     /// Settings › Home › Continue Watching › Show on Home.
     static let continueWatchingVisibilityKey = "home-show-continue-watching"
@@ -171,7 +173,7 @@ struct HomeView: View {
                             ContentUnavailableView(
                                 "All Catalogs Are Hidden",
                                 systemImage: "rectangle.stack",
-                                description: Text("Choose what appears on Home in Settings › Home › Catalogs.")
+                                description: Text("Choose what appears on Home in Settings › Layout › Home Layout › Catalogs.")
                             )
                             .frame(maxWidth: .infinity, minHeight: 220)
                         }
@@ -203,7 +205,7 @@ struct HomeView: View {
                 .padding(.top, 22)
                 .padding(.bottom, 56)
                 .background {
-                    if let featured = displayFeatured {
+                    if let featured = displayFeatured, usesDynamicBackground {
                         #if os(macOS)
                         // The window backdrop already draws the accent behind
                         // the shelves. Drawing it here too blurred a layer as
@@ -218,7 +220,7 @@ struct HomeView: View {
                 }
                 // Shelves sit on the dark artwork accent, so their primary
                 // text must stay light even in Light appearance.
-                .environment(\.colorScheme, displayFeatured == nil ? colorScheme : .dark)
+                .environment(\.colorScheme, displayFeatured == nil || !usesDynamicBackground ? colorScheme : .dark)
             }
         }
         .background {
@@ -238,7 +240,7 @@ struct HomeView: View {
         .navigationDestination(for: CollectionFolderRoute.self) { route in
             CollectionFolderView(collection: route.collection, folder: route.folder)
         }
-        .omniaGlassModal(isPresented: showsSourcePicker) {
+        .omniaStreamsPage(isPresented: showsSourcePicker) {
             if let sourcePlaybackItem {
                 PlaybackSourceSheet(
                     item: sourcePlaybackItem,
@@ -271,9 +273,17 @@ struct HomeView: View {
         .task(id: addonLoadKey) {
             addonCatalogs.load(addonCatalogsToLoad)
         }
-        .task(id: "\(heroCandidateKey)-\(heroIndex)-\(isActiveDestination)") {
-            // The carousel pauses while Home sits in a hidden tab.
-            guard isActiveDestination, heroCandidates.count > 1 else { return }
+        .task(id: heroTrailerKey) {
+            await heroTrailer.load(
+                displayFeatured,
+                preferences: settings.preferences.heroTrailer,
+                metadata: metadata
+            )
+        }
+        .task(id: "\(heroCandidateKey)-\(heroIndex)-\(isActiveDestination)-\(heroTrailer.holdsCarousel)") {
+            // The carousel pauses while Home sits in a hidden tab, and while
+            // a hero trailer is waiting to start or playing.
+            guard isActiveDestination, heroCandidates.count > 1, !heroTrailer.holdsCarousel else { return }
 
             do {
                 try await Task.sleep(for: .seconds(isAddonMode ? 8 : 9))
@@ -305,9 +315,31 @@ struct HomeView: View {
 
     private func hero(_ featured: MediaItem) -> some View {
         ZStack(alignment: .bottomLeading) {
-            HeroArtworkCanvas(item: featured, source: .home, artworkAlignment: .topTrailing)
+            if isCardHero {
+                LinearGradient(colors: featured.artworkColors, startPoint: .topLeading, endPoint: .bottomTrailing)
+            }
+
+            HeroArtworkCanvas(
+                item: featured,
+                source: .home,
+                artworkAlignment: .topTrailing,
+                drawsArtworkLocally: isCardHero
+            )
                 .id(featured.id)
                 .transition(.opacity)
+
+            if isCardHero {
+                // The window draws this scrim over full-bleed artwork; the
+                // card draws its own.
+                LinearGradient(
+                    colors: [.clear, .black.opacity(0.22), .black.opacity(0.68)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .allowsHitTesting(false)
+            }
+
+            HomeHeroTrailerLayer(model: heroTrailer, isPlaying: heroTrailerIsPlaying)
 
             // FeaturedBackdrop correctly opts out of hit-testing so it can be
             // reused behind detail content. Give Home a separate clear link
@@ -410,6 +442,12 @@ struct HomeView: View {
                 .padding(.horizontal, 20)
             }
         }
+        .overlay(alignment: .bottomTrailing) {
+            HomeHeroTrailerMuteButton(model: heroTrailer)
+                .padding(.trailing, 28)
+                .padding(.bottom, 24)
+                .animation(.snappy(duration: 0.25), value: heroTrailer.isVisible)
+        }
         .overlay(alignment: .bottom) {
             if heroCandidates.count > 1 {
                 HeroPageControl(
@@ -425,13 +463,34 @@ struct HomeView: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .frame(height: heroHeight)
-        .clipped()
+        .frame(height: isCardHero ? heroHeight - heroCardTopInset : heroHeight)
+        .clipShape(.rect(cornerRadius: isCardHero ? Self.heroCardCornerRadius : 0, style: .continuous))
+        .overlay {
+            if isCardHero {
+                RoundedRectangle(cornerRadius: Self.heroCardCornerRadius, style: .continuous)
+                    .strokeBorder(.white.opacity(0.1))
+            }
+        }
+        .shadow(color: .black.opacity(isCardHero ? 0.35 : 0), radius: 24, y: 12)
+        .padding(.horizontal, isCardHero ? horizontalInset : 0)
+        .padding(.top, isCardHero ? heroCardTopInset : 0)
         .animation(.easeInOut(duration: 0.45), value: featured.id)
         // `.contain` keeps the hero's Play, info and paging buttons reachable
         // by VoiceOver; `.combine` merged them into one unactionable element.
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Featured: \(featured.title)")
+    }
+
+    /// Restarts the trailer for a new title or changed trailer settings.
+    private var heroTrailerKey: String {
+        let preferences = settings.preferences.heroTrailer
+        return "\(featured?.id ?? "")-\(preferences.autoplay)-\(preferences.startDelaySeconds)-\(preferences.startsWithSound)"
+    }
+
+    /// The trailer pauses in a hidden tab, while the streams page is open,
+    /// and while something else is playing.
+    private var heroTrailerIsPlaying: Bool {
+        isActiveDestination && sourcePlaybackItem == nil && playback.source == nil
     }
 
     private var loadingHero: some View {
@@ -601,13 +660,33 @@ struct HomeView: View {
         #if os(macOS)
         Color.clear
         #else
-        if let featured = displayFeatured {
+        if let featured = displayFeatured, usesDynamicBackground {
             HeroAccentBackground(item: featured)
         } else {
             pageBackground
         }
         #endif
     }
+
+    /// Settings › Layout › Home Layout › Dynamic Background Color.
+    private var usesDynamicBackground: Bool {
+        homeLayout.preferences.dynamicBackground
+    }
+
+    /// Settings › Layout › Home Layout › Hero Style.
+    private var isCardHero: Bool {
+        homeLayout.preferences.heroStyle == .card
+    }
+
+    private var heroCardTopInset: CGFloat {
+        #if os(iOS)
+        56
+        #else
+        72
+        #endif
+    }
+
+    private static let heroCardCornerRadius: CGFloat = 28
     private var heroHeight: CGFloat {
         #if os(iOS)
         700

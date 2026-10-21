@@ -366,6 +366,7 @@ struct AboutSettingsView: View {
                     } label: {
                         Label(section.title, systemImage: section.systemImage)
                     }
+                    .settingsLinkRow()
                 }
             }
         }
@@ -393,6 +394,7 @@ struct AboutSectionSettingsView: View {
                     } label: {
                         Label("Native Playback Notices", systemImage: "doc.text")
                     }
+                    .settingsLinkRow()
 
                     Text("Read the local SPDX inventory and exact license notices shipped with this build.")
                         .font(.caption)

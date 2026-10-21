@@ -27,11 +27,11 @@ struct ProgressSettingsView: View {
             }
 
             Section {
-                Picker("Continue Watching items", selection: settings.binding(\.continueWatchingLimit)) {
-                    ForEach(BoundedItemLimit.allCases, id: \.self) { limit in
-                        Text(limit.title).tag(limit)
-                    }
-                }
+                SettingsDropdown(
+                    "Continue Watching items",
+                    selection: settings.binding(\.continueWatchingLimit),
+                    options: Array(BoundedItemLimit.allCases)
+                ) { limit in limit.title }
             } footer: {
                 Text("Fewer items reduce the amount of Home content loaded at once.")
             }

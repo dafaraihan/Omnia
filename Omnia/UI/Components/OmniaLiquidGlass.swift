@@ -247,4 +247,28 @@ extension View {
         sheet(isPresented: isPresented, content: content)
         #endif
     }
+    /// The streams page covers the whole window on macOS, like Nuvio's,
+    /// instead of floating as a panel. Other platforms keep the sheet.
+    @ViewBuilder
+    func omniaStreamsPage<PageContent: View>(
+        isPresented: Binding<Bool>,
+        @ViewBuilder content: @escaping () -> PageContent
+    ) -> some View {
+        #if os(macOS)
+        overlay {
+            if isPresented.wrappedValue {
+                content()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .ignoresSafeArea()
+                    .onExitCommand { isPresented.wrappedValue = false }
+                    .transition(.opacity.combined(with: .scale(scale: 1.02)))
+                    .zIndex(100)
+                    .accessibilityAddTraits(.isModal)
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: isPresented.wrappedValue)
+        #else
+        sheet(isPresented: isPresented, content: content)
+        #endif
+    }
 }

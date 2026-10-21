@@ -36,11 +36,11 @@ struct PlaybackResolverSettingsView: View {
             }
 
             Section {
-                Picker("Maximum cache", selection: cacheQuotaBinding) {
-                    ForEach(ResolverCacheQuota.allCases, id: \.self) { quota in
-                        Text(quota.title).tag(quota)
-                    }
-                }
+                SettingsDropdown(
+                    "Maximum cache",
+                    selection: cacheQuotaBinding,
+                    options: Array(ResolverCacheQuota.allCases)
+                ) { quota in quota.title }
                 Toggle("Keep incomplete downloads", isOn: retainsIncompleteJobsBinding)
             } header: {
                 Text("Storage")

@@ -86,7 +86,7 @@ enum PluginStreamResolver {
         let id = sourceID(for: entry.scraper)
         guard let tmdbID else {
             let reason = plan.tmdbAPIKey == nil
-                ? "Plugins need this title's TMDB ID. Add a TMDB API key in Settings › Plugins so Omnia can look it up."
+                ? "Plugins need this title's TMDB ID. Add a TMDB API key in Settings › Content & Discovery › Plugins so Omnia can look it up."
                 : "Omnia couldn't find this title on TMDB, which plugins search by."
             return AddonSourceResolution(
                 addonID: id,

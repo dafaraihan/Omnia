@@ -162,8 +162,11 @@ struct OmniaRootView: View {
         NavigationSplitView {
             macSidebar
                 .navigationSplitViewColumnWidth(min: 170, ideal: 220, max: 300)
+                .tint(.gray)
+                .accentColor(.gray)
         } detail: {
             macNavigationStack(for: navigation.selection)
+                .tint(accentColor)
         }
         // The detail stack is rebuilt per destination, so a destination left
         // behind starts again at its root, as it did before paths were stored.
@@ -173,8 +176,6 @@ struct OmniaRootView: View {
         // Keep the platform sidebar so macOS owns its Liquid Glass surface,
         // resizing, keyboard behavior, and the single native toolbar toggle.
         .navigationSplitViewStyle(.balanced)
-        .tint(.gray)
-        .accentColor(.gray)
         .modifier(floatingSearchPanel)
     }
 
@@ -191,7 +192,7 @@ struct OmniaRootView: View {
         )
     }
 
-    /// Settings › Appearance › Top Bar Style. iPadOS Native is the system
+    /// Settings › Layout › Top Bar Style. Standard is the system
     /// tab bar; the other styles are Nuvio's floating bar.
     @ViewBuilder
     private var macTopBarNavigation: some View {
