@@ -6,9 +6,10 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Home › Collections: import a Nuvio or Xperience `collections.json`, then
-/// show, hide, pin or remove each collection. Folder sources are checked
-/// against the installed add-ons so a missing add-on is visible here.
+/// Home › Collections: make collections, or import a Nuvio or Xperience
+/// `collections.json`, then edit, show, hide, pin, reorder or remove each.
+/// Folder sources are checked against the installed add-ons so a missing
+/// add-on is visible here.
 struct CollectionsSettingsView: View {
     @Environment(OmniaStore.self) private var store
     @Environment(CollectionsStore.self) private var collections
@@ -23,6 +24,13 @@ struct CollectionsSettingsView: View {
     var body: some View {
         OmniaSettingsForm {
             Section {
+                NavigationLink {
+                    CollectionEditorView(collection: nil)
+                } label: {
+                    Label("New Collection", systemImage: "plus")
+                }
+                .settingsLinkRow()
+                .disabled(collections.collections.count >= HomeCollection.maximumCollections)
                 Button("Import Collections…", systemImage: "square.and.arrow.down") {
                     showsImporter = true
                 }
@@ -38,7 +46,7 @@ struct CollectionsSettingsView: View {
             } header: {
                 Text("Collections")
             } footer: {
-                Text("Import the collections.json that Xperience or Nuvio exports. Importing an updated file replaces the collections it already contains.")
+                Text("Make a collection here, or import the collections.json that Xperience or Nuvio exports. Importing an updated file replaces the collections it already contains.")
             }
 
             if collections.collections.isEmpty {
@@ -79,14 +87,22 @@ struct CollectionsSettingsView: View {
                 collectionToRemove = nil
             }
         } message: {
-            Text("Its folders disappear from Home. You can import the file again later.")
+            Text("Its folders disappear from Home. Export your collections first to keep a copy.")
         }
     }
 
     private func collectionSection(_ collection: HomeCollection) -> some View {
         let availability = sourceAvailability(for: collection)
 
+        let index = collections.collections.firstIndex { $0.id == collection.id } ?? 0
+
         return Section {
+            NavigationLink {
+                CollectionEditorView(collection: collection)
+            } label: {
+                Label("Edit Collection", systemImage: "pencil")
+            }
+            .settingsLinkRow()
             Toggle(isOn: visibilityBinding(for: collection)) {
                 rowLabel("Show on Home", detail: "\(collection.folders.count) \(collection.folders.count == 1 ? "folder" : "folders")")
             }
@@ -131,6 +147,19 @@ struct CollectionsSettingsView: View {
                 }
             } label: {
                 Text("Folders")
+            }
+            if collections.collections.count > 1 {
+                HStack(spacing: 16) {
+                    Button("Move Up", systemImage: "chevron.up") {
+                        collections.move(collection, by: -1)
+                    }
+                    .disabled(index == 0)
+                    Button("Move Down", systemImage: "chevron.down") {
+                        collections.move(collection, by: 1)
+                    }
+                    .disabled(index == collections.collections.count - 1)
+                }
+                .buttonStyle(.borderless)
             }
             Button("Remove Collection…", systemImage: "trash", role: .destructive) {
                 collectionToRemove = collection

@@ -51,12 +51,16 @@ extension MediaTitleDetails {
 }
 
 extension MediaVideo {
-    /// The YouTube id from the watch URL, only when it looks like one, since
-    /// it is written into the embedded player's page.
+    /// Only canonical HTTPS YouTube watch links can seed trailer extraction.
     nonisolated var youtubeVideoID: String? {
         guard let components = URLComponents(url: watchURL, resolvingAgainstBaseURL: false),
+              components.scheme?.lowercased() == "https",
+              ["youtube.com", "www.youtube.com", "m.youtube.com"].contains(components.host?.lowercased() ?? ""),
+              components.user == nil, components.password == nil,
+              components.port == nil || components.port == 443,
+              components.path == "/watch",
               let value = components.queryItems?.first(where: { $0.name == "v" })?.value,
-              (6...20).contains(value.count),
+              value.count == 11,
               value.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") })
         else { return nil }
         return value

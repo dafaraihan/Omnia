@@ -21,6 +21,12 @@ struct MediaDetailView: View {
     @State private var selectedEpisode: MediaEpisode?
     @State private var ratingsLoader = MDBListRatingsLoader()
     @State private var showsMDBListSettings = false
+    @State private var showsShuffle = false
+    /// The random episode the Play button starts while shuffle is on.
+    @State private var shufflePrimary: MediaEpisode?
+    /// Settings › Layout › Detail Page › Poster Transition.
+    @State private var posterTransition: PosterTransitionCenter.Anchor?
+    @State private var hasTakenPosterTransition = false
 
     private var displayItem: MediaItem { resolvedItem ?? item }
 
@@ -41,6 +47,22 @@ struct MediaDetailView: View {
             }
         }
         .background(screenBackground)
+        .overlay {
+            if let posterTransition {
+                PosterTransitionOverlay(anchor: posterTransition) {
+                    self.posterTransition = nil
+                }
+            }
+        }
+        .onAppear {
+            // Only the first appearance after a poster click animates, not
+            // returning to the page from a title opened on it.
+            guard !hasTakenPosterTransition else { return }
+            hasTakenPosterTransition = true
+            if display.posterTransition {
+                posterTransition = PosterTransitionCenter.shared.consume(itemID: item.id)
+            }
+        }
         #if os(macOS)
         // Match Home: the scroll container, not merely its first child,
         // owns the top safe area. The detail hero can therefore meet the
@@ -91,6 +113,19 @@ struct MediaDetailView: View {
         }
         .sheet(isPresented: $showsMDBListSettings) {
             MDBListSettingsSheet()
+        }
+        .sheet(isPresented: $showsShuffle) {
+            EpisodeShuffleSheet(
+                item: displayItem,
+                episodes: detailEpisodes,
+                watchState: watchState
+            ) { episode in
+                selectedEpisode = episode
+                sourceRequest = PlaybackRequest(item: displayItem, episode: episode, resumeAt: nil)
+            }
+        }
+        .task(id: shuffleKey) {
+            shufflePrimary = isShuffleActive ? pickShuffleEpisode() : nil
         }
         .onDisappear {
             ratingsLoader.cancel()
@@ -204,65 +239,8 @@ struct MediaDetailView: View {
 
     private var detailInformation: some View {
         VStack(alignment: .leading, spacing: 34) {
-            if display.shows(.genres), !displayItem.genres.isEmpty {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Genres")
-                        .font(.headline)
-                        .foregroundStyle(.primary)
-                    FlowLayout(spacing: 8) {
-                        ForEach(displayItem.genres, id: \.self) { genre in
-                            Text(genre)
-                                .font(.subheadline.weight(.medium))
-                                .foregroundStyle(.primary)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 7)
-                                .background(.primary.opacity(0.08), in: Capsule())
-                        }
-                    }
-                }
-            }
-
-            if let details = displayItem.details {
-                if display.shows(.facts) {
-                    TitleFactsView(details: details)
-                }
-
-                if display.shows(.episodes), displayItem.kind == .series, !details.seasons.isEmpty {
-                    EpisodeShelf(
-                        seasons: details.seasons,
-                        selectedSeasonNumber: $selectedSeasonNumber,
-                        resumeProgress: resumeProgressPresentation,
-                        watchState: watchState,
-                        selectEpisode: { episode in
-                            selectedEpisode = episode
-                            sourceRequest = PlaybackRequest(item: displayItem, episode: episode, resumeAt: nil)
-                        }
-                    )
-                }
-
-                if display.shows(.trailers), !details.trailers.isEmpty {
-                    VideoShelf(title: "Trailers", videos: details.trailers)
-                }
-
-                if display.shows(.bonusContent), !details.bonusContent.isEmpty {
-                    VideoShelf(title: "Bonus Content", videos: details.bonusContent)
-                }
-
-                if display.shows(.people), !displayPeople(for: details).isEmpty {
-                    peopleSection(details: details)
-                }
-
-                if display.shows(.studio), !details.studioTitles.isEmpty {
-                    detailShelf(title: studioShelfTitle(details), items: details.studioTitles)
-                }
-
-                if display.shows(.collection), let collection = details.collection, !collection.members.isEmpty {
-                    detailShelf(title: collection.name, items: collection.members)
-                }
-
-                if display.shows(.recommendations), !details.recommendations.isEmpty {
-                    detailShelf(title: "More Like This", items: details.recommendations)
-                }
+            ForEach(display.orderedDetailSections) { section in
+                detailSection(section)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -279,6 +257,73 @@ struct MediaDetailView: View {
         // The info sections sit on the dark artwork accent; keep their
         // text light in Light appearance.
         .environment(\.colorScheme, usesArtworkBackground ? .dark : colorScheme)
+    }
+
+    /// One of the page's sections, drawn in the order chosen in Settings ›
+    /// Layout › Detail Page. Empty sections draw nothing.
+    @ViewBuilder
+    private func detailSection(_ section: DetailSection) -> some View {
+        switch section {
+        case .genres:
+            if !displayItem.genres.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Genres")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    FlowLayout(spacing: 8) {
+                        ForEach(displayItem.genres, id: \.self) { genre in
+                            Text(genre)
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(.primary)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 7)
+                                .background(.primary.opacity(0.08), in: Capsule())
+                        }
+                    }
+                }
+            }
+        case .facts:
+            if let details = displayItem.details {
+                TitleFactsView(details: details)
+            }
+        case .episodes:
+            if let details = displayItem.details, displayItem.kind == .series, !details.seasons.isEmpty {
+                EpisodeShelf(
+                    seasons: details.seasons,
+                    selectedSeasonNumber: $selectedSeasonNumber,
+                    resumeProgress: resumeProgressPresentation,
+                    watchState: watchState,
+                    selectEpisode: { episode in
+                        selectedEpisode = episode
+                        sourceRequest = PlaybackRequest(item: displayItem, episode: episode, resumeAt: nil)
+                    }
+                )
+            }
+        case .trailers:
+            if let details = displayItem.details, !details.trailers.isEmpty {
+                VideoShelf(title: "Trailers", videos: details.trailers)
+            }
+        case .bonusContent:
+            if let details = displayItem.details, !details.bonusContent.isEmpty {
+                VideoShelf(title: "Bonus Content", videos: details.bonusContent)
+            }
+        case .people:
+            if let details = displayItem.details, !displayPeople(for: details).isEmpty {
+                peopleSection(details: details)
+            }
+        case .studio:
+            if let details = displayItem.details, !details.studioTitles.isEmpty {
+                detailShelf(title: studioShelfTitle(details), items: details.studioTitles)
+            }
+        case .collection:
+            if let collection = displayItem.details?.collection, !collection.members.isEmpty {
+                detailShelf(title: collection.name, items: collection.members)
+            }
+        case .recommendations:
+            if let details = displayItem.details, !details.recommendations.isEmpty {
+                detailShelf(title: "More Like This", items: details.recommendations)
+            }
+        }
     }
 
     /// Add-on mode (Nuvio's model): the add-on that listed the title is the
@@ -342,15 +387,24 @@ struct MediaDetailView: View {
             width: CinematicHeroLayout.logoWidth,
             isSaved: store.isSaved(displayItem),
             libraryAction: { store.toggleSaved(displayItem) },
-            watchAction: heroWatchAction
+            watchAction: heroWatchAction,
+            shuffleAction: heroShuffleAction
         ) {
             Button {
                 let intent = playbackIntent
+                // Shuffle (Nuvio): an episode in progress resumes; otherwise
+                // Play starts the random pick.
+                if intent.resumeAt == nil, let shuffled = shufflePrimary {
+                    selectedEpisode = shuffled
+                    sourceRequest = PlaybackRequest(item: intent.item, episode: shuffled, resumeAt: nil)
+                    shufflePrimary = pickShuffleEpisode(excluding: shuffled) ?? shuffled
+                    return
+                }
                 selectedEpisode = intent.episode
                 sourceRequest = PlaybackRequest(item: intent.item, episode: intent.episode, resumeAt: intent.resumeAt)
             } label: {
                 HeroPrimaryActionLabel(
-                    title: playbackActionTitle,
+                    title: shuffledPlayTitle ?? playbackActionTitle,
                     resumeProgress: playbackActionTitle == "Resume" ? resumeProgressPresentation : nil
                 )
             }
@@ -360,6 +414,41 @@ struct MediaDetailView: View {
             .buttonStyle(.plain)
             #endif
         }
+    }
+
+    /// Settings › Layout › Detail Page › Shuffle.
+    private var heroShuffleAction: HeroWatchAction? {
+        guard display.episodeShuffleAvailable, displayItem.kind == .series, !detailEpisodes.isEmpty else { return nil }
+        let isOn = EpisodeShuffleStore.shared.settings(for: displayItem.id).enabled
+        return HeroWatchAction(
+            systemImage: "shuffle",
+            accessibilityLabel: isOn ? "Shuffle On" : "Shuffle",
+            perform: { showsShuffle = true }
+        )
+    }
+
+    private var isShuffleActive: Bool {
+        EpisodeShuffleStore.shared.isActive(for: displayItem, display: display) && !detailEpisodes.isEmpty
+    }
+
+    private var shuffleKey: String {
+        let settings = EpisodeShuffleStore.shared.settings(for: displayItem.id)
+        return "\(isShuffleActive)|\(settings.includeWatched)|\(detailEpisodes.count)"
+    }
+
+    private var shuffledPlayTitle: String? {
+        guard playbackIntent.resumeAt == nil, let shufflePrimary else { return nil }
+        return "Play S\(shufflePrimary.seasonNumber) E\(shufflePrimary.episodeNumber)"
+    }
+
+    private func pickShuffleEpisode(excluding episode: MediaEpisode? = nil) -> MediaEpisode? {
+        EpisodeShuffleStore.shared.pick(
+            for: displayItem.id,
+            episodes: detailEpisodes,
+            watchState: watchState,
+            includeWatched: EpisodeShuffleStore.shared.settings(for: displayItem.id).includeWatched,
+            excluding: episode
+        )
     }
 
     private var detailEpisodes: [MediaEpisode] {

@@ -49,6 +49,34 @@ struct ContinueWatchingSettingsView: View {
             }
 
             Section {
+                Toggle(isOn: settings.binding(\.display.nextUpFromFurthestEpisode)) {
+                    Text("Next Up From Furthest Episode")
+                    Text("After an episode ends, offers the one after the furthest episode you've watched. Turn off for rewatches to follow the episode you just finished.")
+                }
+                Toggle(isOn: settings.binding(\.display.showsUnairedNextUp)) {
+                    Text("Show Unaired Next Up Episodes")
+                    Text("Keeps a show in the row when its next episode hasn't aired yet.")
+                }
+                Toggle(isOn: settings.binding(\.display.blursNextUp)) {
+                    Text("Blur Unwatched in Continue Watching")
+                    Text("Blurs next-up episode stills so they don't spoil the episode.")
+                }
+                .disabled(!settings.preferences.display.continueWatchingEpisodeThumbnails
+                    || settings.preferences.display.continueWatchingStyle == .poster)
+            } header: {
+                Text("Next Up Behavior")
+            }
+
+            Section {
+                Toggle(isOn: settings.binding(\.display.resumePromptOnLaunch)) {
+                    Text("Resume Prompt on Launch")
+                    Text("When Omnia was closed during playback, offers to continue where you left off the next time it opens.")
+                }
+            } header: {
+                Text("On Launch")
+            }
+
+            Section {
                 SettingsDropdown(
                     "Finished At",
                     selection: $completionThreshold,

@@ -129,7 +129,7 @@ struct HomeSettingsView: View {
             Text("Hero Trailer")
         } footer: {
             Text(homeLayout.preferences.showsHero
-                 ? "Trailers play in YouTube's own player. Titles without a trailer keep their artwork."
+                 ? "Trailers play natively in the hero. If a trailer is unavailable, its artwork stays visible. Reduce Motion pauses autoplay."
                  : "Turn on Show Hero below to use hero trailers.")
         }
         .disabled(!homeLayout.preferences.showsHero)
@@ -190,6 +190,10 @@ struct DetailPageSettingsView: View {
                     selection: settings.binding(\.display.detailBackground),
                     options: Array(DetailBackgroundMode.allCases)
                 ) { mode in mode.title }
+                Toggle(isOn: settings.binding(\.display.posterTransition)) {
+                    Text("Poster Transition")
+                    Text("Expand and blur posters when opening details.")
+                }
             } header: {
                 Text("Page")
             } footer: {
@@ -209,6 +213,10 @@ struct DetailPageSettingsView: View {
                     Text("Blur Unwatched Episodes")
                     Text("Hide the stills of episodes you haven't watched or started, to avoid spoilers.")
                 }
+                Toggle(isOn: settings.binding(\.display.episodeShuffleAvailable)) {
+                    Text("Shuffle")
+                    Text("Shuffle episodes from any series. Turning this off pauses shuffle.")
+                }
             } header: {
                 Text("Episode Cards")
             } footer: {
@@ -216,16 +224,45 @@ struct DetailPageSettingsView: View {
             }
 
             Section {
-                ForEach(DetailSection.allCases) { section in
-                    Toggle(section.title, isOn: sectionBinding(section))
+                ForEach(Array(sectionOrder.enumerated()), id: \.element) { index, section in
+                    sectionRow(section, index: index)
                 }
             } header: {
                 Text("Sections")
             } footer: {
-                Text("Turned-off sections are left out of every title page.")
+                Text("Turned-off sections are left out of every title page. Use the arrows to change the order they appear in.")
             }
         }
         .omniaNavigationTitle("Detail Page")
+    }
+
+    private var sectionOrder: [DetailSection] {
+        DisplayPreferences.completeOrder(settings.preferences.display.detailSectionOrder)
+    }
+
+    private func sectionRow(_ section: DetailSection, index: Int) -> some View {
+        HStack(spacing: 12) {
+            Toggle(section.title, isOn: sectionBinding(section))
+
+            Button {
+                settings.update { $0.display.moveDetailSection(section, by: -1) }
+            } label: {
+                Image(systemName: "chevron.up")
+            }
+            .disabled(index == 0)
+            .help("Move Up")
+            .accessibilityLabel("Move \(section.title) up")
+
+            Button {
+                settings.update { $0.display.moveDetailSection(section, by: 1) }
+            } label: {
+                Image(systemName: "chevron.down")
+            }
+            .disabled(index == sectionOrder.count - 1)
+            .help("Move Down")
+            .accessibilityLabel("Move \(section.title) down")
+        }
+        .buttonStyle(.borderless)
     }
 
     private func sectionBinding(_ section: DetailSection) -> Binding<Bool> {

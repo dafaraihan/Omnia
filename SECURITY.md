@@ -87,6 +87,11 @@ dependency source.
 
 ## Confirmed repository controls
 
+- Home hero trailers resolve public YouTube player responses on-device and
+  pass validated HLS/muxed media URLs to a dedicated AVPlayer. The bounded
+  extraction network policy, native media trust boundary and verification
+  limitations are documented in [Native hero trailer extraction](docs/research/hero-trailer-extraction.md).
+
 - User-owned provider credentials and the legacy resolver bearer token use
   `KeychainStore`; mobile items use `WhenUnlockedThisDeviceOnly`, and no
   synchronizable Keychain attribute is enabled. The resolver endpoint and exact

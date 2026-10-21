@@ -32,6 +32,44 @@ nonisolated struct HomeCollection: Codable, Hashable, Sendable, Identifiable {
         case id, title, pinToTop, viewMode, showAllTab, backdropImageUrl, folders
     }
 
+    /// A new, empty collection, as Nuvio's editor starts one.
+    init(
+        id: String = UUID().uuidString.lowercased(),
+        title: String = "",
+        pinToTop: Bool = false,
+        viewMode: String = ViewMode.tabs.rawValue,
+        showAllTab: Bool = true,
+        backdropImageUrl: URL? = nil,
+        folders: [HomeCollectionFolder] = []
+    ) {
+        self.id = id
+        self.title = title
+        self.pinToTop = pinToTop
+        self.viewMode = viewMode
+        self.showAllTab = showAllTab
+        self.backdropImageUrl = backdropImageUrl
+        self.folders = folders
+    }
+
+    /// Nuvio's folder page layouts. Files may also hold `FOLLOW_LAYOUT`,
+    /// which Omnia shows as tabs.
+    enum ViewMode: String, CaseIterable, Sendable {
+        case tabs = "TABBED_GRID"
+        case rows = "ROWS"
+
+        var title: String {
+            switch self {
+            case .tabs: "Tabs"
+            case .rows: "Rows"
+            }
+        }
+    }
+
+    var layout: ViewMode {
+        get { showsSourcesAsRows ? .rows : .tabs }
+        set { viewMode = newValue.rawValue }
+    }
+
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         guard let id = container.manifestString(forKey: .id), !id.isEmpty else {
@@ -53,6 +91,17 @@ nonisolated struct HomeCollectionFolder: Codable, Hashable, Sendable, Identifiab
         case landscape = "LANDSCAPE"
         case wide = "WIDE"
         case square = "SQUARE"
+
+        static let allCases: [TileShape] = [.poster, .landscape, .wide, .square]
+
+        var title: String {
+            switch self {
+            case .poster: "Poster"
+            case .landscape: "Landscape"
+            case .wide: "Wide"
+            case .square: "Square"
+            }
+        }
 
         /// Width divided by height.
         var aspectRatio: Double {
@@ -82,6 +131,21 @@ nonisolated struct HomeCollectionFolder: Codable, Hashable, Sendable, Identifiab
 
     private enum CodingKeys: String, CodingKey {
         case id, title, hideTitle, coverImageUrl, coverEmoji, heroBackdropUrl, titleLogoUrl, focusGifUrl, focusGifEnabled, tileShape, sources, catalogSources
+    }
+
+    /// A new folder, as Nuvio's editor adds one.
+    init(id: String = UUID().uuidString.lowercased(), title: String = "New Folder") {
+        self.id = id
+        self.title = title
+        hideTitle = false
+        coverImageUrl = nil
+        coverEmoji = nil
+        heroBackdropUrl = nil
+        titleLogoUrl = nil
+        focusGifUrl = nil
+        focusGifEnabled = true
+        tileShape = .poster
+        sources = []
     }
 
     init(from decoder: Decoder) throws {
@@ -145,6 +209,15 @@ nonisolated struct HomeCollectionSource: Codable, Hashable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case provider, addonId, type, catalogId, genre
+    }
+
+    /// An installed add-on's catalog, picked in the folder editor.
+    init(addonId: String, type: String, catalogId: String, genre: String? = nil) {
+        provider = "addon"
+        self.addonId = addonId
+        self.type = type
+        self.catalogId = catalogId
+        self.genre = genre
     }
 
     init(from decoder: Decoder) throws {

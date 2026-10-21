@@ -338,6 +338,7 @@ nonisolated struct CardHoverPreferences: Codable, Equatable, Sendable {
 }
 
 nonisolated enum ContinueWatchingStyle: String, Codable, CaseIterable, Identifiable, Sendable {
+    case card
     case wide
     case poster
 
@@ -345,10 +346,14 @@ nonisolated enum ContinueWatchingStyle: String, Codable, CaseIterable, Identifia
 
     var title: String {
         switch self {
+        case .card: "Card"
         case .wide: "Wide"
         case .poster: "Poster"
         }
     }
+
+    /// Card and Wide use landscape artwork; Poster uses the poster.
+    var isLandscape: Bool { self != .poster }
 }
 
 nonisolated enum ContinueWatchingSort: String, Codable, CaseIterable, Identifiable, Sendable {
@@ -461,11 +466,27 @@ nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
     var continueWatchingStyle: ContinueWatchingStyle = .wide
     var continueWatchingSort: ContinueWatchingSort = .recent
     var continueWatchingEpisodeThumbnails = true
+    /// Nuvio's Next Up behaviour: after an episode ends, the row offers the
+    /// one after the furthest episode watched, not the one just finished.
+    var nextUpFromFurthestEpisode = true
+    var showsUnairedNextUp = true
+    /// Blurs next-up episode stills, so they don't spoil the episode.
+    var blursNextUp = false
+    /// Offers to resume when Omnia opens after it was closed during playback.
+    var resumePromptOnLaunch = true
 
     var detailBackground: DetailBackgroundMode = .artworkColor
     var episodeLayout: EpisodeCardLayout = .horizontal
     var blurUnwatchedEpisodes = false
     var hiddenDetailSections: Set<DetailSection> = []
+    /// The order of a title page's sections (Nuvio's reorderable sections).
+    var detailSectionOrder: [DetailSection] = DetailSection.allCases
+    /// Nuvio's Poster Transition: the poster expands and blurs into the
+    /// title page when it opens.
+    var posterTransition = false
+    /// Nuvio's Shuffle: offers random episodes on a show's page. Turning it
+    /// off pauses shuffle for every show.
+    var episodeShuffleAvailable = false
 
     static let `default` = Self()
     /// Nuvio's default custom gradient, the same as Rose Gold.
@@ -493,10 +514,33 @@ nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
         continueWatchingStyle = (try? c.decodeIfPresent(ContinueWatchingStyle.self, forKey: .continueWatchingStyle)) ?? d.continueWatchingStyle
         continueWatchingSort = (try? c.decodeIfPresent(ContinueWatchingSort.self, forKey: .continueWatchingSort)) ?? d.continueWatchingSort
         continueWatchingEpisodeThumbnails = (try? c.decodeIfPresent(Bool.self, forKey: .continueWatchingEpisodeThumbnails)) ?? d.continueWatchingEpisodeThumbnails
+        nextUpFromFurthestEpisode = (try? c.decodeIfPresent(Bool.self, forKey: .nextUpFromFurthestEpisode)) ?? d.nextUpFromFurthestEpisode
+        showsUnairedNextUp = (try? c.decodeIfPresent(Bool.self, forKey: .showsUnairedNextUp)) ?? d.showsUnairedNextUp
+        blursNextUp = (try? c.decodeIfPresent(Bool.self, forKey: .blursNextUp)) ?? d.blursNextUp
+        resumePromptOnLaunch = (try? c.decodeIfPresent(Bool.self, forKey: .resumePromptOnLaunch)) ?? d.resumePromptOnLaunch
         detailBackground = (try? c.decodeIfPresent(DetailBackgroundMode.self, forKey: .detailBackground)) ?? d.detailBackground
         episodeLayout = (try? c.decodeIfPresent(EpisodeCardLayout.self, forKey: .episodeLayout)) ?? d.episodeLayout
         blurUnwatchedEpisodes = (try? c.decodeIfPresent(Bool.self, forKey: .blurUnwatchedEpisodes)) ?? d.blurUnwatchedEpisodes
         hiddenDetailSections = (try? c.decodeIfPresent(Set<DetailSection>.self, forKey: .hiddenDetailSections)) ?? d.hiddenDetailSections
+        detailSectionOrder = Self.completeOrder((try? c.decodeIfPresent([LenientDetailSection].self, forKey: .detailSectionOrder))?.compactMap(\.value) ?? d.detailSectionOrder)
+        posterTransition = (try? c.decodeIfPresent(Bool.self, forKey: .posterTransition)) ?? d.posterTransition
+        episodeShuffleAvailable = (try? c.decodeIfPresent(Bool.self, forKey: .episodeShuffleAvailable)) ?? d.episodeShuffleAvailable
+    }
+
+    /// Drops repeats and appends sections a saved order doesn't know yet.
+    nonisolated static func completeOrder(_ order: [DetailSection]) -> [DetailSection] {
+        var seen = Set<DetailSection>()
+        let known = order.filter { seen.insert($0).inserted }
+        return known + DetailSection.allCases.filter { !seen.contains($0) }
+    }
+
+    /// One saved section, ignored when a later version removed it.
+    private nonisolated struct LenientDetailSection: Decodable {
+        let value: DetailSection?
+
+        init(from decoder: Decoder) throws {
+            value = try? decoder.singleValueContainer().decode(DetailSection.self)
+        }
     }
 
     var normalized: Self {
@@ -560,6 +604,20 @@ nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
 
     func shows(_ section: DetailSection) -> Bool {
         !hiddenDetailSections.contains(section)
+    }
+
+    /// Visible sections in the chosen order.
+    var orderedDetailSections: [DetailSection] {
+        Self.completeOrder(detailSectionOrder).filter(shows)
+    }
+
+    mutating func moveDetailSection(_ section: DetailSection, by offset: Int) {
+        var order = Self.completeOrder(detailSectionOrder)
+        guard let index = order.firstIndex(of: section) else { return }
+        let target = index + offset
+        guard order.indices.contains(target) else { return }
+        order.swapAt(index, target)
+        detailSectionOrder = order
     }
 }
 

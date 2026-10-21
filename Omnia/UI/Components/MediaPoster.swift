@@ -65,6 +65,7 @@ struct MediaPoster: View {
                     }
                     .cardDepth(.posters, cornerRadius: cornerRadius)
                     .mediaHoverPreview(item)
+                    .posterTransitionSource(item, prefersBackdrop: usesBackdropCard, cornerRadius: cornerRadius)
 
                 if showsMediaCardLabels {
                     MediaPosterLabel(item: item)

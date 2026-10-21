@@ -1356,6 +1356,30 @@ enum PlaybackLauncher {
                 }
             }
         }
+        let display = settings.preferences.display
+        let seriesEpisodes = (item.details ?? progressItem.details)?.seasons.flatMap(\.episodes) ?? []
+        // Shuffle (Nuvio): while it is on for the show, the next episode and
+        // Next Up are a random pick instead of the following episode.
+        let shuffle = EpisodeShuffleStore.shared
+        let shuffledNext = episode.flatMap { current in
+            shuffle.isActive(for: progressItem, display: display)
+                ? shuffle.pick(
+                    for: progressItem.id,
+                    episodes: seriesEpisodes,
+                    watchState: store.watchState(for: progressItem),
+                    includeWatched: shuffle.settings(for: progressItem.id).includeWatched,
+                    excluding: current
+                )
+                : nil
+        }
+        let nextUp = episode.map { _ in
+            OmniaStore.NextUpRequest(
+                episodes: seriesEpisodes,
+                fromFurthest: display.nextUpFromFurthestEpisode,
+                includesUnaired: display.showsUnairedNextUp,
+                shuffledNext: shuffledNext
+            )
+        }
         playback.start(
             item: item,
             episode: episode,
@@ -1367,9 +1391,11 @@ enum PlaybackLauncher {
                 for: progressItem,
                 episode: episode,
                 positionSeconds: position,
-                durationSeconds: duration
+                durationSeconds: duration,
+                nextUp: nextUp
             )
         }
+        playback.shuffledNextEpisode = shuffledNext
         playback.setCurrentSource(candidate, linkKey: candidate == nil ? nil : linkKey)
         playback.loadAddonSubtitles(
             addons: store.installedAddons,

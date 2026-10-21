@@ -405,6 +405,7 @@ final class PlaybackSession {
         self.source = source
         mediaItem = item
         self.episode = episode
+        ResumePromptMarker.mark(item.id)
         progressHandler = onProgress
         playbackError = nil
         isPaused = false
@@ -746,6 +747,8 @@ final class PlaybackSession {
 
     func stop(persisting: Bool = true) {
         sourceSelectionID = nil
+        ResumePromptMarker.clear()
+        shuffledNextEpisode = nil
         endTimelinePreview()
         if persisting { flushProgress() }
         #if os(macOS)
@@ -1055,8 +1058,12 @@ final class PlaybackSession {
     }
     #endif
 
+    /// Set by Shuffle (Settings › Layout › Detail Page) for this episode.
+    var shuffledNextEpisode: MediaEpisode?
+
     var nextEpisode: MediaEpisode? {
         guard let episode else { return nil }
+        if let shuffledNextEpisode { return shuffledNextEpisode }
         let episodes = mediaItem?.details?.seasons.flatMap(\.episodes).sorted {
             ($0.seasonNumber, $0.episodeNumber) < ($1.seasonNumber, $1.episodeNumber)
         } ?? []
@@ -1213,3 +1220,24 @@ private extension SubtitleAppearance.Alignment {
     }
 }
 #endif
+
+/// Nuvio's resume prompt: the title being played is remembered until the
+/// player closes, so a launch after Omnia quit during playback can offer
+/// to continue it.
+nonisolated enum ResumePromptMarker {
+    private static let key = "resume-prompt-media-id"
+
+    static func mark(_ mediaID: String) {
+        UserDefaults.standard.set(mediaID, forKey: key)
+    }
+
+    static func clear() {
+        UserDefaults.standard.removeObject(forKey: key)
+    }
+
+    /// The title left in the player, read once.
+    static func consume() -> String? {
+        defer { clear() }
+        return UserDefaults.standard.string(forKey: key)
+    }
+}

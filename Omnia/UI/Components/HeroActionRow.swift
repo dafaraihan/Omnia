@@ -29,6 +29,8 @@ struct HeroActionRow<Primary: View>: View {
     let isSaved: Bool
     let libraryAction: () -> Void
     let watchAction: HeroWatchAction?
+    /// Settings › Layout › Detail Page › Shuffle, on a show's page.
+    let shuffleAction: HeroWatchAction?
     private let primary: Primary
 
     init(
@@ -36,12 +38,14 @@ struct HeroActionRow<Primary: View>: View {
         isSaved: Bool,
         libraryAction: @escaping () -> Void,
         watchAction: HeroWatchAction? = nil,
+        shuffleAction: HeroWatchAction? = nil,
         @ViewBuilder primary: () -> Primary
     ) {
         self.width = width
         self.isSaved = isSaved
         self.libraryAction = libraryAction
         self.watchAction = watchAction
+        self.shuffleAction = shuffleAction
         self.primary = primary()
     }
 
@@ -49,6 +53,9 @@ struct HeroActionRow<Primary: View>: View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 8) {
                 primary
+                if let shuffleAction {
+                    watchButton(action: shuffleAction)
+                }
                 if let watchAction {
                     watchButton(action: watchAction)
                 }
@@ -58,6 +65,9 @@ struct HeroActionRow<Primary: View>: View {
             VStack(alignment: .center, spacing: 10) {
                 primary
                 HStack(spacing: 10) {
+                    if let shuffleAction {
+                        watchButton(action: shuffleAction)
+                    }
                     if let watchAction {
                         watchButton(action: watchAction)
                     }

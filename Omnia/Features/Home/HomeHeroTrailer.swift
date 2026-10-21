@@ -8,7 +8,7 @@ import Observation
 @Observable
 @MainActor
 final class HomeHeroTrailerModel {
-    private(set) var videoID: String?
+    private(set) var streamURL: URL?
     /// True once the player reports playback, so the trailer never covers
     /// the artwork with a black or loading frame.
     private(set) var isVisible = false
@@ -16,17 +16,19 @@ final class HomeHeroTrailerModel {
     /// Shared across titles, like Nuvio's speaker button.
     var isMuted = true
     @ObservationIgnored private var appliedStartsWithSound: Bool?
-    @ObservationIgnored private var revealTask: Task<Void, Never>?
+    @ObservationIgnored private var generation = UUID()
 
-    var holdsCarousel: Bool { isPending || videoID != nil }
+    var holdsCarousel: Bool { isPending || streamURL != nil }
 
     func load(
         _ item: MediaItem?,
         preferences: HeroTrailerPreferences,
-        metadata: LiveMetadataStore
+        metadata: LiveMetadataStore,
+        autoplayAllowed: Bool = true
     ) async {
         reset()
-        guard preferences.autoplay, let item else { return }
+        let requestGeneration = generation
+        guard preferences.autoplay, autoplayAllowed, let item else { return }
         if appliedStartsWithSound != preferences.startsWithSound {
             appliedStartsWithSound = preferences.startsWithSound
             isMuted = !preferences.startsWithSound
@@ -36,41 +38,37 @@ final class HomeHeroTrailerModel {
         var trailer = item.details?.heroTrailer
         if trailer == nil {
             let detailed = await metadata.details(for: item)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, generation == requestGeneration else { return }
             trailer = detailed.details?.heroTrailer
         }
         guard let id = trailer?.youtubeVideoID else {
             isPending = false
             return
         }
-        if preferences.startDelaySeconds > 0 {
-            try? await Task.sleep(for: .seconds(preferences.startDelaySeconds))
-            guard !Task.isCancelled else { return }
-        }
-        videoID = id
+        // Resolve during the chosen delay instead of delaying network work.
+        async let resolvedURL = YouTubeTrailerExtractor().resolve(videoID: id)
+        do {
+            try await Task.sleep(for: .seconds(preferences.startDelaySeconds))
+        } catch { return }
+        let url = await resolvedURL
+        guard !Task.isCancelled, generation == requestGeneration else { return }
+        streamURL = url
         isPending = false
     }
 
-    func handle(_ event: YouTubeTrailerPlayer.Event) {
+    func handle(_ event: NativeTrailerPlayer.Event, for url: URL) {
+        guard streamURL == url else { return }
         switch event {
         case .playing:
-            guard !isVisible, revealTask == nil else { return }
-            // YouTube shows the title over the first moments; wait for it to
-            // clear before fading in.
-            revealTask = Task {
-                try? await Task.sleep(for: .milliseconds(700))
-                guard !Task.isCancelled, videoID != nil else { return }
-                isVisible = true
-            }
+            isVisible = true
         case .ended, .failed:
             reset()
         }
     }
 
     private func reset() {
-        revealTask?.cancel()
-        revealTask = nil
-        videoID = nil
+        generation = UUID()
+        streamURL = nil
         isVisible = false
         isPending = false
     }
@@ -84,15 +82,15 @@ struct HomeHeroTrailerLayer: View {
 
     var body: some View {
         ZStack {
-            if let videoID = model.videoID {
-                YouTubeTrailerPlayer(
-                    videoID: videoID,
+            if let url = model.streamURL {
+                NativeTrailerPlayer(
+                    url: url,
                     isMuted: model.isMuted,
                     isPlaying: isPlaying
                 ) { event in
-                    model.handle(event)
+                    model.handle(event, for: url)
                 }
-                .id(videoID)
+                .id(url)
 
                 LinearGradient(
                     stops: [

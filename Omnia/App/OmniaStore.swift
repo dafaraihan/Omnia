@@ -18,6 +18,9 @@ final class OmniaStore {
     private(set) var localMediaSnapshots: [LocalMediaSnapshot]
     private(set) var localMediaPersistenceFailed = false
     @ObservationIgnored private var playbackPersistenceTask: Task<Void, Never>?
+    /// The episode whose ending already produced a Next Up entry, so later
+    /// ticks past the end don't repeat it.
+    @ObservationIgnored private var finishedEpisodeKey: String?
     private let localMediaStore: LocalMediaStore?
     private let addonPersistence: InstalledAddonPersistence?
     var installedAddons: [InstalledAddon] {
@@ -289,14 +292,33 @@ final class OmniaStore {
         }
     }
 
+    /// What Continue Watching offers once an episode ends: the series'
+    /// episodes and the Next Up options from Settings.
+    struct NextUpRequest {
+        let episodes: [MediaEpisode]
+        let fromFurthest: Bool
+        let includesUnaired: Bool
+        /// Shuffle's random pick, which replaces the following episode.
+        var shuffledNext: MediaEpisode? = nil
+    }
+
     /// Stores a durable local resume point. The title is added to the library
     /// when necessary so Continue Watching never depends on a remote catalog.
     func recordPlayback(
         for item: MediaItem,
         episode: MediaEpisode? = nil,
         positionSeconds: Double,
-        durationSeconds: Double?
+        durationSeconds: Double?,
+        nextUp: NextUpRequest? = nil
     ) {
+        let finished = finishedEpisodeCommand(
+            for: item,
+            episode: episode,
+            positionSeconds: positionSeconds,
+            durationSeconds: durationSeconds,
+            nextUp: nextUp
+        )
+
         guard let localMediaStore else {
             recordPlaybackInMemory(
                 for: item,
@@ -304,6 +326,9 @@ final class OmniaStore {
                 positionSeconds: positionSeconds,
                 durationSeconds: durationSeconds
             )
+            if let finished, let nextUp {
+                applyWatchCommandInMemory(finished, to: item, episodes: nextUp.episodes)
+            }
             return
         }
 
@@ -317,6 +342,9 @@ final class OmniaStore {
             positionSeconds: positionSeconds,
             durationSeconds: durationSeconds
         )
+        if let finished, let nextUp {
+            applyWatchCommandInMemory(finished, to: item, episodes: nextUp.episodes)
+        }
         let previousWrite = playbackPersistenceTask
         playbackPersistenceTask = Task { [weak self] in
             await previousWrite?.value
@@ -330,11 +358,51 @@ final class OmniaStore {
                     completionThreshold: Self.playbackCompletionThreshold,
                     at: .now
                 )
+                // Written after the resume point is cleared, in the same
+                // chain, so the Next Up entry can't be overwritten.
+                if let finished, let nextUp {
+                    try await localMediaStore.applyWatchCommand(
+                        finished,
+                        to: item,
+                        episodes: nextUp.episodes,
+                        at: .now
+                    )
+                }
                 await refreshLocalMedia()
             } catch {
                 localMediaPersistenceFailed = true
             }
         }
+    }
+
+    /// The Next Up command for the tick that first passes the end of an
+    /// episode, or nil.
+    private func finishedEpisodeCommand(
+        for item: MediaItem,
+        episode: MediaEpisode?,
+        positionSeconds: Double,
+        durationSeconds: Double?,
+        nextUp: NextUpRequest?
+    ) -> LocalMediaWatchCommand? {
+        guard item.kind == .series, let episode else { return nil }
+        let key = "\(item.id)|\(episode.id)"
+        let duration = durationSeconds.flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
+        let progress = duration.map { min(max(positionSeconds, 0) / $0, 1) } ?? 0
+        guard progress >= Self.playbackCompletionThreshold else {
+            // Starting the episode again allows another Next Up later.
+            if finishedEpisodeKey == key { finishedEpisodeKey = nil }
+            return nil
+        }
+        guard finishedEpisodeKey != key, let nextUp, !nextUp.episodes.isEmpty else { return nil }
+        finishedEpisodeKey = key
+        let target = nextUp.shuffledNext ?? NextUpEpisode.after(
+            episode,
+            episodes: nextUp.episodes,
+            watchState: watchState(for: item),
+            fromFurthest: nextUp.fromFurthest,
+            includesUnaired: nextUp.includesUnaired
+        )
+        return .finishEpisode(episode, nextUp: target)
     }
 
     func removeFromContinueWatching(_ item: MediaItem) {
@@ -618,6 +686,9 @@ final class OmniaStore {
             let previous = orderedEpisodes[index - 1]
             state.setWatched(false, for: previous)
             setResumeTarget(previous)
+        case let .finishEpisode(finished, nextUp):
+            state.setWatched(true, for: finished)
+            setResumeTarget(nextUp)
         }
 
         let isInWatchlist = existingSnapshot?.isInWatchlist

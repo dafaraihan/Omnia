@@ -223,6 +223,11 @@ actor LocalMediaStore: LocalMediaStoring {
             let previous = orderedEpisodes[currentIndex - 1]
             watchState.setWatched(false, for: previous)
             setResumeTarget(previous, on: record, at: date)
+
+        case let .finishEpisode(finished, nextUp):
+            guard item.kind == .series else { throw LocalMediaStoreError.invalidPlaybackState }
+            watchState.setWatched(true, for: finished)
+            setResumeTarget(nextUp, on: record, at: date)
         }
 
         record.mediaData = try encodedBaseItem(item)

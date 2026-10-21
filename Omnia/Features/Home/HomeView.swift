@@ -10,6 +10,7 @@ struct HomeView: View {
     @Environment(LiveMetadataStore.self) private var metadata
     @Environment(SettingsPreferencesStore.self) private var settings
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(AddonCatalogStore.self) private var addonCatalogs
     @Environment(HomeLayoutStore.self) private var homeLayout
     @Environment(CollectionsStore.self) private var collections
@@ -21,6 +22,9 @@ struct HomeView: View {
     @State private var heroIndex = 0
     @State private var heroCandidates: [MediaItem] = []
     @State private var sourcePlaybackItem: MediaItem?
+    @State private var resumePromptItem: MediaItem?
+    /// The resume prompt is offered once per launch.
+    private static var didCheckResumePrompt = false
     @State private var heroTrailer = HomeHeroTrailerModel()
     @Environment(PlaybackSession.self) private var playback
     @AppStorage(HomeView.continueWatchingVisibilityKey) private var showsContinueWatching = true
@@ -250,6 +254,24 @@ struct HomeView: View {
                 )
             }
         }
+        .task(id: store.localMediaSnapshots.count) {
+            checkResumePrompt()
+        }
+        .alert(
+            "Continue Watching?",
+            isPresented: Binding(get: { resumePromptItem != nil }, set: { if !$0 { resumePromptItem = nil } }),
+            presenting: resumePromptItem
+        ) { item in
+            Button("Resume") {
+                resumePromptItem = nil
+                sourcePlaybackItem = item
+            }
+            Button("Not Now", role: .cancel) {
+                resumePromptItem = nil
+            }
+        } message: { item in
+            Text(resumePromptMessage(for: item))
+        }
         .task(id: featured?.id) {
             guard let featured else {
                 resolvedFeatured = nil
@@ -277,13 +299,14 @@ struct HomeView: View {
             await heroTrailer.load(
                 displayFeatured,
                 preferences: settings.preferences.heroTrailer,
-                metadata: metadata
+                metadata: metadata,
+                autoplayAllowed: !reduceMotion
             )
         }
-        .task(id: "\(heroCandidateKey)-\(heroIndex)-\(isActiveDestination)-\(heroTrailer.holdsCarousel)") {
+        .task(id: "\(heroCandidateKey)-\(heroIndex)-\(isActiveDestination)-\(heroTrailer.holdsCarousel)-\(reduceMotion)") {
             // The carousel pauses while Home sits in a hidden tab, and while
             // a hero trailer is waiting to start or playing.
-            guard isActiveDestination, heroCandidates.count > 1, !heroTrailer.holdsCarousel else { return }
+            guard isActiveDestination, !reduceMotion, heroCandidates.count > 1, !heroTrailer.holdsCarousel else { return }
 
             do {
                 try await Task.sleep(for: .seconds(isAddonMode ? 8 : 9))
@@ -484,7 +507,7 @@ struct HomeView: View {
     /// Restarts the trailer for a new title or changed trailer settings.
     private var heroTrailerKey: String {
         let preferences = settings.preferences.heroTrailer
-        return "\(featured?.id ?? "")-\(preferences.autoplay)-\(preferences.startDelaySeconds)-\(preferences.startsWithSound)"
+        return "\(featured?.id ?? "")-\(preferences.autoplay)-\(preferences.startDelaySeconds)-\(preferences.startsWithSound)-\(reduceMotion)"
     }
 
     /// The trailer pauses in a hidden tab, while the streams page is open,
@@ -562,6 +585,28 @@ struct HomeView: View {
                 }
             }
         }
+    }
+
+    /// Nuvio's resume prompt on launch: Omnia was closed while a title was
+    /// playing, so offer to continue it once its progress has loaded.
+    private func checkResumePrompt() {
+        guard !Self.didCheckResumePrompt, !store.localMediaSnapshots.isEmpty else { return }
+        Self.didCheckResumePrompt = true
+        guard let mediaID = ResumePromptMarker.consume(),
+              display.resumePromptOnLaunch,
+              playback.source == nil,
+              let snapshot = store.localMediaSnapshots.first(where: { $0.mediaID == mediaID }),
+              let progress = snapshot.progress, progress > 0
+        else { return }
+        resumePromptItem = snapshot.item
+    }
+
+    private func resumePromptMessage(for item: MediaItem) -> String {
+        let remaining = ResumeProgressPresentation(item: item)?.remainingText
+        if item.kind == .series, let season = item.resumeSeasonNumber, let episode = item.resumeEpisodeNumber {
+            return ["\(item.title), S\(season) E\(episode)", remaining].compactMap { $0 }.joined(separator: " · ")
+        }
+        return [item.title, remaining].compactMap { $0 }.joined(separator: " · ")
     }
 
     private func upcomingShelf(_ result: UpcomingResult) -> some View {
@@ -816,6 +861,8 @@ struct ContinueWatchingCard: View {
     /// chosen in Settings › Home › Continue Watching.
     static func itemSpan(for display: DisplayPreferences) -> CGFloat {
         switch display.continueWatchingStyle {
+        case .card:
+            cardStyleWidth(for: display) + MediaBrowseMetrics.shelfSpacing
         case .poster:
             display.posterCardWidth + MediaBrowseMetrics.shelfSpacing
         case .wide:
@@ -827,10 +874,31 @@ struct ContinueWatchingCard: View {
         }
     }
 
-    private var isPoster: Bool { display.continueWatchingStyle == .poster }
+    /// Nuvio's Card style: a landscape card 1.2 times its landscape poster,
+    /// so it follows Poster Card Style's width.
+    static func cardStyleWidth(for display: DisplayPreferences) -> CGFloat {
+        (display.posterCardWidth * 180 / 110 * 1.2).rounded()
+    }
+
+    private var style: ContinueWatchingStyle { display.continueWatchingStyle }
+    private var isPoster: Bool { style == .poster }
 
     private var cornerRadius: CGFloat {
-        isPoster ? display.posterCornerRadius : 16
+        switch style {
+        case .poster: display.posterCornerRadius
+        case .card: max(display.posterCornerRadius, 10)
+        case .wide: 16
+        }
+    }
+
+    /// The next episode, offered after the previous one ended, before any
+    /// of it is watched.
+    private var isNextUp: Bool {
+        item.kind == .series && item.progress == 0 && item.resumeEpisodeNumber != nil
+    }
+
+    private var usesEpisodeStill: Bool {
+        !isPoster && item.kind == .series && display.continueWatchingEpisodeThumbnails
     }
 
     var body: some View {
@@ -849,7 +917,7 @@ struct ContinueWatchingCard: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Continue watching \(item.title)")
-        .accessibilityValue(cardPresentation.accessibilityValue)
+        .accessibilityValue(isNextUp ? "Up next, \(cardPresentation.accessibilityValue)" : cardPresentation.accessibilityValue)
         .accessibilityHint(
             settings.preferences.directContinueWatchingPlayback
                 ? "Opens available sources and resumes playback in Omnia"
@@ -862,7 +930,17 @@ struct ContinueWatchingCard: View {
         #endif
     }
 
+    @ViewBuilder
     private var cardLabel: some View {
+        if style == .card {
+            landscapeCard
+                .mediaContextMenu(for: item, placement: .continueWatching)
+        } else {
+            classicCard
+        }
+    }
+
+    private var classicCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             ZStack(alignment: .bottom) {
                 resumeArtwork
@@ -884,6 +962,14 @@ struct ContinueWatchingCard: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, isPoster ? 10 : 14)
                     .padding(.bottom, 10)
+                } else if isNextUp {
+                    Text(nextUpText)
+                        .font(isPoster ? .caption.weight(.semibold) : .subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        .padding(.horizontal, isPoster ? 10 : 14)
+                        .padding(.bottom, 10)
                 }
             }
             .frame(width: cardWidth, height: cardHeight)
@@ -904,20 +990,91 @@ struct ContinueWatchingCard: View {
         .mediaContextMenu(for: item, placement: .continueWatching)
     }
 
+    /// Nuvio's TV-style card: everything sits on the artwork, with the time
+    /// left or Up Next in a badge at the top.
+    private var landscapeCard: some View {
+        ZStack(alignment: .bottomLeading) {
+            resumeArtwork
+            LinearGradient(
+                stops: [
+                    .init(color: .clear, location: 0.4),
+                    .init(color: .black.opacity(0.55), location: 0.72),
+                    .init(color: .black.opacity(0.85), location: 1)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+
+            VStack(alignment: .leading, spacing: 3) {
+                if let code = episodeCode {
+                    Text(code)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.9))
+                }
+                Text(item.title)
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                if let episodeTitle {
+                    Text(episodeTitle)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.white.opacity(0.72))
+                }
+                if let resumePresentation {
+                    ResumeProgressBar(progress: resumePresentation.progress)
+                        .padding(.top, 5)
+                }
+            }
+            .lineLimit(1)
+            .padding(12)
+
+            Text(resumePresentation?.remainingText ?? nextUpText)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(.black.opacity(0.62), in: Capsule())
+                .padding(8)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+        }
+        .frame(width: cardWidth, height: cardHeight)
+        .clipShape(.rect(cornerRadius: cornerRadius, style: .continuous))
+        .cardDepth(.continueWatching, cornerRadius: cornerRadius, fallbackBorderOpacity: 0.24)
+    }
+
+    private var episodeCode: String? {
+        guard item.kind == .series, let season = item.resumeSeasonNumber, let episode = item.resumeEpisodeNumber else {
+            return nil
+        }
+        return "S\(season) E\(episode)"
+    }
+
+    private var episodeTitle: String? {
+        let title = item.resumeEpisodeTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return title.isEmpty ? nil : title
+    }
+
+    private var nextUpText: String {
+        isNextUp ? "Up Next" : item.year
+    }
+
     @ViewBuilder
     private var resumeArtwork: some View {
         let url: URL? = if isPoster {
             item.artworkURL ?? item.backdropURL
-        } else if item.kind == .series, display.continueWatchingEpisodeThumbnails {
+        } else if usesEpisodeStill {
             item.resumeEpisodeStillURL ?? item.backdropURL ?? item.artworkURL
         } else {
             item.backdropURL ?? item.artworkURL
         }
+        // Nuvio blurs only next-up episode stills, which can spoil the episode.
+        let blursArtwork = display.blursNextUp && isNextUp && usesEpisodeStill && item.resumeEpisodeStillURL != nil
 
         ZStack {
             LinearGradient(colors: item.artworkColors, startPoint: .topLeading, endPoint: .bottomTrailing)
             AsyncImage(url: url) { image in
                 image.resizable().scaledToFill()
+                    .blur(radius: blursArtwork ? 18 : 0, opaque: true)
             } placeholder: {
                 Image(systemName: item.symbol)
                     .font(.system(size: 42, weight: .light))
@@ -937,21 +1094,33 @@ struct ContinueWatchingCard: View {
     }
 
     private var cardWidth: CGFloat {
-        if isPoster { return display.posterCardWidth }
-        #if os(iOS)
-        return 248
-        #else
-        return 304
-        #endif
+        switch style {
+        case .poster:
+            return display.posterCardWidth
+        case .card:
+            return Self.cardStyleWidth(for: display)
+        case .wide:
+            #if os(iOS)
+            return 248
+            #else
+            return 304
+            #endif
+        }
     }
 
     private var cardHeight: CGFloat {
-        if isPoster { return display.posterCardHeight }
-        #if os(iOS)
-        return 140
-        #else
-        return 172
-        #endif
+        switch style {
+        case .poster:
+            return display.posterCardHeight
+        case .card:
+            return (cardWidth / 1.77).rounded()
+        case .wide:
+            #if os(iOS)
+            return 140
+            #else
+            return 172
+            #endif
+        }
     }
 }
 

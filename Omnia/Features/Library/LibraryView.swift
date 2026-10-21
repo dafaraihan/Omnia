@@ -148,7 +148,7 @@ private struct LibrarySectionGridView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let layout = kind == .continueWatching && display.continueWatchingStyle == .wide
+            let layout = kind == .continueWatching && display.continueWatchingStyle.isLandscape
                 ? MediaBrowseMetrics.landscapeGridLayout(containerWidth: proxy.size.width)
                 : MediaBrowseMetrics.posterGridLayout(containerWidth: proxy.size.width, display: display)
             ScrollView {

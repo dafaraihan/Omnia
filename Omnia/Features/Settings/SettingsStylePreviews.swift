@@ -68,6 +68,23 @@ struct ContinueWatchingStylePreview: View {
 
     var body: some View {
         switch style {
+        case .card:
+            ZStack(alignment: .bottomLeading) {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(.primary.opacity(0.22))
+                VStack(alignment: .leading, spacing: 4) {
+                    bar(width: 0.35, height: 5, opacity: 0.30)
+                    bar(width: 0.6, height: 7, opacity: 0.38)
+                    progress(0.6, height: 3)
+                }
+                .padding(6)
+                Capsule()
+                    .fill(.primary.opacity(0.30))
+                    .frame(width: 24, height: 8)
+                    .padding(5)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            }
+            .frame(width: 104, height: 60)
         case .wide:
             HStack(spacing: 0) {
                 Rectangle()
@@ -188,6 +205,7 @@ extension ContinueWatchingStyle {
     /// Nuvio's line under each style.
     var detail: String {
         switch self {
+        case .card: "TV-style landscape card"
         case .wide: "Info-dense horizontal card"
         case .poster: "Artwork-first poster card"
         }

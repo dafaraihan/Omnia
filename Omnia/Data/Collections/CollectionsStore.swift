@@ -80,6 +80,31 @@ final class CollectionsStore {
         save()
     }
 
+    func collection(id: String) -> HomeCollection? {
+        collections.first { $0.id == id }
+    }
+
+    /// Saves a collection made or changed in the editor, keeping its place.
+    func save(_ collection: HomeCollection) {
+        if let index = collections.firstIndex(where: { $0.id == collection.id }) {
+            guard collections[index] != collection else { return }
+            collections[index] = collection
+        } else {
+            guard collections.count < HomeCollection.maximumCollections else { return }
+            collections.append(collection)
+        }
+        save()
+    }
+
+    /// Nuvio's up and down arrows. Pinned collections keep this order too.
+    func move(_ collection: HomeCollection, by offset: Int) {
+        guard let index = collections.firstIndex(where: { $0.id == collection.id }) else { return }
+        let target = index + offset
+        guard collections.indices.contains(target) else { return }
+        collections.swapAt(index, target)
+        save()
+    }
+
     func setPinned(_ isPinned: Bool, for collection: HomeCollection) {
         guard let index = collections.firstIndex(where: { $0.id == collection.id }) else { return }
         collections[index].pinToTop = isPinned
