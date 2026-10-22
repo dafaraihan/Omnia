@@ -183,13 +183,17 @@ struct HeroAccentBackground: View {
                 Color.clear
                     .overlay {
                         GeometryReader { proxy in
-                            AsyncImage(url: url) { phase in
+                            // Blurring at full window size is costly and was
+                            // redone while scrolling. Blur a copy an eighth of
+                            // the size instead and scale it up: a heavy blur
+                            // looks the same either way. It is decoded at that
+                            // size too, unless a sharper copy is already kept.
+                            let scale = HeroAccentBackground.downscale
+                            CachedArtworkImage(
+                                url: url,
+                                size: CGSize(width: proxy.size.width / scale, height: proxy.size.height / scale)
+                            ) { phase in
                                 if let image = phase.image {
-                                    // Blurring at full window size is costly and
-                                    // was redone while scrolling. Blur a copy an
-                                    // eighth of the size instead and scale it up:
-                                    // a heavy blur looks the same either way.
-                                    let scale = HeroAccentBackground.downscale
                                     image
                                         .resizable()
                                         .scaledToFill()
@@ -316,11 +320,22 @@ enum WindowHeroBackdropLayout {
 struct WindowHeroBackdrop: View {
     let state: HeroBackdropState
     @Environment(HomeLayoutStore.self) private var homeLayout
+    /// The accent fades out when the hero scrolls away instead of cutting
+    /// to black, then is dropped so nothing is drawn behind the shelves.
+    @State private var accentItem: MediaItem?
+    @State private var accentVisible = false
 
     var body: some View {
         GeometryReader { proxy in
             ZStack(alignment: .topLeading) {
                 OmniaPageBackground()
+
+                if let accentItem {
+                    HeroAccentBackground(item: accentItem)
+                        .equatable()
+                        .frame(width: proxy.size.width, height: proxy.size.height)
+                        .opacity(accentVisible ? 1 : 0)
+                }
 
                 if let presentation = state.presentation {
                     let globalFrame = proxy.frame(in: .global)
@@ -330,15 +345,10 @@ struct WindowHeroBackdrop: View {
                         backdropGlobalFrame: globalFrame
                     )
 
-                    // The accent covers the whole window and depends only on
-                    // the item, so scrolling, which moves the hero frame, never
-                    // re-renders the blur. The artwork below draws over it.
+                    // The accent (drawn above) covers the whole window and
+                    // depends only on the item, so scrolling, which moves the
+                    // hero frame, never re-renders the blur.
                     let isHome = presentation.source == .home
-                    if !isHome || homeLayout.preferences.dynamicBackground {
-                        HeroAccentBackground(item: presentation.item)
-                            .equatable()
-                            .frame(width: proxy.size.width, height: proxy.size.height)
-                    }
 
                     // Home's Card hero draws its own artwork inside the card.
                     if !isHome || homeLayout.preferences.heroStyle == .fullBleed {
@@ -372,6 +382,32 @@ struct WindowHeroBackdrop: View {
         .ignoresSafeArea()
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+        .onAppear(perform: updateAccent)
+        .onChange(of: accentKey) { updateAccent() }
+    }
+
+    private var wantedAccent: MediaItem? {
+        guard let presentation = state.presentation else { return nil }
+        guard presentation.source != .home || homeLayout.preferences.dynamicBackground else { return nil }
+        return presentation.item
+    }
+
+    private var accentKey: String {
+        guard let item = wantedAccent else { return "" }
+        return "\(item.id)|\(item.backdropURL?.absoluteString ?? item.artworkURL?.absoluteString ?? "")"
+    }
+
+    private func updateAccent() {
+        if let item = wantedAccent {
+            accentItem = item
+            withAnimation(.easeOut(duration: 0.35)) { accentVisible = true }
+        } else if accentItem != nil {
+            withAnimation(.easeInOut(duration: 0.55)) {
+                accentVisible = false
+            } completion: {
+                if !accentVisible { accentItem = nil }
+            }
+        }
     }
 }
 #endif

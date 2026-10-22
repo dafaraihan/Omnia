@@ -26,6 +26,15 @@ struct HomeView: View {
     /// The resume prompt is offered once per launch.
     private static var didCheckResumePrompt = false
     @State private var heroTrailer = HomeHeroTrailerModel()
+    /// The hero trailer and carousel pause while the hero is scrolled away
+    /// or the window can't be seen.
+    @State private var heroIsOnScreen = true
+    @State private var windowIsVisible = true
+    /// Settings › Integrations › MDBList Ratings, under the hero's metadata
+    /// line as on a title's page.
+    @State private var heroRatings = MDBListRatingsLoader()
+    @State private var showsMDBListSettings = false
+    @State private var servers = MediaServerStore.shared
     @Environment(PlaybackSession.self) private var playback
     @AppStorage(HomeView.continueWatchingVisibilityKey) private var showsContinueWatching = true
     /// Settings › Home › Continue Watching › Show on Home.
@@ -33,11 +42,19 @@ struct HomeView: View {
     @AppStorage(HomeShelfPreferences.storageKey) private var disabledHomeShelfIDs = ""
 
     private var continuing: [MediaItem] {
+        // Newest played first. The stored order puts a title in My List by
+        // the day it was added, so a show watched again stayed where it was.
         let values = store.localMediaSnapshots
             .filter { $0.progress != nil }
+            .sorted { ($0.lastPlayedAt ?? .distantPast) > ($1.lastPlayedAt ?? .distantPast) }
             .map(\.item)
-        let limited = settings.preferences.continueWatchingLimit.value.map { Array(values.prefix($0)) } ?? values
-        return display.continueWatchingSort.sorted(limited)
+        // Titles in progress on media servers that import watch progress.
+        let local = Set(values.map(\.id))
+        let imported = servers.importedProgress.filter { !local.contains($0.id) }
+        // Sorted before the limit, so Title and Nearly Finished sort the
+        // whole row rather than the first few.
+        let sorted = display.continueWatchingSort.sorted(values + imported)
+        return settings.preferences.continueWatchingLimit.value.map { Array(sorted.prefix($0)) } ?? sorted
     }
     /// The pager is deliberately drawn from the live discovery response, not
     /// hard-coded feature art. Prefer titles that can present a proper
@@ -59,7 +76,7 @@ struct HomeView: View {
         homeLayout.ordered(AddonCatalogStore.catalogs(in: store))
     }
 
-    private var isAddonMode: Bool { !addonHomeCatalogs.isEmpty }
+    private var isAddonMode: Bool { !addonHomeCatalogs.isEmpty || !servers.homeRows.isEmpty }
 
     private var visibleAddonCatalogs: [AddonHomeCatalog] {
         addonHomeCatalogs.filter { store.isCatalogEnabled(for: $0.addon, catalog: $0.catalog) }
@@ -67,12 +84,18 @@ struct HomeView: View {
 
     /// Visible catalogs and collections in Home order.
     private var visibleHomeEntries: [HomeRowEntry] {
-        homeLayout.entries(catalogs: addonHomeCatalogs, collections: collections.collections).filter { entry in
+        homeLayout.entries(
+            catalogs: addonHomeCatalogs,
+            collections: collections.collections,
+            servers: servers.homeRows
+        ).filter { entry in
             switch entry {
             case let .catalog(catalog):
                 store.isCatalogEnabled(for: catalog.addon, catalog: catalog.catalog)
             case let .collection(collection):
                 collections.isVisible(collection)
+            case let .server(row):
+                homeLayout.isVisible(row)
             }
         }
     }
@@ -110,7 +133,7 @@ struct HomeView: View {
     }
 
     private var showsHeroSlot: Bool {
-        !isAddonMode || homeLayout.preferences.showsHero
+        !isAddonMode || (homeLayout.preferences.showsHero && !addonHomeCatalogs.isEmpty)
     }
 
     private var visibleHomeCatalogs: [BuiltInHomeCatalog] {
@@ -133,6 +156,7 @@ struct HomeView: View {
             LazyVStack(alignment: .leading, spacing: 0) {
                 if let featured = displayFeatured {
                     hero(featured)
+                        .onScrollVisibilityChange(threshold: 0.15) { heroIsOnScreen = $0 }
                 } else if showsHeroSlot {
                     loadingHero
                 } else {
@@ -171,6 +195,13 @@ struct HomeView: View {
                                 )
                             case let .collection(collection):
                                 CollectionHomeRow(collection: collection)
+                            case let .server(row):
+                                MediaServerHomeRowView(
+                                    row: row,
+                                    items: servers.items(for: row),
+                                    state: servers.state(for: row),
+                                    retry: { servers.retry(row) }
+                                )
                             }
                         }
                         if visibleHomeEntries.isEmpty {
@@ -239,6 +270,16 @@ struct HomeView: View {
         #if os(iOS)
         .toolbarBackground(.hidden, for: .navigationBar)
         #endif
+        #if os(macOS)
+        // The trailer's speaker button sits in the top bar, level with it.
+        .toolbar {
+            if heroTrailer.isVisible {
+                ToolbarItem(placement: .primaryAction) {
+                    HomeHeroTrailerMuteButton(model: heroTrailer, isInToolbar: true)
+                }
+            }
+        }
+        #endif
         .omniaNavigationTitle("Home", screen: .home)
         .navigationDestination(for: MediaItem.self) { MediaDetailView(item: $0) }
         .navigationDestination(for: CollectionFolderRoute.self) { route in
@@ -292,8 +333,28 @@ struct HomeView: View {
             guard !Task.isCancelled else { return }
             resolvedFeatured = resolved
         }
+        .task(id: "\(resolvedFeatured?.id ?? "")-\(settings.preferences.integrations.mdblistEnabled)") {
+            heroRatings.cancel()
+            guard let resolvedFeatured, settings.preferences.integrations.mdblistEnabled else { return }
+            await heroRatings.load(
+                for: resolvedFeatured,
+                preferences: settings.preferences.mdblistRatings
+            )
+            if case let .loaded(presentation) = heroRatings.state {
+                settings.recordMDBListRatingProviders(presentation.discoveredProviderIDs)
+            }
+        }
+        .sheet(isPresented: $showsMDBListSettings) {
+            MDBListSettingsSheet()
+        }
+        #if os(macOS)
+        .background { WindowVisibilityReader(isVisible: $windowIsVisible) }
+        #endif
         .task(id: addonLoadKey) {
             addonCatalogs.load(addonCatalogsToLoad)
+        }
+        .task(id: servers.rowsSignature) {
+            await servers.loadRows()
         }
         .task(id: heroTrailerKey) {
             await heroTrailer.load(
@@ -303,10 +364,13 @@ struct HomeView: View {
                 autoplayAllowed: !reduceMotion
             )
         }
-        .task(id: "\(heroCandidateKey)-\(heroIndex)-\(isActiveDestination)-\(heroTrailer.holdsCarousel)-\(reduceMotion)") {
-            // The carousel pauses while Home sits in a hidden tab, and while
-            // a hero trailer is waiting to start or playing.
-            guard isActiveDestination, !reduceMotion, heroCandidates.count > 1, !heroTrailer.holdsCarousel else { return }
+        .task(id: "\(heroCandidateKey)-\(heroIndex)-\(isActiveDestination)-\(heroTrailer.holdsCarousel)-\(reduceMotion)-\(heroIsOnScreen)-\(windowIsVisible)") {
+            // The carousel pauses while Home sits in a hidden tab, while a
+            // hero trailer is waiting to start or playing, and while nobody
+            // can see the hero.
+            guard isActiveDestination, !reduceMotion, heroCandidates.count > 1, !heroTrailer.holdsCarousel,
+                  heroIsOnScreen, windowIsVisible
+            else { return }
 
             do {
                 try await Task.sleep(for: .seconds(isAddonMode ? 8 : 9))
@@ -334,6 +398,41 @@ struct HomeView: View {
         // seamlessly without an empty offset band.
         .ignoresSafeArea(edges: .top)
         #endif
+    }
+
+    /// Mark Watched beside View Details, as on a title's page: a movie, or a
+    /// show's resume episode (else its first episode).
+    private func heroWatchAction(for featured: MediaItem) -> HeroWatchAction? {
+        let episodes = featured.details?.seasons.flatMap(\.episodes) ?? []
+        let currentEpisode = featured.resumeEpisode
+            ?? episodes.first(where: { $0.seasonNumber > 0 })
+            ?? episodes.first
+        guard let action = MediaDetailWatchActionPresentation.action(
+            kind: featured.kind,
+            currentEpisode: currentEpisode,
+            watchState: store.watchState(for: featured)
+        ) else { return nil }
+        return HeroWatchAction(
+            systemImage: action.systemImage,
+            accessibilityLabel: action.accessibilityLabel,
+            perform: {
+                store.applyWatchCommand(
+                    action.command,
+                    to: featured,
+                    episodes: episodes,
+                    leavingContinueWatching: action.leavesContinueWatching
+                )
+            }
+        )
+    }
+
+    private func retryHeroRatings(for featured: MediaItem) {
+        Task {
+            await heroRatings.retry(for: featured, preferences: settings.preferences.mdblistRatings)
+            if case let .loaded(presentation) = heroRatings.state {
+                settings.recordMDBListRatingProviders(presentation.discoveredProviderIDs)
+            }
+        }
     }
 
     private func hero(_ featured: MediaItem) -> some View {
@@ -419,6 +518,15 @@ struct HomeView: View {
 
                     HeroMetadataLine(item: featured)
 
+                    if settings.preferences.integrations.mdblistEnabled, resolvedFeatured?.id == featured.id {
+                        MDBListRatingsView(
+                            state: heroRatings.state.applying(settings.preferences.mdblistRatings),
+                            retry: { retryHeroRatings(for: featured) },
+                            openSettings: { showsMDBListSettings = true }
+                        )
+                        .frame(width: CinematicHeroLayout.logoWidth, alignment: .leading)
+                    }
+
                     JustifiedSynopsisText(
                         text: featured.overview,
                         lineLimit: 3,
@@ -429,7 +537,8 @@ struct HomeView: View {
                     HeroActionRow(
                         width: CinematicHeroLayout.logoWidth,
                         isSaved: store.isSaved(featured),
-                        libraryAction: { store.toggleSaved(featured) }
+                        libraryAction: { store.toggleSaved(featured) },
+                        watchAction: heroWatchAction(for: featured)
                     ) {
                         NavigationLink(value: featured) {
                             HeroPrimaryActionLabel(title: "View Details")
@@ -465,6 +574,7 @@ struct HomeView: View {
                 .padding(.horizontal, 20)
             }
         }
+        #if !os(macOS)
         .overlay(alignment: .topTrailing) {
             // Top right, clear of the window's top bar when the hero runs
             // full-bleed beneath it.
@@ -473,6 +583,7 @@ struct HomeView: View {
                 .padding(.top, isCardHero ? 20 : HomeHeroTrailerMuteButton.fullBleedTopInset)
                 .animation(.snappy(duration: 0.25), value: heroTrailer.isVisible)
         }
+        #endif
         .overlay(alignment: .bottom) {
             if heroCandidates.count > 1 {
                 HeroPageControl(
@@ -516,7 +627,7 @@ struct HomeView: View {
     /// while something else is playing, and while a title page is open.
     private var heroTrailerIsPlaying: Bool {
         isActiveDestination && sourcePlaybackItem == nil && playback.source == nil
-            && HeroTrailerFocus.shared.homeMayPlay
+            && HeroTrailerFocus.shared.homeMayPlay && heroIsOnScreen && windowIsVisible
     }
 
     private var loadingHero: some View {
@@ -816,12 +927,17 @@ private struct UpcomingEpisodeCard: View {
             VStack(alignment: .leading, spacing: 8) {
                 ZStack(alignment: .bottomLeading) {
                     LinearGradient(colors: item.series.artworkColors, startPoint: .topLeading, endPoint: .bottomTrailing)
-                    AsyncImage(url: item.episode.stillURL ?? item.series.backdropURL ?? item.series.artworkURL) { image in
-                        image.resizable().scaledToFill()
-                    } placeholder: {
-                        Image(systemName: item.series.symbol)
-                            .font(.largeTitle)
-                            .foregroundStyle(.white.opacity(0.7))
+                    CachedArtworkImage(
+                        url: item.episode.stillURL ?? item.series.backdropURL ?? item.series.artworkURL,
+                        size: CGSize(width: 304, height: 171)
+                    ) { phase in
+                        if let image = phase.image {
+                            image.resizable().scaledToFill()
+                        } else {
+                            Image(systemName: item.series.symbol)
+                                .font(.largeTitle)
+                                .foregroundStyle(.white.opacity(0.7))
+                        }
                     }
                     LinearGradient(colors: [.clear, .black.opacity(0.75)], startPoint: .center, endPoint: .bottom)
                     Text(item.airDate.formatted(date: .abbreviated, time: .omitted))
@@ -1063,7 +1179,14 @@ struct ContinueWatchingCard: View {
 
     @ViewBuilder
     private var resumeArtwork: some View {
-        let url: URL? = if isPoster {
+        // Settings › Continue Watching › Artwork › Paused Scene.
+        // Next Up is a new episode, so the scene from the last one doesn't fit.
+        let scene = display.continueWatchingArtwork == .pausedScene && !isNextUp
+            ? ContinueWatchingSceneStore.shared.sceneURL(for: item.id)
+            : nil
+        let url: URL? = if let scene {
+            scene
+        } else if isPoster {
             item.artworkURL ?? item.backdropURL
         } else if usesEpisodeStill {
             item.resumeEpisodeStillURL ?? item.backdropURL ?? item.artworkURL
@@ -1071,17 +1194,17 @@ struct ContinueWatchingCard: View {
             item.backdropURL ?? item.artworkURL
         }
         // Nuvio blurs only next-up episode stills, which can spoil the episode.
-        let blursArtwork = display.blursNextUp && isNextUp && usesEpisodeStill && item.resumeEpisodeStillURL != nil
+        let blursArtwork = scene == nil && display.blursNextUp && isNextUp && usesEpisodeStill && item.resumeEpisodeStillURL != nil
 
         ZStack {
             LinearGradient(colors: item.artworkColors, startPoint: .topLeading, endPoint: .bottomTrailing)
-            AsyncImage(url: url) { image in
-                image.resizable().scaledToFill()
+            Image(systemName: item.symbol)
+                .font(.system(size: 42, weight: .light))
+                .foregroundStyle(.white.opacity(0.7))
+            if let url {
+                RemoteArtworkImage(url: url)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .blur(radius: blursArtwork ? 18 : 0, opaque: true)
-            } placeholder: {
-                Image(systemName: item.symbol)
-                    .font(.system(size: 42, weight: .light))
-                    .foregroundStyle(.white.opacity(0.7))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

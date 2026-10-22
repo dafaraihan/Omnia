@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="supported-color-schemes" content="dark">
+<title>Confirm your email</title>
+</head>
+<body style="margin:0;padding:0;background:#07080c;">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;">Your Omnia code is inside.</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#07080c;">
+<tr><td align="center" style="padding:40px 16px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:520px;">
+<tr><td align="center" style="padding:0 0 28px;">
+<img src="https://mjblatbeddetccidpogv.supabase.co/storage/v1/object/public/brand/omnia-wordmark-dark.png" width="168" height="45" alt="Omnia" style="display:block;border:0;width:168px;height:auto;">
+</td></tr>
+<tr><td style="background:#12141c;background-image:linear-gradient(160deg,#1b1640 0%,#12141c 45%,#0f1d22 100%);border:1px solid #262a38;border-radius:20px;padding:40px 36px;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#eef2f8;">
+<h1 style="margin:0 0 12px;font-size:24px;line-height:32px;font-weight:700;color:#ffffff;">Welcome to Omnia</h1>
+<p style="margin:0 0 28px;font-size:15px;line-height:23px;color:#aab1c2;">Confirm your email to finish creating your account. Then your profiles, library and progress follow you to every device.</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr><td align="center" style="background:#0b0c12;border:1px solid #2c3142;border-radius:14px;padding:20px 12px;">
+<div style="font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#7d8597;margin-bottom:8px;">Your code</div>
+<div style="font-family:'SF Mono',Menlo,Consolas,monospace;font-size:36px;line-height:44px;letter-spacing:10px;font-weight:700;color:#ffffff;">{{ .Token }}</div>
+</td></tr>
+</table>
+<p style="margin:24px 0 20px;font-size:14px;line-height:21px;color:#aab1c2;text-align:center;">Type it in Omnia, or use the button on the Mac where Omnia is open.</p>
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
+<tr><td align="center" style="border-radius:999px;background:#705cff;background-image:linear-gradient(135deg,#705cff 0%,#33c9cf 100%);">
+<a href="{{ .ConfirmationURL }}" style="display:inline-block;padding:14px 32px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:999px;">Confirm Email</a>
+</td></tr>
+</table>
+<p style="margin:28px 0 0;font-size:13px;line-height:20px;color:#7d8597;text-align:center;">The code expires in one hour. If you didn't create an Omnia account, you can ignore this email.</p>
+</td></tr>
+<tr><td align="center" style="padding:24px 8px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#5d6475;">
+Sent to {{ .Email }} by Omnia.<br>Omnia hosts no content. It plays from the add-ons you choose.
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>

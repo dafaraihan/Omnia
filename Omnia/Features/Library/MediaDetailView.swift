@@ -34,6 +34,10 @@ struct MediaDetailView: View {
     /// Settings › Home Layout › Hero Trailer options.
     @State private var heroTrailer = HomeHeroTrailerModel()
     @State private var trailerToken = UUID()
+    /// The trailer pauses while the hero is scrolled away or the window
+    /// can't be seen.
+    @State private var heroIsOnScreen = true
+    @State private var windowIsVisible = true
 
     private var displayItem: MediaItem { resolvedItem ?? item }
 
@@ -50,6 +54,7 @@ struct MediaDetailView: View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(alignment: .leading, spacing: 0) {
                 detailHero
+                    .onScrollVisibilityChange(threshold: 0.15) { heroIsOnScreen = $0 }
                 detailInformation
             }
         }
@@ -80,10 +85,28 @@ struct MediaDetailView: View {
         #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)
         #endif
+        #if os(macOS)
+        // The trailer's speaker button sits in the top bar, level with it.
+        .toolbar {
+            if heroTrailer.isVisible {
+                ToolbarItem(placement: .primaryAction) {
+                    HomeHeroTrailerMuteButton(model: heroTrailer, isInToolbar: true)
+                }
+            }
+        }
+        #endif
         .task(id: item.id) {
             ratingsLoader.cancel()
             let resolved: MediaItem
-            if AddonCatalogStore.isAddonMode(store) {
+            if let fromServer = await MediaServerStore.shared.serverDetails(for: item) {
+                // A media server title that keeps the server's own details
+                // (Use Add-on Metadata off).
+                guard !Task.isCancelled else { return }
+                resolvedItem = fromServer
+                selectedSeasonNumber = fromServer.details?.seasons.first(where: { $0.seasonNumber > 0 })?.seasonNumber
+                    ?? fromServer.details?.seasons.first?.seasonNumber ?? 1
+                resolved = fromServer
+            } else if AddonCatalogStore.isAddonMode(store) {
                 resolved = await loadAddonFirstDetails()
             } else {
                 resolved = await loadProviderFirstDetails()
@@ -145,6 +168,9 @@ struct MediaDetailView: View {
                 autoplayAllowed: !reduceMotion
             )
         }
+        #if os(macOS)
+        .background { WindowVisibilityReader(isVisible: $windowIsVisible) }
+        #endif
         .onAppear {
             HeroTrailerFocus.shared.appear(trailerToken)
         }
@@ -164,6 +190,7 @@ struct MediaDetailView: View {
     private var heroTrailerIsPlaying: Bool {
         isActiveDestination && sourceRequest == nil && playback.source == nil
             && HeroTrailerFocus.shared.titlePageMayPlay(trailerToken)
+            && heroIsOnScreen && windowIsVisible
     }
 
     private var detailHero: some View {
@@ -199,12 +226,14 @@ struct MediaDetailView: View {
             .accessibilityLabel("Back")
         }
         #endif
+        #if !os(macOS)
         .overlay(alignment: .topTrailing) {
             HomeHeroTrailerMuteButton(model: heroTrailer)
                 .padding(.trailing, 28)
                 .padding(.top, HomeHeroTrailerMuteButton.fullBleedTopInset)
                 .animation(.snappy(duration: 0.25), value: heroTrailer.isVisible)
         }
+        #endif
         .frame(maxWidth: .infinity, minHeight: detailHeroHeight, maxHeight: detailHeroHeight)
         // The hero owns the top safe area on every platform. On macOS the
         // compact system Back control floats above this artwork; it must not
@@ -546,21 +575,15 @@ struct MediaDetailView: View {
                 store.applyWatchCommand(
                     action.command,
                     to: displayItem,
-                    episodes: detailEpisodes
+                    episodes: detailEpisodes,
+                    leavingContinueWatching: action.leavesContinueWatching
                 )
             }
         )
     }
 
     private var currentRatingsState: MDBListRatingsLoadState {
-        guard case let .loaded(presentation) = ratingsLoader.state else {
-            return ratingsLoader.state
-        }
-        let current = MDBListRatingsPresentation(
-            response: presentation.response,
-            preferences: settings.preferences.mdblistRatings
-        )
-        return current.items.isEmpty ? .empty : .loaded(current)
+        ratingsLoader.state.applying(settings.preferences.mdblistRatings)
     }
 
     private func retryRatings() {
@@ -599,7 +622,7 @@ struct MediaDetailView: View {
                 accessibilityLabel: "People"
             ) { person in
                 if Int(person.id) != nil {
-                    NavigationLink {
+                    OmniaPageLink {
                         PersonDetailView(
                             personID: person.id,
                             name: person.name,
@@ -683,7 +706,7 @@ struct MediaDetailView: View {
             FlowLayout(spacing: 10) {
                 ForEach(productionEntities(details), id: \.studio.id) { entity in
                     if entity.studio.hasTMDBPage {
-                        NavigationLink {
+                        OmniaPageLink {
                             EntityTitlesView(
                                 kind: entity.kind,
                                 entityID: entity.studio.id,
@@ -796,7 +819,8 @@ struct MediaDetailView: View {
     }
 }
 
-private struct MDBListRatingsView: View {
+/// The MDBList ratings row, on the title page and the Home hero.
+struct MDBListRatingsView: View {
     let state: MDBListRatingsLoadState
     let retry: () -> Void
     let openSettings: () -> Void
@@ -891,7 +915,7 @@ private struct MDBListRatingValueView: View {
     }
 }
 
-private struct MDBListSettingsSheet: View {
+struct MDBListSettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -1055,19 +1079,21 @@ private struct EpisodeCard: View {
     }
 
     private func artwork(width: CGFloat, height: CGFloat) -> some View {
-        AsyncImage(url: episode.stillURL) { image in
-            image.resizable().scaledToFill()
-                .blur(radius: blursArtwork ? 18 : 0, opaque: true)
-        } placeholder: {
-            LinearGradient(
-                colors: [.indigo.opacity(0.84), .black],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .overlay {
-                Image(systemName: "play.rectangle.fill")
-                    .font(.title)
-                    .foregroundStyle(.white.opacity(0.7))
+        CachedArtworkImage(url: episode.stillURL, size: CGSize(width: width, height: height)) { phase in
+            if let image = phase.image {
+                image.resizable().scaledToFill()
+                    .blur(radius: blursArtwork ? 18 : 0, opaque: true)
+            } else {
+                LinearGradient(
+                    colors: [.indigo.opacity(0.84), .black],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .overlay {
+                    Image(systemName: "play.rectangle.fill")
+                        .font(.title)
+                        .foregroundStyle(.white.opacity(0.7))
+                }
             }
         }
         .frame(width: width, height: height)
@@ -1232,15 +1258,22 @@ private struct VideoShelf: View {
 /// than attempting unsupported playback through AVPlayer.
 private struct VideoCard: View {
     let video: MediaVideo
+    @State private var thumbnailSize = CGSize.zero
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            AsyncImage(url: video.thumbnailURL) { image in
-                image.resizable().scaledToFill()
-            } placeholder: {
-                LinearGradient(colors: [.red.opacity(0.7), .black], startPoint: .topLeading, endPoint: .bottomTrailing)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            Color.clear
+                .onGeometryChange(for: CGSize.self) { $0.size } action: { thumbnailSize = $0 }
+                .overlay {
+                    CachedArtworkImage(url: video.thumbnailURL, size: thumbnailSize) { phase in
+                        if let image = phase.image {
+                            image.resizable().scaledToFill()
+                        } else {
+                            LinearGradient(colors: [.red.opacity(0.7), .black], startPoint: .topLeading, endPoint: .bottomTrailing)
+                        }
+                    }
+                }
+                .clipped()
 
             LinearGradient(colors: [.clear, .black.opacity(0.82)], startPoint: .center, endPoint: .bottom)
             Image(systemName: "play.fill")
@@ -1356,12 +1389,14 @@ private struct ProductionChip: View {
     var body: some View {
         Group {
             if let logoURL = studio.logoURL {
-                AsyncImage(url: logoURL) { image in
-                    image.resizable().scaledToFit()
-                } placeholder: {
-                    Text(studio.name)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color(white: 0.2))
+                CachedArtworkImage(url: logoURL, size: CGSize(width: 72, height: 26), contentMode: .fit) { phase in
+                    if let image = phase.image {
+                        image.resizable().scaledToFit()
+                    } else {
+                        Text(studio.name)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Color(white: 0.2))
+                    }
                 }
                 .frame(width: 72, height: 26)
             } else {
@@ -1383,14 +1418,16 @@ private struct CreditCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
-            AsyncImage(url: person.profileURL) { image in
-                image.resizable().scaledToFill()
-            } placeholder: {
-                Image(systemName: "person.crop.circle.fill")
-                    .font(.system(size: 42))
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(.primary.opacity(0.08))
+            CachedArtworkImage(url: person.profileURL, size: CGSize(width: 104, height: 104)) { phase in
+                if let image = phase.image {
+                    image.resizable().scaledToFill()
+                } else {
+                    Image(systemName: "person.crop.circle.fill")
+                        .font(.system(size: 42))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(.primary.opacity(0.08))
+                }
             }
             .frame(width: 104, height: 104)
             .clipShape(Circle())

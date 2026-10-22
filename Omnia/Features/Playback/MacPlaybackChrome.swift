@@ -4,6 +4,7 @@ import SwiftUI
 
 private enum MacPlaybackPanel: Hashable {
     case episodes
+    case channels
     case audio
     case subtitles
     case speed
@@ -15,23 +16,34 @@ private enum MacSubtitlePanelPage: Hashable {
     case style
     case font
     case background
+    case sync
+}
+
+/// Which channels the player's channel list shows.
+private enum MacLiveChannelFilter: Hashable {
+    case all
+    case favorites
+    case group(String)
 }
 
 private struct MacPlaybackPanelObservationBoundary<Content: View>: View, Equatable {
     let panel: MacPlaybackPanel
     let subtitlePage: MacSubtitlePanelPage
     let episodeSeasonNumber: Int?
+    let channelFilter: MacLiveChannelFilter
     let content: () -> Content
 
     init(
         panel: MacPlaybackPanel,
         subtitlePage: MacSubtitlePanelPage,
         episodeSeasonNumber: Int? = nil,
+        channelFilter: MacLiveChannelFilter = .all,
         @ViewBuilder content: @escaping () -> Content
     ) {
         self.panel = panel
         self.subtitlePage = subtitlePage
         self.episodeSeasonNumber = episodeSeasonNumber
+        self.channelFilter = channelFilter
         self.content = content
     }
 
@@ -39,6 +51,7 @@ private struct MacPlaybackPanelObservationBoundary<Content: View>: View, Equatab
         lhs.panel == rhs.panel
             && lhs.subtitlePage == rhs.subtitlePage
             && lhs.episodeSeasonNumber == rhs.episodeSeasonNumber
+            && lhs.channelFilter == rhs.channelFilter
     }
 
     var body: some View {
@@ -165,61 +178,31 @@ struct MacPlaybackPanelLayout {
     }
 }
 
-enum MacPlaybackPromptKind: Equatable {
-    case skipIntro
-    case upNext
-}
-
-enum MacPlaybackPromptAnchor: Equatable {
-    case optionControlBand
-}
-
-struct MacPlaybackPromptLayout {
-    static func anchor(for prompt: MacPlaybackPromptKind) -> MacPlaybackPromptAnchor {
-        switch prompt {
-        case .skipIntro, .upNext: .optionControlBand
-        }
-    }
-}
-
 enum MacPlaybackAction: Hashable {
-    case skipIntro
+    case sources
     case episodes
+    case channels
     case audio
     case subtitles
     case speed
     case nextEpisode
-    case upNext
-    case cancelUpNext
 }
 
+/// The controls row. Skip and Up Next aren't in it: they're their own
+/// overlay (`PlaybackPromptOverlay`).
 struct MacPlaybackActionPresentation {
     static func actions(
-        isChromeVisible: Bool,
-        showsSkipIntro: Bool,
         hasEpisodes: Bool = false,
         hasNextEpisode: Bool,
-        upNextTitle: String?,
-        canCancelUpNext: Bool = false
+        isLive: Bool = false
     ) -> [MacPlaybackAction] {
-        var actions: [MacPlaybackAction] = []
-        if showsSkipIntro { actions.append(.skipIntro) }
-        guard isChromeVisible else {
-            if upNextTitle != nil {
-                if canCancelUpNext { actions.append(.cancelUpNext) }
-                actions.append(.upNext)
-            }
-            return actions
-        }
-
+        // A live channel has no sources, episodes or speed: its list of
+        // channels takes their place.
+        if isLive { return [.channels, .audio, .subtitles] }
+        var actions: [MacPlaybackAction] = [.sources]
         if hasEpisodes { actions.append(.episodes) }
         actions += [.audio, .subtitles, .speed]
-        if upNextTitle != nil {
-            if canCancelUpNext { actions.append(.cancelUpNext) }
-            actions.append(.upNext)
-        } else if hasNextEpisode {
-            actions.append(.nextEpisode)
-        }
+        if hasNextEpisode { actions.append(.nextEpisode) }
         return actions
     }
 }
@@ -582,17 +565,14 @@ private struct MacPlaybackExpandedSlider: View {
 struct MacPlaybackChrome: View {
     @Environment(PlaybackSession.self) private var playback
     @Environment(\.displayPreferences) private var display
+    @Environment(SettingsPreferencesStore.self) private var settings
     @Binding var isInteracting: Bool
     let close: () -> Void
-    let showsSkipIntro: Bool
-    var skipTitle = "Skip Intro"
-    let skipIntro: () -> Void
     let hasNextEpisode: Bool
-    let upNextTitle: String?
     let showUpNext: () -> Void
-    /// Stops the next-episode countdown, when one is running.
-    var cancelUpNext: (() -> Void)? = nil
     var playEpisode: (MediaEpisode) -> Void = { _ in }
+    /// Opens this title's sources, to switch to another one.
+    var showSources: () -> Void = {}
 
     @State private var activePanel: MacPlaybackPanel?
     @State private var episodeSeasonNumber: Int?
@@ -601,6 +581,20 @@ struct MacPlaybackChrome: View {
     @State private var scrubValue: Double?
     @State private var isScrubbingTimeline = false
     @State private var lastScrubSeek = Date.distantPast
+    @State private var live = LiveTVStore.shared
+    @State private var channelFilter: MacLiveChannelFilter = .all
+    @State private var switchingChannelID: String?
+    @State private var channelNotice: String?
+    @State private var channelNoticeTask: Task<Void, Never>?
+
+    /// Live TV plays in this same player; its channel list, channel up and
+    /// down, and a live bar stand in for episodes, seeking and the timeline.
+    private var isLive: Bool {
+        playback.mediaItem?.id.hasPrefix(PlaybackSource.liveTVIDPrefix) == true
+    }
+    private var currentChannel: LiveTVChannel? {
+        playback.mediaItem.flatMap { live.channel(forPlaybackItemID: $0.id) }
+    }
 
     private var duration: Double { playback.durationSeconds ?? 0 }
     private var position: Double { min(max(playback.positionSeconds, 0), duration) }
@@ -615,12 +609,9 @@ struct MacPlaybackChrome: View {
     }
     private var playbackActions: [MacPlaybackAction] {
         MacPlaybackActionPresentation.actions(
-            isChromeVisible: true,
-            showsSkipIntro: showsSkipIntro,
             hasEpisodes: !episodeSeasons.isEmpty,
             hasNextEpisode: hasNextEpisode,
-            upNextTitle: upNextTitle,
-            canCancelUpNext: cancelUpNext != nil
+            isLive: isLive
         )
     }
     private var episodeSeasons: [MediaSeason] {
@@ -639,19 +630,23 @@ struct MacPlaybackChrome: View {
                     bottomControls
                 }
 
-                transportControls
+                // Hidden after a failure, so they don't sit on the message.
+                if playback.playbackError == nil {
+                    transportControls
+                }
 
                 if let activePanel {
                     MacPlaybackPanelObservationBoundary(
                         panel: activePanel,
                         subtitlePage: subtitlePage,
-                        episodeSeasonNumber: episodeSeasonNumber
+                        episodeSeasonNumber: episodeSeasonNumber,
+                        channelFilter: channelFilter
                     ) {
                         playbackPanel(activePanel)
                     }
                     .equatable()
                         .frame(
-                            width: activePanel == .episodes
+                            width: activePanel == .episodes || activePanel == .channels
                                 ? min(480, max(340, geometry.size.width - 48))
                                 : min(390, max(320, geometry.size.width - 48))
                         )
@@ -667,6 +662,18 @@ struct MacPlaybackChrome: View {
                         .transition(.scale(scale: 0.96, anchor: .bottomTrailing).combined(with: .opacity))
                 }
             }
+            .overlay(alignment: .top) {
+                if let channelNotice {
+                    Label(channelNotice, systemImage: "exclamationmark.triangle.fill")
+                        .font(.callout.weight(.semibold))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .glassEffect(.regular, in: Capsule())
+                        .padding(.top, 70)
+                        .transition(.opacity)
+                }
+            }
+            .animation(.easeInOut(duration: 0.2), value: channelNotice)
             .padding(.horizontal, geometry.size.width < 860 ? 20 : 30)
             .padding(.bottom, geometry.size.width < 860 ? 20 : 30)
             .padding(
@@ -686,9 +693,13 @@ struct MacPlaybackChrome: View {
             if panel == .episodes {
                 episodeSeasonNumber = playback.episode?.seasonNumber
             }
+            if panel == .channels {
+                channelFilter = currentChannel?.group.map { .group($0) } ?? .all
+            }
         }
         .onDisappear {
             isInteracting = false
+            channelNoticeTask?.cancel()
         }
     }
 
@@ -791,8 +802,15 @@ struct MacPlaybackChrome: View {
     private var transportControls: some View {
         GlassEffectContainer(spacing: 28) {
             HStack(spacing: 28) {
-                transportButton(symbol: "gobackward.10", label: "Back 10 seconds") {
-                    playback.seek(by: -10)
+                if isLive {
+                    transportButton(symbol: "backward.end.fill", label: "Previous channel") {
+                        stepChannel(by: -1)
+                    }
+                    .disabled(currentChannel == nil || live.channels.count < 2)
+                } else {
+                    transportButton(symbol: "gobackward.10", label: "Back 10 seconds") {
+                        playback.seek(by: -10)
+                    }
                 }
 
                 Button {
@@ -806,8 +824,15 @@ struct MacPlaybackChrome: View {
                 .playbackCircleGlassButton()
                 .accessibilityLabel(playback.isPaused ? "Play" : "Pause")
 
-                transportButton(symbol: "goforward.10", label: "Forward 10 seconds") {
-                    playback.seek(by: 10)
+                if isLive {
+                    transportButton(symbol: "forward.end.fill", label: "Next channel") {
+                        stepChannel(by: 1)
+                    }
+                    .disabled(currentChannel == nil || live.channels.count < 2)
+                } else {
+                    transportButton(symbol: "goforward.10", label: "Forward 10 seconds") {
+                        playback.seek(by: 10)
+                    }
                 }
             }
         }
@@ -830,34 +855,78 @@ struct MacPlaybackChrome: View {
                 }
             }
 
-            HStack(spacing: 12) {
-                Text(timeline.elapsedText)
-                    .frame(minWidth: 46, alignment: .leading)
+            if isLive {
+                liveBar
+            } else {
+                timelineBar
+            }
+        }
+    }
 
-                Slider(
-                    value: Binding(
-                        get: { duration > 0 ? (scrubValue ?? position) : 0 },
-                        set: { scrub(to: $0) }
-                    ),
-                    in: 0 ... max(duration, 0.001),
-                    onEditingChanged: { isEditing in
-                        isScrubbingTimeline = isEditing
-                        if !isEditing, let scrubValue {
-                            playback.seek(to: scrubValue)
-                            self.scrubValue = nil
-                        }
-                        isInteracting = MacPlaybackInteractionPresentation.keepsChromeVisible(
-                            isEditingControl: isEditing,
-                            hasPresentedPanel: activePanel != nil
-                        )
+    private var timelineBar: some View {
+        HStack(spacing: 12) {
+            Text(timeline.elapsedText)
+                .frame(minWidth: 46, alignment: .leading)
+
+            Slider(
+                value: Binding(
+                    get: { duration > 0 ? (scrubValue ?? position) : 0 },
+                    set: { scrub(to: $0) }
+                ),
+                in: 0 ... max(duration, 0.001),
+                onEditingChanged: { isEditing in
+                    isScrubbingTimeline = isEditing
+                    if !isEditing, let scrubValue {
+                        playback.seek(to: scrubValue)
+                        self.scrubValue = nil
                     }
-                )
-                .tint(display.accentColor)
-                .accessibilityLabel("Playback position")
-                .disabled(duration <= 0)
+                    isInteracting = MacPlaybackInteractionPresentation.keepsChromeVisible(
+                        isEditingControl: isEditing,
+                        hasPresentedPanel: activePanel != nil
+                    )
+                }
+            )
+            .tint(display.accentColor)
+            .accessibilityLabel("Playback position")
+            .disabled(duration <= 0)
 
-                Text(timeline.remainingText)
-                    .frame(minWidth: 54, alignment: .trailing)
+            Text(timeline.remainingText)
+                .frame(minWidth: 54, alignment: .trailing)
+        }
+        .font(.caption.monospacedDigit().weight(.semibold))
+        .foregroundStyle(.white.opacity(0.74))
+        .padding(.horizontal, 14)
+        .frame(height: 44)
+        .omniaLiquidGlass(in: Capsule(), role: .playbackTimeline)
+    }
+
+    /// The live bar in the timeline's place: what's on now, how far into it
+    /// we are, and when it ends. A channel without a guide just says Live.
+    private var liveBar: some View {
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            let program = currentProgram(at: context.date)
+            HStack(spacing: 12) {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(.red)
+                        .frame(width: 7, height: 7)
+                    Text("LIVE")
+                        .foregroundStyle(.white)
+                }
+                .accessibilityElement(children: .combine)
+
+                if let program {
+                    Text(program.start, format: .dateTime.hour().minute())
+                    ProgressView(value: program.progress(at: context.date))
+                        .progressViewStyle(.linear)
+                        .tint(display.accentColor)
+                        .accessibilityLabel("\(program.title) progress")
+                    Text(program.end, format: .dateTime.hour().minute())
+                } else {
+                    Text(currentChannel?.group ?? "Live TV")
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                }
             }
             .font(.caption.monospacedDigit().weight(.semibold))
             .foregroundStyle(.white.opacity(0.74))
@@ -865,6 +934,11 @@ struct MacPlaybackChrome: View {
             .frame(height: 44)
             .omniaLiquidGlass(in: Capsule(), role: .playbackTimeline)
         }
+    }
+
+    private func currentProgram(at date: Date) -> LiveTVProgram? {
+        guard let currentChannel else { return nil }
+        return LiveTVGuideMatcher.nowAndNext(in: live.programs(for: currentChannel), at: date).now
     }
 
     /// Dragging the timeline used to send mpv an exact seek for every pointer
@@ -886,6 +960,42 @@ struct MacPlaybackChrome: View {
 
     @ViewBuilder
     private var playbackMetadata: some View {
+        if isLive {
+            liveMetadata
+        } else {
+            titleMetadata
+        }
+    }
+
+    /// The channel, with what's on now and next under it.
+    private var liveMetadata: some View {
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            let programs = currentChannel.map { live.programs(for: $0) } ?? []
+            let guide = LiveTVGuideMatcher.nowAndNext(in: programs, at: context.date)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(currentChannel?.group ?? "Live TV")
+                    .font(.headline.weight(.medium))
+                    .foregroundStyle(.white.opacity(0.78))
+                    .lineLimit(1)
+                Text(playback.mediaItem?.title ?? "Live TV")
+                    .font(.title.weight(.semibold))
+                    .lineLimit(1)
+                if let now = guide.now {
+                    Text(now.title)
+                        .font(.headline.weight(.medium))
+                        .lineLimit(1)
+                }
+                if let next = guide.next {
+                    Text("Next \(next.start.formatted(date: .omitted, time: .shortened)) · \(next.title)")
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.7))
+                        .lineLimit(1)
+                }
+            }
+        }
+    }
+
+    private var titleMetadata: some View {
         VStack(alignment: .leading, spacing: 3) {
             if playback.episode != nil {
                 Text(metadata.title)
@@ -917,6 +1027,8 @@ struct MacPlaybackChrome: View {
             switch panel {
             case .episodes:
                 episodesPanel
+            case .channels:
+                channelsPanel
             case .audio:
                 audioPanel
             case .subtitles:
@@ -999,7 +1111,7 @@ struct MacPlaybackChrome: View {
             playEpisode(episode)
         } label: {
             HStack(alignment: .top, spacing: 12) {
-                AsyncImage(url: episode.stillURL) { phase in
+                CachedArtworkImage(url: episode.stillURL, size: CGSize(width: 128, height: 72)) { phase in
                     if let image = phase.image {
                         image.resizable().scaledToFill()
                     } else {
@@ -1058,6 +1170,195 @@ struct MacPlaybackChrome: View {
         .accessibilityHint(isCurrent ? "" : "Choose a source for this episode")
     }
 
+    // MARK: Channels
+
+    private var filteredChannels: [LiveTVChannel] {
+        switch channelFilter {
+        case .all:
+            live.channels
+        case .favorites:
+            live.channels.filter { live.isFavorite($0) }
+        case let .group(group):
+            live.channels.filter { $0.group == group }
+        }
+    }
+
+    private func channelFilterTitle(_ filter: MacLiveChannelFilter) -> String {
+        switch filter {
+        case .all: "All Channels"
+        case .favorites: "Favorites"
+        case let .group(group): group
+        }
+    }
+
+    /// Laid out like the Episodes list: a header with a category menu in the
+    /// season menu's place, then a row per channel.
+    private var channelsPanel: some View {
+        LazyVStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Channels")
+                    .font(.title3.weight(.semibold))
+                Spacer()
+                Menu {
+                    Picker("Category", selection: $channelFilter) {
+                        Text("All Channels").tag(MacLiveChannelFilter.all)
+                        if !live.configuration.favoriteChannelIDs.isEmpty {
+                            Text("Favorites").tag(MacLiveChannelFilter.favorites)
+                        }
+                        ForEach(live.groups, id: \.self) { group in
+                            Text(group).tag(MacLiveChannelFilter.group(group))
+                        }
+                    }
+                    .pickerStyle(.inline)
+                } label: {
+                    Label(channelFilterTitle(channelFilter), systemImage: "chevron.up.chevron.down")
+                        .labelStyle(.titleAndIcon)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                }
+                .menuStyle(.button)
+                .buttonStyle(.glass)
+                .fixedSize()
+                .accessibilityLabel("Category")
+            }
+            panelDivider
+
+            let channels = filteredChannels
+            if channels.isEmpty {
+                Text(live.channels.isEmpty ? "No channels are loaded." : "No channels in this category.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 8)
+            } else {
+                let now = Date()
+                ForEach(channels) { channel in
+                    channelRow(channel, at: now)
+                }
+            }
+        }
+    }
+
+    private func channelRow(_ channel: LiveTVChannel, at date: Date) -> some View {
+        let isCurrent = channel.id == currentChannel?.id
+        let isSwitching = channel.id == switchingChannelID
+        let program = LiveTVGuideMatcher.nowAndNext(in: live.programs(for: channel), at: date).now
+
+        return Button {
+            withAnimation(.easeInOut(duration: 0.18)) {
+                activePanel = nil
+            }
+            guard !isCurrent else { return }
+            switchChannel(to: channel)
+        } label: {
+            HStack(alignment: .center, spacing: 12) {
+                ZStack {
+                    Color.white.opacity(0.08)
+                    if let logoURL = channel.logoURL {
+                        LiveTVLogoImage(url: logoURL, size: CGSize(width: 80, height: 48)) {
+                            Image(systemName: "play.tv")
+                                .foregroundStyle(.white.opacity(0.4))
+                        }
+                        .padding(8)
+                    } else {
+                        Image(systemName: "play.tv")
+                            .foregroundStyle(.white.opacity(0.4))
+                    }
+                }
+                .frame(width: 96, height: 64)
+                .clipShape(.rect(cornerRadius: 10, style: .continuous))
+                .overlay(alignment: .center) {
+                    if isSwitching {
+                        ProgressView()
+                            .controlSize(.small)
+                            .padding(8)
+                            .background(.black.opacity(0.55), in: Circle())
+                    } else if isCurrent {
+                        Image(systemName: "speaker.wave.2.fill")
+                            .font(.headline)
+                            .padding(8)
+                            .background(.black.opacity(0.55), in: Circle())
+                            .accessibilityHidden(true)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(channel.name)
+                            .font(.headline)
+                            .lineLimit(1)
+                        if live.isFavorite(channel) {
+                            Image(systemName: "star.fill")
+                                .font(.caption)
+                                .foregroundStyle(.yellow)
+                                .accessibilityLabel("Favorite")
+                        }
+                    }
+                    if let program {
+                        Text(program.title)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                        ProgressView(value: program.progress(at: date))
+                            .progressViewStyle(.linear)
+                            .tint(display.accentColor)
+                            .accessibilityHidden(true)
+                    } else if let group = channel.group {
+                        Text(group)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(8)
+            .background {
+                if isCurrent {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(.white.opacity(0.1))
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .omniaMenuRowButton()
+        .disabled(switchingChannelID != nil)
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(isCurrent ? "Now playing" : "")
+        .accessibilityHint(isCurrent ? "" : "Switches to this channel")
+    }
+
+    /// Channel up and down, through the whole list.
+    private func stepChannel(by offset: Int) {
+        guard let currentChannel, let next = live.channel(after: currentChannel, offset: offset) else { return }
+        switchChannel(to: next)
+    }
+
+    private func switchChannel(to channel: LiveTVChannel) {
+        guard switchingChannelID == nil else { return }
+        switchingChannelID = channel.id
+        let preferences = settings.preferences
+        Task {
+            defer { switchingChannelID = nil }
+            do {
+                try await live.play(channel, in: playback, preferences: preferences)
+            } catch {
+                showChannelNotice(
+                    (error as? LocalizedError)?.errorDescription ?? "\(channel.name) couldn't be started."
+                )
+            }
+        }
+    }
+
+    private func showChannelNotice(_ text: String) {
+        channelNoticeTask?.cancel()
+        channelNotice = text
+        channelNoticeTask = Task {
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled else { return }
+            channelNotice = nil
+        }
+    }
+
     private var audioPanel: some View {
         LazyVStack(alignment: .leading, spacing: 12) {
             panelTitle("Audio Track", detail: selectedAudioTrackName)
@@ -1106,6 +1407,9 @@ struct MacPlaybackChrome: View {
                 }
                 navigationRow("Style", detail: "Custom") {
                     subtitlePage = .style
+                }
+                navigationRow("Sync", detail: subtitleDelayTitle) {
+                    subtitlePage = .sync
                 }
             }
         case .language:
@@ -1160,11 +1464,11 @@ struct MacPlaybackChrome: View {
                 styleSlider(
                     "Position",
                     value: Binding(
-                        get: { playback.subtitleStyle.position },
-                        set: { playback.setSubtitlePosition($0) }
+                        get: { playback.subtitleStyle.height },
+                        set: { playback.setSubtitlePosition(100 - $0) }
                     ),
                     range: 0 ... 100,
-                    valueText: "\(Int(playback.subtitleStyle.position.rounded()))"
+                    valueText: "\(Int(playback.subtitleStyle.height.rounded()))"
                 )
                 styleSlider(
                     "Shadow Opacity",
@@ -1193,6 +1497,8 @@ struct MacPlaybackChrome: View {
                     fontRow(fontName)
                 }
             }
+        case .sync:
+            subtitleSyncPage
         case .background:
             LazyVStack(alignment: .leading, spacing: 12) {
                 panelTitle("Background", detail: subtitleBackgroundTitle, backTo: .style)
@@ -1281,30 +1587,20 @@ struct MacPlaybackChrome: View {
         .help(label)
     }
 
-    private func promptButton(
-        _ title: String,
-        symbol: String,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Label(title, systemImage: symbol)
-                .font(.headline.weight(.semibold))
-                .padding(.horizontal, 18)
-                .frame(minHeight: 44)
-                .contentShape(Capsule())
-        }
-        .playbackCapsuleGlassButton()
-    }
-
     @ViewBuilder
     private func playbackAction(_ action: MacPlaybackAction) -> some View {
         switch action {
-        case .skipIntro:
-            promptButton(skipTitle, symbol: "forward.end.fill", action: skipIntro)
-                .keyboardShortcut(.return, modifiers: [])
-                .accessibilityHint("Seeks past the detected segment")
+        case .sources:
+            circleButton(
+                symbol: "rectangle.stack.badge.play",
+                label: "Sources",
+                hint: "Choose another source for what's playing",
+                action: showSources
+            )
         case .episodes:
             optionButton(.episodes, symbol: "list.and.film", label: "Episodes")
+        case .channels:
+            optionButton(.channels, symbol: "play.tv", label: "Channels")
         case .audio:
             optionButton(.audio, symbol: "waveform", label: "Audio")
         case .subtitles:
@@ -1318,16 +1614,6 @@ struct MacPlaybackChrome: View {
                 hint: "Choose an in-app source for the next episode",
                 action: showUpNext
             )
-        case .upNext:
-            if let upNextTitle {
-                promptButton(upNextTitle, symbol: "forward.end.fill", action: showUpNext)
-                    .accessibilityHint("Plays the next episode")
-            }
-        case .cancelUpNext:
-            if let cancelUpNext {
-                promptButton("Cancel", symbol: "xmark", action: cancelUpNext)
-                    .accessibilityHint("Stops the next episode from starting automatically")
-            }
         }
     }
 
@@ -1468,6 +1754,30 @@ struct MacPlaybackChrome: View {
         playback.subtitleTracks.first(where: \.isSelected)?.displayName ?? "Off"
     }
 
+    private var subtitleDelayTitle: String {
+        let delay = playback.subtitleStyle.delaySeconds
+        return abs(delay) < 0.05 ? "In sync" : String(format: "%+.1f s", delay)
+    }
+
+    /// Nuvio Enhanced's subtitle sync tools: a delay slider, automatic sync,
+    /// Sync by Ear and picking the line just heard.
+    private var subtitleSyncPage: some View {
+        LazyVStack(alignment: .leading, spacing: 14) {
+            panelTitle("Sync", detail: subtitleDelayTitle, backTo: .overview)
+            panelDivider
+            styleSlider(
+                "Subtitle Delay",
+                value: Binding(
+                    get: { min(max(playback.subtitleStyle.delaySeconds, -10), 10) },
+                    set: { playback.setSubtitleDelay(($0 * 10).rounded() / 10) }
+                ),
+                range: -10 ... 10,
+                valueText: String(format: "%+.1f s", playback.subtitleStyle.delaySeconds)
+            )
+            MacSubtitleSyncTools(playback: playback, accentColor: display.accentColor)
+        }
+    }
+
     private var selectedFontTitle: String {
         playback.subtitleStyle.fontName == "sans-serif"
             ? "System"
@@ -1508,6 +1818,14 @@ struct MacPlaybackChrome: View {
                 sliderCount: 0,
                 maximumHeight: maximumHeight
             )
+        case .channels:
+            // Channel rows are about one and a half standard rows tall.
+            return MacPlaybackPanelLayout.idealHeight(
+                rowCount: max(1, filteredChannels.count) * 3 / 2,
+                navigationRowCount: 0,
+                sliderCount: 0,
+                maximumHeight: maximumHeight
+            )
         case .audio:
             return MacPlaybackPanelLayout.idealHeight(
                 rowCount: max(1, playback.audioTracks.count),
@@ -1527,7 +1845,7 @@ struct MacPlaybackChrome: View {
             case .overview:
                 return MacPlaybackPanelLayout.idealHeight(
                     rowCount: 2,
-                    navigationRowCount: 2,
+                    navigationRowCount: 3,
                     sliderCount: 0,
                     maximumHeight: maximumHeight
                 )
@@ -1552,6 +1870,13 @@ struct MacPlaybackChrome: View {
                     sliderCount: 0,
                     maximumHeight: maximumHeight
                 )
+            case .sync:
+                return MacPlaybackPanelLayout.idealHeight(
+                    rowCount: 13,
+                    navigationRowCount: 0,
+                    sliderCount: 1,
+                    maximumHeight: maximumHeight
+                )
             case .background:
                 return MacPlaybackPanelLayout.idealHeight(
                     rowCount: PlaybackSubtitleBackground.allCases.count,
@@ -1564,84 +1889,220 @@ struct MacPlaybackChrome: View {
     }
 }
 
-struct MacPlaybackContextualActions: View {
-    let showsSkipIntro: Bool
-    var skipTitle = "Skip Intro"
-    let skipIntro: () -> Void
-    let upNextTitle: String?
-    let showUpNext: () -> Void
-    var cancelUpNext: (() -> Void)? = nil
+/// The sync controls below the delay slider. Their own view, so what they
+/// remember between presses (Heard, Saw, the captured moment) redraws them.
+private struct MacSubtitleSyncTools: View {
+    let playback: PlaybackSession
+    let accentColor: Color
 
-    private var actions: [MacPlaybackAction] {
-        MacPlaybackActionPresentation.actions(
-            isChromeVisible: false,
-            showsSkipIntro: showsSkipIntro,
-            hasNextEpisode: false,
-            upNextTitle: upNextTitle,
-            canCancelUpNext: cancelUpNext != nil
-        )
-    }
+    /// Sync by Ear: when the line was heard and when its subtitle showed.
+    @State private var heardAt: Double?
+    @State private var sawAt: Double?
+    /// Pick the Line: the moment captured and the lines around it.
+    @State private var lineCaptureTime: Double?
+    @State private var lineChoices: [SubtitleCue] = []
+    @State private var lineCaptureProblem: String?
 
     var body: some View {
-        GlassEffectContainer(spacing: 10) {
-            HStack(spacing: 10) {
-                ForEach(actions, id: \.self) { action in
-                    contextualAction(action)
+        LazyVStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 8) {
+                syncPill("−0.1 s") { playback.setSubtitleDelay(playback.subtitleStyle.delaySeconds - 0.1) }
+                syncPill("Reset") { playback.setSubtitleDelay(0) }
+                    .disabled(playback.subtitleStyle.delaySeconds == 0)
+                syncPill("+0.1 s") { playback.setSubtitleDelay(playback.subtitleStyle.delaySeconds + 0.1) }
+            }
+            .padding(.horizontal, 10)
+            Text("A positive delay shows subtitles later. Use it when they appear before the speech.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 10)
+
+            divider
+            syncSectionTitle("Auto Sync", symbol: "waveform")
+            automaticSyncControls
+                .padding(.horizontal, 10)
+
+            divider
+            syncSectionTitle("Sync by Ear", symbol: "ear")
+            Text(syncByEarHint)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 10)
+            HStack(spacing: 8) {
+                syncPill("Heard", symbol: "ear", isActive: heardAt != nil) { markSyncByEar(heard: true) }
+                syncPill("Saw", symbol: "eye", isActive: sawAt != nil) { markSyncByEar(heard: false) }
+            }
+            .padding(.horizontal, 10)
+
+            divider
+            syncSectionTitle("Pick the Line", symbol: "text.bubble")
+            Text("Press when you hear a line, then choose that line below.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 10)
+            syncPill("I Just Heard a Line", symbol: "hand.tap") { captureHeardLine() }
+                .padding(.horizontal, 10)
+            if let lineCaptureProblem {
+                Text(lineCaptureProblem)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 10)
+            }
+            ForEach(Array(lineChoices.enumerated()), id: \.offset) { _, cue in
+                Button {
+                    if let lineCaptureTime {
+                        playback.setSubtitleDelay(lineCaptureTime - cue.startSeconds)
+                    }
+                    lineChoices = []
+                    lineCaptureTime = nil
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(cue.text)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                        Text(timeTitle(cue.startSeconds + playback.subtitleStyle.delaySeconds))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .contentShape(Rectangle())
                 }
+                .omniaMenuRowButton()
             }
         }
-        .foregroundStyle(.white)
+    }
+
+    private var divider: some View {
+        Divider().overlay(.white.opacity(0.12))
     }
 
     @ViewBuilder
-    private func contextualAction(_ action: MacPlaybackAction) -> some View {
-        switch action {
-        case .skipIntro:
-            promptButton(
-                skipTitle,
-                symbol: "forward.end.fill",
-                hint: "Seeks past the detected segment",
-                action: skipIntro
-            )
-            .keyboardShortcut(.return, modifiers: [])
-        case .upNext:
-            if let upNextTitle {
-                promptButton(
-                    upNextTitle,
-                    symbol: "forward.end.fill",
-                    hint: "Plays the next episode",
-                    action: showUpNext
-                )
+    private var automaticSyncControls: some View {
+        switch playback.subtitleSyncStatus {
+        case .idle:
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Listens to the speech while you watch, for up to three minutes, then lines the subtitle up with it.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                syncPill("Sync Automatically", symbol: "wand.and.stars") { playback.startAutomaticSubtitleSync() }
             }
-        case .cancelUpNext:
-            if let cancelUpNext {
-                promptButton(
-                    "Cancel",
-                    symbol: "xmark",
-                    hint: "Stops the next episode from starting automatically",
-                    action: cancelUpNext
-                )
+        case let .listening(progress):
+            VStack(alignment: .leading, spacing: 8) {
+                ProgressView(value: progress)
+                    .tint(accentColor)
+                HStack {
+                    Text(playback.isPaused ? "Paused. Listening resumes when you play." : "Listening to the speech…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    syncPill("Cancel") { playback.cancelAutomaticSubtitleSync() }
+                }
             }
-        case .episodes, .audio, .subtitles, .speed, .nextEpisode:
-            EmptyView()
+        case let .synced(delay):
+            HStack {
+                Label(
+                    abs(delay) < 0.05 ? "Already in sync" : String(format: "Synced, %+.1f s", delay),
+                    systemImage: "checkmark.circle.fill"
+                )
+                .font(.subheadline)
+                Spacer()
+                syncPill("Again") { playback.startAutomaticSubtitleSync() }
+            }
+        case let .failed(message):
+            VStack(alignment: .leading, spacing: 8) {
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                syncPill("Try Again", symbol: "arrow.clockwise") { playback.startAutomaticSubtitleSync() }
+            }
         }
     }
 
-    private func promptButton(
+    private var syncByEarHint: String {
+        if heardAt != nil { return "Heard captured. Press Saw when its subtitle shows." }
+        if sawAt != nil { return "Saw captured. Press Heard when you hear the line." }
+        return "Press Heard when you hear a line and Saw when its subtitle shows, in either order."
+    }
+
+    private func markSyncByEar(heard: Bool) {
+        let now = playback.positionSeconds
+        if heard { heardAt = now } else { sawAt = now }
+        guard let heardAt, let sawAt else { return }
+        self.heardAt = nil
+        self.sawAt = nil
+        // Taps far apart are two different lines, not one late subtitle.
+        guard abs(heardAt - sawAt) <= 20 else { return }
+        playback.setSubtitleDelay(playback.subtitleStyle.delaySeconds + heardAt - sawAt)
+    }
+
+    private func captureHeardLine() {
+        let captured = playback.positionSeconds
+        lineCaptureTime = captured
+        lineCaptureProblem = nil
+        lineChoices = []
+        Task {
+            do {
+                let cues = try await playback.selectedSubtitleCues()
+                // Lines that, as currently timed, show within 20 seconds of
+                // the moment, nearest first.
+                let delay = playback.subtitleStyle.delaySeconds
+                let nearby = cues
+                    .filter { !$0.text.isEmpty && abs($0.startSeconds + delay - captured) <= 20 }
+                    .sorted { abs($0.startSeconds + delay - captured) < abs($1.startSeconds + delay - captured) }
+                    .prefix(8)
+                lineChoices = nearby.sorted { $0.startSeconds < $1.startSeconds }
+                if lineChoices.isEmpty {
+                    lineCaptureProblem = "No lines near this moment. Try again on another line."
+                }
+            } catch {
+                lineCaptureProblem = error.localizedDescription
+            }
+        }
+    }
+
+    private func timeTitle(_ seconds: Double) -> String {
+        let total = max(Int(seconds.rounded(.down)), 0)
+        let hours = total / 3_600
+        let minutes = total / 60 % 60
+        let rest = total % 60
+        return hours > 0
+            ? String(format: "%d:%02d:%02d", hours, minutes, rest)
+            : String(format: "%d:%02d", minutes, rest)
+    }
+
+    private func syncSectionTitle(_ title: String, symbol: String) -> some View {
+        Label(title, systemImage: symbol)
+            .font(.subheadline.weight(.semibold))
+            .padding(.horizontal, 10)
+    }
+
+    private func syncPill(
         _ title: String,
-        symbol: String,
-        hint: String,
+        symbol: String? = nil,
+        isActive: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            Label(title, systemImage: symbol)
-                .font(.headline.weight(.semibold))
-                .padding(.horizontal, 18)
-                .frame(minHeight: 44)
-                .contentShape(Capsule())
+            Group {
+                if let symbol {
+                    Label(title, systemImage: symbol)
+                } else {
+                    Text(title)
+                }
+            }
+            .font(.subheadline.weight(.medium))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity)
+            .background(
+                Capsule().fill(isActive ? accentColor.opacity(0.45) : .white.opacity(0.12))
+            )
+            .contentShape(Capsule())
         }
-        .playbackCapsuleGlassButton()
-        .accessibilityHint(hint)
+        .buttonStyle(.plain)
     }
 }
 

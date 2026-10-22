@@ -7,6 +7,7 @@ import UIKit
 #endif
 
 enum AddonContextMenuAction: Equatable {
+    case refresh
     case configure
     case copyLink
     case rename
@@ -23,6 +24,7 @@ enum AddonSettingsPresentation {
     static let actionTextTreatment = AddonActionTextTreatment.white
 
     static let contextMenuActions: [AddonContextMenuAction] = [
+        .refresh,
         .copyLink,
         .rename,
         .configure,
@@ -71,6 +73,7 @@ struct AddonsSettingsView: View {
     @State private var importedDocument: AddonBackupDocument?
     @State private var statusMessage: String?
     @State private var detailAddonID: String?
+    @State private var refreshingAddonIDs: Set<String> = []
 
     var body: some View {
         @Bindable var store = store
@@ -150,6 +153,11 @@ struct AddonsSettingsView: View {
                             Button("Show Details", systemImage: "info.circle") {
                                 detailAddonID = addon.id
                             }
+
+                            Button("Refresh", systemImage: "arrow.clockwise") {
+                                refreshAddon(addon.id)
+                            }
+                            .disabled(refreshingAddonIDs.contains(addon.id))
 
                             Button("Copy Link", systemImage: "doc.on.doc") {
                                 copyManifestLink(addon.manifestURL)
@@ -261,6 +269,19 @@ struct AddonsSettingsView: View {
     private func beginRename(_ addon: InstalledAddon) {
         renameDraft = addon.displayName
         addonToRename = addon
+    }
+
+    private func refreshAddon(_ id: String) {
+        guard !refreshingAddonIDs.contains(id) else { return }
+        refreshingAddonIDs.insert(id)
+        Task {
+            let error = await store.refreshAddonManifest(id: id)
+            refreshingAddonIDs.remove(id)
+            let name = store.installedAddons.first { $0.id == id }?.displayName ?? "The add-on"
+            statusMessage = error == nil
+                ? "\(name) was refreshed."
+                : "\(name) couldn't be refreshed. Its last manifest keeps working."
+        }
     }
 
     private func copyManifestLink(_ url: URL) {
@@ -407,7 +428,7 @@ struct AddonLogoView: View {
     var body: some View {
         Group {
             if let url {
-                AsyncImage(url: url) { phase in
+                CachedArtworkImage(url: url, size: CGSize(width: 38, height: 38), contentMode: .fit) { phase in
                     if let image = phase.image {
                         image
                             .resizable()

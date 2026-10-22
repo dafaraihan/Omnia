@@ -61,27 +61,32 @@ enum AppDestination: Hashable {
     case home
     case library
     case discover
+    case liveTV
     case search
     case settings
 
-    static func visibleDestinations(for platform: AppPlatform) -> [AppDestination] {
-        let browsing: [AppDestination] = [.home, .library, .discover, .search]
+    static func visibleDestinations(for platform: AppPlatform, showsLiveTV: Bool = false) -> [AppDestination] {
+        let browsing: [AppDestination] = [.home, .library, .discover] + (showsLiveTV ? [.liveTV] : []) + [.search]
         return browsing + [.settings]
     }
 
-    static let macTopBarDestinations: [AppDestination] = [
-        .home,
-        .library,
-        .discover,
-        .settings,
-        .search
-    ]
+    /// Live TV sits between Discover and Settings once a source is set up.
+    static func macTopBarDestinations(showsLiveTV: Bool) -> [AppDestination] {
+        [.home, .library, .discover] + (showsLiveTV ? [.liveTV] : []) + [.search, .settings]
+    }
+
+    /// Settings is the watching profile's page, named after it.
+    @MainActor
+    func title(for profile: ViewerProfile?) -> String {
+        self == .settings ? (profile?.name ?? "Profile") : title
+    }
 
     var symbolName: String {
         switch self {
         case .home: "house"
         case .library: "rectangle.stack"
         case .discover: "bag"
+        case .liveTV: "play.tv"
         case .search: "magnifyingglass"
         case .settings: "gearshape"
         }
@@ -92,6 +97,7 @@ enum AppDestination: Hashable {
         case .home: "Home"
         case .library: "Library"
         case .discover: "Discover"
+        case .liveTV: "Live TV"
         case .search: "Search"
         case .settings: "Settings"
         }
@@ -101,7 +107,7 @@ enum AppDestination: Hashable {
         switch self {
         case .home, .library, .discover:
             true
-        case .search, .settings:
+        case .liveTV, .search, .settings:
             false
         }
     }
@@ -111,7 +117,7 @@ enum AppDestination: Hashable {
         switch self {
         case .home, .library, .discover, .search:
             true
-        case .settings:
+        case .liveTV, .settings:
             false
         }
     }

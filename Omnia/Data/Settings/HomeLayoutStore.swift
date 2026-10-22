@@ -51,9 +51,14 @@ final class HomeLayoutStore {
     /// Catalogs and collections in Home order, as in Nuvio: pinned
     /// collections first, then catalogs and the other collections in the
     /// order the user set. New collections start after the catalogs.
-    func entries(catalogs: [AddonHomeCatalog], collections: [HomeCollection]) -> [HomeRowEntry] {
+    func entries(
+        catalogs: [AddonHomeCatalog],
+        collections: [HomeCollection],
+        servers: [MediaServerHomeRow] = []
+    ) -> [HomeRowEntry] {
         let pinned = collections.filter(\.pinToTop).map(HomeRowEntry.collection)
         let movable = catalogs.map(HomeRowEntry.catalog)
+            + servers.map(HomeRowEntry.server)
             + collections.filter { !$0.pinToTop }.map(HomeRowEntry.collection)
         let byKey = Dictionary(movable.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         return pinned + preferences.ordered(movable.map(\.id)).compactMap { byKey[$0] }
@@ -119,7 +124,23 @@ final class HomeLayoutStore {
         return true
     }
 
+    func isVisible(_ row: MediaServerHomeRow) -> Bool {
+        !preferences.hiddenServerRowKeys.contains(row.key)
+    }
+
+    func setVisible(_ visible: Bool, for row: MediaServerHomeRow) {
+        update { preferences in
+            preferences.hiddenServerRowKeys.removeAll { $0 == row.key }
+            if !visible { preferences.hiddenServerRowKeys.append(row.key) }
+        }
+    }
+
     func reset() {
         update { $0 = HomeLayoutPreferences() }
+    }
+
+    /// Switching profiles: another profile's layout, or the default one.
+    func replace(with preferences: HomeLayoutPreferences?) {
+        update { $0 = preferences ?? HomeLayoutPreferences() }
     }
 }

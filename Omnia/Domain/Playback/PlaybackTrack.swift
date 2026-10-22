@@ -27,6 +27,8 @@ struct PlaybackTrack: Identifiable, Equatable, Sendable {
     let language: String?
     let codec: String?
     let isSelected: Bool
+    /// The add-on file an added subtitle track was loaded from.
+    var externalURL: URL? = nil
 
     var displayName: String {
         let cleanTitle = title?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
@@ -51,6 +53,8 @@ struct PlaybackTrack: Identifiable, Equatable, Sendable {
         language = track.language
         codec = track.codec
         isSelected = track.isSelected
+        externalURL = track.externalFilename.flatMap(URL.init(string:))
+            .flatMap { ["http", "https"].contains($0.scheme?.lowercased()) ? $0 : nil }
     }
     #endif
 

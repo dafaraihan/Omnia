@@ -112,14 +112,16 @@ struct PersonDetailView: View {
 
     private var header: some View {
         HStack(alignment: .top, spacing: 22) {
-            AsyncImage(url: page?.profileURL ?? photoURL) { image in
-                image.resizable().scaledToFill()
-            } placeholder: {
-                Image(systemName: "person.crop.circle.fill")
-                    .font(.system(size: 64))
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(.primary.opacity(0.08))
+            CachedArtworkImage(url: page?.profileURL ?? photoURL, size: CGSize(width: 150, height: 225)) { phase in
+                if let image = phase.image {
+                    image.resizable().scaledToFill()
+                } else {
+                    Image(systemName: "person.crop.circle.fill")
+                        .font(.system(size: 64))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(.primary.opacity(0.08))
+                }
             }
             .frame(width: 150, height: 225)
             .clipShape(.rect(cornerRadius: display.posterCornerRadius, style: .continuous))
@@ -185,10 +187,8 @@ struct EntityTitlesView: View {
             try await metadata.entityPage(kind: kind, id: entityID, type: currentType, page: page)
         } header: {
             if let logoURL {
-                AsyncImage(url: logoURL) { image in
-                    image.resizable().scaledToFit()
-                } placeholder: {
-                    Color.clear
+                CachedArtworkImage(url: logoURL, size: CGSize(width: 220, height: 70), contentMode: .fit) { phase in
+                    phase.image?.resizable().scaledToFit()
                 }
                 .frame(maxWidth: 220, maxHeight: 70, alignment: .leading)
                 .padding(14)

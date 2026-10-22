@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 struct ProgressSettingsView: View {
     @Environment(OmniaStore.self) private var store
     @Environment(SettingsPreferencesStore.self) private var settings
+    @Environment(OmniaAccount.self) private var account
     @State private var exportDocument: SettingsJSONDocument?
     @State private var showsExporter = false
     @State private var showsImporter = false
@@ -20,10 +21,15 @@ struct ProgressSettingsView: View {
     var body: some View {
         OmniaSettingsForm {
             Section("Storage") {
-                LabeledContent("Progress", value: "On this device")
-                LabeledContent("Watchlist", value: "On this device")
-                Label("No account is required", systemImage: "iphone")
-                    .foregroundStyle(.secondary)
+                LabeledContent("Progress", value: account.storageSummary)
+                LabeledContent("Watchlist", value: account.storageSummary)
+                if account.user != nil {
+                    Label("Synced for this profile on every device you sign in on", systemImage: "checkmark.icloud")
+                        .foregroundStyle(.secondary)
+                } else {
+                    Label("Sign in under Account to keep them in your Omnia account", systemImage: "laptopcomputer")
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Section {

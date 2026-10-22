@@ -16,7 +16,12 @@ struct TitleLogoView: View {
     var alignment: Alignment = .leading
 
     var body: some View {
-        AsyncImage(url: url, transaction: .init(animation: .easeInOut)) { phase in
+        CachedArtworkImage(
+            url: url,
+            size: CGSize(width: maximumWidth, height: maximumHeight),
+            contentMode: .fit,
+            transaction: .init(animation: .easeInOut)
+        ) { phase in
             if let image = phase.image {
                 image
                     .resizable()

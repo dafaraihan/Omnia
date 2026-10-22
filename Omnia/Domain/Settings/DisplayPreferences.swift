@@ -356,6 +356,151 @@ nonisolated enum ContinueWatchingStyle: String, Codable, CaseIterable, Identifia
     var isLandscape: Bool { self != .poster }
 }
 
+/// Settings › Layout › Collections › Card Style: the folder tiles in every
+/// collection row, like Poster Card Style is for posters. The defaults draw
+/// tiles as they looked before the option existed.
+nonisolated struct CollectionCardPreferences: Codable, Equatable, Sendable {
+    var shape: Shape = .asImported
+    var size: Size = .matchPosters
+    var corners: Corners = .rounded
+    var titles: Titles = .automatic
+
+    static let `default` = Self()
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = Self.default
+        shape = (try? c.decodeIfPresent(Shape.self, forKey: .shape)) ?? d.shape
+        size = (try? c.decodeIfPresent(Size.self, forKey: .size)) ?? d.size
+        corners = (try? c.decodeIfPresent(Corners.self, forKey: .corners)) ?? d.corners
+        titles = (try? c.decodeIfPresent(Titles.self, forKey: .titles)) ?? d.titles
+    }
+
+    enum Shape: String, Codable, CaseIterable, Identifiable, Sendable {
+        /// Each collection's own tile shape, from its editor or import.
+        case asImported
+        case poster
+        case square
+        case landscape
+        case wide
+
+        var id: Self { self }
+
+        var title: String {
+            switch self {
+            case .asImported: "As Imported"
+            case .poster: "Poster"
+            case .square: "Square"
+            case .landscape: "Landscape"
+            case .wide: "Wide"
+            }
+        }
+
+        func resolved(_ folderShape: HomeCollectionFolder.TileShape) -> HomeCollectionFolder.TileShape {
+            switch self {
+            case .asImported: folderShape
+            case .poster: .poster
+            case .square: .square
+            case .landscape: .landscape
+            case .wide: .wide
+            }
+        }
+    }
+
+    enum Size: String, Codable, CaseIterable, Identifiable, Sendable {
+        /// Portrait tiles follow Poster Card Style's size.
+        case matchPosters
+        case small
+        case standard
+        case large
+        case extraLarge
+
+        var id: Self { self }
+
+        var title: String {
+            switch self {
+            case .matchPosters: "Same as Posters"
+            case .small: "Small"
+            case .standard: "Standard"
+            case .large: "Large"
+            case .extraLarge: "Extra Large"
+            }
+        }
+
+        var scale: CGFloat {
+            switch self {
+            case .matchPosters, .standard: 1
+            case .small: 0.85
+            case .large: 1.15
+            case .extraLarge: 1.3
+            }
+        }
+    }
+
+    enum Corners: String, Codable, CaseIterable, Identifiable, Sendable {
+        case square
+        case subtle
+        case rounded
+        case round
+
+        var id: Self { self }
+
+        var title: String {
+            switch self {
+            case .square: "Square"
+            case .subtle: "Subtle"
+            case .rounded: "Rounded"
+            case .round: "Round"
+            }
+        }
+
+        var radius: CGFloat {
+            switch self {
+            case .square: 0
+            case .subtle: 8
+            case .rounded: 16
+            case .round: 24
+            }
+        }
+    }
+
+    enum Titles: String, Codable, CaseIterable, Identifiable, Sendable {
+        /// Drawn when the folder asks for it or has no cover.
+        case automatic
+        case always
+        case never
+
+        var id: Self { self }
+
+        var title: String {
+            switch self {
+            case .automatic: "Automatic"
+            case .always: "Always"
+            case .never: "Never"
+            }
+        }
+    }
+}
+
+/// Settings › Layout › Continue Watching › Artwork.
+nonisolated enum ContinueWatchingArtwork: String, Codable, CaseIterable, Identifiable, Sendable {
+    /// The movie's artwork, or the episode's still for a show.
+    case artwork
+    /// The frame where playback stopped, saved when the player closes.
+    case pausedScene
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .artwork: "Title Artwork"
+        case .pausedScene: "Paused Scene"
+        }
+    }
+}
+
 nonisolated enum ContinueWatchingSort: String, Codable, CaseIterable, Identifiable, Sendable {
     case recent
     case title
@@ -470,6 +615,10 @@ nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
     var continueWatchingStyle: ContinueWatchingStyle = .wide
     var continueWatchingSort: ContinueWatchingSort = .recent
     var continueWatchingEpisodeThumbnails = true
+    /// Each card's picture: the title's artwork, or the scene it stopped on.
+    var continueWatchingArtwork: ContinueWatchingArtwork = .artwork
+    /// Settings › Layout › Collections › Card Style.
+    var collectionCard: CollectionCardPreferences = .default
     /// Nuvio's Next Up behaviour: after an episode ends, the row offers the
     /// one after the furthest episode watched, not the one just finished.
     var nextUpFromFurthestEpisode = true
@@ -518,6 +667,8 @@ nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
         continueWatchingStyle = (try? c.decodeIfPresent(ContinueWatchingStyle.self, forKey: .continueWatchingStyle)) ?? d.continueWatchingStyle
         continueWatchingSort = (try? c.decodeIfPresent(ContinueWatchingSort.self, forKey: .continueWatchingSort)) ?? d.continueWatchingSort
         continueWatchingEpisodeThumbnails = (try? c.decodeIfPresent(Bool.self, forKey: .continueWatchingEpisodeThumbnails)) ?? d.continueWatchingEpisodeThumbnails
+        continueWatchingArtwork = (try? c.decodeIfPresent(ContinueWatchingArtwork.self, forKey: .continueWatchingArtwork)) ?? d.continueWatchingArtwork
+        collectionCard = (try? c.decodeIfPresent(CollectionCardPreferences.self, forKey: .collectionCard)) ?? d.collectionCard
         nextUpFromFurthestEpisode = (try? c.decodeIfPresent(Bool.self, forKey: .nextUpFromFurthestEpisode)) ?? d.nextUpFromFurthestEpisode
         showsUnairedNextUp = (try? c.decodeIfPresent(Bool.self, forKey: .showsUnairedNextUp)) ?? d.showsUnairedNextUp
         blursNextUp = (try? c.decodeIfPresent(Bool.self, forKey: .blursNextUp)) ?? d.blursNextUp

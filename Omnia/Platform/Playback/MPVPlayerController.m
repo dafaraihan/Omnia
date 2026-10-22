@@ -296,6 +296,218 @@ static void *OMOpenGLProcedureAddress(void *context, const char *name) {
 
 @end
 
+/// A button that works on the first click, while Omnia isn't frontmost.
+@interface OMMpvPictureInPictureButton : NSButton
+@end
+
+@implementation OMMpvPictureInPictureButton
+- (BOOL)acceptsFirstMouse:(NSEvent *)event { return YES; }
+@end
+
+/// The floating player, styled after macOS Picture in Picture: no title
+/// bar, rounded corners and a shadow, controls that fade in on hover, drag
+/// anywhere to move, and it settles into the nearest screen corner.
+@interface OMMpvPictureInPicturePanel : NSPanel
+@end
+
+@implementation OMMpvPictureInPicturePanel
+- (BOOL)canBecomeKeyWindow { return YES; }
+- (BOOL)canBecomeMainWindow { return NO; }
+@end
+
+@interface OMMpvPictureInPictureView : NSView
+@property (nonatomic, readonly) NSView *videoContainer;
+@property (nonatomic, copy, nullable) void (^closeHandler)(void);
+@property (nonatomic, copy, nullable) void (^returnHandler)(void);
+@property (nonatomic, copy, nullable) void (^togglePauseHandler)(void);
+@property (nonatomic, copy, nullable) void (^seekHandler)(double seconds);
+@property (nonatomic, copy, nullable) BOOL (^isPausedProvider)(void);
+- (void)refreshControls;
+@end
+
+@implementation OMMpvPictureInPictureView {
+    NSView *_controls;
+    CAGradientLayer *_shade;
+    OMMpvPictureInPictureButton *_closeButton;
+    OMMpvPictureInPictureButton *_returnButton;
+    OMMpvPictureInPictureButton *_backButton;
+    OMMpvPictureInPictureButton *_playButton;
+    OMMpvPictureInPictureButton *_forwardButton;
+    NSTrackingArea *_trackingArea;
+    NSPoint _dragStartMouse;
+    NSPoint _dragStartOrigin;
+    BOOL _didDrag;
+}
+
+- (instancetype)initWithFrame:(NSRect)frameRect {
+    self = [super initWithFrame:frameRect];
+    if (!self) return nil;
+    self.wantsLayer = YES;
+    self.layer.cornerRadius = 10;
+    self.layer.cornerCurve = kCACornerCurveContinuous;
+    self.layer.masksToBounds = YES;
+    self.layer.backgroundColor = NSColor.blackColor.CGColor;
+    self.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+
+    _videoContainer = [[NSView alloc] initWithFrame:self.bounds];
+    _videoContainer.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    [self addSubview:_videoContainer];
+
+    _controls = [[NSView alloc] initWithFrame:self.bounds];
+    _controls.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    _controls.wantsLayer = YES;
+    _controls.alphaValue = 0;
+    _shade = [CAGradientLayer layer];
+    _shade.colors = @[
+        (__bridge id)[NSColor colorWithWhite:0 alpha:0.5].CGColor,
+        (__bridge id)[NSColor colorWithWhite:0 alpha:0.2].CGColor,
+        (__bridge id)[NSColor colorWithWhite:0 alpha:0.5].CGColor,
+    ];
+    [_controls.layer addSublayer:_shade];
+    [self addSubview:_controls];
+
+    _closeButton = [self buttonWithSymbol:@"xmark" size:13 label:@"Close" action:@selector(close:)];
+    _returnButton = [self buttonWithSymbol:@"pip.exit" size:14 label:@"Return to Omnia" action:@selector(returnToApp:)];
+    _backButton = [self buttonWithSymbol:@"gobackward.10" size:20 label:@"Back 10 seconds" action:@selector(seekBack:)];
+    _playButton = [self buttonWithSymbol:@"pause.fill" size:28 label:@"Pause" action:@selector(togglePause:)];
+    _forwardButton = [self buttonWithSymbol:@"goforward.10" size:20 label:@"Forward 10 seconds" action:@selector(seekForward:)];
+    return self;
+}
+
+- (OMMpvPictureInPictureButton *)buttonWithSymbol:(NSString *)symbol
+                                             size:(CGFloat)size
+                                            label:(NSString *)label
+                                           action:(SEL)action {
+    OMMpvPictureInPictureButton *button = [[OMMpvPictureInPictureButton alloc] initWithFrame:NSZeroRect];
+    button.bordered = NO;
+    button.imagePosition = NSImageOnly;
+    button.contentTintColor = NSColor.whiteColor;
+    button.target = self;
+    button.action = action;
+    button.toolTip = label;
+    button.symbolConfiguration = [NSImageSymbolConfiguration configurationWithPointSize:size weight:NSFontWeightSemibold];
+    button.image = [NSImage imageWithSystemSymbolName:symbol accessibilityDescription:label];
+    [button setAccessibilityLabel:label];
+    [_controls addSubview:button];
+    return button;
+}
+
+- (BOOL)acceptsFirstMouse:(NSEvent *)event { return YES; }
+- (BOOL)mouseDownCanMoveWindow { return NO; }
+
+- (void)layout {
+    [super layout];
+    NSRect bounds = self.bounds;
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    _shade.frame = bounds;
+    [CATransaction commit];
+
+    CGFloat inset = 10;
+    _closeButton.frame = NSMakeRect(inset, NSMaxY(bounds) - inset - 24, 24, 24);
+    _returnButton.frame = NSMakeRect(inset + 30, NSMaxY(bounds) - inset - 24, 24, 24);
+
+    CGFloat mid = NSMidX(bounds);
+    CGFloat midY = NSMidY(bounds);
+    _playButton.frame = NSMakeRect(mid - 22, midY - 22, 44, 44);
+    _backButton.frame = NSMakeRect(mid - 22 - 56, midY - 18, 36, 36);
+    _forwardButton.frame = NSMakeRect(mid + 22 + 20, midY - 18, 36, 36);
+    BOOL showsSeek = bounds.size.width >= 260;
+    _backButton.hidden = !showsSeek;
+    _forwardButton.hidden = !showsSeek;
+}
+
+- (void)updateTrackingAreas {
+    [super updateTrackingAreas];
+    if (_trackingArea) [self removeTrackingArea:_trackingArea];
+    _trackingArea = [[NSTrackingArea alloc]
+        initWithRect:NSZeroRect
+        options:NSTrackingMouseEnteredAndExited | NSTrackingActiveAlways | NSTrackingInVisibleRect
+        owner:self
+        userInfo:nil];
+    [self addTrackingArea:_trackingArea];
+}
+
+- (void)mouseEntered:(NSEvent *)event {
+    [self refreshControls];
+    [self setControlsVisible:YES];
+}
+
+- (void)mouseExited:(NSEvent *)event {
+    [self setControlsVisible:NO];
+}
+
+- (void)setControlsVisible:(BOOL)visible {
+    [NSAnimationContext runAnimationGroup:^(NSAnimationContext *context) {
+        context.duration = 0.2;
+        self->_controls.animator.alphaValue = visible ? 1 : 0;
+    }];
+}
+
+- (void)refreshControls {
+    BOOL paused = self.isPausedProvider ? self.isPausedProvider() : NO;
+    NSString *label = paused ? @"Play" : @"Pause";
+    _playButton.image = [NSImage imageWithSystemSymbolName:paused ? @"play.fill" : @"pause.fill"
+                                  accessibilityDescription:label];
+    _playButton.toolTip = label;
+    [_playButton setAccessibilityLabel:label];
+}
+
+- (void)close:(id)sender { if (self.closeHandler) self.closeHandler(); }
+- (void)returnToApp:(id)sender { if (self.returnHandler) self.returnHandler(); }
+- (void)seekBack:(id)sender { if (self.seekHandler) self.seekHandler(-10); }
+- (void)seekForward:(id)sender { if (self.seekHandler) self.seekHandler(10); }
+- (void)togglePause:(id)sender {
+    if (self.togglePauseHandler) self.togglePauseHandler();
+    [self refreshControls];
+}
+
+// Dragging moves the window; letting go settles it into the nearest
+// corner, and a double click returns to Omnia, as in macOS PiP.
+- (void)mouseDown:(NSEvent *)event {
+    _dragStartMouse = NSEvent.mouseLocation;
+    _dragStartOrigin = self.window.frame.origin;
+    _didDrag = NO;
+    if (event.clickCount == 2 && self.returnHandler) self.returnHandler();
+}
+
+- (void)mouseDragged:(NSEvent *)event {
+    NSPoint mouse = NSEvent.mouseLocation;
+    CGFloat dx = mouse.x - _dragStartMouse.x;
+    CGFloat dy = mouse.y - _dragStartMouse.y;
+    if (!_didDrag && hypot(dx, dy) < 3) return;
+    _didDrag = YES;
+    [self.window setFrameOrigin:NSMakePoint(_dragStartOrigin.x + dx, _dragStartOrigin.y + dy)];
+}
+
+- (void)mouseUp:(NSEvent *)event {
+    if (_didDrag) [self snapToNearestCorner];
+    _didDrag = NO;
+}
+
+- (void)snapToNearestCorner {
+    NSWindow *window = self.window;
+    NSScreen *screen = window.screen ?: NSScreen.mainScreen;
+    if (!window || !screen) return;
+    NSRect visible = screen.visibleFrame;
+    NSRect frame = window.frame;
+    CGFloat margin = 16;
+    BOOL right = NSMidX(frame) > NSMidX(visible);
+    BOOL top = NSMidY(frame) > NSMidY(visible);
+    NSPoint origin = NSMakePoint(
+        right ? NSMaxX(visible) - frame.size.width - margin : NSMinX(visible) + margin,
+        top ? NSMaxY(visible) - frame.size.height - margin : NSMinY(visible) + margin
+    );
+    frame.origin = origin;
+    [NSAnimationContext runAnimationGroup:^(NSAnimationContext *context) {
+        context.duration = 0.25;
+        context.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseOut];
+        [window.animator setFrame:frame display:YES];
+    }];
+}
+
+@end
+
 @implementation OMMpvTrack
 
 - (instancetype)initWithTrackID:(NSInteger)trackID
@@ -303,6 +515,20 @@ static void *OMOpenGLProcedureAddress(void *context, const char *name) {
                        language:(NSString *)language
                           codec:(NSString *)codec
                        selected:(BOOL)selected {
+    return [self initWithTrackID:trackID
+                           title:title
+                        language:language
+                           codec:codec
+                        selected:selected
+                externalFilename:nil];
+}
+
+- (instancetype)initWithTrackID:(NSInteger)trackID
+                          title:(NSString *)title
+                       language:(NSString *)language
+                          codec:(NSString *)codec
+                       selected:(BOOL)selected
+               externalFilename:(NSString *)externalFilename {
     self = [super init];
     if (!self) return nil;
     _trackID = trackID;
@@ -310,6 +536,7 @@ static void *OMOpenGLProcedureAddress(void *context, const char *name) {
     _language = [language copy];
     _codec = [codec copy];
     _selected = selected;
+    _externalFilename = [externalFilename copy];
     return self;
 }
 
@@ -386,6 +613,7 @@ static void OMMpvRequestRedraw(void *context) {
     BOOL _fileLoaded;
     NSView *_inlineVideoHost;
     NSPanel *_pictureInPicturePanel;
+    OMMpvPictureInPictureView *_pictureInPictureView;
     BOOL _pictureInPictureActive;
     uint64_t _nextTrackSelectionRequestID;
     uint64_t _latestAudioTrackSelectionRequestID;
@@ -393,6 +621,7 @@ static void OMMpvRequestRedraw(void *context) {
     NSMutableDictionary<NSNumber *, OMMpvPendingTrackSelection *> *_pendingTrackSelections;
     OMMpvCallbackBox *_wakeupBox;
     OMMpvCallbackBox *_redrawBox;
+    NSString *_lastLoadProblem;
 }
 @property (nonatomic, readwrite) OMMpvVideoView *videoView;
 @property (nonatomic, readwrite, nullable) NSString *errorMessage;
@@ -544,6 +773,9 @@ static void OMMpvWakeup(void *context) {
     [self applyPlayerOptions];
     [self applySubtitleStyleOptions];
 
+    // "loading failed" alone says nothing; mpv's own warning (HTTP 403, an
+    // unknown format, a refused connection) is kept and shown with it.
+    mpv_request_log_messages(_mpv, "warn");
     if (mpv_initialize(_mpv) < 0) {
         [self failWithMessage:@"libmpv could not initialize the video renderer."];
         return;
@@ -589,12 +821,29 @@ static void OMMpvWakeup(void *context) {
     [_videoView.videoLayer scheduleRender];
 
     if (_requestHeaders.count > 0) {
+        // http-header-fields is a list. Set as one string, mpv split it at
+        // every comma, so a header such as a browser User-Agent or a Cookie
+        // with commas reached the server broken. Each header is now its own
+        // list item, and line breaks are never passed through.
+        NSCharacterSet *lineBreaks = NSCharacterSet.newlineCharacterSet;
         NSMutableArray<NSString *> *fields = [NSMutableArray arrayWithCapacity:_requestHeaders.count];
         [_requestHeaders enumerateKeysAndObjectsUsingBlock:^(NSString *key, NSString *value, BOOL *stop) {
+            if ([key rangeOfCharacterFromSet:lineBreaks].location != NSNotFound
+                || [value rangeOfCharacterFromSet:lineBreaks].location != NSNotFound) return;
             [fields addObject:[NSString stringWithFormat:@"%@: %@", key, value]];
         }];
-        NSString *headerFields = [fields componentsJoinedByString:@"\n"];
-        mpv_set_property_string(_mpv, "http-header-fields", headerFields.UTF8String);
+        if (fields.count > 0) {
+            mpv_node *items = calloc(fields.count, sizeof(mpv_node));
+            for (NSUInteger index = 0; index < fields.count; index++) {
+                items[index].format = MPV_FORMAT_STRING;
+                items[index].u.string = (char *)fields[index].UTF8String;
+            }
+            mpv_node_list list = { .num = (int)fields.count, .values = items, .keys = NULL };
+            mpv_node node = { .format = MPV_FORMAT_NODE_ARRAY };
+            node.u.list = &list;
+            mpv_set_property(_mpv, "http-header-fields", MPV_FORMAT_NODE, &node);
+            free(items);
+        }
     }
 
     [self setDouble:_volume forProperty:"volume"];
@@ -626,8 +875,8 @@ static void OMMpvWakeup(void *context) {
 - (NSArray<OMMpvTrack *> *)subtitleTracks { return [self tracksOfType:@"sub"]; }
 
 - (void)togglePause { self.paused ? [self play] : [self pause]; }
-- (void)play { _paused = NO; [self setFlag:NO forProperty:"pause"]; }
-- (void)pause { _paused = YES; [self setFlag:YES forProperty:"pause"]; }
+- (void)play { _paused = NO; [self setFlag:NO forProperty:"pause"]; [_pictureInPictureView refreshControls]; }
+- (void)pause { _paused = YES; [self setFlag:YES forProperty:"pause"]; [_pictureInPictureView refreshControls]; }
 
 - (void)seekBy:(double)seconds { [self seekTo:self.position + seconds]; }
 
@@ -730,6 +979,37 @@ static void OMMpvWakeup(void *context) {
         NULL
     };
     mpv_command_async(_mpv, 0, command);
+}
+
+- (void)setSpeechActivityProbeEnabled:(BOOL)enabled {
+    if (!_mpv || _stopped) return;
+    // astats only reads the audio and tags each block with its loudness;
+    // the sound that plays is unchanged.
+    const char *add[] = {"af", "add", "@omniasync:lavfi=[astats=metadata=1:reset=4]", NULL};
+    const char *remove[] = {"af", "remove", "@omniasync", NULL};
+    mpv_command_async(_mpv, 0, enabled ? add : remove);
+}
+
+- (NSNumber *)speechActivityLevel {
+    if (!_mpv || _stopped) return nil;
+    mpv_node node;
+    if (mpv_get_property(_mpv, "af-metadata/omniasync", MPV_FORMAT_NODE, &node) < 0) return nil;
+    NSNumber *level = nil;
+    if (node.format == MPV_FORMAT_NODE_MAP && node.u.list) {
+        for (int index = 0; index < node.u.list->num; index += 1) {
+            mpv_node value = node.u.list->values[index];
+            if (strcmp(node.u.list->keys[index], "lavfi.astats.Overall.RMS_level") != 0
+                || value.format != MPV_FORMAT_STRING) {
+                continue;
+            }
+            double decibels = strtod(value.u.string, NULL);
+            if (isinf(decibels) && decibels < 0) decibels = -120;
+            if (isfinite(decibels)) level = @(MAX(decibels, -120));
+            break;
+        }
+    }
+    mpv_free_node_contents(&node);
+    return level;
 }
 
 - (void)setSubtitleStyle:(NSDictionary<NSString *, id> *)style {
@@ -913,9 +1193,44 @@ static void OMMpvWakeup(void *context) {
 
     NSPanel *panel = _pictureInPicturePanel ?: [self makePictureInPicturePanel];
     _pictureInPicturePanel = panel;
-    [self embedVideoViewInHost:panel.contentView];
+    [self fitPictureInPicturePanelToVideo:panel];
+    [self embedVideoViewInHost:_pictureInPictureView.videoContainer];
     _pictureInPictureActive = YES;
+    [_pictureInPictureView refreshControls];
+    panel.alphaValue = 0;
     [panel orderFront:nil];
+    [NSAnimationContext runAnimationGroup:^(NSAnimationContext *context) {
+        context.duration = 0.2;
+        panel.animator.alphaValue = 1;
+    }];
+}
+
+/// Matches the floating window to the video's shape, keeping its corner.
+- (void)fitPictureInPicturePanelToVideo:(NSPanel *)panel {
+    int64_t width = 0;
+    int64_t height = 0;
+    if (_mpv) {
+        mpv_get_property(_mpv, "video-params/dw", MPV_FORMAT_INT64, &width);
+        mpv_get_property(_mpv, "video-params/dh", MPV_FORMAT_INT64, &height);
+    }
+    double aspect = (width > 0 && height > 0) ? (double)width / (double)height : 16.0 / 9.0;
+    aspect = MIN(MAX(aspect, 1.0), 2.8);
+    NSRect frame = panel.frame;
+    CGFloat contentWidth = MAX(frame.size.width, 320);
+    NSSize size = NSMakeSize(contentWidth, round(contentWidth / aspect));
+    panel.contentAspectRatio = size;
+    panel.minSize = NSMakeSize(240, round(240 / aspect));
+    NSScreen *screen = panel.screen ?: _inlineVideoHost.window.screen ?: NSScreen.mainScreen;
+    NSRect visible = screen.visibleFrame;
+    BOOL right = NSMidX(frame) > NSMidX(visible);
+    BOOL top = NSMidY(frame) > NSMidY(visible);
+    CGFloat margin = 16;
+    frame.size = size;
+    frame.origin = NSMakePoint(
+        right ? NSMaxX(visible) - size.width - margin : NSMinX(visible) + margin,
+        top ? NSMaxY(visible) - size.height - margin : NSMinY(visible) + margin
+    );
+    [panel setFrame:frame display:NO];
 }
 
 - (void)exitPictureInPicture {
@@ -926,6 +1241,19 @@ static void OMMpvWakeup(void *context) {
     }
     [_pictureInPicturePanel orderOut:nil];
     _pictureInPictureActive = NO;
+}
+
+/// The floating window's Return button and double click: back to Omnia's
+/// player window, in front.
+- (void)returnFromPictureInPicture {
+    NSWindow *window = _inlineVideoHost.window;
+    [self exitPictureInPicture];
+    if (@available(macOS 14.0, *)) {
+        [NSApp activate];
+    } else {
+        [NSApp activateIgnoringOtherApps:YES];
+    }
+    [window makeKeyAndOrderFront:nil];
 }
 
 - (void)togglePictureInPicture {
@@ -955,39 +1283,65 @@ static void OMMpvWakeup(void *context) {
 }
 
 - (NSPanel *)makePictureInPicturePanel {
-    NSSize contentSize = NSMakeSize(480, 270);
+    NSSize contentSize = NSMakeSize(400, 225);
     NSScreen *screen = _inlineVideoHost.window.screen ?: NSScreen.mainScreen;
     NSRect visibleFrame = screen.visibleFrame;
     NSRect contentRect = NSMakeRect(
-        NSMaxX(visibleFrame) - contentSize.width - 24,
-        NSMinY(visibleFrame) + 24,
+        NSMaxX(visibleFrame) - contentSize.width - 16,
+        NSMinY(visibleFrame) + 16,
         contentSize.width,
         contentSize.height
     );
-    NSPanel *panel = [[NSPanel alloc]
+    OMMpvPictureInPicturePanel *panel = [[OMMpvPictureInPicturePanel alloc]
         initWithContentRect:contentRect
-        styleMask:NSWindowStyleMaskTitled
-            | NSWindowStyleMaskClosable
+        styleMask:NSWindowStyleMaskBorderless
             | NSWindowStyleMaskResizable
-            | NSWindowStyleMaskFullSizeContentView
             | NSWindowStyleMaskNonactivatingPanel
         backing:NSBackingStoreBuffered
         defer:NO
     ];
     panel.title = @"Picture in Picture";
-    panel.titleVisibility = NSWindowTitleHidden;
-    panel.titlebarAppearsTransparent = YES;
-    panel.movableByWindowBackground = YES;
     panel.releasedWhenClosed = NO;
     panel.hidesOnDeactivate = NO;
     panel.level = NSFloatingWindowLevel;
     panel.collectionBehavior = NSWindowCollectionBehaviorCanJoinAllSpaces
-        | NSWindowCollectionBehaviorFullScreenAuxiliary;
+        | NSWindowCollectionBehaviorFullScreenAuxiliary
+        | NSWindowCollectionBehaviorIgnoresCycle;
     panel.contentAspectRatio = NSMakeSize(16, 9);
-    panel.minSize = NSMakeSize(320, 180);
-    panel.backgroundColor = NSColor.blackColor;
+    panel.minSize = NSMakeSize(240, 135);
+    // Clear, so the rounded corners and the shadow follow the video.
+    panel.opaque = NO;
+    panel.backgroundColor = NSColor.clearColor;
+    panel.hasShadow = YES;
     panel.delegate = self;
+
+    OMMpvPictureInPictureView *view = [[OMMpvPictureInPictureView alloc]
+        initWithFrame:NSMakeRect(0, 0, contentSize.width, contentSize.height)];
+    __weak OMMpvPlayerController *weakSelf = self;
+    view.closeHandler = ^{
+        OMMpvPlayerController *controller = weakSelf;
+        [controller pause];
+        [controller exitPictureInPicture];
+    };
+    view.returnHandler = ^{ [weakSelf returnFromPictureInPicture]; };
+    view.togglePauseHandler = ^{ [weakSelf togglePause]; };
+    view.seekHandler = ^(double seconds) { [weakSelf seekBy:seconds]; };
+    view.isPausedProvider = ^BOOL { return weakSelf.paused; };
+    panel.contentView = view;
+    _pictureInPictureView = view;
     return panel;
+}
+
+- (void)windowDidResize:(NSNotification *)notification {
+    if (notification.object == _pictureInPicturePanel) {
+        [_pictureInPicturePanel invalidateShadow];
+    }
+}
+
+- (BOOL)writeCurrentSceneToURL:(NSURL *)URL {
+    if (!_mpv || !URL.isFileURL) return NO;
+    const char *command[] = { "screenshot-to-file", URL.fileSystemRepresentation, "video", NULL };
+    return mpv_command(_mpv, command) >= 0;
 }
 
 - (void)stop {
@@ -1143,6 +1497,35 @@ static void OMMpvWakeup(void *context) {
     mpv_set_property_string(_mpv, "sub-ass-override", "style");
 }
 
+/// A warning or error from the network or demuxer while a file loads, with
+/// every address removed: stream links can carry account names and passwords.
+- (nullable NSString *)loadProblemFromLogMessage:(mpv_event_log_message *)message {
+    if (_fileLoaded || !message->text || !message->prefix) return nil;
+    if (message->log_level > MPV_LOG_LEVEL_WARN) return nil;
+    NSString *prefix = [NSString stringWithUTF8String:message->prefix];
+    NSArray<NSString *> *sources = @[@"ffmpeg", @"stream", @"demux", @"lavf", @"file", @"cplayer"];
+    BOOL isRelevant = NO;
+    for (NSString *source in sources) {
+        if ([prefix hasPrefix:source]) { isRelevant = YES; break; }
+    }
+    if (!isRelevant) return nil;
+    NSString *text = [[NSString stringWithUTF8String:message->text]
+        stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    if (text.length == 0) return nil;
+    static NSRegularExpression *addresses;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        addresses = [NSRegularExpression regularExpressionWithPattern:@"[A-Za-z][A-Za-z0-9+.-]*://\\S+"
+                                                              options:0
+                                                                error:NULL];
+    });
+    text = [addresses stringByReplacingMatchesInString:text
+                                               options:0
+                                                 range:NSMakeRange(0, text.length)
+                                          withTemplate:@"the stream address"];
+    return text.length > 160 ? [[text substringToIndex:160] stringByAppendingString:@"…"] : text;
+}
+
 - (void)drainEvents {
     if (!_mpv || _stopped) return;
 
@@ -1155,6 +1538,7 @@ static void OMMpvWakeup(void *context) {
         case MPV_EVENT_START_FILE:
             _fileLoaded = NO;
             _tracksLoading = YES;
+            _lastLoadProblem = nil;
             self.errorMessage = nil;
             shouldEmitSnapshot = YES;
             break;
@@ -1185,12 +1569,27 @@ static void OMMpvWakeup(void *context) {
                 NSString *detail = description
                     ? [NSString stringWithUTF8String:description]
                     : @"unknown playback error";
-                self.errorMessage = [NSString stringWithFormat:
-                    @"libmpv could not play the selected source (%@).",
-                    detail
-                ];
+                self.errorMessage = _lastLoadProblem
+                    ? [NSString stringWithFormat:
+                        @"libmpv could not play the selected source (%@: %@).",
+                        detail,
+                        _lastLoadProblem
+                    ]
+                    : [NSString stringWithFormat:
+                        @"libmpv could not play the selected source (%@).",
+                        detail
+                    ];
             }
             shouldEmitSnapshot = YES;
+            break;
+        }
+        case MPV_EVENT_LOG_MESSAGE: {
+            mpv_event_log_message *message = event->data;
+            NSString *problem = message ? [self loadProblemFromLogMessage:message] : nil;
+            // An error outranks the warnings around it.
+            if (problem && (message->log_level <= MPV_LOG_LEVEL_ERROR || !_lastLoadProblem)) {
+                _lastLoadProblem = problem;
+            }
             break;
         }
         case MPV_EVENT_QUEUE_OVERFLOW:
@@ -1269,6 +1668,7 @@ static void OMMpvWakeup(void *context) {
             language:[self stringForProperty:[prefix stringByAppendingString:@"/lang"].UTF8String]
             codec:[self stringForProperty:[prefix stringByAppendingString:@"/codec"].UTF8String]
             selected:selected != 0
+            externalFilename:[self stringForProperty:[prefix stringByAppendingString:@"/external-filename"].UTF8String]
         ]];
     }
     return tracks;

@@ -164,4 +164,50 @@ final class WindowChromeView: NSView {
         titlebarHitLayerWasHidden = false
     }
 }
+
+/// Reports whether the view's window can be seen: false while it is
+/// minimized, hidden, on another Space or fully covered. Decorative video
+/// and timers pause then, since nobody can see them.
+struct WindowVisibilityReader: NSViewRepresentable {
+    @Binding var isVisible: Bool
+
+    func makeNSView(context: Context) -> WindowVisibilityView {
+        let view = WindowVisibilityView(frame: .zero)
+        view.onChange = { visible in
+            if isVisible != visible { isVisible = visible }
+        }
+        return view
+    }
+
+    func updateNSView(_ view: WindowVisibilityView, context: Context) {
+        view.onChange = { visible in
+            if isVisible != visible { isVisible = visible }
+        }
+    }
+}
+
+final class WindowVisibilityView: NSView {
+    var onChange: ((Bool) -> Void)?
+    private var observer: NSObjectProtocol?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let observer { NotificationCenter.default.removeObserver(observer) }
+        observer = nil
+        guard let window else { return }
+        observer = NotificationCenter.default.addObserver(
+            forName: NSWindow.didChangeOcclusionStateNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.report() }
+        }
+        report()
+    }
+
+    private func report() {
+        guard let window else { return }
+        onChange?(window.occlusionState.contains(.visible))
+    }
+}
 #endif

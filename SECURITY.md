@@ -124,7 +124,7 @@ dependency source.
   manifest before constructing the typed local Blu-ray request.
   Only unencrypted Blu-ray playback is in scope. No decryption keys, DVD
   libraries, script execution, or remote resolver is introduced.
-- The plist contains no App Transport Security exception. The built products
+- The plist contains no App Transport Security exception beyond local networking. Live TV's plain HTTP fetches bypass ATS by using Network.framework; see the documented exception below. The built products
   still need release verification because generated or dependency settings can
   alter effective behavior.
 - Migrations enable RLS on all application tables. User tables use
@@ -137,6 +137,15 @@ dependency source.
 - The macOS target enables App Sandbox and hardened runtime. libmpv configuration,
   scripts, console input, auto-profiles, and downloader integration are disabled
   in the player wrapper.
+- Viewer profiles keep their own settings, add-ons, plugins and library. While
+  another profile is active, its copy sits in `Profiles/Data/<profile>/` as
+  AES-GCM files keyed by the Keychain item `profile-data-key`. When signed in,
+  the same data is synced to the `profile_data` table, readable and writable
+  only by its owner through row-level security. Add-on payloads hold add-on
+  addresses, which can carry the user's own tokens, so a leaked account session
+  exposes them. Live TV logins are never synced and stay in the device Keychain.
+- Uploaded avatars come from the public `avatars` bucket and the read-only
+  `avatar_catalog` table; the app rejects catalog paths containing `..`.
 - Swift Package Manager and Deno lockfiles record resolved revisions. This does
   not make the locally copied libmpv dependency reproducible.
 
@@ -166,6 +175,20 @@ dependency source.
 - Require HTTPS and normal ATS validation for Supabase, providers, add-ons,
   artwork, resolver calls, and final media. Any exception requires a documented,
   host-scoped review; never allow arbitrary HTTP or disable certificate checks.
+- **Documented exception: Live TV plain HTTP (owner decision, 2026-10-21).**
+  Most IPTV providers (M3U playlists, Xtream Codes, Stalker portals, XMLTV
+  guides) serve only `http://` on hosts the user enters, so a host-scoped list
+  is not possible. Scope: only Live TV (`LiveTVAddressPolicy`); every other
+  feature keeps `MediaServerAddressPolicy` and ATS. The app plist gains no ATS
+  exception: Live TV fetches internet `http://` through `LiveTVPlainHTTP`, a
+  GET-only HTTP/1.1 client over Network.framework with no cookies or cache, the
+  same 64 MB response limit (2 MB for logos), a deadline, at most five
+  redirects with every hop re-checked, header line-break rejection, and no URL
+  user information. libmpv plays the stream URL directly. HTTPS is still
+  certificate-checked as normal. Risk accepted by the owner: on such sources
+  the account name, password or MAC address in the request, the channel list
+  and the stream can be read or altered on the network path. Settings tell the
+  user to prefer `https://`. Revisit if providers move to HTTPS.
 - Before sending a credential, compare a normalized host to an exact allow-list.
   Do not use suffix or substring matching. Reject URL user information,
   unexpected ports, non-public/local targets where applicable, and credentialed

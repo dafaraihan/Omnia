@@ -33,7 +33,9 @@ final class StreamLinkCacheStore {
     func save(_ candidate: AddonStreamCandidate, for key: MediaPlaybackKey) {
         guard case let .nativeHTTPS(url) = candidate.delivery else { return }
         var values = load()
-        guard !PlaybackURLCredentials.looksSigned(url) else {
+        // Media server links carry the server's token in their headers,
+        // which must stay in the Keychain.
+        guard !PlaybackURLCredentials.looksSigned(url), !MediaServerIdentifier.isServerSource(candidate.addonID) else {
             if values.removeValue(forKey: key.rawValue) != nil { save(values) }
             return
         }

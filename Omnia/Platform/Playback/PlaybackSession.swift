@@ -261,6 +261,15 @@ nonisolated struct PlaybackPeriodicState: Equatable, Sendable {
     let isPictureInPictureAvailable: Bool
 }
 
+/// Where automatic subtitle sync stands for what is playing.
+enum SubtitleSyncStatus: Equatable, Sendable {
+    case idle
+    /// Listening to the audio; `progress` runs from 0 to 1.
+    case listening(progress: Double)
+    case synced(delay: Double)
+    case failed(String)
+}
+
 @Observable
 @MainActor
 final class PlaybackSession {
@@ -290,6 +299,7 @@ final class PlaybackSession {
     private(set) var isPictureInPictureActive = false
     private(set) var isPictureInPictureAvailable = false
     #if os(macOS)
+    private(set) var subtitleSyncStatus: SubtitleSyncStatus = .idle
     private(set) var timelinePreviewTimestamp: Double?
     private(set) var timelinePreviewImage: NSImage?
     #endif
@@ -311,6 +321,17 @@ final class PlaybackSession {
     @ObservationIgnored private var pendingSubtitlePreference: (id: Int?, tracks: [PlaybackTrack])?
     @ObservationIgnored private var timelinePreviewService: PlaybackTimelinePreviewService?
     @ObservationIgnored private var addonSubtitleTask: Task<Void, Never>?
+    @ObservationIgnored private var pictureInPictureAfterFullScreen = false
+    /// Settings › Video Player › Use Whole Screen, read when playback starts.
+    @ObservationIgnored private var usesWholeScreen = false
+    @ObservationIgnored private let wholeScreen = WholeScreenPresentation()
+    /// Settings' subtitle delay; delays set in the player are kept per title
+    /// instead of replacing it.
+    @ObservationIgnored private var defaultSubtitleDelay: Double = 0
+    @ObservationIgnored private var autoSyncsSubtitles = false
+    @ObservationIgnored private var didAutoSyncAtStart = false
+    @ObservationIgnored private var subtitleSyncTask: Task<Void, Never>?
+    @ObservationIgnored private var subtitleCueCache: (url: URL, cues: [SubtitleCue])?
     @ObservationIgnored private let timelinePreviewScheduler = PlaybackTimelinePreviewRequestScheduler()
     #endif
     @ObservationIgnored private var lastPersistedPosition: Double = 0
@@ -405,7 +426,10 @@ final class PlaybackSession {
         self.source = source
         mediaItem = item
         self.episode = episode
-        ResumePromptMarker.mark(item.id)
+        // Live TV has nothing to resume.
+        if !item.id.hasPrefix(PlaybackSource.liveTVIDPrefix) {
+            ResumePromptMarker.mark(item.id)
+        }
         progressHandler = onProgress
         playbackError = nil
         isPaused = false
@@ -452,7 +476,16 @@ final class PlaybackSession {
         mpv.setPreferredSubtitleLanguages(mediaPolicy.subtitleLanguages ?? [])
         mpv.setSubtitlesDisabled(mediaPolicy.disablesSubtitles)
         mpv.setPlayerOptions(Self.mpvPlayerOptions(for: preferences))
+        usesWholeScreen = preferences.playbackBehavior.usesWholeScreen
         subtitleStyle = preferences.playbackSubtitleStyle.normalized
+        defaultSubtitleDelay = subtitleStyle.delaySeconds
+        if let key = subtitleDelayKey, let remembered = SubtitleDelayMemory.delay(for: key) {
+            subtitleStyle.delaySeconds = remembered
+        }
+        autoSyncsSubtitles = preferences.playbackBehavior.autoSyncsSubtitles
+        didAutoSyncAtStart = false
+        subtitleSyncStatus = .idle
+        subtitleCueCache = nil
         var mpvStyle = preferences.subtitleAppearance == .followSystem
             ? [String: Any]()
             : Self.mpvSubtitleStyle(for: preferences)
@@ -718,10 +751,158 @@ final class PlaybackSession {
         #endif
     }
 
+    #if os(macOS)
+    /// mpv's sub-delay in tenths of a second; positive shows subtitles later.
+    /// Kept for this title only.
+    func setSubtitleDelay(_ seconds: Double) {
+        guard seconds.isFinite else { return }
+        let delay = (min(max(seconds, -30), 30) * 10).rounded() / 10
+        subtitleStyle.delaySeconds = delay
+        if let key = subtitleDelayKey {
+            SubtitleDelayMemory.remember(delay == defaultSubtitleDelay ? nil : delay, for: key)
+        }
+        applySubtitleStyle()
+    }
+
+    private var subtitleDelayKey: String? {
+        guard let mediaItem, !mediaItem.id.hasPrefix(PlaybackSource.liveTVIDPrefix) else { return nil }
+        return [mediaItem.id, episode?.id].compactMap { $0 }.joined(separator: "#")
+    }
+
+    enum SubtitleSyncProblem: LocalizedError {
+        case noSubtitle
+        case embedded
+        case unreadable
+        case unavailable
+
+        var errorDescription: String? {
+            switch self {
+            case .noSubtitle:
+                "Turn on a subtitle first."
+            case .embedded:
+                "This subtitle is part of the video, so it is usually already in sync. Use the delay slider or Sync by Ear if it isn't."
+            case .unreadable:
+                "This subtitle file's timing couldn't be read."
+            case .unavailable:
+                "The subtitle file couldn't be downloaded."
+            }
+        }
+    }
+
+    /// The timing of every line in the selected add-on subtitle.
+    func selectedSubtitleCues() async throws -> [SubtitleCue] {
+        guard let track = subtitleTracks.first(where: \.isSelected) else { throw SubtitleSyncProblem.noSubtitle }
+        guard let url = track.externalURL else { throw SubtitleSyncProblem.embedded }
+        if let subtitleCueCache, subtitleCueCache.url == url { return subtitleCueCache.cues }
+        var request = URLRequest(url: url, timeoutInterval: 20)
+        request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
+        let data: Data
+        do {
+            let (body, response) = try await URLSession.shared.data(for: request)
+            guard (response as? HTTPURLResponse).map({ (200 ..< 300).contains($0.statusCode) }) ?? true else {
+                throw SubtitleSyncProblem.unavailable
+            }
+            data = body
+        } catch {
+            throw SubtitleSyncProblem.unavailable
+        }
+        let cues = await Task.detached(priority: .userInitiated) {
+            SubtitleAutoSync.cues(fromSubtitleData: data)
+        }.value
+        guard cues.count >= 8 else { throw SubtitleSyncProblem.unreadable }
+        subtitleCueCache = (url, cues)
+        return cues
+    }
+
+    /// Nuvio Enhanced's AutoSync, done Omnia's way: listen to how loud the
+    /// audio is while the video plays, then pick the delay at which the
+    /// subtitle's lines show while people speak. Tries after 45 seconds of
+    /// listening and keeps listening, up to three minutes, until it is sure.
+    func startAutomaticSubtitleSync() {
+        guard let player else { return }
+        subtitleSyncTask?.cancel()
+        subtitleSyncStatus = .listening(progress: 0)
+        subtitleSyncTask = Task { [weak self] in
+            guard let self else { return }
+            let cues: [SubtitleCue]
+            do {
+                cues = try await self.selectedSubtitleCues()
+            } catch {
+                guard !Task.isCancelled else { return }
+                self.subtitleSyncStatus = .failed(error.localizedDescription)
+                return
+            }
+            player.setSpeechActivityProbeEnabled(true)
+            defer { player.setSpeechActivityProbeEnabled(false) }
+            var samples: [SubtitleSyncSample] = []
+            var lastTime = -1.0
+            let attempts = [450, 750, 1_050, 1_400, 1_800]
+            let target = attempts.last ?? 1_800
+            var waited = 0
+            var lastAttempt = 0
+            while !Task.isCancelled, self.player === player {
+                try? await Task.sleep(for: .milliseconds(100))
+                waited += 1
+                let time = player.position
+                // Only fresh audio counts: skip pauses, seeks backwards and
+                // the moments before the probe reports anything.
+                if !player.isPaused, time > lastTime, time - lastTime < 2,
+                   let level = player.speechActivityLevel()?.doubleValue {
+                    samples.append(SubtitleSyncSample(time: time, decibels: level))
+                }
+                lastTime = time
+                let progress = (min(Double(samples.count) / Double(target), 0.99) * 100).rounded() / 100
+                if self.subtitleSyncStatus != .listening(progress: progress) {
+                    self.subtitleSyncStatus = .listening(progress: progress)
+                }
+                guard attempts.contains(samples.count), samples.count != lastAttempt else {
+                    // Ten minutes without enough fresh audio, e.g. paused.
+                    if waited > 6_000 { break }
+                    continue
+                }
+                lastAttempt = samples.count
+                let snapshot = samples
+                let match = await Task.detached(priority: .utility) {
+                    SubtitleAutoSync.bestDelay(cues: cues, samples: snapshot)
+                }.value
+                guard !Task.isCancelled, self.player === player else { return }
+                if let match, match.confidence >= 0.03 || samples.count >= target {
+                    self.setSubtitleDelay(match.delay)
+                    self.subtitleSyncStatus = .synced(delay: match.delay)
+                    return
+                }
+                if samples.count >= target { break }
+            }
+            guard !Task.isCancelled, self.player === player else { return }
+            self.subtitleSyncStatus = .failed(
+                "Couldn't match this subtitle to the speech. Try Sync by Ear, or pick a different subtitle."
+            )
+        }
+    }
+
+    func cancelAutomaticSubtitleSync() {
+        subtitleSyncTask?.cancel()
+        subtitleSyncTask = nil
+        player?.setSpeechActivityProbeEnabled(false)
+        subtitleSyncStatus = .idle
+    }
+
+    /// Settings › Playback › Subtitles › Auto Sync: once per video, as soon
+    /// as an add-on subtitle is showing and the video is playing.
+    private func autoSyncSubtitlesIfNeeded() {
+        guard autoSyncsSubtitles, !didAutoSyncAtStart, hasRenderedVideoFrame,
+              subtitleTracks.first(where: \.isSelected)?.externalURL != nil,
+              subtitleStyle.delaySeconds == defaultSubtitleDelay
+        else { return }
+        didAutoSyncAtStart = true
+        startAutomaticSubtitleSync()
+    }
+    #endif
+
     func toggleFullScreen() {
         #if os(macOS)
         guard let window = NSApplication.shared.keyWindow ?? NSApplication.shared.mainWindow else { return }
-        setFullScreen(!window.styleMask.contains(.fullScreen), in: window)
+        setFullScreen(!(window.styleMask.contains(.fullScreen) || wholeScreen.isActive), in: window)
         #endif
     }
 
@@ -737,9 +918,25 @@ final class PlaybackSession {
 
     func handleFullScreenExit() {
         isFullScreenActive = false
+        // Picture in Picture asked for from full screen starts once the
+        // window is back on the desktop.
+        if pictureInPictureAfterFullScreen {
+            pictureInPictureAfterFullScreen = false
+            if !isPictureInPictureActive {
+                player?.togglePictureInPicture()
+                refreshState()
+            }
+        }
     }
 
+    /// Picture in Picture leaves exclusive full screen first; otherwise the
+    /// window stayed full screen, empty, behind the floating player.
     func togglePictureInPicture() {
+        if !isPictureInPictureActive, isFullScreenActive {
+            pictureInPictureAfterFullScreen = true
+            setFullScreen(false)
+            return
+        }
         player?.togglePictureInPicture()
         refreshState()
     }
@@ -752,6 +949,7 @@ final class PlaybackSession {
         endTimelinePreview()
         if persisting { flushProgress() }
         #if os(macOS)
+        pictureInPictureAfterFullScreen = false
         if isFullScreenActive {
             setFullScreen(false)
         }
@@ -765,6 +963,10 @@ final class PlaybackSession {
         #if os(macOS)
         addonSubtitleTask?.cancel()
         addonSubtitleTask = nil
+        subtitleSyncTask?.cancel()
+        subtitleSyncTask = nil
+        subtitleSyncStatus = .idle
+        subtitleCueCache = nil
         trackSelectionGate.reset()
         pendingSubtitlePreference = nil
         let cacheProtection = cacheProtection
@@ -775,6 +977,7 @@ final class PlaybackSession {
             }
         }
         player?.stateChangeHandler = nil
+        if persisting { captureContinueWatchingScene() }
         player?.stop()
         #else
         player?.pause()
@@ -980,6 +1183,18 @@ final class PlaybackSession {
 
     #if os(macOS)
     private func setFullScreen(_ active: Bool, in window: NSWindow) {
+        // Omnia's whole-screen mode has no system notifications, so it
+        // reports entering and leaving itself.
+        if wholeScreen.isActive || (active && usesWholeScreen && !window.styleMask.contains(.fullScreen)) {
+            if active {
+                wholeScreen.enter(window)
+                handleFullScreenEnter()
+            } else {
+                wholeScreen.leave()
+                handleFullScreenExit()
+            }
+            return
+        }
         let isCurrentlyFullScreen = window.styleMask.contains(.fullScreen)
         guard active != isCurrentlyFullScreen else {
             isFullScreenActive = active
@@ -988,12 +1203,20 @@ final class PlaybackSession {
         window.toggleFullScreen(nil)
     }
 
+    /// The style Settings keeps: everything chosen in the player except
+    /// the delay, which belongs to this title.
+    private var persistedSubtitleStyle: PlaybackSubtitleStyle {
+        var style = subtitleStyle
+        style.delaySeconds = defaultSubtitleDelay
+        return style
+    }
+
     private func applySubtitleStyle() {
         subtitleStyle = subtitleStyle.normalized
         player?.setSubtitleStyle(Self.mpvSubtitleOverrides(for: subtitleStyle))
         subtitlePreferencesHandler?(
             PlaybackSubtitlePreferenceUpdate(
-                style: subtitleStyle,
+                style: persistedSubtitleStyle,
                 isEnabled: nil,
                 preferredLanguage: nil
             )
@@ -1061,6 +1284,39 @@ final class PlaybackSession {
     /// Set by Shuffle (Settings › Layout › Detail Page) for this episode.
     var shuffledNextEpisode: MediaEpisode?
 
+    #if os(macOS)
+    /// The frame playback stopped on, for Continue Watching's Paused Scene
+    /// artwork. Skipped near the start and once the title counts as finished.
+    private func captureContinueWatchingScene() {
+        guard let mediaItem, positionSeconds > 10,
+              !mediaItem.id.hasPrefix(PlaybackSource.liveTVIDPrefix) else { return }
+        if let durationSeconds, durationSeconds > 0, positionSeconds / durationSeconds >= 0.9 { return }
+        let store = ContinueWatchingSceneStore.shared
+        if let player, hasRenderedVideoFrame,
+           store.capture(for: mediaItem.id, write: { player.writeCurrentScene(to: $0) }) {
+            return
+        }
+        // mpv couldn't save the frame on screen (it can't with some decoders):
+        // decode the frame at the same moment from the stream instead.
+        guard let source else { return }
+        let mediaID = mediaItem.id
+        let position = positionSeconds
+        Task { await store.generate(for: mediaID, source: source, at: position) }
+    }
+    #endif
+
+    /// A show opened from Continue Watching is stored without its seasons,
+    /// which left the player without Episodes, Next Episode and Up Next.
+    /// The player fills them in once the title's details load.
+    func fillMissingEpisodes(from resolved: MediaItem) {
+        guard let current = mediaItem,
+              current.id == resolved.id || current.isSameTitle(as: resolved),
+              current.details == nil,
+              resolved.details?.seasons.contains(where: { !$0.episodes.isEmpty }) == true
+        else { return }
+        mediaItem = current.mergingSourceIdentifiers(from: resolved)
+    }
+
     var nextEpisode: MediaEpisode? {
         guard let episode else { return nil }
         if let shuffledNextEpisode { return shuffledNextEpisode }
@@ -1091,6 +1347,7 @@ final class PlaybackSession {
         let duration = player.duration
         if player.hasRenderedVideoFrame != hasRenderedVideoFrame {
             hasRenderedVideoFrame = player.hasRenderedVideoFrame
+            autoSyncSubtitlesIfNeeded()
         }
         if !synchronizeOutputVolume() {
             let nextVolume = min(max(player.volume / 100, 0), 1)
@@ -1150,9 +1407,17 @@ final class PlaybackSession {
     private func apply(_ snapshot: OMMpvPlaybackSnapshot) {
         playbackError = snapshot.errorMessage
         audioTracks = snapshot.audioTracks.map(PlaybackTrack.init)
+        let previousSubtitle = subtitleTracks.first(where: \.isSelected)?.id
         subtitleTracks = snapshot.subtitleTracks.map(PlaybackTrack.init)
         confirmPendingSubtitlePreference()
         areTracksLoading = snapshot.tracksLoading
+        // A sync measured against one subtitle file says nothing about
+        // another.
+        if subtitleTracks.first(where: \.isSelected)?.id != previousSubtitle,
+           case .listening = subtitleSyncStatus {
+            cancelAutomaticSubtitleSync()
+        }
+        autoSyncSubtitlesIfNeeded()
     }
 
     private func confirmPendingSubtitlePreference() {
@@ -1168,7 +1433,7 @@ final class PlaybackSession {
             .selecting(
                 id: pendingSubtitlePreference.id,
                 from: pendingSubtitlePreference.tracks,
-                style: subtitleStyle
+                style: persistedSubtitleStyle
             )
         )
         self.pendingSubtitlePreference = nil

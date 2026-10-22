@@ -101,6 +101,7 @@ struct PlaybackSourceSheet: View {
                     episode: episode,
                     addons: store.installedAddons,
                     plugins: plugins.plan(for: lookupItem, episode: episode),
+                    servers: MediaServerStore.shared.streamPlan(),
                     timeout: settings.preferences.addonTimeout
                 ) { partial, pending in
                     // Show what has arrived instead of waiting for the
@@ -389,6 +390,10 @@ struct PlaybackSourceSheet: View {
             retryPlugin(addonID)
             return
         }
+        if MediaServerIdentifier.isServerSource(addonID) {
+            retryServer(addonID)
+            return
+        }
         guard let resolution,
               !retryingAddonIDs.contains(addonID),
               let addon = enabledStreamAddons.first(where: { $0.id == addonID })
@@ -427,6 +432,27 @@ struct PlaybackSourceSheet: View {
         }
     }
 
+    private func retryServer(_ sourceID: String) {
+        guard resolution != nil, !retryingAddonIDs.contains(sourceID),
+              let entry = MediaServerStore.shared.streamPlan(forSourceID: sourceID).entries.first
+        else { return }
+        let lookupItem = preparedPlaybackItem ?? item
+        retryingAddonIDs.insert(sourceID)
+        Task {
+            let result = await MediaServerStreamResolver.resolve(entry, item: lookupItem, episode: episode)
+            guard !Task.isCancelled, let current = resolution else { return }
+            let updated = current.replacingAddonResult(result)
+            self.resolution = updated
+            candidates = updated.candidates
+            retryingAddonIDs.remove(sourceID)
+        }
+    }
+
+    /// Media servers that answered for this title.
+    private var serverSources: [AddonSourceResolution] {
+        (resolution?.addonResults ?? []).filter { MediaServerIdentifier.isServerSource($0.addonID) }
+    }
+
     private var enabledStreamAddons: [InstalledAddon] {
         store.installedAddons.filter { $0.isEnabled && $0.manifest.supportsStreams }
     }
@@ -439,9 +465,16 @@ struct PlaybackSourceSheet: View {
         return candidates.filter { $0.addonID == selectedAddonID }
     }
 
-    /// Plugin repositories get a filter each, like add-ons, as in Nuvio.
+    /// Plugin providers get a filter each, like add-ons, as in Nuvio: one per
+    /// repository, or one per plugin when Group by Repository is off.
     private var pluginRepositories: [(filterID: String, name: String, sourceIDs: Set<String>)] {
         guard plugins.pluginsEnabled else { return [] }
+        guard plugins.groupsByRepository else {
+            return plugins.scrapers.filter(\.isEnabled).map { scraper in
+                let sourceID = PluginStreamResolver.sourceID(for: scraper)
+                return (sourceID, scraper.name, [sourceID])
+            }
+        }
         return plugins.repositories.compactMap { repository in
             let sourceIDs = Set(
                 plugins.scrapers
@@ -500,6 +533,18 @@ struct PlaybackSourceSheet: View {
                         selectedAddonID = repository.filterID
                     }
                 }
+
+                ForEach(serverSources, id: \.addonID) { source in
+                    StreamFilterChip(
+                        title: source.addonName,
+                        count: candidates.filter { $0.addonID == source.addonID }.count,
+                        systemImage: "server.rack",
+                        isSelected: selectedAddonID == source.addonID,
+                        isLoading: retryingAddonIDs.contains(source.addonID)
+                    ) {
+                        selectedAddonID = source.addonID
+                    }
+                }
             }
             .padding(.horizontal, 18)
             .padding(.vertical, 6)
@@ -536,7 +581,8 @@ struct PlaybackSourceSheet: View {
         let resolverIDs = Set(sections.resolverRequired.map(\.id))
         // A single add-on needs no headings; All and plugin repositories,
         // which hold several sources, are grouped like Nuvio.
-        let showsHeaders = selectedAddonID == nil || pluginRepositories.contains { $0.filterID == selectedAddonID }
+        let showsHeaders = selectedAddonID == nil
+            || pluginRepositories.contains { $0.filterID == selectedAddonID && $0.sourceIDs.count > 1 }
 
         return ScrollView {
             LazyVStack(alignment: .leading, spacing: 8) {
@@ -556,6 +602,7 @@ struct PlaybackSourceSheet: View {
                             logoURL: group.logoURL,
                             isPinned: group.isPinned,
                             isLoading: retryingAddonIDs.contains(group.id)
+                                || group.candidates.contains { retryingAddonIDs.contains($0.addonID) }
                         )
                         .contentShape(.rect)
                         .contextMenu { pinButton(sourceID: group.id, name: group.title) }
@@ -565,7 +612,7 @@ struct PlaybackSourceSheet: View {
                             ? .direct
                             : resolverIDs.contains(candidate.id) ? .resolverRequired : .unavailable
                         streamRow(candidate, kind: kind)
-                            .contextMenu { pinButton(sourceID: candidate.addonID, name: group.title) }
+                            .contextMenu { pinButton(sourceID: group.id, name: group.title) }
                     }
                 }
 
@@ -626,19 +673,27 @@ struct PlaybackSourceSheet: View {
         }
 
         let preferences = streamPreferences
+        // With Group by Repository on, a repository's plugins share one
+        // section, as Nuvio shows one provider per repository.
+        let pluginGroups = Dictionary(
+            pluginRepositories.flatMap { provider in provider.sourceIDs.map { ($0, provider) } },
+            uniquingKeysWith: { first, _ in first }
+        )
         var groups: [StreamSourceGroup] = []
         var indexByID: [String: Int] = [:]
         for candidate in ordered {
-            if let index = indexByID[candidate.addonID] {
+            let provider = plugins.groupsByRepository ? pluginGroups[candidate.addonID] : nil
+            let groupID = provider?.filterID ?? candidate.addonID
+            if let index = indexByID[groupID] {
                 groups[index].candidates.append(candidate)
             } else {
-                indexByID[candidate.addonID] = groups.count
+                indexByID[groupID] = groups.count
                 let addon = enabledStreamAddons.first { $0.id == candidate.addonID }
                 groups.append(StreamSourceGroup(
-                    id: candidate.addonID,
-                    title: addon?.displayName ?? candidate.addonName,
+                    id: groupID,
+                    title: provider?.name ?? addon?.displayName ?? candidate.addonName,
                     logoURL: addon?.manifest.presentationLogoURL,
-                    isPinned: preferences.isPinned(candidate.addonID),
+                    isPinned: preferences.isPinned(groupID),
                     candidates: [candidate]
                 ))
             }
@@ -1457,6 +1512,7 @@ struct PlaybackExperienceView: View {
     @Environment(SettingsPreferencesStore.self) private var settings
     @Environment(OmniaStore.self) private var store
     @Environment(PluginStore.self) private var plugins
+    @Environment(LiveMetadataStore.self) private var metadata
     @State private var isScrubbing = false
     @State private var showsChrome = true
     @State private var chromeHideTask: Task<Void, Never>?
@@ -1468,6 +1524,9 @@ struct PlaybackExperienceView: View {
     @State private var skipPromptTask: Task<Void, Never>?
     @State private var skipNotice: String?
     @State private var showsUpNext = false
+    /// Up Next reached during an outro waits for the outro to end, so the
+    /// two prompts never show together.
+    @State private var deferredUpNext = false
     @State private var nextSourceRequest: PlaybackRequest?
     @State private var nextSourceAutoSelection: StreamAutoPlayRequest?
     @State private var didHandleEnd = false
@@ -1514,7 +1573,12 @@ struct PlaybackExperienceView: View {
         }
         .contentShape(Rectangle())
         .onTapGesture {
-            revealChrome()
+            // One click shows the controls, the next hides them.
+            if showsChrome {
+                concealChrome()
+            } else {
+                revealChrome()
+            }
         }
         .overlay {
             if showsLoadingOverlay, let item = playback.mediaItem {
@@ -1525,8 +1589,8 @@ struct PlaybackExperienceView: View {
                 )
                 .allowsHitTesting(false)
                 .transition(.opacity)
-            } else if showsPauseOverlay, !showsChrome, let item = playback.mediaItem {
-                PlaybackPauseOverlay(item: item, episode: playback.episode)
+            } else if showsPauseOverlay, let item = playback.mediaItem {
+                PlaybackPauseOverlay(item: item, episode: playback.episode, clearsControls: showsChrome)
                     .allowsHitTesting(false)
                     .transition(.opacity)
             }
@@ -1534,18 +1598,27 @@ struct PlaybackExperienceView: View {
         .animation(.easeInOut(duration: 0.35), value: showsLoadingOverlay)
         .animation(.easeInOut(duration: 0.35), value: showsPauseOverlay)
         .overlay {
+            if playback.isPictureInPictureActive {
+                VStack(spacing: 12) {
+                    Image(systemName: "pip")
+                        .font(.system(size: 54, weight: .light))
+                    Text("Playing in Picture in Picture")
+                        .font(.title3.weight(.semibold))
+                }
+                .foregroundStyle(.white.opacity(0.55))
+                .allowsHitTesting(false)
+                .accessibilityElement(children: .combine)
+            }
+        }
+        .overlay {
             if showsChrome {
                 PlaybackChrome(
                     isScrubbing: $isScrubbing,
                     close: { playback.stop() },
-                    showsSkipIntro: visibleSkipSegment != nil,
-                    skipTitle: skipTitle,
-                    skipIntro: skipIntro,
                     hasNextEpisode: playback.nextEpisode != nil,
-                    upNextTitle: upNextTitle,
                     showUpNext: showUpNext,
-                    cancelUpNext: cancelUpNextAction,
-                    playEpisode: presentEpisode
+                    playEpisode: presentEpisode,
+                    showSources: presentSources
                 )
                 #if os(macOS)
                 .id(
@@ -1559,15 +1632,17 @@ struct PlaybackExperienceView: View {
             }
         }
         #if os(macOS)
+        // Skip and Up Next are their own overlay, apart from the player
+        // controls, like the pause overlay. With the controls showing it
+        // sits above them.
         .overlay(alignment: .bottomTrailing) {
-            if !showsChrome, showsContextualSkip || upNextTitle != nil {
-                MacPlaybackContextualActions(
-                    showsSkipIntro: showsContextualSkip,
-                    skipTitle: skipTitle,
-                    skipIntro: skipIntro,
-                    upNextTitle: upNextTitle,
-                    showUpNext: showUpNext,
-                    cancelUpNext: cancelUpNextAction
+            if showsPromptOverlay {
+                PlaybackPromptOverlay(
+                    skipTitle: showsChrome || showsContextualSkip ? visibleSkipSegment.map { _ in skipTitle } : nil,
+                    skip: skipIntro,
+                    upNext: upNextPrompt,
+                    playNext: showUpNext,
+                    cancel: cancelUpNextAction
                 )
                 .id(
                     MacPlaybackChromeCoordinateSpaceIdentity(
@@ -1575,10 +1650,12 @@ struct PlaybackExperienceView: View {
                     )
                 )
                 .padding(.trailing, 30)
-                .padding(.bottom, 86)
-                .transition(.opacity.combined(with: .move(edge: .bottom)))
+                .padding(.bottom, showsChrome ? 150 : 40)
+                .transition(.opacity.combined(with: .move(edge: .trailing)))
+                .zIndex(20)
             }
         }
+        .animation(.easeInOut(duration: 0.25), value: showsPromptOverlay)
         #endif
         .overlay(alignment: .topTrailing) {
             if let skipNotice {
@@ -1635,6 +1712,7 @@ struct PlaybackExperienceView: View {
             configureAutomation()
             await loadSkipSegments()
         }
+        .task(id: playback.mediaItem?.id) { await loadMissingEpisodes() }
         .onChange(of: playback.positionSeconds) { _, _ in updateAutomation() }
         .onChange(of: playback.isPaused) { _, isPaused in schedulePauseOverlay(isPaused: isPaused) }
         .onChange(of: playback.playbackError) { _, error in
@@ -1661,6 +1739,7 @@ struct PlaybackExperienceView: View {
                 PlaybackSourceSheet(
                     item: request.item,
                     episode: request.episode,
+                    resumeAt: request.resumeAt,
                     isNextEpisode: true,
                     nextEpisodeRequest: nextSourceAutoSelection,
                     onClose: { nextSourceRequest = nil }
@@ -1747,21 +1826,36 @@ struct PlaybackExperienceView: View {
         return "Starting playback…"
     }
 
-    /// Nuvio's Pause Overlay: the title's details after five seconds paused.
+    /// Episodes for a show started from Continue Watching, which keeps no
+    /// season list: from the add-on that lists it in add-on mode, else from
+    /// the metadata service, as the title's page loads them.
+    private func loadMissingEpisodes() async {
+        guard let item = playback.mediaItem, item.kind != .movie, item.details == nil else { return }
+        var resolved: MediaItem?
+        if AddonCatalogStore.isAddonMode(store) {
+            let addons = store.installedAddons
+            resolved = await Task { await AddonMetadataResolver.resolve(item, addons: addons) }.value
+        }
+        if resolved?.details?.seasons.contains(where: { !$0.episodes.isEmpty }) != true {
+            resolved = await metadata.details(for: item)
+        }
+        guard !Task.isCancelled, let resolved else { return }
+        playback.fillMissingEpisodes(from: resolved)
+    }
+
+    /// Nuvio's Pause Overlay: the title's details, shown as soon as playback
+    /// pauses (Dafa, 2026-10-21). A tap on the video hides the controls and
+    /// leaves the overlay.
     private func schedulePauseOverlay(isPaused: Bool) {
         pauseOverlayTask?.cancel()
-        guard isPaused, behavior.showPauseOverlay else {
+        guard isPaused,
+              behavior.showPauseOverlay,
+              playback.playbackError == nil,
+              (playback.durationSeconds ?? 0) > 0 else {
             showsPauseOverlay = false
             return
         }
-        pauseOverlayTask = Task {
-            try? await Task.sleep(for: .seconds(5))
-            guard !Task.isCancelled,
-                  playback.isPaused,
-                  playback.playbackError == nil,
-                  (playback.durationSeconds ?? 0) > 0 else { return }
-            showsPauseOverlay = true
-        }
+        showsPauseOverlay = true
     }
 
     private var showsContextualSkip: Bool {
@@ -1770,6 +1864,41 @@ struct PlaybackExperienceView: View {
 
     private var skipTitle: String {
         visibleSkipSegment?.kind.skipTitle ?? "Skip Intro"
+    }
+
+    #if os(macOS)
+    /// The prompt overlay shows while a prompt is up, except while a player
+    /// panel is open or the timeline is being dragged.
+    private var showsPromptOverlay: Bool {
+        guard !(showsChrome && isScrubbing) else { return false }
+        let showsSkip = visibleSkipSegment != nil && (showsChrome || showsContextualSkip)
+        return showsSkip || upNextPrompt != nil
+    }
+    #endif
+
+    private var upNextPrompt: PlaybackUpNextPrompt? {
+        guard showsUpNext, let nextEpisode = playback.nextEpisode else { return nil }
+        let status: String?
+        if let autoPlay = nextEpisodeAutoPlay {
+            status = autoPlay.candidate.map { "Playing via \($0.addonName) in \(autoPlay.secondsLeft)" }
+                ?? "Finding a source…"
+        } else {
+            status = nil
+        }
+        return PlaybackUpNextPrompt(episode: nextEpisode, status: status, isCountingDown: nextEpisodeAutoPlay != nil)
+    }
+
+    /// The player's Sources button: this title's sources, listed without
+    /// automatic selection, resuming where playback is now.
+    private func presentSources() {
+        guard nextSourceRequest == nil, let item = playback.mediaItem else { return }
+        cancelNextEpisodeAutoPlay()
+        nextSourceAutoSelection = nil
+        nextSourceRequest = PlaybackRequest(
+            item: item,
+            episode: playback.episode,
+            resumeAt: playback.positionSeconds > 5 ? playback.positionSeconds : nil
+        )
     }
 
     /// Picking an episode from the player's list is always a manual choice.
@@ -1813,6 +1942,7 @@ struct PlaybackExperienceView: View {
         guard let visibleSkipSegment else { return }
         playback.seek(to: PlaybackAutomationController.skipTarget(for: visibleSkipSegment, in: segments))
         self.visibleSkipSegment = nil
+        presentDeferredUpNext()
     }
 
     private var upNextTitle: String? {
@@ -1844,6 +1974,7 @@ struct PlaybackExperienceView: View {
         visibleSkipSegment = nil
         skipPromptExpired = false
         showsUpNext = false
+        deferredUpNext = false
         didHandleEnd = false
         nextSourceRequest = nil
         cancelNextEpisodeAutoPlay()
@@ -1892,6 +2023,10 @@ struct PlaybackExperienceView: View {
               duration - playback.positionSeconds <= 0.5,
               duration - playback.positionSeconds >= 0 else { return }
         didHandleEnd = true
+        if deferredUpNext {
+            visibleSkipSegment = nil
+            presentDeferredUpNext()
+        }
         if let effect = automation.playbackEnded(hasNextEpisode: hasNextEpisode) {
             apply(effect)
         }
@@ -1903,22 +2038,44 @@ struct PlaybackExperienceView: View {
             visibleSkipSegment = segment
             restartSkipPromptTimer()
             dismissChromeForContextualAction()
+            // An outro that starts after Up Next took its place.
+            if segment.kind.isEnding, showsUpNext {
+                showsUpNext = false
+                cancelNextEpisodeAutoPlay()
+                deferredUpNext = true
+            }
         case .dismissSkip:
             visibleSkipSegment = nil
             skipPromptTask?.cancel()
+            presentDeferredUpNext()
         case let .autoSkip(segment, position):
             playback.seek(to: position)
             visibleSkipSegment = nil
             showSkipNotice("Skipped \(segment.kind.settingsTitle)")
+            presentDeferredUpNext()
         case .presentUpNext:
-            showsUpNext = true
-            dismissChromeForContextualAction()
-            if settings.preferences.autoplayNextEpisode {
-                startNextEpisodeAutoPlay()
+            if visibleSkipSegment?.kind.isEnding == true {
+                deferredUpNext = true
+            } else {
+                presentUpNext()
             }
         case .preloadNextEpisode:
             preloadNextEpisodeSources()
         }
+    }
+
+    private func presentUpNext() {
+        deferredUpNext = false
+        showsUpNext = true
+        dismissChromeForContextualAction()
+        if settings.preferences.autoplayNextEpisode {
+            startNextEpisodeAutoPlay()
+        }
+    }
+
+    private func presentDeferredUpNext() {
+        guard deferredUpNext else { return }
+        presentUpNext()
     }
 
     private func restartSkipPromptTimer() {
@@ -1960,6 +2117,7 @@ struct PlaybackExperienceView: View {
         let key = PlaybackLauncher.linkKey(item: item, episode: episode)
         let addons = store.installedAddons
         let pluginPlan = plugins.plan(for: item, episode: episode)
+        let serverPlan = MediaServerStore.shared.streamPlan()
         let timeout = settings.preferences.addonTimeout
         nextEpisodeTask?.cancel()
         nextEpisodeTask = Task {
@@ -1974,6 +2132,7 @@ struct PlaybackExperienceView: View {
                         episode: episode,
                         addons: addons,
                         plugins: pluginPlan,
+                        servers: serverPlan,
                         timeout: timeout
                     ) { partial, _ in
                         run.receive(partial.candidates, isComplete: false)
@@ -2042,6 +2201,7 @@ struct PlaybackExperienceView: View {
         let key = PlaybackLauncher.linkKey(item: item, episode: episode)
         let addons = store.installedAddons
         let pluginPlan = plugins.plan(for: item, episode: episode)
+        let serverPlan = MediaServerStore.shared.streamPlan()
         let timeout = settings.preferences.addonTimeout
         preloadTask?.cancel()
         preloadTask = Task {
@@ -2050,6 +2210,7 @@ struct PlaybackExperienceView: View {
                 episode: episode,
                 addons: addons,
                 plugins: pluginPlan,
+                servers: serverPlan,
                 timeout: timeout
             )
             guard !Task.isCancelled else { return }
@@ -2062,6 +2223,12 @@ struct PlaybackExperienceView: View {
         showsChrome = true
         guard !isScrubbing else { return }
         hideChrome(after: 3.2)
+    }
+
+    private func concealChrome() {
+        guard !isScrubbing else { return }
+        chromeHideTask?.cancel()
+        withAnimation(.easeInOut(duration: 0.2)) { showsChrome = false }
     }
 
     private func dismissChromeForContextualAction() {
@@ -2089,28 +2256,20 @@ struct PlaybackExperienceView: View {
 private struct PlaybackChrome: View {
     @Binding var isScrubbing: Bool
     let close: () -> Void
-    let showsSkipIntro: Bool
-    let skipTitle: String
-    let skipIntro: () -> Void
     let hasNextEpisode: Bool
-    let upNextTitle: String?
     let showUpNext: () -> Void
-    let cancelUpNext: (() -> Void)?
     let playEpisode: (MediaEpisode) -> Void
+    let showSources: () -> Void
 
     var body: some View {
         #if os(macOS)
         MacPlaybackChrome(
             isInteracting: $isScrubbing,
             close: close,
-            showsSkipIntro: showsSkipIntro,
-            skipTitle: skipTitle,
-            skipIntro: skipIntro,
             hasNextEpisode: hasNextEpisode,
-            upNextTitle: upNextTitle,
             showUpNext: showUpNext,
-            cancelUpNext: cancelUpNext,
-            playEpisode: playEpisode
+            playEpisode: playEpisode,
+            showSources: showSources
         )
             .ignoresSafeArea()
         #else
@@ -2333,11 +2492,10 @@ private struct PlaybackLoadingOverlay: View {
         ZStack {
             Color.black
             if let backdrop = item.backdropURL ?? item.artworkURL {
-                AsyncImage(url: backdrop) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
-                    LinearGradient(colors: item.artworkColors, startPoint: .topLeading, endPoint: .bottomTrailing)
-                }
+                RemoteArtworkImage(url: backdrop)
+                    .background {
+                        LinearGradient(colors: item.artworkColors, startPoint: .topLeading, endPoint: .bottomTrailing)
+                    }
                 .opacity(0.45)
                 .blur(radius: 6)
                 .clipped()
@@ -2376,9 +2534,118 @@ private struct PlaybackLoadingOverlay: View {
 }
 
 /// The title's details over a paused picture.
+/// The next episode Up Next offers, and the countdown when one is running.
+struct PlaybackUpNextPrompt: Equatable {
+    let episode: MediaEpisode
+    let status: String?
+    let isCountingDown: Bool
+}
+
+#if os(macOS)
+/// Skip Intro or Outro, and Up Next with its countdown, as an overlay of
+/// their own rather than buttons in the controls row.
+private struct PlaybackPromptOverlay: View {
+    let skipTitle: String?
+    let skip: () -> Void
+    let upNext: PlaybackUpNextPrompt?
+    let playNext: () -> Void
+    let cancel: (() -> Void)?
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 12) {
+            if let skipTitle {
+                Button(action: skip) {
+                    Label(skipTitle, systemImage: "forward.end.fill")
+                        .font(.headline.weight(.semibold))
+                        .padding(.horizontal, 20)
+                        .frame(minHeight: 46)
+                        .contentShape(Capsule())
+                }
+                .omniaCapsuleGlassButton()
+                .keyboardShortcut(.return, modifiers: [])
+                .accessibilityHint("Seeks past the detected segment")
+            }
+            if let upNext {
+                upNextCard(upNext)
+            }
+        }
+        .foregroundStyle(.white)
+    }
+
+    private func upNextCard(_ prompt: PlaybackUpNextPrompt) -> some View {
+        HStack(alignment: .center, spacing: 14) {
+            CachedArtworkImage(url: prompt.episode.stillURL, size: CGSize(width: 136, height: 77)) { phase in
+                if let image = phase.image {
+                    image.resizable().scaledToFill()
+                } else {
+                    ZStack {
+                        Color.white.opacity(0.08)
+                        Image(systemName: "film")
+                            .foregroundStyle(.white.opacity(0.4))
+                    }
+                }
+            }
+            .frame(width: 136, height: 77)
+            .clipShape(.rect(cornerRadius: 10, style: .continuous))
+            .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Up Next")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.65))
+                    .textCase(.uppercase)
+                Text(MacPlaybackEpisodePresentation.title(prompt.episode))
+                    .font(.headline)
+                    .lineLimit(1)
+                Text("Season \(prompt.episode.seasonNumber), Episode \(prompt.episode.episodeNumber)")
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.7))
+                if let status = prompt.status {
+                    Text(status)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .lineLimit(1)
+                        .contentTransition(.numericText(countsDown: true))
+                }
+                HStack(spacing: 8) {
+                    Button(action: playNext) {
+                        Label(prompt.isCountingDown ? "Play Now" : "Play", systemImage: "play.fill")
+                            .font(.subheadline.weight(.semibold))
+                            .padding(.horizontal, 14)
+                            .frame(minHeight: 32)
+                            .contentShape(Capsule())
+                    }
+                    .omniaCapsuleGlassButton()
+                    .accessibilityHint("Plays the next episode")
+                    if let cancel {
+                        Button(action: cancel) {
+                            Text("Cancel")
+                                .font(.subheadline.weight(.semibold))
+                                .padding(.horizontal, 14)
+                                .frame(minHeight: 32)
+                                .contentShape(Capsule())
+                        }
+                        .omniaCapsuleGlassButton()
+                        .accessibilityHint("Stops the next episode from starting automatically")
+                    }
+                }
+                .padding(.top, 4)
+            }
+            .frame(width: 230, alignment: .leading)
+        }
+        .padding(12)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Up Next")
+    }
+}
+#endif
+
 private struct PlaybackPauseOverlay: View {
     let item: MediaItem
     let episode: MediaEpisode?
+    /// Sits higher while the controls are up, so it never runs under them.
+    var clearsControls = false
 
     private var overview: String {
         let episodeOverview = episode?.overview.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -2416,7 +2683,8 @@ private struct PlaybackPauseOverlay: View {
             }
             .foregroundStyle(.white)
             .padding(.leading, 56)
-            .padding(.bottom, 120)
+            .padding(.bottom, clearsControls ? 170 : 120)
+            .animation(.easeInOut(duration: 0.2), value: clearsControls)
         }
         .ignoresSafeArea()
         .accessibilityElement(children: .combine)

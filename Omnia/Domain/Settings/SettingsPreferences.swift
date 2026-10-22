@@ -152,7 +152,13 @@ nonisolated struct MDBListRatingPreferences: Codable, Equatable, Sendable {
     static let `default` = Self()
 
     func isEnabled(_ id: MDBListRatingProviderID) -> Bool {
-        !disabledProviderIDs.contains(id.rawValue)
+        if disabledProviderIDs.contains(id.rawValue) { return false }
+        // Metacritic's user score is Metacritic too: switching Metacritic
+        // off hides both, as Dafa expected.
+        if id == .metacriticUser {
+            return !disabledProviderIDs.contains(MDBListRatingProviderID.metacritic.rawValue)
+        }
+        return true
     }
 
     var normalized: Self {

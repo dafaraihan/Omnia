@@ -113,6 +113,11 @@ static void OMMpvThumbnailWakeup(void *context) {
     mpv_set_option_string(_mpv, "hwdec", "auto-safe");
     mpv_set_option_string(_mpv, "hr-seek", "yes");
     mpv_set_option_string(_mpv, "ytdl", "no");
+    // Previews jump straight to one frame, so reading far ahead is wasted.
+    // mpv's default stream cache would keep up to 200 MB per decoder.
+    mpv_set_option_string(_mpv, "demuxer-max-bytes", "32MiB");
+    mpv_set_option_string(_mpv, "demuxer-max-back-bytes", "0");
+    mpv_set_option_string(_mpv, "demuxer-readahead-secs", "1");
 
     if (mpv_initialize(_mpv) < 0) {
         mpv_terminate_destroy(_mpv);

@@ -18,6 +18,8 @@ final class CollectionsStore {
     private(set) var collections: [HomeCollection] = []
     private(set) var hiddenIDs: Set<String>
     private(set) var loadError: String?
+    /// Goes up on every save, so profile sync notices changes.
+    private(set) var revision = 0
 
     private let fileURL: URL?
     private let defaults: UserDefaults
@@ -125,6 +127,29 @@ final class CollectionsStore {
         saveHiddenIDs()
     }
 
+    // MARK: Profiles
+
+    /// A profile's collections, in Nuvio's file format, and which are hidden.
+    nonisolated struct ProfileSnapshot: Codable, Sendable {
+        var collections: Data?
+        var hiddenIDs: [String]
+    }
+
+    func profileSnapshot() -> ProfileSnapshot {
+        ProfileSnapshot(
+            collections: collections.isEmpty ? nil : try? HomeCollectionFile.data(for: collections),
+            hiddenIDs: hiddenIDs.sorted()
+        )
+    }
+
+    /// Switching profiles: another profile's collections, or none.
+    func restore(_ snapshot: ProfileSnapshot?) {
+        collections = snapshot?.collections.flatMap { try? HomeCollectionFile.collections(from: $0) } ?? []
+        hiddenIDs = Set(snapshot?.hiddenIDs ?? [])
+        saveHiddenIDs()
+        save()
+    }
+
     // MARK: Storage
 
     private func load() {
@@ -138,6 +163,7 @@ final class CollectionsStore {
     }
 
     private func save() {
+        revision &+= 1
         guard let fileURL else { return }
         do {
             try FileManager.default.createDirectory(
@@ -156,6 +182,7 @@ final class CollectionsStore {
     }
 
     private func saveHiddenIDs() {
+        revision &+= 1
         defaults.set(hiddenIDs.sorted(), forKey: Self.hiddenIDsKey)
     }
 }

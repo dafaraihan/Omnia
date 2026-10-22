@@ -49,12 +49,15 @@ nonisolated struct HomeLayoutPreferences: Codable, Equatable, Sendable {
     /// Until the user picks hero sources, the first two visible catalogs are
     /// used, as in Nuvio.
     var hasCustomHeroSources = false
+    /// Media server rows turned off on Home. Server rows are shown unless
+    /// they are listed here.
+    var hiddenServerRowKeys: [String] = []
 
     init() {}
 
     private enum CodingKeys: String, CodingKey {
         case showsHero, showsCatalogType, hidesUnreleasedContent, order, customTitles, heroSourceKeys, hasCustomHeroSources
-        case heroStyle, dynamicBackground
+        case heroStyle, dynamicBackground, hiddenServerRowKeys
     }
 
     init(from decoder: Decoder) throws {
@@ -68,6 +71,7 @@ nonisolated struct HomeLayoutPreferences: Codable, Equatable, Sendable {
         hasCustomHeroSources = try container.decodeIfPresent(Bool.self, forKey: .hasCustomHeroSources) ?? false
         heroStyle = (try? container.decodeIfPresent(HeroStyle.self, forKey: .heroStyle)) ?? .fullBleed
         dynamicBackground = (try? container.decodeIfPresent(Bool.self, forKey: .dynamicBackground)) ?? true
+        hiddenServerRowKeys = (try? container.decodeIfPresent([String].self, forKey: .hiddenServerRowKeys)) ?? []
     }
 
     /// Known keys keep their saved position; catalogs that appeared since are
@@ -89,15 +93,18 @@ nonisolated struct HomeLayoutPreferences: Codable, Equatable, Sendable {
     }
 }
 
-/// A Home row: an add-on catalog or a collection, in Home order.
+/// A Home row: an add-on catalog, a collection or a media server row, in
+/// Home order.
 enum HomeRowEntry: Identifiable {
     case catalog(AddonHomeCatalog)
     case collection(HomeCollection)
+    case server(MediaServerHomeRow)
 
     var id: String {
         switch self {
         case let .catalog(catalog): catalog.key
         case let .collection(collection): collection.layoutKey
+        case let .server(row): row.key
         }
     }
 

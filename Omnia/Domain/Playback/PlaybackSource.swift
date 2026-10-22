@@ -223,6 +223,30 @@ struct PlaybackSource: Identifiable, Hashable, Sendable {
         self.timelinePreviewDescriptor = timelinePreviewDescriptor
     }
 
+    /// Titles played from Live TV carry this id prefix, so the player skips
+    /// what only applies to movies and episodes, such as Continue Watching.
+    nonisolated static let liveTVIDPrefix = "livetv:"
+
+    /// A Live TV channel's stream.
+    init(
+        liveChannelID: String,
+        title: String,
+        detail: String?,
+        sourceName: String,
+        url: URL,
+        requestHeaders: [String: String]
+    ) {
+        id = Self.liveTVIDPrefix + liveChannelID
+        addonID = "omnia.livetv"
+        addonName = sourceName
+        self.title = title
+        self.detail = detail
+        streamIdentifier = liveChannelID
+        self.url = url
+        self.requestHeaders = requestHeaders
+        timelinePreviewDescriptor = nil
+    }
+
     #if DEBUG
     init(
         previewID: String,
@@ -489,6 +513,7 @@ enum PlaybackSourceResolver {
         episode: MediaEpisode? = nil,
         addons: [InstalledAddon],
         plugins: PluginStreamPlan = .empty,
+        servers: MediaServerStreamPlan = .empty,
         timeout: AddonTimeout = .seconds20,
         onUpdate: ((PlaybackSourceResolution, _ pendingCount: Int) -> Void)? = nil
     ) async -> PlaybackSourceResolution {
@@ -542,7 +567,16 @@ enum PlaybackSourceResolver {
                 }
             }
 
-            var pending = enabledAddons.count + plugins.entries.count
+            // Media servers (Jellyfin, Emby) are listed last.
+            let serverOffset = enabledAddons.count + plugins.entries.count
+            for (offset, entry) in servers.entries.enumerated() {
+                group.addTask {
+                    let result = await MediaServerStreamResolver.resolve(entry, item: item, episode: episode)
+                    return (serverOffset + offset, [result])
+                }
+            }
+
+            var pending = serverOffset + servers.entries.count
             var batches: [(Int, [AddonSourceResolution])] = []
             func current() -> PlaybackSourceResolution {
                 PlaybackSourceResolution(

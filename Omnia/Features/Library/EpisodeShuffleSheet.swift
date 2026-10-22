@@ -118,10 +118,11 @@ struct EpisodeShuffleSheet: View {
                 .fill(.quaternary)
                 .overlay {
                     if !hidden, let still = episode.stillURL {
-                        AsyncImage(url: still) { image in
-                            image.resizable().scaledToFill()
-                        } placeholder: {
-                            Color.clear
+                        GeometryReader { proxy in
+                            CachedArtworkImage(url: still, size: proxy.size) { phase in
+                                phase.image?.resizable().scaledToFill()
+                            }
+                            .frame(width: proxy.size.width, height: proxy.size.height)
                         }
                     } else {
                         VStack(spacing: 8) {

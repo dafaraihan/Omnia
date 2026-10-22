@@ -144,6 +144,8 @@ struct HomeHeroTrailerLayer: View {
 /// Nuvio's speaker button for the hero trailer.
 struct HomeHeroTrailerMuteButton: View {
     @Bindable var model: HomeHeroTrailerModel
+    /// In the window's top bar, where the toolbar draws the glass.
+    var isInToolbar = false
 
     /// Distance from the top of a hero that runs beneath the window's top
     /// bar, so the button sits just below the bar.
@@ -157,23 +159,40 @@ struct HomeHeroTrailerMuteButton: View {
 
     var body: some View {
         if model.isVisible {
-            Button {
-                model.isMuted.toggle()
-            } label: {
-                Image(systemName: model.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                    .font(.system(size: 15, weight: .semibold))
+            if isInToolbar {
+                Button {
+                    model.isMuted.toggle()
+                } label: {
+                    Label(
+                        model.isMuted ? "Unmute Trailer" : "Mute Trailer",
+                        systemImage: model.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill"
+                    )
                     .contentTransition(.symbolEffect(.replace))
-                    .frame(width: 38, height: 38)
+                }
+                .help(model.isMuted ? "Unmute Trailer" : "Mute Trailer")
+            } else {
+                overlayButton
             }
-            #if os(macOS)
-            .omniaCircularGlassButton()
-            #else
-            .buttonStyle(.plain)
-            .background(.ultraThinMaterial, in: .circle)
-            #endif
-            .help(model.isMuted ? "Unmute Trailer" : "Mute Trailer")
-            .accessibilityLabel(model.isMuted ? "Unmute trailer" : "Mute trailer")
-            .transition(.opacity.combined(with: .scale(scale: 0.85)))
         }
+    }
+
+    private var overlayButton: some View {
+        Button {
+            model.isMuted.toggle()
+        } label: {
+            Image(systemName: model.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                .font(.system(size: 15, weight: .semibold))
+                .contentTransition(.symbolEffect(.replace))
+                .frame(width: 38, height: 38)
+        }
+        #if os(macOS)
+        .omniaCircularGlassButton()
+        #else
+        .buttonStyle(.plain)
+        .background(.ultraThinMaterial, in: .circle)
+        #endif
+        .help(model.isMuted ? "Unmute Trailer" : "Mute Trailer")
+        .accessibilityLabel(model.isMuted ? "Unmute trailer" : "Mute trailer")
+        .transition(.opacity.combined(with: .scale(scale: 0.85)))
     }
 }

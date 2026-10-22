@@ -56,10 +56,8 @@ private struct MediaHoverPreviewCard: View {
         VStack(alignment: .leading, spacing: 10) {
             ZStack(alignment: .bottomLeading) {
                 LinearGradient(colors: item.artworkColors, startPoint: .topLeading, endPoint: .bottomTrailing)
-                AsyncImage(url: item.backdropURL ?? item.artworkURL) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
-                    Color.clear
+                CachedArtworkImage(url: item.backdropURL ?? item.artworkURL, size: CGSize(width: 320, height: 180)) { phase in
+                    phase.image?.resizable().scaledToFill()
                 }
                 LinearGradient(colors: [.clear, .black.opacity(0.6)], startPoint: .center, endPoint: .bottom)
                 if let logoURL = item.logoURL {

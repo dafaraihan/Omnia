@@ -30,6 +30,16 @@ struct PluginsSettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+
+                Toggle(isOn: Binding(get: { plugins.groupsByRepository }, set: { plugins.setGroupsByRepository($0) })) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Group Plugin Providers by Repository")
+                        Text("In Streams, show one provider per repository instead of one per plugin.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .disabled(!plugins.pluginsEnabled)
             }
 
             Section {

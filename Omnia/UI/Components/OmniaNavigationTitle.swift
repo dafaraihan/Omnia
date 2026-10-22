@@ -10,6 +10,7 @@ enum MacToolbarScreen {
     case mediaDetail
     case library
     case discover
+    case liveTV
     case search
     case settings
 }
@@ -31,7 +32,7 @@ enum MacToolbarPresentation {
         switch screen {
         case .home, .mediaDetail:
             ""
-        case .library, .discover, .search, .settings:
+        case .library, .discover, .liveTV, .search, .settings:
             proposedTitle
         }
     }

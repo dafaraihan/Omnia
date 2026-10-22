@@ -166,6 +166,14 @@ nonisolated struct PlaybackBehaviorPreferences: Codable, Equatable, Sendable {
     var showLoadingStatus = true
     var showPauseOverlay = true
 
+    // Full screen (macOS): Omnia's own borderless full screen, which also
+    // covers the strip beside the camera notch (Dafa, 2026-10-21).
+    var usesWholeScreen = false
+
+    // Subtitles: Nuvio Enhanced's AutoSync. Omnia lines an add-on subtitle
+    // up with the speech it hears during the first minutes of playback.
+    var autoSyncsSubtitles = false
+
     static let `default` = PlaybackBehaviorPreferences()
 
     static let lastLinkCacheHourOptions = [1, 2, 3, 6, 12, 24, 48, 72, 168]
@@ -185,6 +193,8 @@ nonisolated struct PlaybackBehaviorPreferences: Codable, Equatable, Sendable {
         case stripSDHSubtitles, useForcedSubtitles, showOnlyPreferredSubtitleLanguages
         case decoderPriority
         case showLoadingOverlay, showLoadingStatus, showPauseOverlay
+        case usesWholeScreen
+        case autoSyncsSubtitles
     }
 
     init(from decoder: Decoder) throws {
@@ -218,6 +228,8 @@ nonisolated struct PlaybackBehaviorPreferences: Codable, Equatable, Sendable {
         showLoadingOverlay = value(.showLoadingOverlay, defaults.showLoadingOverlay)
         showLoadingStatus = value(.showLoadingStatus, defaults.showLoadingStatus)
         showPauseOverlay = value(.showPauseOverlay, defaults.showPauseOverlay)
+        usesWholeScreen = value(.usesWholeScreen, defaults.usesWholeScreen)
+        autoSyncsSubtitles = value(.autoSyncsSubtitles, defaults.autoSyncsSubtitles)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -245,6 +257,8 @@ nonisolated struct PlaybackBehaviorPreferences: Codable, Equatable, Sendable {
         try container.encode(showLoadingOverlay, forKey: .showLoadingOverlay)
         try container.encode(showLoadingStatus, forKey: .showLoadingStatus)
         try container.encode(showPauseOverlay, forKey: .showPauseOverlay)
+        try container.encode(usesWholeScreen, forKey: .usesWholeScreen)
+        try container.encode(autoSyncsSubtitles, forKey: .autoSyncsSubtitles)
     }
 
     var normalized: Self {

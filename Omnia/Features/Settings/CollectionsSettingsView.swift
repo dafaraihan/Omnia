@@ -13,6 +13,7 @@ import UniformTypeIdentifiers
 struct CollectionsSettingsView: View {
     @Environment(OmniaStore.self) private var store
     @Environment(CollectionsStore.self) private var collections
+    @Environment(SettingsPreferencesStore.self) private var settings
 
     @State private var showsImporter = false
     @State private var showsExporter = false
@@ -47,6 +48,36 @@ struct CollectionsSettingsView: View {
                 Text("Collections")
             } footer: {
                 Text("Make a collection here, or import the collections.json that Xperience or Nuvio exports. Importing an updated file replaces the collections it already contains.")
+            }
+
+            Section {
+                CollectionCardPreview(folders: Array(collections.collections.flatMap(\.folders).prefix(3)))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                SettingsDropdown(
+                    "Shape",
+                    selection: settings.binding(\.display.collectionCard.shape),
+                    options: Array(CollectionCardPreferences.Shape.allCases)
+                ) { shape in shape.title }
+                SettingsDropdown(
+                    "Size",
+                    selection: settings.binding(\.display.collectionCard.size),
+                    options: Array(CollectionCardPreferences.Size.allCases)
+                ) { size in size.title }
+                SettingsDropdown(
+                    "Corners",
+                    selection: settings.binding(\.display.collectionCard.corners),
+                    options: Array(CollectionCardPreferences.Corners.allCases)
+                ) { corners in corners.title }
+                SettingsDropdown(
+                    "Folder Names",
+                    selection: settings.binding(\.display.collectionCard.titles),
+                    options: Array(CollectionCardPreferences.Titles.allCases)
+                ) { titles in titles.title }
+            } header: {
+                Text("Card Style")
+            } footer: {
+                Text("Applies to every collection row on Home. As Imported keeps each collection's own tile shape, and Automatic shows a folder's name only when the folder asks for it or has no cover. Depth and hover glow follow Poster Card Style.")
             }
 
             if collections.collections.isEmpty {
@@ -271,5 +302,56 @@ struct CollectionsSettingsView: View {
                 }
             }
         )
+    }
+}
+
+/// A few of your folders drawn as they'll look on Home, or a sample tile
+/// before any collection exists. It updates as each option changes.
+private struct CollectionCardPreview: View {
+    let folders: [HomeCollectionFolder]
+    @Environment(\.displayPreferences) private var display
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 14) {
+            if folders.isEmpty {
+                sampleTile
+            } else {
+                ForEach(folders) { folder in
+                    CollectionFolderTile(folder: folder)
+                        .allowsHitTesting(false)
+                }
+            }
+        }
+        .padding(12)
+        .animation(.easeInOut(duration: 0.2), value: display.collectionCard)
+        .accessibilityHidden(true)
+    }
+
+    private var sampleTile: some View {
+        let shape = display.collectionCard.shape.resolved(.poster)
+        let radius = display.collectionCard.corners.radius
+        return ZStack(alignment: .bottomLeading) {
+            LinearGradient(
+                colors: [display.accentColor.opacity(0.85), .black],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            Image(systemName: "folder.fill")
+                .font(.system(size: 34, weight: .light))
+                .foregroundStyle(.white.opacity(0.7))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if display.collectionCard.titles != .never {
+                Text("Preview")
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .padding(12)
+            }
+        }
+        .frame(
+            width: CollectionFolderTile.width(for: shape, display: display),
+            height: CollectionFolderTile.height(for: shape, display: display)
+        )
+        .clipShape(.rect(cornerRadius: radius, style: .continuous))
+        .cardDepth(.collections, cornerRadius: radius)
     }
 }

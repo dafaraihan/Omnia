@@ -68,6 +68,7 @@ private struct StreamsPageBackdrop: View {
     let item: MediaItem
     let episode: MediaEpisode?
     let background: StreamPagePreferences.Background
+    @State private var backdropSize = CGSize.zero
 
     var body: some View {
         ZStack {
@@ -77,8 +78,10 @@ private struct StreamsPageBackdrop: View {
                 HeroAccentBackground(item: item)
                     .opacity(0.9)
                 if let url = item.backdropURL ?? episode?.stillURL ?? item.artworkURL {
-                    Color.clear.overlay {
-                        AsyncImage(url: url, transaction: .init(animation: .easeOut(duration: 0.5))) { phase in
+                    Color.clear
+                    .onGeometryChange(for: CGSize.self) { $0.size } action: { backdropSize = $0 }
+                    .overlay {
+                        CachedArtworkImage(url: url, size: backdropSize, transaction: .init(animation: .easeOut(duration: 0.5))) { phase in
                             if let image = phase.image {
                                 image
                                     .resizable()
@@ -205,7 +208,7 @@ struct StreamFilterChip: View {
         Button(action: action) {
             HStack(spacing: 6) {
                 if let logoURL {
-                    AsyncImage(url: logoURL) { phase in
+                    CachedArtworkImage(url: logoURL, size: CGSize(width: 16, height: 16), contentMode: .fit) { phase in
                         phase.image?.resizable().scaledToFit()
                     }
                     .frame(width: 16, height: 16)
@@ -254,7 +257,7 @@ struct StreamSectionHeader: View {
     var body: some View {
         HStack(spacing: 8) {
             if let logoURL {
-                AsyncImage(url: logoURL) { phase in
+                CachedArtworkImage(url: logoURL, size: CGSize(width: 18, height: 18), contentMode: .fit) { phase in
                     phase.image?.resizable().scaledToFit()
                 }
                 .frame(width: 18, height: 18)
@@ -360,7 +363,7 @@ struct StreamCardView: View {
             if preferences.showAddonLogo {
                 VStack(spacing: 3) {
                     if let addonLogoURL {
-                        AsyncImage(url: addonLogoURL) { phase in
+                        CachedArtworkImage(url: addonLogoURL, size: CGSize(width: 28, height: 28), contentMode: .fit) { phase in
                             phase.image?.resizable().scaledToFit()
                         }
                         .frame(width: 28, height: 28)
@@ -424,7 +427,7 @@ struct StreamBadgeChip: View {
     var body: some View {
         Group {
             if let url = badge.imageURL {
-                AsyncImage(url: url) { phase in
+                CachedArtworkImage(url: url, size: CGSize(width: 92, height: 16), contentMode: .fit) { phase in
                     switch phase {
                     case let .success(image):
                         image.resizable().scaledToFit()

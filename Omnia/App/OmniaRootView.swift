@@ -11,6 +11,10 @@ struct OmniaRootView: View {
     @Environment(OmniaStore.self) private var store
     @Environment(PlaybackSession.self) private var playback
     @Environment(SettingsPreferencesStore.self) private var settings
+    @Environment(ProfileStore.self) private var profiles
+    @AppStorage(OnboardingView.completedKey) private var onboardingCompleted = false
+    @State private var liveTV = LiveTVStore.shared
+    @State private var switchCenter = ProfileSwitchCenter.shared
     #if os(macOS)
     @State private var navigation = MacPrimaryNavigationState()
     @State private var hoveredSidebarDestination: AppDestination?
@@ -28,8 +32,8 @@ struct OmniaRootView: View {
         let isFullWindowPlayback = playback.isPresentingPlayer && !playback.isPictureInPictureActive
         #endif
 
-        rootContent
-        .preferredColorScheme(store.appearance.colorScheme)
+        gatedContent
+        .preferredColorScheme(onboardingCompleted ? store.appearance.colorScheme : nil)
         #if os(iOS)
         .fullScreenCover(isPresented: $playback.isPresentingPlayer) {
             PlaybackExperienceView()
@@ -74,6 +78,10 @@ struct OmniaRootView: View {
         .onChange(of: usesFloatingSearch) { _, floating in
             navigation.applySearchStyle(floating: floating)
         }
+        // Leaves Live TV when it is hidden or its last source is removed.
+        .onChange(of: liveTV.showsInNavigation) { _, shows in
+            if !shows, navigation.selection == .liveTV { navigation.select(.home) }
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { _ in
             playback.handleFullScreenEnter()
         }
@@ -81,6 +89,55 @@ struct OmniaRootView: View {
             playback.handleFullScreenExit()
         }
         #endif
+    }
+
+    /// Onboarding on first launch, then Who's Watching when there's more
+    /// than one profile and the last one isn't remembered.
+    @ViewBuilder
+    private var gatedContent: some View {
+        Group {
+            if !onboardingCompleted {
+                OnboardingView { onboardingCompleted = true }
+                    .transition(.opacity)
+            } else if profiles.needsSelection {
+                ProfilePickerView(onCancel: pickerCancel)
+                .transition(.opacity.combined(with: .scale(scale: 1.04)))
+            } else {
+                rootContent
+                    .transition(.opacity)
+            }
+        }
+        .animation(.smooth(duration: 0.35), value: onboardingCompleted)
+        .animation(.smooth(duration: 0.6), value: profiles.needsSelection)
+        // Nuvio's startup screen, and its profile switch.
+        .overlay {
+            if let transition = switchCenter.transition {
+                ProfileTransitionOverlay(
+                    transition: transition,
+                    isExiting: switchCenter.isExiting,
+                    anchor: switchCenter.profileAnchor
+                ) {
+                    switchCenter.finish(transition.id)
+                }
+                .id(transition.id)
+                .zIndex(2)
+            }
+        }
+        .onAppear {
+            switchCenter.beginLaunch()
+            // Profiles were removed outside the app: start again with one.
+            if onboardingCompleted, profiles.profiles.isEmpty {
+                profiles.create(name: "Profile 1", avatarID: AvatarCatalog.random().id, colorHex: ViewerProfile.colors[0])
+            }
+        }
+    }
+
+    /// Back from Who's Watching, when Switch Profile opened it.
+    private var pickerCancel: (() -> Void)? {
+        guard switchCenter.isPickerOpen, profiles.activeProfile != nil else { return nil }
+        let center = switchCenter
+        let profiles = profiles
+        return { center.cancelPicker(using: profiles) }
     }
 
     /// Settings › Appearance › Accent Color.
@@ -132,21 +189,27 @@ struct OmniaRootView: View {
         #else
         TabView(selection: $selection) {
             Tab("Home", systemImage: AppDestination.home.symbolName, value: .home) {
-                NavigationStack { HomeView() }
+                NavigationStack { HomeView().omniaPageDestinations() }
             }
             Tab("Search", systemImage: AppDestination.search.symbolName, value: .search) {
-                NavigationStack { SearchView() }
+                NavigationStack { SearchView().omniaPageDestinations() }
             }
             Tab("Library", systemImage: AppDestination.library.symbolName, value: .library) {
-                NavigationStack { LibraryView() }
+                NavigationStack { LibraryView().omniaPageDestinations() }
             }
 
             Tab("Discover", systemImage: AppDestination.discover.symbolName, value: .discover) {
-                NavigationStack { DiscoverView() }
+                NavigationStack { DiscoverView().omniaPageDestinations() }
+            }
+
+            if liveTV.showsInNavigation {
+                Tab("Live TV", systemImage: AppDestination.liveTV.symbolName, value: .liveTV) {
+                    NavigationStack { LiveTVView().omniaPageDestinations() }
+                }
             }
 
             Tab("Settings", systemImage: AppDestination.settings.symbolName, value: .settings) {
-                NavigationStack { SettingsView() }
+                NavigationStack { SettingsView().omniaPageDestinations() }
             }
         }
         .tabViewStyle(.sidebarAdaptable)
@@ -154,6 +217,9 @@ struct OmniaRootView: View {
         .toolbarBackground(OmniaMaterial.tabBar, for: .tabBar)
         .toolbarBackground(.visible, for: .tabBar)
         .tabBarMinimizeBehavior(.onScrollDown)
+        .onChange(of: liveTV.showsInNavigation) { _, shows in
+            if !shows, selection == .liveTV { selection = .home }
+        }
         #endif
     }
 
@@ -210,7 +276,7 @@ struct OmniaRootView: View {
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     NuvioTopBar(
-                        destinations: AppDestination.macTopBarDestinations,
+                        destinations: AppDestination.macTopBarDestinations(showsLiveTV: liveTV.showsInNavigation),
                         selection: navigation.selection,
                         style: settings.preferences.display.topBarStyle,
                         showsGlow: settings.preferences.display.topBarGlow,
@@ -243,7 +309,7 @@ struct OmniaRootView: View {
 
     private var nativeTopBarNavigation: some View {
         TabView(selection: macTopBarSelection) {
-            ForEach(AppDestination.macTopBarDestinations, id: \.self) { destination in
+            ForEach(AppDestination.macTopBarDestinations(showsLiveTV: liveTV.showsInNavigation), id: \.self) { destination in
                 if destination == .search && usesFloatingSearch {
                     Tab(
                         destination.title,
@@ -251,6 +317,17 @@ struct OmniaRootView: View {
                         value: destination
                     ) {
                         Color.clear
+                    }
+                } else if destination == .settings, let profile = profiles.activeProfile {
+                    Tab(value: destination) {
+                        macNavigationStack(for: destination)
+                    } label: {
+                        Label {
+                            Text(profile.name)
+                        } icon: {
+                            ProfileAvatarView(profile: profile, size: 26)
+                                .modifier(ProfileAnchorReporting())
+                        }
                     }
                 } else {
                     Tab(
@@ -314,18 +391,23 @@ struct OmniaRootView: View {
 
     private func macNavigationStack(for destination: AppDestination) -> some View {
         NavigationStack(path: macPath(for: destination)) {
-            switch destination {
-            case .home:
-                HomeView()
-            case .library:
-                LibraryView()
-            case .discover:
-                DiscoverView()
-            case .search:
-                SearchView()
-            case .settings:
-                SettingsView()
+            Group {
+                switch destination {
+                case .home:
+                    HomeView()
+                case .library:
+                    LibraryView()
+                case .discover:
+                    DiscoverView()
+                case .liveTV:
+                    LiveTVView()
+                case .search:
+                    SearchView()
+                case .settings:
+                    SettingsView()
+                }
             }
+            .omniaPageDestinations()
         }
         .id(destination)
         .environment(\.isActiveDestination, destination == navigation.selection)
@@ -335,17 +417,22 @@ struct OmniaRootView: View {
     }
 
     private var macSidebarDestinations: [AppDestination] {
-        [.search, .home, .library, .discover, .settings]
+        [.settings, .home, .library, .discover] + (liveTV.showsInNavigation ? [.liveTV] : []) + [.search]
     }
 
     private func macSidebarLabel(for destination: AppDestination) -> some View {
         Label {
-            Text(destination.title)
+            Text(destination.title(for: profiles.activeProfile))
                 .foregroundStyle(.primary)
         } icon: {
-            Image(systemName: destination.symbolName)
-                .symbolRenderingMode(.palette)
-                .foregroundStyle(macSidebarSymbolColor(for: destination))
+            if destination == .settings, let profile = profiles.activeProfile {
+                ProfileAvatarView(profile: profile, size: 28, isSelected: navigation.selection == .settings)
+                    .modifier(ProfileAnchorReporting())
+            } else {
+                Image(systemName: destination.symbolName)
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(macSidebarSymbolColor(for: destination))
+            }
         }
     }
 

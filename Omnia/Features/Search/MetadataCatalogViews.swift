@@ -168,7 +168,7 @@ private struct GenreArtworkCard: View {
     let type: MediaType
 
     var body: some View {
-        NavigationLink {
+        OmniaPageLink {
             if let providerGenre {
                 GenreCatalogView(genre: providerGenre, type: type, titleOverride: genre.title)
             } else {
@@ -238,6 +238,9 @@ struct GenreDirectoryView: View {
 /// the app. Anime is a browse category here rather than a peer sidebar tab.
 struct SearchBrowseDirectoryView: View {
     let genres: [MetadataGenre]
+    var recentSearches: [String] = []
+    var onSelectRecent: (String) -> Void = { _ in }
+    var onRemoveRecent: (String) -> Void = { _ in }
 
     var body: some View {
         GeometryReader { proxy in
@@ -245,6 +248,15 @@ struct SearchBrowseDirectoryView: View {
 
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 16) {
+                    if !recentSearches.isEmpty {
+                        RecentSearchesSection(
+                            searches: recentSearches,
+                            onSelect: onSelectRecent,
+                            onRemove: onRemoveRecent
+                        )
+                        .padding(.bottom, 12)
+                    }
+
                     Text("Browse by Genre")
                         .font(.title2.weight(.bold))
 
@@ -272,11 +284,57 @@ struct SearchBrowseDirectoryView: View {
     }
 }
 
+/// Nuvio's Recent Searches list: tap one to search again, or remove it.
+private struct RecentSearchesSection: View {
+    let searches: [String]
+    let onSelect: (String) -> Void
+    let onRemove: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Recent Searches")
+                .font(.title2.weight(.bold))
+                .padding(.bottom, 8)
+
+            ForEach(searches, id: \.self) { search in
+                HStack(spacing: 12) {
+                    Button {
+                        onSelect(search)
+                    } label: {
+                        Label {
+                            Text(search)
+                                .lineLimit(1)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        } icon: {
+                            Image(systemName: "clock.arrow.circlepath")
+                                .foregroundStyle(.secondary)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+
+                    Button("Remove Recent Search", systemImage: "xmark") {
+                        onRemove(search)
+                    }
+                    .buttonStyle(.plain)
+                    .labelStyle(.iconOnly)
+                    .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 8)
+
+                if search != searches.last {
+                    Divider()
+                }
+            }
+        }
+    }
+}
+
 private struct AnimeSearchDirectoryCard: View {
     let cardWidth: CGFloat
 
     var body: some View {
-        NavigationLink {
+        OmniaPageLink {
             AnimeDiscoveryView()
         } label: {
             ZStack(alignment: .bottomLeading) {
@@ -321,7 +379,7 @@ private struct GenreDirectoryCard: View {
     let cardWidth: CGFloat
 
     var body: some View {
-        NavigationLink {
+        OmniaPageLink {
             if let providerGenre {
                 GenreCatalogView(genre: providerGenre, type: type, titleOverride: genre.title)
             } else {

@@ -31,12 +31,20 @@ typedef void (^OMMpvTrackSelectionCompletion)(
 @property (nonatomic, readonly, nullable) NSString *language;
 @property (nonatomic, readonly, nullable) NSString *codec;
 @property (nonatomic, readonly, getter=isSelected) BOOL selected;
+/// Where an added subtitle file came from; nil for tracks inside the video.
+@property (nonatomic, readonly, nullable) NSString *externalFilename;
 
 - (instancetype)initWithTrackID:(NSInteger)trackID
                           title:(nullable NSString *)title
                        language:(nullable NSString *)language
                           codec:(nullable NSString *)codec
-                       selected:(BOOL)selected NS_DESIGNATED_INITIALIZER;
+                       selected:(BOOL)selected;
+- (instancetype)initWithTrackID:(NSInteger)trackID
+                          title:(nullable NSString *)title
+                       language:(nullable NSString *)language
+                          codec:(nullable NSString *)codec
+                       selected:(BOOL)selected
+               externalFilename:(nullable NSString *)externalFilename NS_DESIGNATED_INITIALIZER;
 - (instancetype)init NS_UNAVAILABLE;
 
 @end
@@ -108,6 +116,12 @@ typedef void (^OMMpvTrackSelectionCompletion)(
 - (uint64_t)selectSubtitleTrackWithID:(nullable NSNumber *)trackID
                            completion:(nullable OMMpvTrackSelectionCompletion)completion
     NS_SWIFT_NAME(selectSubtitleTrack(id:completion:));
+/// Measures how loud the audio is, without changing it, so subtitles can
+/// be lined up with speech. Off by default.
+- (void)setSpeechActivityProbeEnabled:(BOOL)enabled;
+/// Loudness of the latest stretch of audio in dBFS, or nil while the probe
+/// is off or has not heard anything yet.
+- (nullable NSNumber *)speechActivityLevel;
 - (void)cycleSubtitles;
 - (void)cycleAudioTrack;
 - (void)attachVideoViewToHost:(NSView *)hostView;
@@ -115,6 +129,9 @@ typedef void (^OMMpvTrackSelectionCompletion)(
 - (void)enterPictureInPicture;
 - (void)exitPictureInPicture;
 - (void)togglePictureInPicture;
+/// Saves the frame on screen, without subtitles, as an image at `URL` (the
+/// extension picks the format). Blocks until the file is written.
+- (BOOL)writeCurrentSceneToURL:(NSURL *)URL NS_SWIFT_NAME(writeCurrentScene(to:));
 - (void)stop;
 
 @end

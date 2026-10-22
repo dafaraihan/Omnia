@@ -41,10 +41,13 @@ enum MediaContextMenuPresentation {
     static let symbolTreatment: MediaContextMenuSymbolTreatment = .white
     static let selectionTreatment: MediaContextMenuSelectionTreatment = .nativeBlue
 
+    /// A browse card offers Add or Remove, whichever applies to the title.
     static func commands(
         kind: MediaItem.Kind,
-        placement: MediaContextPlacement
+        placement: MediaContextPlacement,
+        isSaved: Bool = false
     ) -> [MediaContextCommand] {
+        let watchlist: MediaContextCommand = isSaved ? .removeFromWatchlist : .addToWatchlist
         switch (kind, placement) {
         case (.movie, .continueWatching):
             return [
@@ -67,9 +70,9 @@ enum MediaContextMenuPresentation {
                 .episodesThroughHereUnwatched,
             ]
         case (.movie, .browse):
-            return [.goToMovie, .addToWatchlist, .removeFromWatchlist]
+            return [.goToMovie, watchlist]
         case (.series, .browse), (.episode, .browse):
-            return [.goToShow, .addToWatchlist, .removeFromWatchlist]
+            return [.goToShow, watchlist]
         }
     }
 }
@@ -78,6 +81,8 @@ struct MediaDetailWatchAction: Equatable, Sendable {
     let systemImage: String
     let accessibilityLabel: String
     let command: LocalMediaWatchCommand
+    /// Marking watched also takes the title out of Continue Watching.
+    var leavesContinueWatching = false
 }
 
 enum MediaDetailWatchActionPresentation {
@@ -102,7 +107,8 @@ enum MediaDetailWatchActionPresentation {
         return MediaDetailWatchAction(
             systemImage: isWatched ? "eye.slash" : "eye",
             accessibilityLabel: isWatched ? "Mark as Unwatched" : "Mark as Watched",
-            command: command
+            command: command,
+            leavesContinueWatching: !isWatched
         )
     }
 }
@@ -120,7 +126,11 @@ private struct MediaContextMenuModifier: ViewModifier {
             .contentShape(Rectangle())
             .contextMenu {
                 ForEach(
-                    Array(MediaContextMenuPresentation.commands(kind: item.kind, placement: placement).enumerated()),
+                    Array(MediaContextMenuPresentation.commands(
+                        kind: item.kind,
+                        placement: placement,
+                        isSaved: store.isSaved(item)
+                    ).enumerated()),
                     id: \.offset
                 ) { _, command in
                     menuItem(for: command)

@@ -18,6 +18,7 @@ struct CatalogsSettingsView: View {
     @State private var showsResetConfirmation = false
     @State private var dropTargetKey: String?
     @State private var isExpanded = false
+    @State private var servers = MediaServerStore.shared
 
     private var homeCatalogs: [AddonHomeCatalog] {
         homeLayout.ordered(AddonCatalogStore.catalogs(in: store))
@@ -25,7 +26,7 @@ struct CatalogsSettingsView: View {
 
     /// Home rows in Home order, pinned collections first.
     private var homeEntries: [HomeRowEntry] {
-        homeLayout.entries(catalogs: homeCatalogs, collections: collections.collections)
+        homeLayout.entries(catalogs: homeCatalogs, collections: collections.collections, servers: servers.homeRows)
     }
 
     /// The keys drag and drop and the Move commands reorder. Pinned
@@ -58,7 +59,7 @@ struct CatalogsSettingsView: View {
         } else {
             withDialogs(
                 OmniaSettingsForm {
-                    if !homeCatalogs.isEmpty {
+                    if !homeCatalogs.isEmpty || !servers.homeRows.isEmpty {
                         homeRowsSection
                     }
                     otherSections
@@ -140,6 +141,8 @@ struct CatalogsSettingsView: View {
                         homeRow(catalog)
                     case let .collection(collection):
                         collectionRow(collection)
+                    case let .server(row):
+                        serverRow(row)
                     }
                 }
             } label: {
@@ -212,6 +215,8 @@ struct CatalogsSettingsView: View {
                     homeRow(catalog)
                 case let .collection(collection):
                     collectionRow(collection)
+                case let .server(row):
+                    serverRow(row)
                 }
             }
         } header: {
@@ -262,6 +267,28 @@ struct CatalogsSettingsView: View {
         }
         .contextMenu {
             Button("Rename…", systemImage: "pencil") { beginRename(catalog) }
+        }
+    }
+
+    /// A media server library or Continue Watching row.
+    private func serverRow(_ row: MediaServerHomeRow) -> some View {
+        let visible = homeLayout.isVisible(row)
+        return reorderableRow(key: row.key, title: row.title) {
+            Toggle(isOn: Binding(
+                get: { homeLayout.isVisible(row) },
+                set: { homeLayout.setVisible($0, for: row) }
+            )) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(row.title)
+                        .foregroundStyle(visible ? .primary : .secondary)
+                    Text(row.library.map { "\(row.serverName) • \($0.kind.label)" } ?? "\(row.serverName) • Continue Watching")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .toggleStyle(TrailingSwitchToggleStyle())
+        } extraMenuItems: {
+            EmptyView()
         }
     }
 

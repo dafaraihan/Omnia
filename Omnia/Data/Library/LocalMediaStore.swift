@@ -38,6 +38,23 @@ actor LocalMediaStore: LocalMediaStoring {
         return LocalMediaStore(modelContainer: container)
     }
 
+    /// A profile's own library. The profile that owns this Mac's library
+    /// from before profiles keeps using `live()`.
+    static func live(profileID: UUID) throws -> LocalMediaStore {
+        guard let url = profileStoreURL(for: profileID) else { return try live() }
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let configuration = ModelConfiguration(url: url)
+        let container = try ModelContainer(for: LocalMediaRecord.self, configurations: configuration)
+        return LocalMediaStore(modelContainer: container)
+    }
+
+    nonisolated static func profileStoreURL(for profileID: UUID) -> URL? {
+        ProfileStore.defaultDirectory?.appending(path: "\(profileID.uuidString).store")
+    }
+
     static func inMemory() throws -> LocalMediaStore {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(for: LocalMediaRecord.self, configurations: configuration)

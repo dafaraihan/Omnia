@@ -15,13 +15,21 @@ final class OmniaStore {
     private static let metadataRoutingStorageKey = "metadata-routing-preferences"
 
     private(set) var library: [MediaItem]
-    private(set) var localMediaSnapshots: [LocalMediaSnapshot]
+    private(set) var localMediaSnapshots: [LocalMediaSnapshot] {
+        didSet { libraryRevision &+= 1 }
+    }
+    /// Goes up whenever the library or progress changes, so profile sync
+    /// notices.
+    private(set) var libraryRevision = 0
+    /// Each playback tick, for the profile's watch time.
+    @ObservationIgnored var onPlaybackProgress: ((_ key: String, _ positionSeconds: Double) -> Void)?
     private(set) var localMediaPersistenceFailed = false
     @ObservationIgnored private var playbackPersistenceTask: Task<Void, Never>?
     /// The episode whose ending already produced a Next Up entry, so later
     /// ticks past the end don't repeat it.
     @ObservationIgnored private var finishedEpisodeKey: String?
-    private let localMediaStore: LocalMediaStore?
+    @ObservationIgnored private var localMediaStore: LocalMediaStore?
+    @ObservationIgnored private var libraryProfileID: UUID?
     private let addonPersistence: InstalledAddonPersistence?
     var installedAddons: [InstalledAddon] {
         didSet { addonHomeCatalogCache = nil }
@@ -175,6 +183,29 @@ final class OmniaStore {
         }
     }
 
+    /// Nuvio's Refresh addon: fetch one add-on's manifest again now. Returns
+    /// the error when it couldn't be fetched; the last manifest keeps working.
+    @discardableResult
+    func refreshAddonManifest(id: String) async -> Error? {
+        guard let addon = installedAddons.first(where: { $0.id == id }) else { return nil }
+        let url = addon.manifestURL
+        let manifest: StremioAddonManifest
+        do {
+            manifest = try await StremioAddonClient.fetchManifest(from: url)
+            AddonDiagnostics.shared.recordSuccess(.manifest, addonID: id)
+        } catch {
+            AddonDiagnostics.shared.recordFailure(.manifest, addonID: id, error: error)
+            return error
+        }
+        guard let current = installedAddons.first(where: { $0.id == id }),
+              manifest.id == current.manifest.id,
+              current.manifestURL == url,
+              current.manifest != manifest
+        else { return nil }
+        replaceAddon(id: id, manifest: manifest, manifestURL: url)
+        return nil
+    }
+
     func moveAddons(from source: IndexSet, to destination: Int) {
         installedAddons.move(fromOffsets: source, toOffset: destination)
         saveAddons()
@@ -311,6 +342,7 @@ final class OmniaStore {
         durationSeconds: Double?,
         nextUp: NextUpRequest? = nil
     ) {
+        onPlaybackProgress?(episode.map { "\(item.id)|\($0.id)" } ?? item.id, positionSeconds)
         let finished = finishedEpisodeCommand(
             for: item,
             episode: episode,
@@ -422,16 +454,26 @@ final class OmniaStore {
     }
 
     func watchState(for item: MediaItem) -> LocalMediaWatchState {
-        localMediaSnapshots.first(where: { $0.mediaID == item.id })?.watchState ?? .empty
+        savedSnapshot(matching: item)?.watchState ?? .empty
     }
 
+    /// - Parameter leavingContinueWatching: Mark Watched on a title's hero
+    ///   also takes the title out of Continue Watching, next episode
+    ///   included (Dafa, 2026-10-21).
     func applyWatchCommand(
         _ command: LocalMediaWatchCommand,
-        to item: MediaItem,
-        episodes: [MediaEpisode]
+        to requested: MediaItem,
+        episodes: [MediaEpisode],
+        leavingContinueWatching: Bool = false
     ) {
+        // The entry already stored for this title, even when the page that
+        // asks knows it by another ID (an add-on ID against a TMDB one).
+        // Otherwise the command made a second entry and the one in
+        // Continue Watching never changed.
+        let item = savedSnapshot(matching: requested)?.item ?? requested
         guard let localMediaStore else {
             applyWatchCommandInMemory(command, to: item, episodes: episodes)
+            if leavingContinueWatching { removeFromContinueWatchingInMemory(item) }
             return
         }
 
@@ -443,6 +485,9 @@ final class OmniaStore {
                     episodes: episodes,
                     at: .now
                 )
+                if leavingContinueWatching {
+                    try await localMediaStore.clearProgress(for: item.id)
+                }
                 await refreshLocalMedia()
             } catch {
                 localMediaPersistenceFailed = true
@@ -460,6 +505,36 @@ final class OmniaStore {
         }
     }
 
+    /// NuvioTV's default add-ons (Dafa, 2026-10-21): Cinemeta and
+    /// OpenSubtitles, installed once each. One that is removed stays removed,
+    /// and one that couldn't be reached is tried again at the next launch.
+    static let defaultAddonManifestURLs = [
+        "https://v3-cinemeta.strem.io/manifest.json",
+        "https://opensubtitles-v3.strem.io/manifest.json",
+    ]
+    private static let installedDefaultAddonsKey = "installed-default-addons"
+
+    /// `force` installs them again, for a new profile's fresh add-ons.
+    func installDefaultAddonsIfNeeded(force: Bool = false) async {
+        guard addonPersistence != nil, !installedAddonsAreLoading else { return }
+        let defaults = UserDefaults.standard
+        var done = force ? [] : Set(defaults.stringArray(forKey: Self.installedDefaultAddonsKey) ?? [])
+        for address in Self.defaultAddonManifestURLs where !done.contains(address) {
+            guard let url = URL(string: address) else { continue }
+            if installedAddons.contains(where: { $0.manifestURL == url }) {
+                done.insert(address)
+                continue
+            }
+            guard let manifest = try? await StremioAddonClient.fetchManifest(from: url) else { continue }
+            // Already installed from another address: count it as done.
+            if !installedAddons.contains(where: { $0.manifest.id == manifest.id }) {
+                add(.init(manifest: manifest, manifestURL: url, isEnabled: true, addedAt: .now))
+            }
+            done.insert(address)
+        }
+        defaults.set(Array(done).sorted(), forKey: Self.installedDefaultAddonsKey)
+    }
+
     func prepareInstalledAddons() async {
         guard let addonPersistence, installedAddonsAreLoading else { return }
         let result = await addonPersistence.load()
@@ -474,14 +549,14 @@ final class OmniaStore {
         }
     }
 
-    func exportLocalMedia() async throws -> Data {
+    func exportLocalMedia(at date: Date = .now) async throws -> Data {
         guard let localMediaStore else {
             return try LocalMediaBackupDocument(
                 snapshots: localMediaSnapshots,
-                exportedAt: .now
+                exportedAt: date
             ).encoded()
         }
-        return try await localMediaStore.exportDocument().encoded()
+        return try await localMediaStore.exportDocument(at: date).encoded()
     }
 
     func importLocalMedia(_ data: Data, replacingExisting: Bool) async throws {
@@ -709,6 +784,75 @@ final class OmniaStore {
         if let libraryIndex = library.firstIndex(where: { $0.id == item.id }) {
             library[libraryIndex] = updatedItem
         }
+    }
+
+    // MARK: Profiles
+
+    /// A profile's add-ons, with their addresses, and its hidden catalogs.
+    nonisolated struct AddonProfileSnapshot: Codable, Sendable {
+        struct Entry: Codable, Sendable {
+            var manifest: StremioAddonManifest
+            var manifestURL: URL
+            var isEnabled: Bool
+            var addedAt: Date
+            var customName: String?
+            var installID: String
+        }
+
+        var addons: [Entry]
+        var disabledCatalogIDs: [String]
+    }
+
+    func addonProfileSnapshot() -> AddonProfileSnapshot {
+        AddonProfileSnapshot(
+            addons: installedAddons.map {
+                .init(
+                    manifest: $0.manifest, manifestURL: $0.manifestURL, isEnabled: $0.isEnabled,
+                    addedAt: $0.addedAt, customName: $0.customName, installID: $0.installID
+                )
+            },
+            disabledCatalogIDs: disabledAddonCatalogIDs.sorted()
+        )
+    }
+
+    /// Switching profiles: another profile's add-ons, or Cinemeta and
+    /// OpenSubtitles for a new one, as on a first launch.
+    func restoreAddons(_ snapshot: AddonProfileSnapshot?) async {
+        installedAddons = snapshot?.addons.map {
+            InstalledAddon(
+                manifest: $0.manifest, manifestURL: $0.manifestURL, isEnabled: $0.isEnabled,
+                addedAt: $0.addedAt, customName: $0.customName, installID: $0.installID
+            )
+        } ?? []
+        installedAddonRestoreIssues = []
+        disabledAddonCatalogIDs = Set(snapshot?.disabledCatalogIDs ?? [])
+        saveAddons()
+        saveDisabledCatalogIDs()
+        if snapshot == nil {
+            await installDefaultAddonsIfNeeded(force: true)
+        }
+        await refreshInstalledManifests()
+    }
+
+    /// Switches the library, watchlist and progress to a profile's own.
+    func useLibrary(for profileID: UUID, ownsDefaultLibrary: Bool) async {
+        guard addonPersistence != nil, libraryProfileID != profileID else { return }
+        // At launch the default library is already open.
+        if ownsDefaultLibrary, libraryProfileID == nil {
+            libraryProfileID = profileID
+            return
+        }
+        // Progress still being written belongs to the previous profile.
+        libraryProfileID = profileID
+        await playbackPersistenceTask?.value
+        playbackPersistenceTask = nil
+        finishedEpisodeKey = nil
+        localMediaStore = ownsDefaultLibrary
+            ? try? LocalMediaStore.live()
+            : try? LocalMediaStore.live(profileID: profileID)
+        library = []
+        localMediaSnapshots = []
+        await refreshLocalMedia()
     }
 
     private func refreshLocalMedia() async {

@@ -126,6 +126,13 @@ nonisolated struct DefaultPlaybackStoryboardLoader: PlaybackStoryboardLoading {
 actor MPVLocalFrameGenerator: PlaybackLocalFrameGenerating {
     private var generator: OMMpvThumbnailGenerator?
     private var sourceID: String?
+    private let maximumSize: NSSize
+
+    /// Timeline previews use the small default; Continue Watching's Paused
+    /// Scene asks for a card-sized frame.
+    init(maximumSize: NSSize = NSSize(width: 320, height: 180)) {
+        self.maximumSize = maximumSize
+    }
 
     func image(at timestamp: Double, source: PlaybackSource) async throws -> PlaybackTimelinePreviewImage {
         try Task.checkCancellation()
@@ -145,7 +152,7 @@ actor MPVLocalFrameGenerator: PlaybackLocalFrameGenerating {
             try await withCheckedThrowingContinuation { continuation in
                 generator.requestFrame(
                     at: timestamp,
-                    maximumSize: NSSize(width: 320, height: 180)
+                    maximumSize: maximumSize
                 ) { image, error in
                     if let image {
                         continuation.resume(returning: image)
@@ -162,7 +169,7 @@ actor MPVLocalFrameGenerator: PlaybackLocalFrameGenerating {
         try Task.checkCancellation()
         return PlaybackTimelinePreviewImage(
             image: image,
-            byteCount: 320 * 180 * 4
+            byteCount: Int(maximumSize.width * maximumSize.height) * 4
         )
     }
 

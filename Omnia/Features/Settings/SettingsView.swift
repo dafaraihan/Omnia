@@ -5,6 +5,7 @@ struct SettingsView: View {
     @Environment(OmniaAccount.self) private var account
     @Environment(SettingsPreferencesStore.self) private var settings
     @Environment(PluginStore.self) private var plugins
+    @Environment(ProfileStore.self) private var profiles
     @State private var searchText = ""
     #if os(macOS)
     @State private var hoveredRoute: SettingsRoute?
@@ -12,7 +13,7 @@ struct SettingsView: View {
 
     var body: some View {
         rootSettingsContent
-            .omniaNavigationTitle("Settings", screen: .settings)
+            .omniaNavigationTitle(AppDestination.settings.title(for: profiles.activeProfile), screen: .settings)
         #if os(macOS)
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
@@ -67,15 +68,22 @@ struct SettingsView: View {
     private func summary(for route: SettingsRoute) -> String? {
         switch route {
         case .account:
-            return account.user?.provider?.capitalized ?? (account.user == nil ? "Not signed in" : "Signed in")
+            let count = profiles.profiles.count
+            let people = count == 1 ? "1 profile" : "\(count) profiles"
+            return account.user == nil ? "\(people), not signed in" : "\(people), synced to your account"
         case .contentDiscovery:
-            return "Add-ons and plugins"
+            return "Add-ons, media servers, Live TV, and plugins"
         case .addons:
             if store.installedAddonsAreLoading {
                 return "Loading…"
             }
             let count = store.installedAddons.filter(\.isEnabled).count
             return count == 0 ? "No sources enabled" : "\(count) enabled"
+        case .mediaServers:
+            let count = MediaServerStore.shared.connections.count
+            return count == 0 ? "No servers" : count == 1 ? "1 server" : "\(count) servers"
+        case .liveTV:
+            return LiveTVStore.shared.hasSources ? "Set up" : "Not set up"
         case .plugins:
             if plugins.repositories.isEmpty { return "No repositories" }
             guard plugins.pluginsEnabled else { return "Turned off" }
@@ -93,7 +101,7 @@ struct SettingsView: View {
         case .metadata:
             return "TMDB enrichment, MDBList ratings and metadata sources"
         case .progress:
-            return "Stored only on this device"
+            return account.storageSummary
         case .upcoming:
             return settings.preferences.showUpcoming ? "Shown on Home" : "Hidden from Home"
         case .videoPlayer:
@@ -123,6 +131,10 @@ struct SettingsDestinationView: View {
                 ContentDiscoverySettingsView()
             case .addons:
                 AddonsSettingsView()
+            case .mediaServers:
+                MediaServersSettingsView()
+            case .liveTV:
+                LiveTVSettingsView()
             case .plugins:
                 PluginsSettingsView()
             case .home:
@@ -271,8 +283,11 @@ struct MacSettingsToolbarSearch: View {
     }
 }
 
-private struct MacSettingsSearchField: NSViewRepresentable {
+/// AppKit's search field, for toolbars that need it beside other items
+/// (SwiftUI's searchable field always sits apart at the trailing edge).
+struct MacSettingsSearchField: NSViewRepresentable {
     @Binding var text: String
+    var prompt = "Search Settings"
 
     func makeCoordinator() -> Coordinator {
         Coordinator(text: $text)
@@ -280,7 +295,7 @@ private struct MacSettingsSearchField: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSSearchField {
         let searchField = NSSearchField()
-        searchField.placeholderString = "Search Settings"
+        searchField.placeholderString = prompt
         searchField.sendsSearchStringImmediately = true
         searchField.delegate = context.coordinator
         return searchField

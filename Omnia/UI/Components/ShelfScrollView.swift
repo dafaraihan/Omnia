@@ -118,8 +118,11 @@ struct ShelfScrollView<Item: Identifiable, Content: View>: View {
 
     private func move(by delta: Int, proxy: ScrollViewProxy) {
         let index = min(max(currentIndex + delta, 0), items.count - 1)
+        // Scroll through the position binding, not the proxy: a proxy
+        // scroll never updated `leadingItemID`, so every later press
+        // computed the same target from index 0 and the row moved once.
         withAnimation(.easeInOut(duration: 0.28)) {
-            proxy.scrollTo(items[index].id, anchor: .leading)
+            leadingItemID = items[index].id
         }
         showControls()
     }

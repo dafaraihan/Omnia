@@ -3,8 +3,10 @@
 //  Omnia
 //
 
+import CryptoKit
 import Foundation
 import Observation
+import Synchronization
 import SwiftUI
 
 /// Read-only, provider-aggregated metadata for Omnia's built-in discovery.
@@ -235,9 +237,36 @@ final class LiveMetadataStore {
         return resolvedItem.mergingTMDBCounterpart(counterpart)
     }
 
+    /// Title details answered recently, so a title page, its hero trailer
+    /// and the player don't each ask the service again. Shared by every
+    /// caller asking for the same title at once.
+    private var detailsInFlight: [String: Task<MetadataDetailResponse?, Never>] = [:]
+
+    /// Answers from `MetadataDetailCache` first, then the service.
+    private func detailsWithRetry(
+        _ client: SupabaseMetadataClient,
+        provider: MetadataProviderIdentifier,
+        id: String,
+        type: MediaType
+    ) async -> MetadataDetailResponse? {
+        let key = MetadataDetailCache.key(provider: provider, id: id, type: type)
+        if let cached = await MetadataDetailCache.response(for: key) { return cached }
+        if let running = detailsInFlight[key] { return await running.value }
+        let task = Task { [weak self] () -> MetadataDetailResponse? in
+            guard let self else { return nil }
+            let response = await self.fetchDetailsWithRetry(client, provider: provider, id: id, type: type)
+            if let response { await MetadataDetailCache.save(response, for: key) }
+            return response
+        }
+        detailsInFlight[key] = task
+        let response = await task.value
+        detailsInFlight[key] = nil
+        return response
+    }
+
     /// One retry absorbs the transient failures seen while Home's catalog
     /// requests are still in flight, which otherwise leave a detail page bare.
-    private func detailsWithRetry(
+    private func fetchDetailsWithRetry(
         _ client: SupabaseMetadataClient,
         provider: MetadataProviderIdentifier,
         id: String,
@@ -951,5 +980,66 @@ struct BuiltInAnimeCatalog: Identifiable, Sendable {
 private extension MediaItem {
     var metadataType: MediaType {
         kind == .series ? .series : .movie
+    }
+}
+
+/// Title details kept in memory and in Caches, so a title opened again, or
+/// after a relaunch, shows at once. Kept for a few hours: long enough to
+/// skip repeat requests, short enough that new episodes still appear the
+/// same day. Files are named by a hash of the title's provider ID.
+private nonisolated enum MetadataDetailCache {
+    static let maximumAge: TimeInterval = 4 * 60 * 60
+
+    private struct Entry: Codable {
+        var savedAt: Date
+        var response: MetadataDetailResponse
+    }
+
+    private static let memory = Mutex<[String: Entry]>([:])
+    private static let memoryLimit = 120
+
+    private static let directory: URL? = {
+        guard let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else { return nil }
+        let directory = caches.appendingPathComponent("MetadataDetails", isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
+    }()
+
+    static func key(provider: MetadataProviderIdentifier, id: String, type: MediaType) -> String {
+        let identity = [provider.rawValue, type.rawValue, id].joined(separator: "|")
+        return SHA256.hash(data: Data(identity.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
+    @concurrent
+    static func response(for key: String) async -> MetadataDetailResponse? {
+        if let entry = memory.withLock({ $0[key] }) {
+            return Date.now.timeIntervalSince(entry.savedAt) < maximumAge ? entry.response : nil
+        }
+        guard let directory,
+              let data = try? Data(contentsOf: directory.appendingPathComponent(key)),
+              let entry = try? JSONDecoder().decode(Entry.self, from: data),
+              Date.now.timeIntervalSince(entry.savedAt) < maximumAge
+        else { return nil }
+        remember(entry, for: key)
+        return entry.response
+    }
+
+    @concurrent
+    static func save(_ response: MetadataDetailResponse, for key: String) async {
+        let entry = Entry(savedAt: .now, response: response)
+        remember(entry, for: key)
+        guard let directory, let data = try? JSONEncoder().encode(entry) else { return }
+        try? data.write(to: directory.appendingPathComponent(key), options: .atomic)
+    }
+
+    private static func remember(_ entry: Entry, for key: String) {
+        memory.withLock { entries in
+            entries[key] = entry
+            // Drop the oldest once full; the disk copy stays.
+            if entries.count > memoryLimit,
+               let oldest = entries.min(by: { $0.value.savedAt < $1.value.savedAt })?.key {
+                entries[oldest] = nil
+            }
+        }
     }
 }

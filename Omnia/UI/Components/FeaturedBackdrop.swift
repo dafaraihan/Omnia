@@ -25,7 +25,7 @@ struct FeaturedBackdrop: View {
                     item.backdropURL,
                     pixelWidth: proxy.size.width * displayScale
                 ) {
-                    AsyncImage(url: backdropURL, transaction: .init(animation: .easeInOut)) { phase in
+                    CachedArtworkImage(url: backdropURL, size: proxy.size, transaction: .init(animation: .easeInOut)) { phase in
                         if let image = phase.image {
                             image
                                 .resizable()

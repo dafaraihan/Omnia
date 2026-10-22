@@ -130,6 +130,15 @@ struct VideoPlayerSettingsView: View {
                 }
             }
 
+            #if os(macOS)
+            Section("Full Screen") {
+                Toggle(isOn: settings.binding(\.playbackBehavior.usesWholeScreen)) {
+                    Text("Use Whole Screen")
+                    Text("Video also covers the strip beside the camera notch. Full screen then stays in the current Space instead of opening its own. Applies from the next video.")
+                }
+            }
+            #endif
+
             Section("Audio") {
                 LanguagePicker("Preferred audio", selection: settings.binding(\.preferredAudioLanguage), includesNone: false)
                 LanguagePicker("Audio fallback", selection: settings.binding(\.audioFallbackLanguage), includesNone: true)
@@ -169,6 +178,28 @@ struct VideoPlayerSettingsView: View {
                     Text("Only Preferred Languages")
                     Text("Add-on subtitles in other languages aren't added to the player.")
                 }
+                #if os(macOS)
+                Toggle(isOn: settings.binding(\.playbackBehavior.autoSyncsSubtitles)) {
+                    Text("Auto Sync Subtitles")
+                    Text("When an add-on subtitle starts, Omnia listens to the speech for up to three minutes and lines the subtitle up with it. Subtitles inside the video are left as they are.")
+                }
+                SubtitleDoubleSlider(
+                    title: "Subtitle Delay",
+                    value: Binding(
+                        get: { settings.preferences.playbackSubtitleStyle.delaySeconds },
+                        // Tenth-of-a-second steps, like the player's own control.
+                        set: { value in
+                            settings.update { $0.playbackSubtitleStyle.delaySeconds = (value * 10).rounded() / 10 }
+                        }
+                    ),
+                    range: -10 ... 10,
+                    valueLabel: { String(format: "%+.1f s", $0) }
+                )
+                Button("Reset Delay") {
+                    settings.update { $0.playbackSubtitleStyle.delaySeconds = 0 }
+                }
+                .disabled(settings.preferences.playbackSubtitleStyle.delaySeconds == 0)
+                #endif
                 NavigationLink("Subtitle") {
                     SettingsDestinationView(route: .subtitle)
                 }
@@ -176,7 +207,7 @@ struct VideoPlayerSettingsView: View {
             } header: {
                 Text("Subtitles")
             } footer: {
-                Text("Subtitles from add-ons such as OpenSubtitles are added to the player's list as they arrive.")
+                Text("Subtitles from add-ons such as OpenSubtitles are added to the player's list as they arrive. The delay applies to every video; a delay set in the player's Sync panel is kept for that title only, and a positive delay shows subtitles later.")
             }
         }
         .omniaNavigationTitle("Playback")

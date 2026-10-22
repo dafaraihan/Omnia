@@ -11,6 +11,7 @@ import SwiftUI
 /// every value here.
 struct ContinueWatchingSettingsView: View {
     @Environment(SettingsPreferencesStore.self) private var settings
+    @Environment(OmniaAccount.self) private var account
     @AppStorage(HomeView.continueWatchingVisibilityKey) private var showsContinueWatching = true
     /// Read by OmniaStore when it decides a title is finished.
     @AppStorage("playback-completion-threshold") private var completionThreshold = 95
@@ -37,6 +38,11 @@ struct ContinueWatchingSettingsView: View {
                     selection: settings.binding(\.display.continueWatchingSort),
                     options: Array(ContinueWatchingSort.allCases)
                 ) { sort in sort.title }
+                SettingsDropdown(
+                    "Artwork",
+                    selection: settings.binding(\.display.continueWatchingArtwork),
+                    options: Array(ContinueWatchingArtwork.allCases)
+                ) { artwork in artwork.title }
                 Toggle(isOn: settings.binding(\.display.continueWatchingEpisodeThumbnails)) {
                     Text("Episode Thumbnails")
                     Text("Wide cards for shows use the episode's still instead of the show's backdrop.")
@@ -45,7 +51,7 @@ struct ContinueWatchingSettingsView: View {
             } header: {
                 Text("Row")
             } footer: {
-                Text("Poster cards use the size and corners from Layout › Poster Card Style.")
+                Text("Paused Scene shows the frame where you stopped, saved when you close the player; titles you haven't played since use their artwork. Poster cards use the size and corners from Layout › Poster Card Style.")
             }
 
             Section {
@@ -96,7 +102,7 @@ struct ContinueWatchingSettingsView: View {
             }
 
             Section {
-                SettingsRouteLink(route: .progress, summary: "Stored only on this device")
+                SettingsRouteLink(route: .progress, summary: account.storageSummary)
             } header: {
                 Text("Progress")
             } footer: {

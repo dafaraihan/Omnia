@@ -61,6 +61,7 @@ struct NuvioTopBar: View {
     let select: (AppDestination) -> Void
 
     @Environment(\.displayPreferences) private var display
+    @Environment(ProfileStore.self) private var profiles
     @State private var isHovered = false
     @State private var isPressing = false
     @State private var dragIndex: Int?
@@ -71,6 +72,8 @@ struct NuvioTopBar: View {
     static let height: CGFloat = 36
     private static let inset: CGFloat = 4
     private static let iconSize: CGFloat = 15
+    /// The profile's avatar, larger than the symbols so the picture reads.
+    private static let avatarSize: CGFloat = 26
     private static let compactItemWidth: CGFloat = 44
     private static let labelWidth: CGFloat = 52
 
@@ -162,9 +165,9 @@ struct NuvioTopBar: View {
     private func tab(_ destination: AppDestination, isHighlighted: Bool) -> some View {
         HStack(spacing: 6) {
             icon(destination, isHighlighted: isHighlighted)
-                .frame(width: Self.iconSize + 4)
+                .frame(width: destination == .settings && profiles.activeProfile != nil ? Self.avatarSize : Self.iconSize + 4)
             if showsLabels {
-                Text(destination.title)
+                Text(destination.title(for: profiles.activeProfile))
                     .font(.system(size: 13, weight: isHighlighted ? .semibold : .regular))
                     .lineLimit(1)
                     .foregroundStyle(isHighlighted ? .primary : .secondary)
@@ -175,9 +178,9 @@ struct NuvioTopBar: View {
         .scaleEffect(isHighlighted && isPressing ? 1.06 : 1)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
-        .help(destination.title)
+        .help(destination.title(for: profiles.activeProfile))
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(destination.title)
+        .accessibilityLabel(destination.title(for: profiles.activeProfile))
         .accessibilityAddTraits(destination == selection ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction { select(destination) }
     }
@@ -186,6 +189,16 @@ struct NuvioTopBar: View {
     /// theme, as on Nuvio's bar.
     @ViewBuilder
     private func icon(_ destination: AppDestination, isHighlighted: Bool) -> some View {
+        if destination == .settings, let profile = profiles.activeProfile {
+            ProfileAvatarView(profile: profile, size: Self.avatarSize, isSelected: isHighlighted)
+                .modifier(ProfileAnchorReporting())
+        } else {
+            symbol(destination, isHighlighted: isHighlighted)
+        }
+    }
+
+    @ViewBuilder
+    private func symbol(_ destination: AppDestination, isHighlighted: Bool) -> some View {
         let image = Image(systemName: destination.symbolName)
             .font(.system(size: Self.iconSize, weight: .medium))
         if isHighlighted {

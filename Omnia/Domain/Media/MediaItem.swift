@@ -230,6 +230,16 @@ nonisolated struct MediaItem: Identifiable, Hashable, Sendable {
         )
     }
 
+    /// Cinemeta's logos (images.metahub.space) are missing for many titles and
+    /// answer 404, and plain http:// logos often have no https copy, so the
+    /// TMDB logo wins over those when there is one.
+    static func preferredLogo(_ current: URL?, counterpart: URL?) -> URL? {
+        guard let current else { return counterpart }
+        let isUnreliable = current.host?.lowercased().hasSuffix("metahub.space") == true
+            || current.scheme?.lowercased() == "http"
+        return isUnreliable ? (counterpart ?? current) : current
+    }
+
     /// Fills what a TVDB, AniList or add-on record can't supply on its own
     /// (seasons, cast, recommendations, full-size artwork) from the matching
     /// TMDB title. TVDB only provides a small `thumbnail` as its backdrop, so a
@@ -252,7 +262,7 @@ nonisolated struct MediaItem: Identifiable, Hashable, Sendable {
             artworkColors: artworkColors,
             artworkURL: artworkURL ?? tmdbItem.artworkURL,
             backdropURL: preferTMDBBackdrop ? (tmdbItem.backdropURL ?? backdropURL) : backdropURL,
-            logoURL: logoURL ?? tmdbItem.logoURL,
+            logoURL: Self.preferredLogo(logoURL, counterpart: tmdbItem.logoURL),
             metadataProvider: metadataProvider ?? tmdbItem.metadataProvider,
             metadataProviderID: metadataProviderID ?? tmdbItem.metadataProviderID,
             metadataRecordID: metadataRecordID ?? tmdbItem.metadataRecordID,

@@ -70,6 +70,8 @@ enum SettingsRoute: Hashable, Sendable {
     case contentDiscovery
     case addons
     case plugins
+    case mediaServers
+    case liveTV
     case home
     case catalogs
     case collections
@@ -95,8 +97,7 @@ enum SettingsRoute: Hashable, Sendable {
     /// Integrations under General. Omnia's own Progress page opens from
     /// Layout › Continue Watching.
     static let rootGroups: [SettingsRouteGroup] = [
-        .init(section: .account, routes: [.account]),
-        .init(section: .general, routes: [.appearance, .contentDiscovery, .videoPlayer, .metadata]),
+        .init(section: .general, routes: [.account, .appearance, .contentDiscovery, .videoPlayer, .metadata]),
         .init(section: .about, routes: [.about])
     ]
 
@@ -104,7 +105,7 @@ enum SettingsRoute: Hashable, Sendable {
     var children: [SettingsRoute] {
         switch self {
         case .appearance: [.home, .catalogs, .collections, .continueWatching, .progress, .upcoming, .posterCards, .detailPage, .streams]
-        case .contentDiscovery: [.addons, .plugins]
+        case .contentDiscovery: [.addons, .mediaServers, .liveTV, .plugins]
         case .videoPlayer: [.streamSelection, .subtitle, .playbackResolver]
         case .metadata: [.tmdbEnrichment, .metadataProvider("mdblist"), .metadataSources]
         default: []
@@ -133,6 +134,8 @@ enum SettingsRoute: Hashable, Sendable {
         case .contentDiscovery: "Content & Discovery"
         case .addons: "Add-ons"
         case .plugins: "Plugins"
+        case .mediaServers: "Media Servers"
+        case .liveTV: "Live TV"
         case .home: "Home Layout"
         case .catalogs: "Catalogs"
         case .collections: "Collections"
@@ -165,6 +168,8 @@ enum SettingsRoute: Hashable, Sendable {
         case .contentDiscovery: "magnifyingglass"
         case .addons: "puzzlepiece.extension"
         case .plugins: "shippingbox"
+        case .mediaServers: "server.rack"
+        case .liveTV: "play.tv"
         case .home: "house"
         case .catalogs: "rectangle.stack"
         case .collections: "square.stack.3d.up"
@@ -188,9 +193,11 @@ enum SettingsRoute: Hashable, Sendable {
 
     var searchTerms: [String] {
         switch self {
-        case .account: ["Apple", "Google", "Facebook", "sign in", "sign out"]
-        case .contentDiscovery: ["add-ons", "addons", "plugins", "sources", "discovery"]
+        case .account: ["profile", "profiles", "avatar", "PIN", "watch time", "sync", "email", "Apple", "Google", "sign in", "sign out"]
+        case .contentDiscovery: ["add-ons", "addons", "plugins", "sources", "discovery", "recent searches", "search history", "media servers", "live TV", "IPTV"]
         case .addons: ["sources", "manifest", "timeout", "import", "export"]
+        case .liveTV: ["Live TV", "IPTV", "M3U", "playlist", "Xtream", "Stalker", "portal", "MAC", "channels", "TV guide", "EPG", "XMLTV", "navigation"]
+        case .mediaServers: ["Jellyfin", "Emby", "media server", "server", "library", "libraries", "sign in", "watch progress"]
         case .plugins: ["Nuvio", "scrapers", "providers", "repository", "JavaScript", "streams", "TMDB"]
         case .home: ["layout", "hero", "hero style", "card", "full-bleed", "dynamic background", "hero trailer", "trailer", "autoplay", "sound", "delay", "rows", "catalogs", "collections", "order", "rename", "unreleased", "catalog type", "upcoming", "discover", "TMDB", "TVDB"]
         case .catalogs: ["catalog", "discover", "TMDB", "TVDB"]

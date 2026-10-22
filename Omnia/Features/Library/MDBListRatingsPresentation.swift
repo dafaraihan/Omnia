@@ -116,6 +116,14 @@ nonisolated enum MDBListRatingsLoadState: Equatable, Sendable {
     case empty
     case loaded(MDBListRatingsPresentation)
     case failed(MDBListMetadataError, recovery: MDBListRatingsRecoveryAction?)
+
+    /// The ratings to show under the providers switched on now, so turning
+    /// one off or on in Settings applies at once, without a new request.
+    func applying(_ preferences: MDBListRatingPreferences) -> Self {
+        guard case let .loaded(presentation) = self else { return self }
+        let current = MDBListRatingsPresentation(response: presentation.response, preferences: preferences)
+        return current.items.isEmpty ? .empty : .loaded(current)
+    }
 }
 
 @MainActor
@@ -188,11 +196,12 @@ final class MDBListRatingsLoader {
                     self.state = .empty
                     return
                 }
-                let presentation = MDBListRatingsPresentation(
+                // Kept even when every provider is off, so switching one
+                // back on shows it without another request.
+                self.state = .loaded(MDBListRatingsPresentation(
                     response: response,
                     preferences: preferences
-                )
-                self.state = presentation.items.isEmpty ? .empty : .loaded(presentation)
+                ))
             } catch is CancellationError {
                 // A navigation change or newer title owns the visible state.
             } catch let error as MDBListMetadataError {

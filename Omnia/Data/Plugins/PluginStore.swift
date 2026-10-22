@@ -19,11 +19,16 @@ final class PluginStore {
     private(set) var repositories: [PluginRepository] = []
     private(set) var scrapers: [PluginScraper] = []
     private(set) var pluginsEnabled = true
+    /// Nuvio's Group plugin providers by repository: the streams page shows
+    /// one provider per repository instead of one per plugin.
+    private(set) var groupsByRepository = true
     /// Repositories being refreshed, by id.
     private(set) var refreshing: Set<String> = []
     /// The last refresh error for each repository, by id.
     private(set) var errors: [String: String] = [:]
     private(set) var hasTMDBKey = false
+    /// Goes up on every save, so profile sync notices changes.
+    private(set) var revision = 0
 
     /// Each scraper's saved settings as JSON, by scraper id.
     private var settings: [String: String] = [:]
@@ -33,7 +38,14 @@ final class PluginStore {
         self.directory = directory
         hasTMDBKey = (try? KeychainStore.value(account: Self.tmdbKeyAccount))?.isEmpty == false
         load()
-        Task { await refreshDueRepositories() }
+        // Checked at launch and then every hour while Omnia runs; each
+        // repository is refreshed once six hours have passed, as in Nuvio.
+        Task { [weak self] in
+            while let store = self {
+                await store.refreshDueRepositories()
+                try? await Task.sleep(for: .seconds(60 * 60))
+            }
+        }
     }
 
     nonisolated static var defaultDirectory: URL? {
@@ -150,6 +162,17 @@ final class PluginStore {
     func setPluginsEnabled(_ enabled: Bool) {
         pluginsEnabled = enabled
         save()
+    }
+
+    func setGroupsByRepository(_ grouped: Bool) {
+        groupsByRepository = grouped
+        save()
+    }
+
+    /// The repository a plugin source belongs to, for grouping streams.
+    func repository(forSourceID sourceID: String) -> PluginRepository? {
+        guard let scraper = scrapers.first(where: { PluginStreamResolver.sourceID(for: $0) == sourceID }) else { return nil }
+        return repositories.first { $0.manifestURL == scraper.repositoryURL }
     }
 
     func setEnabled(_ enabled: Bool, for scraper: PluginScraper) {
@@ -341,8 +364,35 @@ final class PluginStore {
 
     // MARK: Persistence
 
-    private struct StoredState: Codable {
+    // MARK: Profiles
+
+    /// A profile's repositories, scrapers and their settings. Scraper code
+    /// is shared on disk and downloaded again when missing.
+    func profileState() -> StoredState {
+        StoredState(
+            pluginsEnabled: pluginsEnabled,
+            groupsByRepository: groupsByRepository,
+            repositories: repositories,
+            scrapers: scrapers,
+            settings: settings
+        )
+    }
+
+    /// Switching profiles: another profile's plugins, or none.
+    func restore(_ state: StoredState?) {
+        pluginsEnabled = state?.pluginsEnabled ?? true
+        groupsByRepository = state?.groupsByRepository ?? true
+        repositories = state?.repositories ?? []
+        scrapers = state?.scrapers ?? []
+        settings = state?.settings ?? [:]
+        errors = [:]
+        save()
+        Task { await refreshDueRepositories() }
+    }
+
+    nonisolated struct StoredState: Codable, Sendable {
         var pluginsEnabled: Bool
+        var groupsByRepository: Bool?
         var repositories: [PluginRepository]
         var scrapers: [PluginScraper]
         var settings: [String: String]
@@ -368,14 +418,22 @@ final class PluginStore {
               let state = try? JSONDecoder().decode(StoredState.self, from: data)
         else { return }
         pluginsEnabled = state.pluginsEnabled
+        groupsByRepository = state.groupsByRepository ?? true
         repositories = state.repositories
         scrapers = state.scrapers
         settings = state.settings
     }
 
     private func save() {
+        revision &+= 1
         guard let stateFile else { return }
-        let state = StoredState(pluginsEnabled: pluginsEnabled, repositories: repositories, scrapers: scrapers, settings: settings)
+        let state = StoredState(
+            pluginsEnabled: pluginsEnabled,
+            groupsByRepository: groupsByRepository,
+            repositories: repositories,
+            scrapers: scrapers,
+            settings: settings
+        )
         guard let data = try? JSONEncoder().encode(state) else { return }
         try? FileManager.default.createDirectory(at: stateFile.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? data.write(to: stateFile, options: .atomic)

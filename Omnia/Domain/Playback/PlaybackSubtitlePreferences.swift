@@ -29,6 +29,14 @@ struct PlaybackSubtitleStyle: Codable, Equatable, Sendable {
 
     static let `default` = Self()
 
+    /// How high the subtitles sit, 0 at the bottom edge and 100 at the top.
+    /// `position` keeps mpv's sub-pos meaning (100 is the bottom) so saved
+    /// settings stay valid; sliders show this instead.
+    var height: Double {
+        get { 100 - position }
+        set { position = 100 - newValue }
+    }
+
     init() {}
 
     init(

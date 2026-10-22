@@ -60,6 +60,8 @@ nonisolated struct MDBListRatingProviderID: RawRepresentable, Codable, Hashable,
     static let rottenTomatoesAudience = Self(canonical: "popcorn")
     static let myAnimeList = Self(canonical: "myanimelist")
     static let rogerEbert = Self(canonical: "rogerebert")
+    /// MDBList lists Metacritic's user score apart from its critic score.
+    static let metacriticUser = Self(canonical: "metacriticuser")
 
     private init(canonical: String) {
         rawValue = canonical
@@ -82,7 +84,10 @@ nonisolated struct MDBListRatingProviderID: RawRepresentable, Codable, Hashable,
         "popcornmeter": rottenTomatoesAudience.rawValue,
         "mal": myAnimeList.rawValue,
         "myanimelist": myAnimeList.rawValue,
-        "rogerebert": rogerEbert.rawValue
+        "rogerebert": rogerEbert.rawValue,
+        "metacriticuser": metacriticUser.rawValue,
+        "metacriticusers": metacriticUser.rawValue,
+        "metacriticuserscore": metacriticUser.rawValue
     ]
 
     private static func isAllowed(_ scalar: UnicodeScalar) -> Bool {
@@ -160,6 +165,8 @@ nonisolated enum MDBListRatingProviderRegistry {
             order: 8,
             assetName: "RatingRogerEbertMark"
         ),
+        // Shown by name, so it isn't mistaken for the critic score.
+        descriptor(.metacriticUser, "Metacritic User Score", order: 9),
     ]
 
     static let aggregateAssetName = "RatingMDBListMark"

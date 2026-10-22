@@ -146,7 +146,7 @@ struct SubtitleAppearanceSettingsView: View {
                 )
                 SubtitleDoubleSlider(
                     title: "Position",
-                    value: styleBinding(\.position),
+                    value: styleBinding(\.height),
                     range: 0 ... 100,
                     valueLabel: { "\(Int($0.rounded()))" }
                 )
@@ -185,29 +185,6 @@ struct SubtitleAppearanceSettingsView: View {
                         valueLabel: { String(format: "%.1f", $0) }
                     )
                 }
-            }
-
-            Section {
-                SubtitleDoubleSlider(
-                    title: "Subtitle Delay",
-                    value: Binding(
-                        get: { settings.preferences.playbackSubtitleStyle.delaySeconds },
-                        // Tenth-of-a-second steps, like the player's own control.
-                        set: { value in
-                            settings.update { $0.playbackSubtitleStyle.delaySeconds = (value * 10).rounded() / 10 }
-                        }
-                    ),
-                    range: -10 ... 10,
-                    valueLabel: { String(format: "%+.1f s", $0) }
-                )
-                Button("Reset Delay") {
-                    settings.update { $0.playbackSubtitleStyle.delaySeconds = 0 }
-                }
-                .disabled(settings.preferences.playbackSubtitleStyle.delaySeconds == 0)
-            } header: {
-                Text("Timing")
-            } footer: {
-                Text("A positive delay shows subtitles later; use it when they appear before the speech.")
             }
 
             Section {
@@ -345,7 +322,7 @@ private struct SettingsIntSlider: View {
 }
 
 #if os(macOS)
-private struct SubtitleDoubleSlider: View {
+struct SubtitleDoubleSlider: View {
     let title: String
     @Binding var value: Double
     let range: ClosedRange<Double>

@@ -69,6 +69,13 @@ final class SettingsPreferencesStore {
         }
     }
 
+    /// Switching profiles: another profile's settings, or the defaults for
+    /// a new one.
+    func replace(with preferences: SettingsPreferences?) {
+        self.preferences = (preferences ?? .default).normalized
+        persist()
+    }
+
     func reset() {
         preferences = .default
         defaults.removeObject(forKey: storageKey)

@@ -71,6 +71,22 @@ struct AddonCatalogBrowseView: View {
             .padding(.vertical, 24)
         }
         .omniaNavigationTitle(title)
+        #if os(macOS)
+        // Filter and search share one toolbar item, so they sit together.
+        .toolbar {
+            if !filterExtras.isEmpty || supportsSearch {
+                ToolbarItem(placement: .primaryAction) {
+                    HStack(spacing: 8) {
+                        if !filterExtras.isEmpty { filterMenu }
+                        if supportsSearch {
+                            MacSettingsSearchField(text: $search, prompt: "Search \(title)")
+                                .frame(width: 260)
+                        }
+                    }
+                }
+            }
+        }
+        #else
         .modifier(CatalogSearchModifier(isEnabled: supportsSearch, text: $search, prompt: "Search \(title)"))
         .toolbar {
             if !filterExtras.isEmpty {
@@ -79,6 +95,7 @@ struct AddonCatalogBrowseView: View {
                 }
             }
         }
+        #endif
         .task(id: requestKey) {
             items = []
             nextSkip = 0

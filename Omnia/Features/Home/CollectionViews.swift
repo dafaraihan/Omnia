@@ -53,20 +53,33 @@ struct CollectionFolderTile: View {
     let folder: HomeCollectionFolder
     @State private var isHovered = false
 
-    static func width(for shape: HomeCollectionFolder.TileShape, display: DisplayPreferences) -> CGFloat {
-        switch shape {
-        case .poster: display.posterCardWidth
-        case .square: display.posterCardWidth * 1.25
+    /// The folder's shape and size after Settings › Layout › Collections ›
+    /// Card Style.
+    static func width(for folderShape: HomeCollectionFolder.TileShape, display: DisplayPreferences) -> CGFloat {
+        let card = display.collectionCard
+        let shape = card.shape.resolved(folderShape)
+        let portrait = card.size == .matchPosters ? display.posterCardWidth : PosterWidthPreset.standard.width
+        let base: CGFloat = switch shape {
+        case .poster: portrait
+        case .square: portrait * 1.25
         case .landscape, .wide: MediaBrowseMetrics.landscapeCardWidth
         }
+        return (base * card.size.scale).rounded()
     }
 
-    static func height(for shape: HomeCollectionFolder.TileShape, display: DisplayPreferences) -> CGFloat {
-        width(for: shape, display: display) / CGFloat(shape.aspectRatio)
+    static func height(for folderShape: HomeCollectionFolder.TileShape, display: DisplayPreferences) -> CGFloat {
+        let shape = display.collectionCard.shape.resolved(folderShape)
+        return width(for: folderShape, display: display) / CGFloat(shape.aspectRatio)
     }
+
+    private var cornerRadius: CGFloat { display.collectionCard.corners.radius }
 
     private var showsTitle: Bool {
-        !folder.hideTitle || folder.coverImageUrl == nil
+        switch display.collectionCard.titles {
+        case .automatic: !folder.hideTitle || folder.coverImageUrl == nil
+        case .always: true
+        case .never: folder.coverImageUrl == nil
+        }
     }
 
     var body: some View {
@@ -74,15 +87,8 @@ struct CollectionFolderTile: View {
             fallback
 
             if let cover = folder.coverImageUrl {
-                AsyncImage(url: cover, transaction: .init(animation: .easeInOut)) { phase in
-                    if let image = phase.image {
-                        image
-                            .resizable()
-                            .scaledToFill()
-                            .transition(.opacity)
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                RemoteArtworkImage(url: cover)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
 
             #if os(macOS)
@@ -90,7 +96,7 @@ struct CollectionFolderTile: View {
             // pointer is on the tile. It loads ahead, so hovering starts it
             // at once; without a still cover its first frame stays visible.
             if folder.focusGifEnabled, let animated = folder.focusGifUrl {
-                AnimatedCoverImage(url: animated, isPlaying: isHovered)
+                AnimatedCoverImage(url: animated, isPlaying: isHovered, staysDecoded: folder.coverImageUrl == nil)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .opacity(isHovered || folder.coverImageUrl == nil ? 1 : 0)
             }
@@ -106,11 +112,11 @@ struct CollectionFolderTile: View {
             }
         }
         .frame(width: Self.width(for: folder.tileShape, display: display), height: Self.height(for: folder.tileShape, display: display))
-        .clipShape(.rect(cornerRadius: MediaBrowseMetrics.landscapeCornerRadius, style: .continuous))
+        .clipShape(.rect(cornerRadius: cornerRadius, style: .continuous))
         // Settings › Appearance › Poster Cards draws the hover edge and lift.
-        .cardDepth(.collections, cornerRadius: MediaBrowseMetrics.landscapeCornerRadius)
+        .cardDepth(.collections, cornerRadius: cornerRadius)
         .onHover { isHovered = $0 }
-        .contentShape(.rect(cornerRadius: MediaBrowseMetrics.landscapeCornerRadius))
+        .contentShape(.rect(cornerRadius: cornerRadius))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(folder.title)
         .accessibilityAddTraits(.isButton)
@@ -245,20 +251,13 @@ struct CollectionFolderView: View {
             Rectangle()
                 .fill(.quaternary)
             if let backdrop = folder.heroBackdropUrl ?? folder.coverImageUrl {
-                AsyncImage(url: backdrop, transaction: .init(animation: .easeInOut)) { phase in
-                    if let image = phase.image {
-                        image
-                            .resizable()
-                            .scaledToFill()
-                            .transition(.opacity)
-                    }
-                }
+                RemoteArtworkImage(url: backdrop)
             }
             LinearGradient(colors: [.clear, .black.opacity(0.75)], startPoint: .center, endPoint: .bottom)
 
             VStack(alignment: .leading, spacing: 6) {
                 if let logo = folder.titleLogoUrl {
-                    AsyncImage(url: logo) { phase in
+                    CachedArtworkImage(url: logo, size: CGSize(width: 320, height: 90), contentMode: .fit) { phase in
                         if let image = phase.image {
                             image
                                 .resizable()
@@ -681,7 +680,13 @@ struct CollectionFolderView: View {
 struct AnimatedCoverImage: View {
     let url: URL
     var isPlaying = true
+    /// When the GIF is the tile's only cover, its first frame shows at rest.
+    /// Otherwise it is decoded only while it plays: a Home with dozens of
+    /// animated covers held every one in memory.
+    var staysDecoded = true
     @State private var image: NSImage?
+
+    private var isNeeded: Bool { staysDecoded || isPlaying }
 
     var body: some View {
         GeometryReader { proxy in
@@ -693,11 +698,24 @@ struct AnimatedCoverImage: View {
                     .transition(.opacity)
             }
         }
-        .task(id: url) {
+        .task(id: "\(url.absoluteString)|\(isNeeded)") {
+            guard isNeeded else {
+                image = nil
+                // Download ahead into the disk cache, so hovering starts at once.
+                await Self.prefetch(url)
+                return
+            }
             image = await Self.load(url)
         }
         .accessibilityHidden(true)
         .allowsHitTesting(false)
+    }
+
+    private static var prefetched: Set<URL> = []
+
+    private static func prefetch(_ url: URL) async {
+        guard prefetched.insert(url).inserted else { return }
+        _ = try? await URLSession.shared.data(from: url)
     }
 
     /// Loads through the shared cache, so covers don't download again.
