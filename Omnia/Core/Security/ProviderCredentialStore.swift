@@ -6,8 +6,7 @@
 import Foundation
 
 /// Credentials that belong to one Omnia user rather than to the app. Values
-/// are intentionally Keychain-only and are never included in a Supabase
-/// request, app configuration, analytics event, or sync payload.
+/// stay in Keychain on device and are backed up only through the account vault.
 enum UserManagedProviderCredential: String, CaseIterable, Identifiable, Sendable {
     case mdblist
     case anilist
@@ -47,10 +46,12 @@ enum ProviderCredentialStore {
 
     static func save(_ value: String, for credential: UserManagedProviderCredential) throws {
         try KeychainStore.save(value, account: credential.keychainAccount)
+        NotificationCenter.default.post(name: .credentialVaultDidChange, object: nil)
     }
 
     static func delete(_ credential: UserManagedProviderCredential) throws {
         try KeychainStore.delete(account: credential.keychainAccount)
+        NotificationCenter.default.post(name: .credentialVaultDidChange, object: nil)
     }
 
     static func isConfigured(_ credential: UserManagedProviderCredential) -> Bool {

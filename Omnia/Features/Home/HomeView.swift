@@ -15,6 +15,7 @@ struct HomeView: View {
     @Environment(HomeLayoutStore.self) private var homeLayout
     @Environment(CollectionsStore.self) private var collections
     @Environment(\.isActiveDestination) private var isActiveDestination
+    @Environment(\.isOnboardingPreview) private var isOnboardingPreview
     @Environment(\.displayPreferences) private var display
     @State private var resolvedFeatured: MediaItem?
     @State private var upcomingResult: UpcomingResult?
@@ -44,6 +45,7 @@ struct HomeView: View {
     @AppStorage(HomeShelfPreferences.storageKey) private var disabledHomeShelfIDs = ""
 
     private var continuing: [MediaItem] {
+        if isOnboardingPreview { return [] }
         // Newest played first. The stored order puts a title in My List by
         // the day it was added, so a show watched again stayed where it was.
         let values = store.localMediaSnapshots
@@ -78,7 +80,7 @@ struct HomeView: View {
         homeLayout.ordered(AddonCatalogStore.catalogs(in: store))
     }
 
-    private var isAddonMode: Bool { !addonHomeCatalogs.isEmpty || !servers.homeRows.isEmpty }
+    private var isAddonMode: Bool { !isOnboardingPreview && (!addonHomeCatalogs.isEmpty || !servers.homeRows.isEmpty) }
 
     private var visibleAddonCatalogs: [AddonHomeCatalog] {
         addonHomeCatalogs.filter { store.isCatalogEnabled(for: $0.addon, catalog: $0.catalog) }
@@ -288,6 +290,7 @@ struct HomeView: View {
             }
         }
         .task(id: store.localMediaSnapshots.count) {
+            guard !isOnboardingPreview else { return }
             checkResumePrompt()
         }
         .alert(
@@ -327,7 +330,7 @@ struct HomeView: View {
         }
         .task(id: "\(resolvedFeatured?.id ?? "")-\(settings.preferences.integrations.mdblistEnabled)") {
             heroRatings.cancel()
-            guard let resolvedFeatured, settings.preferences.integrations.mdblistEnabled else { return }
+            guard !isOnboardingPreview, let resolvedFeatured, settings.preferences.integrations.mdblistEnabled else { return }
             await heroRatings.load(
                 for: resolvedFeatured,
                 preferences: settings.preferences.mdblistRatings
@@ -343,12 +346,15 @@ struct HomeView: View {
         .background { WindowVisibilityReader(isVisible: $windowIsVisible) }
         #endif
         .task(id: addonLoadKey) {
+            guard !isOnboardingPreview else { return }
             addonCatalogs.load(addonCatalogsToLoad)
         }
         .task(id: servers.rowsSignature) {
+            guard !isOnboardingPreview else { return }
             await servers.loadRows()
         }
         .task(id: heroTrailerKey) {
+            guard !isOnboardingPreview else { return }
             await heroTrailer.load(
                 displayFeatured,
                 preferences: settings.preferences.heroTrailer,
@@ -360,7 +366,7 @@ struct HomeView: View {
             // The carousel pauses while Home sits in a hidden tab, while a
             // hero trailer is waiting to start or playing, while nobody can
             // see the hero, and when Auto-Advance is off.
-            guard isActiveDestination, !reduceMotion, heroCandidates.count > 1, !heroTrailer.holdsCarousel,
+            guard !isOnboardingPreview, isActiveDestination, !reduceMotion, heroCandidates.count > 1, !heroTrailer.holdsCarousel,
                   heroIsOnScreen, windowIsVisible, heroCarousel.autoAdvance
             else { return }
 
@@ -374,6 +380,7 @@ struct HomeView: View {
             }
         }
         .task(id: upcomingTaskKey) {
+            guard !isOnboardingPreview else { return }
             await loadUpcoming()
         }
         .onChange(of: heroCandidateKey) { _, _ in
@@ -630,7 +637,7 @@ struct HomeView: View {
     /// The trailer pauses in a hidden tab, while the streams page is open,
     /// while something else is playing, and while a title page is open.
     private var heroTrailerIsPlaying: Bool {
-        isActiveDestination && sourcePlaybackItem == nil && playback.source == nil
+        !isOnboardingPreview && isActiveDestination && sourcePlaybackItem == nil && playback.source == nil
             && HeroTrailerFocus.shared.homeMayPlay && heroIsOnScreen && windowIsVisible
     }
 

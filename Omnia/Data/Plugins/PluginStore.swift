@@ -14,6 +14,10 @@ import Observation
 @MainActor
 @Observable
 final class PluginStore {
+    private static weak var activeStore: PluginStore?
+
+    static func vaultCredentialChanged() { activeStore?.refreshVaultCredential() }
+
     nonisolated static let tmdbKeyAccount = "plugins.tmdb-api-key"
 
     private(set) var repositories: [PluginRepository] = []
@@ -26,17 +30,21 @@ final class PluginStore {
     private(set) var refreshing: Set<String> = []
     /// The last refresh error for each repository, by id.
     private(set) var errors: [String: String] = [:]
-    private(set) var hasTMDBKey = false
+    var hasTMDBKey: Bool {
+        _ = revision
+        return (try? KeychainStore.value(account: Self.tmdbKeyAccount))?.isEmpty == false
+    }
     /// Goes up on every save, so profile sync notices changes.
     private(set) var revision = 0
 
     /// Each scraper's saved settings as JSON, by scraper id.
     private var settings: [String: String] = [:]
+    private var generation = UUID()
     private let directory: URL?
 
     init(directory: URL? = PluginStore.defaultDirectory) {
         self.directory = directory
-        hasTMDBKey = (try? KeychainStore.value(account: Self.tmdbKeyAccount))?.isEmpty == false
+        Self.activeStore = self
         load()
         // Checked at launch and then every hour while Omnia runs; each
         // repository is refreshed once six hours have passed, as in Nuvio.
@@ -89,7 +97,9 @@ final class PluginStore {
         refreshing.insert(id)
         defer { refreshing.remove(id) }
 
+        let ticket = generation
         let download = try await Self.download(url, previous: [])
+        guard generation == ticket else { throw CancellationError() }
         guard !download.scrapers.isEmpty else { throw AddError.noScrapers }
         apply(download)
     }
@@ -110,12 +120,14 @@ final class PluginStore {
         guard !refreshing.contains(repository.id) else { return }
         refreshing.insert(repository.id)
         defer { refreshing.remove(repository.id) }
+        let ticket = generation
         do {
             let download = try await Self.download(repository.manifestURL, previous: scrapers(in: repository))
-            guard repositories.contains(where: { $0.id == repository.id }) else { return }
+            guard ticket == generation, repositories.contains(where: { $0.id == repository.id }) else { return }
             apply(download)
             errors[repository.id] = nil
         } catch {
+            guard ticket == generation else { return }
             // The last good copy keeps working.
             errors[repository.id] = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
@@ -239,12 +251,16 @@ final class PluginStore {
 
     func setTMDBAPIKey(_ key: String) {
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
-            try? KeychainStore.delete(account: Self.tmdbKeyAccount)
-        } else {
-            try? KeychainStore.save(trimmed, account: Self.tmdbKeyAccount)
-        }
-        hasTMDBKey = !trimmed.isEmpty
+        do {
+            if trimmed.isEmpty { try KeychainStore.delete(account: Self.tmdbKeyAccount) }
+            else { try KeychainStore.save(trimmed, account: Self.tmdbKeyAccount) }
+            refreshVaultCredential()
+            NotificationCenter.default.post(name: .credentialVaultDidChange, object: nil)
+        } catch { return }
+    }
+
+    func refreshVaultCredential() {
+        revision &+= 1
     }
 
     // MARK: Downloading
@@ -380,6 +396,8 @@ final class PluginStore {
 
     /// Switching profiles: another profile's plugins, or none.
     func restore(_ state: StoredState?) {
+        generation = UUID()
+        refreshing = []
         pluginsEnabled = state?.pluginsEnabled ?? true
         groupsByRepository = state?.groupsByRepository ?? true
         repositories = state?.repositories ?? []

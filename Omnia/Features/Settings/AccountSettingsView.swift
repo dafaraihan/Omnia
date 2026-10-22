@@ -8,6 +8,7 @@ struct AccountSettingsView: View {
     @Environment(OmniaStore.self) private var store
     @Environment(ProfileStore.self) private var profiles
     @Environment(ProfileDataSync.self) private var profileData
+    @Environment(CredentialVaultSync.self) private var credentialVault
     @Environment(\.displayPreferences) private var display
     @State private var confirmation = SettingsConfirmation<DestructiveAction>()
     @State private var isSigningIn = false
@@ -67,7 +68,9 @@ struct AccountSettingsView: View {
             }
             Button("Cancel", role: .cancel) { confirmation.cancel() }
         } message: {
-            Text("Profiles, library and settings stay on this Mac.")
+            Text(credentialVault.hasPendingChanges
+                ? "This Mac will return to welcome with no active profiles, library, settings, credentials or Live TV sources. Your account data stays in the cloud. Recent profile changes must sync before sign-out can finish. Unsynced credentials stay encrypted for this account."
+                : "This Mac will return to welcome with no active profiles, library, settings, credentials or Live TV sources. Recent profile changes must sync before sign-out can finish. Sign in again to restore your account data.")
         }
     }
 
@@ -292,10 +295,13 @@ struct AccountSettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Button("Sync Now") { Task { await profileData.sync() } }
-                        .disabled(profileData.isSyncing)
+                    Button("Sync Now") {
+                        Task { await credentialVault.sync(); await profileData.sync() }
+                    }
+                    .disabled(profileData.isSyncing || credentialVault.isSyncing)
                 }
-                Text("Every profile's watchlist, progress, settings, subtitles, add-ons and plugins are kept in your account, so they follow you to every device.")
+                credentialSyncStatus
+                Text("Your account also backs up provider keys, profile PIN protection, media-server connections and Live TV sources in an encrypted vault. Signing in restores them into this device's secure storage.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Button("Sign Out", role: .destructive) { confirmation.request(.signOut) }
@@ -308,7 +314,7 @@ struct AccountSettingsView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Keep everything in sync")
                             .font(.body.weight(.semibold))
-                        Text("Sign in to keep every profile's library, progress, settings and add-ons on all your devices.")
+                        Text("Sign in to back up this device's setup and restore saved profiles, provider keys, media servers and Live TV sources. Omnia's backend manages vault encryption.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -333,6 +339,39 @@ struct AccountSettingsView: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    private var credentialSyncStatus: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if credentialVault.isSyncing {
+                ProgressView("Syncing saved credentials…")
+            } else if let problem = credentialVault.problem {
+                Label(problem, systemImage: "exclamationmark.icloud")
+                    .font(.caption)
+                Button("Retry Credential Sync") { Task { await credentialVault.sync() } }
+            } else if credentialVault.hasPendingChanges {
+                Label("Credential changes are saved on this device and waiting to sync", systemImage: "clock.arrow.circlepath")
+                    .font(.caption)
+            } else if let date = credentialVault.lastSyncedAt {
+                Label("Credentials synced \(date.formatted(.relative(presentation: .named)))", systemImage: "lock.icloud")
+                    .font(.caption)
+            } else {
+                Label("Credential backup has not completed yet", systemImage: "lock.icloud")
+                    .font(.caption)
+            }
+            ForEach(credentialVault.conflictIDs, id: \.self) { id in
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("\(credentialVault.label(for: id)) changed on another device.")
+                        .font(.callout)
+                    HStack {
+                        Button("Keep Account Copy") { credentialVault.resolve(id: id, keepDevice: false) }
+                        Button("Keep This Device's Change") { credentialVault.resolve(id: id, keepDevice: true) }
+                    }
+                    .disabled(credentialVault.isSyncing)
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
     }
 
     private var syncSymbol: String {

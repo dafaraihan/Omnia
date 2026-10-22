@@ -16,16 +16,23 @@ struct OmniaApp: App {
     @State private var store: OmniaStore
     @State private var account: OmniaAccount
     @State private var metadata = LiveMetadataStore()
-    @State private var playback = PlaybackSession()
+    @State private var playback: PlaybackSession
     @State private var settings: SettingsPreferencesStore
-    @State private var addonCatalogs = AddonCatalogStore()
+    @State private var addonCatalogs: AddonCatalogStore
     @State private var homeLayout: HomeLayoutStore
     @State private var collections: CollectionsStore
     @State private var plugins: PluginStore
     @State private var profiles: ProfileStore
     @State private var profileData: ProfileDataSync
+    @State private var credentialVault: CredentialVaultSync
+    @State private var isPrepared = false
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
+        let addonCatalogs = AddonCatalogStore()
+        _addonCatalogs = State(initialValue: addonCatalogs)
+        let playback = PlaybackSession()
+        _playback = State(initialValue: playback)
         let store = OmniaStore()
         let account = OmniaAccount()
         let settings = SettingsPreferencesStore()
@@ -33,6 +40,47 @@ struct OmniaApp: App {
         let collections = CollectionsStore()
         let plugins = PluginStore()
         let profiles = ProfileStore()
+        let credentialVault = CredentialVaultSync(account: account, profiles: profiles)
+        let profileData = ProfileDataSync(
+            store: store, settings: settings, homeLayout: homeLayout, collections: collections,
+            plugins: plugins, profiles: profiles, account: account
+        )
+        account.willChangeIdentity = { [weak credentialVault, weak profileData] next in
+            profileData?.invalidateSession()
+            try credentialVault?.prepareIdentityChange(to: next)
+        }
+        account.didRecoverIdentity = { [weak credentialVault] in
+            await credentialVault?.identityChanged()
+        }
+        account.willSignOut = { [weak profileData, weak profiles, weak account, weak credentialVault] in
+            guard let profileData, let profiles, let account else { throw CancellationError() }
+            await profiles.sync(with: account)
+            guard profiles.syncProblem == nil else { throw CancellationError() }
+            try await profileData.flushForSignOut()
+            await credentialVault?.sync()
+        }
+        account.didSignOut = { [weak profileData, weak profiles, weak store] in
+            guard let profileData, let profiles, let store else { throw CancellationError() }
+            playback.stop(persisting: false)
+            addonCatalogs.resetAfterSignOut()
+            try PlaybackResolverCredentialStore.deleteAuthorizationToken()
+            try profiles.resetAfterSignOut()
+            await profileData.resetAfterSignOut()
+            try await store.resetLibraryAfterSignOut()
+            SearchHistoryStore.shared.clear()
+            SearchHistoryStore.shared.isEnabled = true
+            EpisodeShuffleStore.shared.resetAfterSignOut()
+            for key in [
+                HomeView.continueWatchingVisibilityKey, HomeShelfPreferences.storageKey,
+                "library-sort", "playback-completion-threshold", "subtitle-delay-by-title",
+                "subtitle-delay-by-title-order", StreamLinkCacheStore.storageKey,
+                "binge-group-cache-v1", LocalResolverSettingsStore.storageKey,
+                PlaybackResolverSettings.endpointKey, PlaybackResolverSettings.approvedAddonIDsKey,
+                PlaybackResolverSettings.approvedStreamHostsKey
+            ] { UserDefaults.standard.removeObject(forKey: key) }
+            UserDefaults.standard.set(false, forKey: OnboardingView.completedKey)
+        }
+        _credentialVault = State(initialValue: credentialVault)
         _store = State(initialValue: store)
         _account = State(initialValue: account)
         _settings = State(initialValue: settings)
@@ -40,10 +88,7 @@ struct OmniaApp: App {
         _collections = State(initialValue: collections)
         _plugins = State(initialValue: plugins)
         _profiles = State(initialValue: profiles)
-        _profileData = State(initialValue: ProfileDataSync(
-            store: store, settings: settings, homeLayout: homeLayout, collections: collections,
-            plugins: plugins, profiles: profiles, account: account
-        ))
+        _profileData = State(initialValue: profileData)
         #if os(macOS)
         UniformScrollers.install()
         #endif
@@ -99,6 +144,7 @@ struct OmniaApp: App {
 
     private var rootContent: some View {
         OmniaRootView()
+            .id(account.sessionGeneration)
             .environment(store)
             .environment(account)
             .environment(metadata)
@@ -110,40 +156,62 @@ struct OmniaApp: App {
             .environment(plugins)
             .environment(profiles)
             .environment(profileData)
+            .environment(credentialVault)
             .environment(\.showsMediaCardLabels, settings.preferences.showMediaCardLabels)
             .environment(\.displayPreferences, settings.preferences.display)
             .task {
+                guard !isPrepared else { return }
+                if account.localResetPending {
+                    playback.stop(persisting: false)
+                    await account.finishLocalSignOut()
+                    guard !account.localResetPending else { return }
+                }
                 await store.prepareInstalledAddons()
-                Task {
-                    await store.installDefaultAddonsIfNeeded()
-                    await store.refreshInstalledManifests()
+                if !profiles.profiles.isEmpty {
+                    Task {
+                        await store.installDefaultAddonsIfNeeded()
+                        await store.refreshInstalledManifests()
+                    }
                 }
                 profiles.account = account
                 await store.prepareLocalMedia()
                 await useActiveProfileLibrary()
                 await profileData.activate()
                 await account.restoreSession()
-                if account.user != nil {
-                    await profiles.sync(with: account)
-                    await profileData.sync()
-                }
+                isPrepared = true
                 metadata.configure(metadataRouting: store.metadataRouting)
                 await metadata.loadDefaultCatalogs()
             }
             // Each profile keeps its own library, progress, settings,
             // add-ons and plugins; its sharing switches can change too.
+            .onChange(of: account.localResetPending) { _, pending in
+                if pending { playback.stop(persisting: false) }
+            }
             .onChange(of: profiles.activeProfile) { _, _ in
                 Task {
                     await useActiveProfileLibrary()
                     await profileData.activate()
+                    if account.user == nil, !profiles.profiles.isEmpty {
+                        await store.installDefaultAddonsIfNeeded()
+                    }
                 }
             }
-            .onChange(of: account.user?.id) { _, id in
-                guard id != nil else { return }
-                Task {
-                    await profiles.sync(with: account)
-                    await profileData.sync()
-                }
+            .task(id: "\(isPrepared)-\(account.user?.id.uuidString ?? "guest")") {
+                guard isPrepared else { return }
+                guard !account.localResetPending else { return }
+                let userID = account.user?.id
+                if userID != nil { await profiles.sync(with: account) }
+                guard !Task.isCancelled, account.user?.id == userID else { return }
+                await credentialVault.identityChanged()
+                guard !Task.isCancelled, account.user?.id == userID else { return }
+                if userID != nil { await profileData.sync() }
+            }
+            .onChange(of: scenePhase) { _, phase in
+                guard phase == .active, isPrepared else { return }
+                Task { await credentialVault.sync() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .credentialVaultDidChange)) { _ in
+                credentialVault.localChanged()
             }
             .modifier(ProfileDataChanges(
                 store: store, settings: settings, homeLayout: homeLayout,
@@ -166,7 +234,7 @@ struct OmniaApp: App {
             }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                 Task { await metadata.refreshCatalogsIfStale() }
-                Task { await profileData.sync() }
+                Task { await credentialVault.sync(); await profileData.sync() }
                 addonCatalogs.refreshIfStale()
             }
             #endif

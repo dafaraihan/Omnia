@@ -145,6 +145,9 @@ private struct ActiveDestinationKey: EnvironmentKey {
 }
 
 extension EnvironmentValues {
+    /// Production screens rendered as a passive onboarding demonstration.
+    @Entry var isOnboardingPreview = false
+
     var reportWindowHeroBackdrop: (HeroBackdropSource, UUID, MediaItem?, CGRect) -> Void {
         get { self[HeroBackdropReporterKey.self] }
         set { self[HeroBackdropReporterKey.self] = newValue }

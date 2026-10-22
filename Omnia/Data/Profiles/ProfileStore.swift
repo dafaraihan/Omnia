@@ -6,7 +6,7 @@ import Observation
 /// next to the library, follow the account to other devices once signed
 /// in, and each keeps its own library and progress (see
 /// `OmniaStore.useLibrary(for:ownsDefaultLibrary:)`). PINs stay in this
-/// Mac's Keychain.
+/// device's Keychain, with encrypted account-vault backup.
 @Observable
 @MainActor
 final class ProfileStore {
@@ -71,13 +71,33 @@ final class ProfileStore {
         if !profiles.contains(where: { $0.id == activeProfileID }) {
             activeProfileID = profiles.first?.id
         }
-        needsSelection = profiles.count > 1 && !rememberLastProfile
+        needsSelection = (profiles.count > 1 && !rememberLastProfile) || activeProfile?.isLocked == true
     }
 
     nonisolated static var defaultDirectory: URL? {
         guard let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
         else { return nil }
         return support.appending(path: "Profiles", directoryHint: .isDirectory)
+    }
+
+    /// Local detachment only. Never creates deletion tombstones or invokes onDelete.
+    func resetAfterSignOut() throws {
+        pushTask?.cancel()
+        pushTask = nil
+        if let fileURL {
+            try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try JSONEncoder.profiles.encode([ViewerProfile]()).write(to: fileURL, options: .atomic)
+        }
+        profiles = []
+        activeProfileID = nil
+        deletedIDs = []
+        failedPINAttempts = [:]
+        needsSelection = false
+        rememberLastProfile = true
+        syncProblem = nil
+        for key in [Keys.active, Keys.deleted, Keys.defaultLibraryOwner] {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
     }
 
     // MARK: Editing
@@ -119,9 +139,10 @@ final class ProfileStore {
     /// Removes the profile and, on this Mac, its library and progress.
     func delete(_ id: UUID) {
         guard profiles.count > 1, !isMain(id), let index = profiles.firstIndex(where: { $0.id == id }) else { return }
+        do { try KeychainStore.delete(account: Self.pinAccount(id)) } catch { return }
         profiles.remove(at: index)
         deletedIDs.insert(id)
-        try? KeychainStore.delete(account: Self.pinAccount(id))
+        NotificationCenter.default.post(name: .credentialVaultDidChange, object: nil)
         onDelete?(id)
         if defaultLibraryOwnerID == id {
             UserDefaults.standard.removeObject(forKey: Keys.defaultLibraryOwner)
@@ -153,6 +174,7 @@ final class ProfileStore {
     enum PINResult: Equatable {
         case accepted
         case wrong
+        case unavailable
         case lockedOut(until: Date)
     }
 
@@ -163,14 +185,18 @@ final class ProfileStore {
     /// Sets or, with nil, removes the PIN. Only a salted hash is kept.
     func setPIN(_ pin: String?, for id: UUID) {
         guard let index = profiles.firstIndex(where: { $0.id == id }) else { return }
-        if let pin, Self.isValidPIN(pin) {
-            let salt = UUID().uuidString
-            try? KeychainStore.save("\(salt):\(Self.hash(pin, salt: salt))", account: Self.pinAccount(id))
-            profiles[index].isLocked = true
-        } else {
-            try? KeychainStore.delete(account: Self.pinAccount(id))
-            profiles[index].isLocked = false
-        }
+        do {
+            if let pin {
+                guard Self.isValidPIN(pin) else { return }
+                let salt = UUID().uuidString
+                try KeychainStore.save("\(salt):\(Self.hash(pin, salt: salt))", account: Self.pinAccount(id))
+                profiles[index].isLocked = true
+            } else {
+                try KeychainStore.delete(account: Self.pinAccount(id))
+                profiles[index].isLocked = false
+            }
+        } catch { return }
+        NotificationCenter.default.post(name: .credentialVaultDidChange, object: nil)
         profiles[index].updatedAt = .now
         save()
     }
@@ -180,8 +206,8 @@ final class ProfileStore {
         var attempts = failedPINAttempts[id] ?? (0, nil)
         if let lockedUntil = attempts.lockedUntil, lockedUntil > .now { return .lockedOut(until: lockedUntil) }
         guard let stored = try? KeychainStore.value(account: Self.pinAccount(id)) else {
-            // Locked on another device: this Mac has no PIN for it yet.
-            return .accepted
+            // A missing/locked Keychain item must not weaken profile protection.
+            return .unavailable
         }
         let parts = stored.split(separator: ":", maxSplits: 1).map(String.init)
         if parts.count == 2, Self.hash(pin, salt: parts[0]) == parts[1] {
@@ -199,6 +225,22 @@ final class ProfileStore {
         return .wrong
     }
 
+    func vaultPINIDs() -> [UUID] { profiles.map(\.id) }
+
+    func vaultPIN(_ id: UUID) throws -> String? {
+        try KeychainStore.value(account: Self.pinAccount(id))
+    }
+
+    func applyVaultPIN(_ value: String?, id: UUID, updateLock: Bool = true) throws {
+        try CredentialVaultLocalStore.replaceCredential(value, account: Self.pinAccount(id))
+        failedPINAttempts[id] = nil
+        if updateLock, let index = profiles.firstIndex(where: { $0.id == id }) {
+            profiles[index].isLocked = value != nil
+            if value != nil, activeProfileID == id { needsSelection = true }
+            save(pushing: false)
+        }
+    }
+
     private static func pinAccount(_ id: UUID) -> String { "profile-pin.\(id.uuidString)" }
 
     private static func hash(_ pin: String, salt: String) -> String {
@@ -214,6 +256,7 @@ final class ProfileStore {
         guard let userID = account.user?.id else { return }
         do {
             let remote = try await account.fetchViewerProfiles()
+            guard account.user?.id == userID, !Task.isCancelled else { return }
             var merged = Dictionary(uniqueKeysWithValues: profiles.map { ($0.id, $0) })
             var positions = Dictionary(uniqueKeysWithValues: profiles.enumerated().map { ($1.id, $0) })
             for row in remote {
@@ -246,6 +289,7 @@ final class ProfileStore {
             if !ordered.isEmpty {
                 profiles = Array(ordered.prefix(ViewerProfile.maximumCount))
                 if !profiles.contains(where: { $0.id == activeProfileID }) { activeProfileID = profiles.first?.id }
+                if activeProfile?.isLocked == true { needsSelection = true }
                 save(pushing: false)
             }
             var rows = profiles.enumerated().map { index, profile in
@@ -265,8 +309,10 @@ final class ProfileStore {
                 )
             }
             try await account.saveViewerProfiles(rows)
+            guard account.user?.id == userID, !Task.isCancelled else { return }
             syncProblem = nil
         } catch {
+            guard account.user?.id == userID, !Task.isCancelled else { return }
             syncProblem = "Profiles are saved on this Mac but couldn't sync with your account."
         }
     }

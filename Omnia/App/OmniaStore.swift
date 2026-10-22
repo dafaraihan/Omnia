@@ -9,6 +9,7 @@ import SwiftUI
 @Observable
 @MainActor
 final class OmniaStore {
+    private static let guestLibraryKey = "signed-out-library-id"
     private static let disabledCatalogsStorageKey = "disabled-addon-catalogs"
     private static let appearanceStorageKey = "app-appearance"
     private static let playbackCompletionThresholdKey = "playback-completion-threshold"
@@ -30,6 +31,8 @@ final class OmniaStore {
     @ObservationIgnored private var finishedEpisodeKey: String?
     @ObservationIgnored private var localMediaStore: LocalMediaStore?
     @ObservationIgnored private var libraryProfileID: UUID?
+    @ObservationIgnored private var libraryGeneration = UUID()
+    @ObservationIgnored private var addonGeneration = UUID()
     private let addonPersistence: InstalledAddonPersistence?
     var installedAddons: [InstalledAddon] {
         didSet { addonHomeCatalogCache = nil }
@@ -60,7 +63,7 @@ final class OmniaStore {
         self.localMediaSnapshots = (library ?? []).map {
             LocalMediaSnapshot(item: $0, isInWatchlist: true, savedAt: nil, lastPlayedAt: nil)
         }
-        self.localMediaStore = library == nil ? try? LocalMediaStore.live() : nil
+        self.localMediaStore = library == nil ? try? Self.defaultLocalMediaStore() : nil
         self.addonPersistence = installedAddons == nil ? InstalledAddonPersistence() : nil
         self.installedAddons = installedAddons ?? []
         self.installedAddonsAreLoading = installedAddons == nil
@@ -112,7 +115,9 @@ final class OmniaStore {
     }
 
     func installAddon(manifestURL: URL) async throws {
+        let ticket = addonGeneration
         let manifest = try await StremioAddonClient.fetchManifest(from: manifestURL)
+        guard ticket == addonGeneration else { throw CancellationError() }
         add(.init(manifest: manifest, manifestURL: manifestURL, isEnabled: true, addedAt: .now))
     }
 
@@ -150,6 +155,7 @@ final class OmniaStore {
     /// Nuvio, fetch every enabled manifest again at launch, so newly enabled
     /// catalogs, and the collection folders that point at them, show up.
     func refreshInstalledManifests() async {
+        let ticket = addonGeneration
         let addons = installedAddons.filter(\.isEnabled).map { (id: $0.id, url: $0.manifestURL) }
         await withTaskGroup(of: (String, URL, Result<StremioAddonManifest, Error>).self) { group in
             for addon in addons {
@@ -162,6 +168,7 @@ final class OmniaStore {
                 }
             }
             for await (id, url, result) in group {
+                guard ticket == addonGeneration else { group.cancelAll(); return }
                 let manifest: StremioAddonManifest
                 switch result {
                 case let .success(fetched):
@@ -516,6 +523,7 @@ final class OmniaStore {
 
     /// `force` installs them again, for a new profile's fresh add-ons.
     func installDefaultAddonsIfNeeded(force: Bool = false) async {
+        let ticket = addonGeneration
         guard addonPersistence != nil, !installedAddonsAreLoading else { return }
         let defaults = UserDefaults.standard
         var done = force ? [] : Set(defaults.stringArray(forKey: Self.installedDefaultAddonsKey) ?? [])
@@ -526,6 +534,7 @@ final class OmniaStore {
                 continue
             }
             guard let manifest = try? await StremioAddonClient.fetchManifest(from: url) else { continue }
+            guard ticket == addonGeneration else { return }
             // Already installed from another address: count it as done.
             if !installedAddons.contains(where: { $0.manifest.id == manifest.id }) {
                 add(.init(manifest: manifest, manifestURL: url, isEnabled: true, addedAt: .now))
@@ -537,7 +546,9 @@ final class OmniaStore {
 
     func prepareInstalledAddons() async {
         guard let addonPersistence, installedAddonsAreLoading else { return }
+        let ticket = addonGeneration
         let result = await addonPersistence.load()
+        guard ticket == addonGeneration else { return }
         installedAddons = result.addons
         installedAddonRestoreIssues = result.issues
         installedAddonsAreLoading = false
@@ -834,6 +845,40 @@ final class OmniaStore {
         await refreshInstalledManifests()
     }
 
+    private static func defaultLocalMediaStore() throws -> LocalMediaStore {
+        if let raw = UserDefaults.standard.string(forKey: guestLibraryKey), let id = UUID(uuidString: raw) {
+            return try LocalMediaStore.live(profileID: id)
+        }
+        return try LocalMediaStore.live()
+    }
+
+    func resetAddonsAfterSignOut() async {
+        addonGeneration = UUID()
+        UserDefaults.standard.removeObject(forKey: Self.installedDefaultAddonsKey)
+        installedAddons = []
+        installedAddonsAreLoading = false
+        installedAddonRestoreIssues = []
+        disabledAddonCatalogIDs = []
+        await addonPersistence?.save([])
+        saveDisabledCatalogIDs()
+    }
+
+    func resetLibraryAfterSignOut() async throws {
+        libraryGeneration = UUID()
+        playbackPersistenceTask?.cancel()
+        await playbackPersistenceTask?.value
+        playbackPersistenceTask = nil
+        let id = UUID()
+        let fresh = try LocalMediaStore.live(profileID: id)
+        UserDefaults.standard.set(id.uuidString, forKey: Self.guestLibraryKey)
+        libraryProfileID = nil
+        localMediaStore = fresh
+        library = []
+        localMediaSnapshots = []
+        finishedEpisodeKey = nil
+        localMediaPersistenceFailed = false
+    }
+
     /// Switches the library, watchlist and progress to a profile's own.
     func useLibrary(for profileID: UUID, ownsDefaultLibrary: Bool) async {
         guard addonPersistence != nil, libraryProfileID != profileID else { return }
@@ -843,12 +888,15 @@ final class OmniaStore {
             return
         }
         // Progress still being written belongs to the previous profile.
+        let ticket = UUID()
+        libraryGeneration = ticket
         libraryProfileID = profileID
         await playbackPersistenceTask?.value
+        guard ticket == libraryGeneration else { return }
         playbackPersistenceTask = nil
         finishedEpisodeKey = nil
         localMediaStore = ownsDefaultLibrary
-            ? try? LocalMediaStore.live()
+            ? try? Self.defaultLocalMediaStore()
             : try? LocalMediaStore.live(profileID: profileID)
         library = []
         localMediaSnapshots = []
@@ -858,7 +906,9 @@ final class OmniaStore {
     private func refreshLocalMedia() async {
         guard let localMediaStore else { return }
         do {
+            let profileID = libraryProfileID
             let snapshots = try await localMediaStore.snapshot()
+            guard self.localMediaStore === localMediaStore, libraryProfileID == profileID else { return }
             localMediaSnapshots = snapshots
             library = snapshots.filter(\.isInWatchlist).map(\.item)
             localMediaPersistenceFailed = false
@@ -897,7 +947,9 @@ final class OmniaStore {
     private func saveAddons() {
         guard let addonPersistence else { return }
         let addons = installedAddons
+        let ticket = addonGeneration
         Task {
+            guard ticket == addonGeneration else { return }
             await addonPersistence.save(addons)
         }
     }

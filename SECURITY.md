@@ -39,7 +39,7 @@ the deliberately public publishable key.
 | --- | --- |
 | Supabase user identity and OAuth session | Private account data. Supabase Auth owns the session; only the signed-in user may act with it. |
 | Library entries and playback history | Private behavioral data. RLS must bind every client operation to `auth.uid()`. |
-| User-owned provider credentials | MDBList API keys and AniList tokens belong to the local user and must remain in Keychain. |
+| User-owned provider credentials | Live values belong in device Keychain; the dedicated account credential vault may hold a server-encrypted backup. See Account credential vault below. |
 | Add-on manifest URLs and enabled state | User-selected configuration that can reveal interests and causes requests to an untrusted origin. It must not contain credentials. |
 | Local torrent cache and peer consent | Device-owned, excluded-from-backup cache data. Peer access is off until the current consent version is accepted. |
 | Backend provider and operational secrets | TMDB/TVDB credentials, the metadata seed token, and the Supabase service-role key are server-only secrets. |
@@ -143,20 +143,57 @@ dependency source.
   the same data is synced to the `profile_data` table, readable and writable
   only by its owner through row-level security. Add-on payloads hold add-on
   addresses, which can carry the user's own tokens, so a leaked account session
-  exposes them. Live TV logins are never synced and stay in the device Keychain.
+  exposes them. Live TV logins use device Keychain and the separate encrypted account credential vault described below.
 - Uploaded avatars come from the public `avatars` bucket and the read-only
   `avatar_catalog` table; the app rejects catalog paths containing `..`.
 - Swift Package Manager and Deno lockfiles record resolved revisions. This does
   not make the locally copied libmpv dependency reproducible.
 
+## Account credential vault
+
+**Deployed to Omnia on 2026-10-22; focused hosted API/isolation checks passed.**
+Native two-device and failure-recovery checks remain pending. See
+[deployment evidence](docs/research/account-credential-vault-deployment-2026-10-22.md).
+The user-approved sign-in-only restoration design is in
+[the credential-sync design](docs/superpowers/specs/2026-10-22-account-credential-sync-design.md).
+User-owned MDBList/AniList/plugin TMDB keys, salted PIN verifiers, media-server
+connections/tokens and Live TV configuration/secrets/playlist attachments pass
+through `credential-vault`, separately from ordinary profile data and metadata.
+The backend can decrypt these backups; this is not end-to-end encryption. An
+account-session compromise therefore exposes its saved credentials. Shared
+TMDB/TVDB secrets, Auth session tokens and local vault keys are excluded.
+
+The function verifies the bearer token through Supabase Auth `getUser` and rejects
+anonymous users; owner ID is derived from that response. Gateway JWT verification
+is disabled to support the project's Auth signing configuration; function-level
+verification is mandatory and fail closed. Ciphertext tables and the narrow
+invoker RPC are service-only, with RLS enabled and no client grants. AES-256-GCM
+binds owner, entry ID, schema and revision as AAD; playlist chunks additionally
+bind upload/generation/index. Only server secrets hold versioned encryption keys.
+Read and write responses are no-store; diagnostics never contain payloads.
+
+The device coordinator binds snapshots and pending edits to the account, seals
+individual payload files using a device-only Keychain key, checks identity after
+network awaits, detaches live credentials on sign-out, and preserves conflicts
+for an explicit device/account choice. PIN text never leaves the device. A missing
+PIN verifier fails closed and the picker exposes credential retry. Existing
+profile-data sync remains a separate boundary; its token-bearing add-on payloads
+have not been migrated into this vault.
+
+Limits, key backup/rotation, scheduled attachment cleanup, old-client limitations,
+required manual isolation cases and the explicit activation/rollback gate are
+owned by [the credential-vault runbook](INFRASTRUCTURE.md#account-credential-vault-release-gate).
+
 ## Required controls
 
 ### Credentials and authorization
 
-- Store user-owned provider and resolver secrets only in Keychain. Never put
-  them in `UserDefaults`, Swift source, plist files, add-on configuration,
-  analytics, crash reports, or sync payloads. Do not treat the publishable key
-  as confidential or as an authorization check.
+- Keep live user-owned provider and resolver secrets in Keychain. Never put
+  them in `UserDefaults`, Swift source, plist files, analytics or crash reports.
+  User-owned provider keys, profile PIN verifiers, media-server tokens and Live TV
+  credentials may cross only the dedicated encrypted account-vault boundary below;
+  do not add them to ordinary `profile_data` payloads. The legacy resolver token
+  remains device-only. Do not treat the publishable key as authorization.
 - Keep provider credentials, the seed token, and the service-role key only in
   managed Edge Function secrets. The native app must never receive them. Rotate
   a secret after suspected exposure and invalidate affected sessions where

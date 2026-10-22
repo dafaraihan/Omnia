@@ -4,6 +4,8 @@ import SwiftUI
 /// locked ones, and Manage Profiles to add, edit or remove them.
 struct ProfilePickerView: View {
     @Environment(ProfileStore.self) private var profiles
+    @Environment(CredentialVaultSync.self) private var credentialVault
+    @Environment(OmniaAccount.self) private var account
     @State private var isManaging = false
     @State private var editing: EditorTarget?
     @State private var unlocking: ViewerProfile?
@@ -30,6 +32,15 @@ struct ProfilePickerView: View {
                     .opacity(appeared ? 1 : 0)
                     .offset(y: appeared ? 0 : 10)
                 profileRow
+                if account.user != nil, let problem = credentialVault.problem {
+                    VStack(spacing: 10) {
+                        Label(problem, systemImage: "lock.trianglebadge.exclamationmark")
+                            .font(.callout)
+                            .multilineTextAlignment(.center)
+                        Button("Retry Credential Sync") { Task { await credentialVault.sync() } }
+                            .disabled(credentialVault.isSyncing)
+                    }
+                }
                 Button(isManaging ? "Done" : "Manage Profiles") {
                     withAnimation(.smooth) { isManaging.toggle() }
                 }
@@ -486,6 +497,8 @@ struct ProfileEditorView: View {
 // MARK: - PIN
 
 struct PINEntrySheet: View {
+    @Environment(CredentialVaultSync.self) private var credentialVault
+    @Environment(ProfileStore.self) private var profiles
     @Environment(\.dismiss) private var dismiss
     let profile: ViewerProfile
     let submit: (String) -> ProfileStore.PINResult
@@ -522,6 +535,13 @@ struct PINEntrySheet: View {
                     if digits.count == 4 { check(digits) }
                 }
                 .accessibilityLabel("Four-digit PIN")
+            if (try? profiles.vaultPIN(profile.id)) == nil {
+                Text("This profile's PIN protection is not available on this device yet. Retry sync, or cancel and use Manage Profiles to reset its PIN.")
+                    .font(.callout)
+                    .multilineTextAlignment(.center)
+                Button("Retry Credential Sync") { Task { await credentialVault.sync() } }
+                    .disabled(credentialVault.isSyncing)
+            }
             Text(message ?? " ")
                 .font(.callout)
                 .foregroundStyle(.secondary)
@@ -541,6 +561,9 @@ struct PINEntrySheet: View {
         case .wrong:
             message = "That PIN isn't right."
             shakes += 1
+            pin = ""
+        case .unavailable:
+            message = "PIN protection needs restoration. Retry credential sync."
             pin = ""
         case let .lockedOut(until):
             let seconds = max(Int(until.timeIntervalSinceNow.rounded(.up)), 1)

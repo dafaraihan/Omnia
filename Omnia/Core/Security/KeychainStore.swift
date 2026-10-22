@@ -22,7 +22,8 @@ enum KeychainStore {
             kSecAttrAccount: account
         ]
         // Provider credentials are personal secrets. Keep them out of
-        // UserDefaults, the app bundle, and cloud sync. iOS and iPadOS use a
+        // UserDefaults and the app bundle. Only the dedicated account vault
+        // may back up explicitly selected user credentials. iOS and iPadOS use a
         // device-only protection class, so an encrypted device backup cannot
         // migrate the secret. On macOS the item stays in the user's local
         // login Keychain; we never opt it into Keychain synchronisation.

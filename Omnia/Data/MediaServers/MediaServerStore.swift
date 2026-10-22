@@ -41,6 +41,7 @@ final class MediaServerStore {
         case failed
     }
 
+    private var vaultGeneration = 0
     private(set) var connections: [MediaServerConnection] = []
     /// The last problem reaching each server, by connection id.
     private(set) var failures: [String: MediaServerFailure] = [:]
@@ -131,6 +132,7 @@ final class MediaServerStore {
     private func load(_ row: MediaServerHomeRow) async {
         guard let connection = connection(id: row.connectionID), let client = client(for: connection) else { return }
         let mapper = MediaServerMapper(connection: connection, client: client)
+        let generation = vaultGeneration
         do {
             let items: [MediaItem]
             if let library = row.library {
@@ -139,12 +141,15 @@ final class MediaServerStore {
             } else {
                 items = try await resumeItems(connection: connection, client: client, mapper: mapper)
             }
+            guard generation == vaultGeneration else { return }
             rowItems[row.key] = items
             rowStates[row.key] = .loaded
             failures[connection.id] = nil
         } catch is CancellationError {
+            guard generation == vaultGeneration else { return }
             rowStates[row.key] = nil
         } catch {
+            guard generation == vaultGeneration else { return }
             rowStates[row.key] = .failed
             record(error, for: connection.id)
         }
@@ -277,7 +282,9 @@ final class MediaServerStore {
     /// added updates it and keeps its choices.
     @discardableResult
     func signIn(kind: MediaServerKind, address: String, username: String, password: String) async throws -> MediaServerConnection {
+        let generation = vaultGeneration
         let result = try await MediaBrowserClient.signIn(kind: kind, address: address, username: username, password: password)
+        guard generation == vaultGeneration, !Task.isCancelled else { throw CancellationError() }
         var connection: MediaServerConnection
         if let existing = connections.first(where: {
             $0.kind == kind && $0.serverID == result.serverID && $0.userID == result.userID
@@ -297,23 +304,27 @@ final class MediaServerStore {
                 userName: result.userName
             )
         }
-        try KeychainStore.save(result.token, account: connection.keychainAccount)
         let client = MediaBrowserClient(connection: connection, token: result.token)
         if let libraries = try? await client.libraries(userID: connection.userID) {
             connection.libraries = Self.merged(libraries, keeping: connection.libraries)
         }
+        guard generation == vaultGeneration, !Task.isCancelled else { throw CancellationError() }
+        try CredentialVaultLocalStore.replaceCredential(result.token, account: connection.keychainAccount)
         failures[connection.id] = nil
         upsert(connection)
         return connection
     }
 
     func refreshLibraries(_ id: String) async {
+        let generation = vaultGeneration
         guard let connection = connection(id: id), let client = client(for: connection) else { return }
         do {
             let libraries = try await client.libraries(userID: connection.userID)
+            guard generation == vaultGeneration, !Task.isCancelled else { return }
             update(id) { $0.libraries = Self.merged(libraries, keeping: $0.libraries) }
             failures[id] = nil
         } catch {
+            guard generation == vaultGeneration, !Task.isCancelled else { return }
             record(error, for: id)
         }
     }
@@ -340,9 +351,11 @@ final class MediaServerStore {
 
     /// Signs out on the server and forgets it on this device.
     func remove(_ id: String) async {
+        let generation = vaultGeneration
         guard let connection = connection(id: id) else { return }
         if let client = client(for: connection) { await client.signOut() }
-        try? KeychainStore.delete(account: connection.keychainAccount)
+        guard generation == vaultGeneration, !Task.isCancelled else { return }
+        do { try KeychainStore.delete(account: connection.keychainAccount) } catch { return }
         connections.removeAll { $0.id == id }
         failures[id] = nil
         importedProgress.removeAll { MediaServerIdentifier.parse($0.id)?.connectionID == id }
@@ -394,9 +407,27 @@ final class MediaServerStore {
         save()
     }
 
+    func invalidateVaultWork() { vaultGeneration &+= 1 }
+
+    func applyVaultConnection(_ connection: MediaServerConnection?, id: String, token: String?) throws {
+        // Encode before changing Keychain; UserDefaults receives only configuration.
+        var updated = connections.filter { $0.id != id }
+        if let connection { updated.append(connection) }
+        let data = try JSONEncoder().encode(updated)
+        try CredentialVaultLocalStore.replaceCredential(token, account: "media-server.\(id)")
+        vaultGeneration &+= 1
+        connections = updated
+        UserDefaults.standard.set(data, forKey: Self.storageKey)
+        failures = [:]
+        rowItems = [:]
+        rowStates = [:]
+        importedProgress = []
+    }
+
     private func save() {
         if let data = try? JSONEncoder().encode(connections) {
             UserDefaults.standard.set(data, forKey: Self.storageKey)
+            NotificationCenter.default.post(name: .credentialVaultDidChange, object: nil)
         }
     }
 }

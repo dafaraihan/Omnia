@@ -88,6 +88,68 @@ final class ProfileDataSync {
     @ObservationIgnored private var hasPulled = false
     @ObservationIgnored private var lastTick: (key: String, position: Double, date: Date)?
 
+    @ObservationIgnored private var generation = UUID()
+    @ObservationIgnored private var isResetting = false
+
+    func invalidateSession() {
+        generation = UUID()
+        for task in pushTasks.values { task.cancel() }
+        pushTasks = [:]
+        isSyncing = false
+        hasPulled = false
+    }
+
+    /// Settle delayed changes before removing their active local representation.
+    /// Failure aborts logout; credentials have their own account-bound recovery.
+    func flushForSignOut() async throws {
+        guard let userID = account.user?.id else { throw CancellationError() }
+        let ticket = generation
+        let deadline = ContinuousClock.now.advanced(by: .seconds(30))
+        while isSyncing || isActivating {
+            guard ContinuousClock.now < deadline, generation == ticket, account.user?.id == userID else {
+                throw CancellationError()
+            }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        for task in pushTasks.values { task.cancel() }
+        pushTasks = [:]
+        isSyncing = true
+        defer { if generation == ticket { isSyncing = false } }
+        for kind in ProfileDataKind.allCases {
+            guard let owner = liveOwner(of: kind) else { continue }
+            guard let data = await export(kind) else { throw CancellationError() }
+            guard generation == ticket, account.user?.id == userID else { throw CancellationError() }
+            let id = key(owner, kind)
+            if baselines[id] != data.fingerprint {
+                dirty.insert(id)
+                baselines[id] = data.fingerprint
+            }
+        }
+        saveDirty()
+        try await uploadDirty()
+        guard generation == ticket, account.user?.id == userID, dirty.isEmpty else { throw CancellationError() }
+    }
+
+    func resetAfterSignOut() async {
+        invalidateSession()
+        isResetting = true
+        defer { isResetting = false }
+        holders = [:]
+        syncedAt = [:]
+        dirty = []
+        baselines = [:]
+        watchSeconds = [:]
+        lastTick = nil
+        lastSyncedAt = nil
+        problem = nil
+        needsActivation = false
+        for kind in ProfileDataKind.swapped { await apply(kind, data: nil) }
+        saveHolders()
+        saveSynced()
+        saveDirty()
+        saveWatchSeconds()
+    }
+
     private enum Keys {
         static let holders = "profile-data-holders"
         static let synced = "profile-data-synced"
@@ -138,6 +200,8 @@ final class ProfileDataSync {
     /// Puts the watching profile's data in the live stores. Called at
     /// launch, when the profile changes, and when its sharing changes.
     func activate() async {
+        guard !isResetting else { return }
+        let ticket = generation
         guard !isActivating else {
             needsActivation = true
             return
@@ -147,17 +211,21 @@ final class ProfileDataSync {
         // Before profiles, everything belonged to what is now the main one.
         let legacyHolder = profiles.mainProfileID ?? active.id
         for kind in ProfileDataKind.swapped {
+            guard ticket == generation, !isResetting else { isActivating = false; return }
             let target = owner(of: kind, for: active)
             let current = holders[kind] ?? legacyHolder
             if current != target {
-                if let data = await export(kind) {
+                if let data = await export(kind), ticket == generation {
                     ProfileDataVault.write(data, owner: current, kind: kind)
                 }
+                guard ticket == generation, !isResetting else { isActivating = false; return }
                 await apply(kind, data: ProfileDataVault.read(owner: target, kind: kind))
             }
+            guard ticket == generation, !isResetting else { isActivating = false; return }
             holders[kind] = target
-            if let data = await export(kind) { baselines[key(target, kind)] = data.fingerprint }
+            if let data = await export(kind), ticket == generation { baselines[key(target, kind)] = data.fingerprint }
         }
+        guard ticket == generation, !isResetting else { isActivating = false; return }
         saveHolders()
         isActivating = false
         // The profile changed again while this one was being loaded.
@@ -167,7 +235,9 @@ final class ProfileDataSync {
             return
         }
         await applyPendingLibrary()
-        if let data = await export(.library) { baselines[key(active.id, .library)] = data.fingerprint }
+        guard ticket == generation else { return }
+        if let data = await export(.library), ticket == generation { baselines[key(active.id, .library)] = data.fingerprint }
+        guard ticket == generation else { return }
         await sync()
     }
 
@@ -189,14 +259,17 @@ final class ProfileDataSync {
     /// A store changed. Uploaded after a short pause once it really differs
     /// from what was last loaded or saved.
     func localChange(_ kind: ProfileDataKind) {
-        guard !isActivating, let owner = liveOwner(of: kind) else { return }
+        guard !isResetting, !isActivating, let owner = liveOwner(of: kind) else { return }
         pushTasks[kind]?.cancel()
+        let ticket = generation
         pushTasks[kind] = Task { [weak self] in
             try? await Task.sleep(for: kind.pushDelay)
             guard let self, !Task.isCancelled, !self.isActivating,
+                  self.generation == ticket, !self.isResetting,
                   self.liveOwner(of: kind) == owner,
                   let data = await self.export(kind)
             else { return }
+            guard self.generation == ticket, !self.isResetting else { return }
             let key = self.key(owner, kind)
             guard self.baselines[key] != data.fingerprint else { return }
             self.baselines[key] = data.fingerprint
@@ -210,20 +283,25 @@ final class ProfileDataSync {
 
     /// Brings down copies changed elsewhere, then uploads what changed here.
     func sync() async {
-        guard account.user != nil, account.isConfigured, !isSyncing else { return }
+        guard let userID = account.user?.id, account.isConfigured, !isSyncing, !isResetting else { return }
+        let ticket = generation
         isSyncing = true
-        defer { isSyncing = false }
+        defer { if generation == ticket { isSyncing = false } }
         do {
             let index = try await account.fetchProfileDataIndex()
+            guard generation == ticket, account.user?.id == userID else { return }
             let known = Set(profiles.profiles.map(\.id))
             for row in index where known.contains(row.profileID) {
+                guard generation == ticket, account.user?.id == userID else { return }
                 guard let kind = ProfileDataKind(rawValue: row.kind) else { continue }
                 let key = key(row.profileID, kind)
                 if let synced = syncedAt[key], synced >= row.updatedAt.addingTimeInterval(-0.001) { continue }
                 guard let payload = try await account.fetchProfileDataPayload(profileID: row.profileID, kind: row.kind),
                       let data = payload.data(using: .utf8)
                 else { continue }
+                guard generation == ticket, account.user?.id == userID else { return }
                 await receive(data, owner: row.profileID, kind: kind)
+                guard generation == ticket, account.user?.id == userID else { return }
                 syncedAt[key] = row.updatedAt
                 dirty.remove(key)
             }
@@ -231,9 +309,11 @@ final class ProfileDataSync {
             saveDirty()
             hasPulled = true
             try await uploadDirty()
+            guard generation == ticket, account.user?.id == userID else { return }
             lastSyncedAt = .now
             problem = nil
         } catch {
+            guard generation == ticket, account.user?.id == userID else { return }
             problem = "Couldn't sync with your account. Everything stays on this Mac and syncs again later."
         }
     }
@@ -243,21 +323,26 @@ final class ProfileDataSync {
             await sync()
             return
         }
-        guard account.user != nil, !isSyncing else { return }
+        guard let userID = account.user?.id, !isSyncing, !isResetting else { return }
+        let ticket = generation
         isSyncing = true
-        defer { isSyncing = false }
+        defer { if generation == ticket { isSyncing = false } }
         do {
             try await uploadDirty()
+            guard generation == ticket, account.user?.id == userID else { return }
             lastSyncedAt = .now
             problem = nil
         } catch {
+            guard generation == ticket, account.user?.id == userID else { return }
             problem = "Couldn't sync with your account. Everything stays on this Mac and syncs again later."
         }
     }
 
     private func uploadDirty() async throws {
-        guard account.user != nil else { return }
+        guard let userID = account.user?.id, !isResetting else { return }
+        let ticket = generation
         for key in dirty.sorted() {
+            guard generation == ticket, account.user?.id == userID else { return }
             guard let (owner, kind) = parse(key), profiles.profiles.contains(where: { $0.id == owner }) else {
                 dirty.remove(key)
                 continue
@@ -266,11 +351,12 @@ final class ProfileDataSync {
                 ? await export(kind)
                 : ProfileDataVault.read(owner: owner, kind: kind)
             guard let data, let payload = String(data: data, encoding: .utf8) else {
-                dirty.remove(key)
-                continue
+                throw CancellationError()
             }
+            guard generation == ticket, account.user?.id == userID else { return }
             let now = Date.now
             try await account.saveProfileData(profileID: owner, kind: kind.rawValue, payload: payload, updatedAt: now)
+            guard generation == ticket, account.user?.id == userID else { return }
             syncedAt[key] = now
             dirty.remove(key)
             saveSynced()
@@ -342,12 +428,13 @@ final class ProfileDataSync {
             let bundle = data.flatMap { try? decoder.decode(ProfileSettingsBundle.self, from: $0) }
             settings.replace(with: bundle?.preferences)
             store.appearance = bundle?.appearance.flatMap(AppAppearance.init(rawValue:)) ?? .system
-            if let routing = bundle?.metadataRouting { store.metadataRouting = routing }
+            store.metadataRouting = bundle?.metadataRouting ?? .init()
         case .homeLayout:
             homeLayout.replace(with: data.flatMap { try? decoder.decode(HomeLayoutPreferences.self, from: $0) })
         case .collections:
             collections.restore(data.flatMap { try? decoder.decode(CollectionsStore.ProfileSnapshot.self, from: $0) })
         case .addons:
+            if isResetting { await store.resetAddonsAfterSignOut(); return }
             await store.restoreAddons(data.flatMap { try? decoder.decode(OmniaStore.AddonProfileSnapshot.self, from: $0) })
         case .plugins:
             plugins.restore(data.flatMap { try? decoder.decode(PluginStore.StoredState.self, from: $0) })

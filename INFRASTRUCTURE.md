@@ -495,3 +495,96 @@ Attach these secret-free items to each release record:
   app-sync evidence after that integration exists;
 - backup/PITR verification, rollback owner/trigger, monitoring window, and any
   accepted findings with owner and due date.
+
+## Account credential vault release gate
+
+**Status: first release deployed to Omnia on 2026-10-22 with explicit owner authorization.**
+Migration, managed secrets, function activation and focused hosted API/isolation
+checks passed; native two-device and accessibility checks remain pending. See
+[the deployment record](docs/research/account-credential-vault-deployment-2026-10-22.md).
+This gate is separate from the pending metadata deployment. See the
+[approved design](docs/superpowers/specs/2026-10-22-account-credential-sync-design.md)
+and [Supabase credential contract](supabase/README.md#credential-boundary).
+
+Before activation, review the exact migration
+`20261022140828_credential_vault.sql`, the complete `credential-vault` source/import
+map/lock, native adapters/coordinator and the filename-only secret scan above.
+Record immutable release source, target project identity, prior deployed source,
+DB backup/restore evidence, key backup owner and rollback trigger. Confirm
+`pg_cron` is available and authorized for this target. Do not disable checks or
+change the metadata deployment to work around vault failures.
+
+Dependency review: no new Swift or external Deno dependency is added; the function
+reuses the repository's existing resolved Supabase dependency tree and Web Crypto.
+Scheduled cleanup uses Supabase's bundled `pg_cron` platform extension because
+request-only cleanup cannot retire abandoned uploads for inactive accounts.
+Provenance is [Citus Data's pg_cron](https://github.com/citusdata/pg_cron), under its
+[permissive PostgreSQL-style license](https://github.com/citusdata/pg_cron/blob/main/LICENSE).
+No extension binary is downloaded or bundled with the app. Record the target's
+Postgres and installed `pg_cron` extension versions and review platform advisories
+before activation; [Supabase ignores explicit extension version pins](https://supabase.com/changelog/extension-version-pinning-ignored).
+Its additional privilege is a database-local scheduled deletion job: the private
+function has no HTTP access, deletes only expired upload generations in bounded
+batches, and leaves current entries/tombstones intact. Monitor its execution and
+backlog; do not grant client access to cron metadata or cleanup functions.
+
+Local gates: frozen Deno check with the function's own config/lock, local migration
+apply and database lint, service-only grants/RLS/RPC verification, plus a signed
+Mac build and supported-destination builds. No automated tests, fixtures, suites
+or scripts; follow AGENTS.md. Source-only review does not prove SQL/runtime grants.
+
+For an authorized activation window, the operator separately approves migration
+application, creation of `CREDENTIAL_VAULT_KEYS` and `CREDENTIAL_VAULT_ACTIVE_KEY`
+in managed Edge Function secrets, and deployment of `credential-vault` only.
+Create a cryptographically random 32-byte key out of band; never put its value,
+Auth tokens or decrypted payloads into shell arguments, logs or evidence files.
+An encrypted operational backup of every retained key version is required before
+writing ciphertext. Verify project and secret **names**, not values, in evidence.
+The function verifies user identity through Auth even though its gateway
+`verify_jwt` setting is false; missing/invalid/publishable-only/anonymous callers
+must fail and cause no vault read or write.
+
+Required manual smoke matrix using isolated accounts and synthetic credentials:
+
+- Fresh sign-in on a second device restores each provider key, profile PIN,
+  media-server connection and Live TV URL/login/imported M3U. Provider expiry or
+  revoked media-server token offers reconnect without erasing other entries.
+- Correct PIN accepted, wrong PIN rejected, missing verifier stays locked with
+  an accessible retry. PIN changes/removal and profile deletion propagate.
+- Offline edits survive relaunch; empty fresh devices pull before upload; stale
+  writes produce an explicit keep-device/keep-account conflict; deleted entries
+  do not reappear. An edit during upload receives a subsequent sync pass.
+- Switch A→B during read/upload/apply and sign out during requests; no A secrets
+  are applied or uploaded to B. Failed sign-out recovers without an endless
+  spinner. Pending changes stay encrypted for the outgoing account.
+- Partial Keychain failures retain previous values. Missing/corrupt playlist
+  chunks never publish a partial local file; byte-count/hash mismatches fail.
+- Invalid owner selectors, oversized bodies, unknown IDs, bad chunks and direct
+  anon/authenticated RPC/table access fail. Confirm ciphertext-only tables and
+  generic diagnostics without displaying plaintext in captured evidence.
+
+Entry IDs include permanent tombstones (1,000 active / 2,000 total); monitor quota
+rejections before a user reaches the reserved-ID ceiling. Attachments reserve
+quota including ciphertext/base64/envelope overhead, so usable plaintext is less
+than 256 MiB per account. Expired uncommitted uploads and retired generations
+become eligible after 24 hours; request cleanup and an hourly private cron job
+remove them. The scheduled job examines at most 128 oldest candidates and removes
+at most 16 uploads per run, skipping busy account locks. Monitor expired backlog
+and `cron.job_run_details`; 24 hours is eligibility, not a guaranteed deletion SLA.
+Validate that current committed attachments and tombstones survive maintenance.
+
+Rotation: add a new random key under a new version while retaining old versions,
+validate reads under all retained versions, then change only the active encryption
+version. Existing records remain readable with their recorded version. Do not
+remove old keys until all records/attachments and retained recovery backups have
+been re-encrypted or retired through a separately reviewed operation. A database
+backup without its matching key versions is insufficient for recovery.
+
+Rollback: stop vault writes/deploy the reviewed previous function or disable the
+new vault endpoint and restore the previous client release. Device-local values
+continue to work; a fresh device cannot restore until the endpoint is recovered.
+Retain all ciphertext tables, pending device snapshots and key versions. Do not
+roll back by dropping data, pruning tombstones or replacing keys. Record generic
+failure categories and the action taken; never preserve secret-bearing payloads.
+Older clients do not participate in vault edits/deletions, so credential-sensitive
+rollout must identify and communicate that version boundary.

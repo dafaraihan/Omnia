@@ -9,6 +9,7 @@ struct OnboardingView: View {
     @Environment(OmniaAccount.self) private var account
     @Environment(LiveMetadataStore.self) private var metadata
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var step: Step = .welcome
     @State private var name = ""
     @State private var avatarID: String? = AvatarCatalog.random().id
@@ -40,23 +41,23 @@ struct OnboardingView: View {
             Group {
                 switch step {
                 case .welcome: welcome
-                case .features: features
+                case .features: ScrollView { features.padding(.vertical, 12) }
                 case .account: accountStep
                 case .profile: profileStep
                 }
             }
-            .padding(48)
+            .padding(32)
             .frame(maxWidth: step == .profile || step == .features ? 960 : 720)
             .transition(.asymmetric(
-                insertion: .move(edge: .trailing).combined(with: .opacity),
-                removal: .move(edge: .leading).combined(with: .opacity)
+                insertion: reduceMotion ? .opacity : .move(edge: .trailing).combined(with: .opacity),
+                removal: reduceMotion ? .opacity : .move(edge: .leading).combined(with: .opacity)
             ))
             .id(step)
         }
         .overlay(alignment: .bottom) { pageDots.padding(.bottom, 28) }
-        .animation(.smooth(duration: 0.5), value: step)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.5), value: step)
         .onAppear {
-            withAnimation(.spring(response: 1.1, dampingFraction: 0.8).delay(0.15)) { appeared = true }
+            withAnimation(reduceMotion ? nil : .spring(response: 1.1, dampingFraction: 0.8).delay(0.15)) { appeared = true }
         }
         // Profiles from the account arrive after signing in; with some
         // already there, there's nothing left to set up.
@@ -82,12 +83,12 @@ struct OnboardingView: View {
             }
             .multilineTextAlignment(.center)
             .opacity(appeared ? 1 : 0)
-            .offset(y: appeared ? 0 : 14)
-            .animation(.smooth(duration: 0.8).delay(0.45), value: appeared)
+            .offset(y: reduceMotion || appeared ? 0 : 14)
+            .animation(reduceMotion ? nil : .smooth(duration: 0.8).delay(0.45), value: appeared)
             nextButton("Get Started") { step = .features }
                 .padding(.top, 10)
                 .opacity(appeared ? 1 : 0)
-                .animation(.smooth(duration: 0.8).delay(0.75), value: appeared)
+                .animation(reduceMotion ? nil : .smooth(duration: 0.8).delay(0.75), value: appeared)
         }
         .padding(.vertical, 36)
         .padding(.horizontal, 44)
@@ -103,20 +104,15 @@ struct OnboardingView: View {
         VStack(spacing: 30) {
             Text("Made for How You Watch")
                 .font(.system(size: 32, weight: .bold, design: .rounded))
-            HStack(alignment: .center, spacing: 40) {
-                AppPreview(items: showcase)
-                    .frame(width: 440, height: 290)
-                VStack(alignment: .leading, spacing: 22) {
-                    StaggeredFeature(index: 0, symbol: "puzzlepiece.extension.fill", title: "Your Add-ons",
-                                     detail: "Bring the Stremio add-ons you already use. Omnia hosts nothing itself.")
-                    StaggeredFeature(index: 1, symbol: "person.2.fill", title: "Profiles for Everyone",
-                                     detail: "Up to five profiles, each with its own library, progress and settings.")
-                    StaggeredFeature(index: 2, symbol: "captions.bubble.fill", title: "Subtitles That Fit",
-                                     detail: "Styles, delay and automatic sync, right in the player.")
-                    StaggeredFeature(index: 3, symbol: "arrow.triangle.2.circlepath", title: "Picks Up Where You Left Off",
-                                     detail: "Sign in and everything follows you to every device.")
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .center, spacing: 32) {
+                    AppPreview(items: showcase).frame(width: 480)
+                    featureList.frame(width: 300)
                 }
-                .frame(maxWidth: 380)
+                VStack(spacing: 24) {
+                    AppPreview(items: showcase).frame(maxWidth: 600)
+                    featureList.frame(maxWidth: 600, alignment: .leading)
+                }
             }
             HStack(spacing: 12) {
                 Button("Back") { step = .welcome }
@@ -124,6 +120,20 @@ struct OnboardingView: View {
                     .controlSize(.large)
                 nextButton("Continue") { step = .account }
             }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var featureList: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            StaggeredFeature(index: 0, symbol: "puzzlepiece.extension.fill", title: "Your Add-ons",
+                             detail: "Bring the Stremio add-ons you already use. Omnia hosts nothing itself.")
+            StaggeredFeature(index: 1, symbol: "person.2.fill", title: "Profiles for Everyone",
+                             detail: "Up to five profiles, each with its own library, progress and settings.")
+            StaggeredFeature(index: 2, symbol: "captions.bubble.fill", title: "Subtitles That Fit",
+                             detail: "Styles, delay and automatic sync, right in the player.")
+            StaggeredFeature(index: 3, symbol: "arrow.triangle.2.circlepath", title: "Picks Up Where You Left Off",
+                             detail: "Sign in to restore your synced profiles, library, settings and sources.")
         }
     }
 
@@ -346,99 +356,80 @@ private struct PosterWall: View {
 
 // MARK: - App preview
 
-/// A small Omnia window: a hero that changes every few seconds over a row
-/// of posters, so the features page shows the app itself.
+/// Uses the shipping screens, with side effects suppressed by preview mode.
 private struct AppPreview: View {
     let items: [MediaItem]
-    @State private var index = 0
-    @State private var floats = false
+    @Environment(LiveMetadataStore.self) private var metadata
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @State private var page: Page = .home
+    @State private var previewStore = OmniaStore(
+        library: [], installedAddons: [], disabledAddonCatalogIDs: [],
+        appearance: .system, metadataRouting: .init()
+    )
+    @State private var previewDefaults = UserDefaults(suiteName: "Omnia.OnboardingPreview")!
 
-    private var heroes: [MediaItem] { Array(items.filter { $0.backdropURL != nil }.prefix(6)) }
+    private enum Page: String, CaseIterable, Identifiable {
+        case home = "Home"
+        case details = "Title Details"
+        var id: String { rawValue }
+    }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 6) {
-                ForEach([Color.red, .yellow, .green], id: \.self) { color in
-                    Circle().fill(color.opacity(0.85)).frame(width: 9, height: 9)
-                }
-                Spacer()
-                OmniaWordmark(height: 12).opacity(0.8)
-                Spacer()
-                Color.clear.frame(width: 39, height: 9)
+        VStack(spacing: 12) {
+            Picker("Preview screen", selection: $page) {
+                ForEach(Page.allCases) { Text($0.rawValue).tag($0) }
             }
-            .padding(.horizontal, 12)
-            .frame(height: 28)
-            ZStack(alignment: .bottomLeading) {
-                hero
-                LinearGradient(colors: [.clear, .black.opacity(0.75)], startPoint: .center, endPoint: .bottom)
-                VStack(alignment: .leading, spacing: 8) {
-                    if let item = heroes[safe: index] {
-                        Text(item.title)
-                            .font(.system(size: 17, weight: .bold, design: .rounded))
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
-                            .id(item.id)
-                            .transition(.opacity)
-                    }
-                    HStack(spacing: 8) {
-                        ForEach(0..<5, id: \.self) { slot in
-                            posterThumb(slot)
+            .pickerStyle(.segmented)
+            .disabled(items.isEmpty)
+
+            GeometryReader { geometry in
+                ZStack {
+                    if !items.isEmpty {
+                        NavigationStack {
+                            Group {
+                                switch page {
+                                case .home: HomeView()
+                                case .details:
+                                    if let item = items.first { MediaDetailView(item: item) }
+                                }
+                            }
+                            .environment(previewStore)
+                            .environment(\.isOnboardingPreview, true)
+                            .environment(\.isActiveDestination, false)
+                            .environment(\.displayPreferences, DisplayPreferences())
+                            .defaultAppStorage(previewDefaults)
+                        }
+                        .frame(width: 1100, height: 720)
+                        .disabled(true)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                        .scaleEffect(geometry.size.width / 1100, anchor: .topLeading)
+                        .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
+                    } else if metadata.isLoadingCatalogs {
+                        ProgressView("Loading Omnia preview…")
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        ContentUnavailableView {
+                            Label("Preview Unavailable", systemImage: "wifi.exclamationmark")
+                        } description: {
+                            Text("You can continue setup and browse when discovery is available.")
+                        } actions: {
+                            Button("Retry") { Task { await metadata.loadDefaultCatalogs() } }
                         }
                     }
                 }
-                .padding(12)
             }
-            .clipped()
-        }
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.white.opacity(0.12))
-        }
-        .shadow(color: .black.opacity(0.3), radius: 30, y: 18)
-        .rotation3DEffect(.degrees(floats ? 4 : -4), axis: (x: 0.2, y: 1, z: 0), perspective: 0.6)
-        .offset(y: floats ? -6 : 6)
-        .onAppear {
-            withAnimation(.easeInOut(duration: 4).repeatForever(autoreverses: true)) { floats = true }
-        }
-        .task(id: heroes.count) {
-            while !Task.isCancelled, heroes.count > 1 {
-                try? await Task.sleep(for: .seconds(3.5))
-                withAnimation(.smooth(duration: 0.9)) { index = (index + 1) % heroes.count }
+            .aspectRatio(1100.0 / 720.0, contentMode: .fit)
+            .background(reduceTransparency ? AnyShapeStyle(.background) : AnyShapeStyle(.regularMaterial))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.separator)
             }
-        }
-        .accessibilityHidden(true)
-    }
 
-    @ViewBuilder
-    private var hero: some View {
-        if let item = heroes[safe: index] {
-            CachedArtworkImage(url: item.backdropURL, size: CGSize(width: 440, height: 262)) { phase in
-                if let image = phase.image {
-                    image.resizable().scaledToFill()
-                } else {
-                    Rectangle().fill(OmniaBrandColors.gradient.opacity(0.4))
-                }
-            }
-            .id(item.id)
-            .transition(.opacity)
-        } else {
-            Rectangle().fill(OmniaBrandColors.gradient.opacity(0.4))
+            Text("Live preview · \(page.rawValue) · Read-only")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
-    }
-
-    private func posterThumb(_ slot: Int) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
-        let item = items.isEmpty ? nil : items[(index * 2 + slot + 6) % items.count]
-        return CachedArtworkImage(url: item?.artworkURL, size: CGSize(width: 46, height: 69)) { phase in
-            if let image = phase.image {
-                image.resizable().scaledToFill()
-            } else {
-                Rectangle().fill(.white.opacity(0.15))
-            }
-        }
-        .frame(width: 46, height: 69)
-        .clipShape(shape)
     }
 }
 
@@ -449,6 +440,7 @@ private struct StaggeredFeature: View {
     let title: String
     let detail: String
     @State private var shown = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(alignment: .top, spacing: 16) {
@@ -456,7 +448,7 @@ private struct StaggeredFeature: View {
                 .font(.system(size: 22, weight: .semibold))
                 .foregroundStyle(OmniaBrandColors.gradient)
                 .frame(width: 34)
-                .symbolEffect(.bounce, value: shown)
+                .symbolEffect(.bounce, options: .nonRepeating, value: reduceMotion ? false : shown)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(.headline)
                 Text(detail)
@@ -466,9 +458,9 @@ private struct StaggeredFeature: View {
             }
         }
         .opacity(shown ? 1 : 0)
-        .offset(x: shown ? 0 : 24)
+        .offset(x: reduceMotion || shown ? 0 : 24)
         .onAppear {
-            withAnimation(.spring(response: 0.6, dampingFraction: 0.85).delay(0.25 + Double(index) * 0.14)) {
+            withAnimation(reduceMotion ? nil : .spring(response: 0.6, dampingFraction: 0.85).delay(0.25 + Double(index) * 0.14)) {
                 shown = true
             }
         }

@@ -326,8 +326,7 @@ final class LiveMetadataStore {
         )
         let fallbackItem = Self.item(from: response.item)
         guard Self.normalizedTitle(fallbackItem.title) == Self.normalizedTitle(item.title),
-              fallbackItem.year == item.year,
-              fallbackItem.hasIMDbIdentifier
+              fallbackItem.year == item.year
         else { return nil }
         return fallbackItem
     }

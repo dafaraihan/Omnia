@@ -45,7 +45,17 @@ final class OmniaAccount {
     private let client: SupabaseClient?
     private var appleAuthorization: AppleAuthorization?
 
-    var user: User?
+    @ObservationIgnored var didRecoverIdentity: (() async -> Void)?
+    @ObservationIgnored var willChangeIdentity: ((UUID?) throws -> Void)?
+
+    @ObservationIgnored var willSignOut: (() async throws -> Void)?
+    @ObservationIgnored var didSignOut: (() async throws -> Void)?
+    private(set) var sessionGeneration = UUID()
+    private(set) var localResetPending = UserDefaults.standard.bool(forKey: "sign-out-local-reset-pending")
+    private(set) var isResettingLocalData = false
+    private(set) var isSigningOut = false
+
+    private(set) var user: User?
     var isWorking = false
     var errorMessage: String?
     /// After sign up, or after asking for a sign-in code: the address the
@@ -82,7 +92,8 @@ final class OmniaAccount {
     func restoreSession() async {
         guard let client else { return }
         if let session = client.auth.currentSession {
-            apply(session)
+            do { try apply(session) }
+            catch { errorMessage = "Saved credentials could not be opened securely. Retry after unlocking Keychain." }
         }
     }
 
@@ -112,21 +123,21 @@ final class OmniaAccount {
                 let session = try await client.auth.signInWithIdToken(
                     credentials: .init(provider: .apple, idToken: identityToken, nonce: nonce)
                 )
-                apply(session)
+                try apply(session)
 
             case .google:
                 let session = try await client.auth.signInWithOAuth(
                     provider: .google,
                     redirectTo: Self.redirectURL
                 )
-                apply(session)
+                try apply(session)
 
             case .facebook:
                 let session = try await client.auth.signInWithOAuth(
                     provider: .facebook,
                     redirectTo: Self.redirectURL
                 )
-                apply(session)
+                try apply(session)
             }
         } catch {
             if (error as? ASAuthorizationError)?.code != .canceled {
@@ -149,7 +160,7 @@ final class OmniaAccount {
                 redirectTo: Self.redirectURL
             )
             if let session = response.session {
-                self.apply(session)
+                try self.apply(session)
             } else {
                 self.pendingCode = PendingCode(email: email, purpose: .confirmSignUp)
             }
@@ -160,7 +171,7 @@ final class OmniaAccount {
         await perform { client in
             let email = Self.cleanEmail(email)
             do {
-                self.apply(try await client.auth.signIn(email: email, password: password))
+                try self.apply(try await client.auth.signIn(email: email, password: password))
             } catch let error as AuthError where error.errorCode == .emailNotConfirmed {
                 // Finish the sign up that was never confirmed.
                 try await client.auth.resend(email: email, type: .signup, emailRedirectTo: Self.redirectURL)
@@ -202,7 +213,7 @@ final class OmniaAccount {
                 try await client.auth.update(user: UserAttributes(password: newPassword))
             }
             if let session = response.session {
-                self.apply(session)
+                try self.apply(session)
             }
             self.pendingCode = nil
         }
@@ -390,7 +401,7 @@ final class OmniaAccount {
         guard url.scheme == Self.redirectURL.scheme, let client else { return }
         Task {
             do {
-                apply(try await client.auth.session(from: url))
+                try apply(try await client.auth.session(from: url))
             } catch {
                 errorMessage = error.localizedDescription
             }
@@ -398,24 +409,57 @@ final class OmniaAccount {
     }
 
     func signOut() async {
-        guard let client else { return }
+        guard !isWorking, let client else { return }
+        isSigningOut = true
         isWorking = true
         errorMessage = nil
-        defer { isWorking = false }
+        defer { isWorking = false; isSigningOut = false }
         do {
+            try await willSignOut?()
+            try willChangeIdentity?(nil)
             try await client.auth.signOut()
             user = nil
+            localResetPending = true
+            UserDefaults.standard.set(true, forKey: "sign-out-local-reset-pending")
         } catch {
-            errorMessage = error.localizedDescription
+            do {
+                try willChangeIdentity?(user?.id)
+                await didRecoverIdentity?()
+            } catch { }
+            errorMessage = "Sign-out could not finish. Check your connection and retry so your latest profile changes can sync. Your local session has been kept."
+            return
+        }
+        await finishLocalSignOut()
+    }
+
+    /// The marker survives interruption so relaunch cannot expose the previous session.
+    func finishLocalSignOut() async {
+        guard localResetPending, !isResettingLocalData else { return }
+        isResettingLocalData = true
+        defer { isResettingLocalData = false }
+        do {
+            guard let didSignOut else { throw CancellationError() }
+            try await didSignOut()
+            pendingCode = nil
+            errorMessage = nil
+            UserDefaults.standard.set(false, forKey: "sign-out-local-reset-pending")
+            localResetPending = false
+            sessionGeneration = UUID()
+        } catch {
+            errorMessage = "You are signed out, but local cleanup needs to finish. Retry to return to welcome."
         }
     }
 
     func metadataAccessToken() async throws -> String {
         guard let client else { throw AccountError.notConfigured }
-        return try await client.auth.session.accessToken
+        let session = try await client.auth.session
+        guard session.user.id == user?.id else { throw AccountError.notConfigured }
+        return session.accessToken
     }
 
-    private func apply(_ session: Session) {
+    private func apply(_ session: Session) throws {
+        guard !localResetPending, !isResettingLocalData, !isSigningOut else { throw AccountError.notConfigured }
+        try willChangeIdentity?(session.user.id)
         user = .init(
             id: session.user.id,
             email: session.user.email,

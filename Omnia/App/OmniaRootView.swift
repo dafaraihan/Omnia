@@ -12,6 +12,8 @@ struct OmniaRootView: View {
     @Environment(PlaybackSession.self) private var playback
     @Environment(SettingsPreferencesStore.self) private var settings
     @Environment(ProfileStore.self) private var profiles
+    @Environment(CredentialVaultSync.self) private var credentialVault
+    @Environment(OmniaAccount.self) private var account
     @AppStorage(OnboardingView.completedKey) private var onboardingCompleted = false
     @State private var liveTV = LiveTVStore.shared
     @State private var switchCenter = ProfileSwitchCenter.shared
@@ -32,7 +34,49 @@ struct OmniaRootView: View {
         let isFullWindowPlayback = playback.isPresentingPlayer && !playback.isPictureInPictureActive
         #endif
 
-        gatedContent
+        Group {
+            if account.localResetPending { Color.clear }
+            else { gatedContent }
+        }
+        .disabled(credentialVault.isRestoring || credentialVault.identityBlocked || account.localResetPending || account.isSigningOut)
+        .overlay {
+            if account.localResetPending {
+                VStack(spacing: 16) {
+                    if account.isResettingLocalData {
+                        ProgressView("Preparing a fresh start…")
+                    } else {
+                        Text(account.errorMessage ?? "Local cleanup needs to finish.")
+                        Button("Retry Cleanup") { Task { await account.finishLocalSignOut() } }
+                    }
+                }
+                .padding(28)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
+            } else if account.isSigningOut {
+                ProgressView("Syncing and signing out…")
+                    .padding(28)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
+            } else if credentialVault.isRestoring || credentialVault.identityBlocked {
+                VStack(spacing: 16) {
+                    if credentialVault.isRestoring {
+                        ProgressView("Restoring saved credentials…")
+                    } else {
+                        Label("Secure storage needs attention", systemImage: "lock.trianglebadge.exclamationmark")
+                        Text("Unlock Keychain, then retry. Your saved credentials have been kept.")
+                            .font(.callout)
+                        Button("Retry Secure Storage") {
+                            Task {
+                                credentialVault.retrySecureStorage()
+                                await account.restoreSession()
+                                await credentialVault.identityChanged()
+                            }
+                        }
+                    }
+                }
+                .padding(28)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
+                .accessibilityElement(children: .contain)
+            }
+        }
         .preferredColorScheme(onboardingCompleted ? store.appearance.colorScheme : nil)
         #if os(iOS)
         .fullScreenCover(isPresented: $playback.isPresentingPlayer) {

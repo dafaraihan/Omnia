@@ -11,16 +11,45 @@ Supabase Edge Function secrets (`TMDB_READ_ACCESS_TOKEN`, `TVDB_API_KEY`, and
 any required TVDB subscriber PIN); the Apple apps receive only the project's
 publishable key.
 
-MDBList is different: its API key belongs to the individual user. Omnia saves
-it as a `kSecClassGenericPassword` item in the Apple Keychain with
-`WhenUnlockedThisDeviceOnly` protection. It is used only for a direct request
-to `api.mdblist.com`; it is not written to the source tree, Info.plist,
-UserDefaults, Supabase, backups, or cross-device sync.
+MDBList and AniList credentials belong to the user, along with any plugin-specific
+TMDB key they enter. Live values remain in device Keychain. The dedicated
+`credential-vault` function can back them up encrypted for sign-in-only account
+restoration; they never enter `metadata` or ordinary `profile_data`. User-facing
+provider requests still send keys only to the intended provider origin.
 
-AniList public anime discovery uses its GraphQL API without a credential. If a
-user later connects their AniList account, the user’s optional OAuth access
-token is stored in the same Keychain-only manner and sent only to
-`graphql.anilist.co`. Do not put a mobile-app OAuth client secret in Omnia.
+The same vault backs up profile PIN **salted verifiers**, media-server connection
+configuration/tokens, Live TV source configuration and credentials, and bounded
+imported M3U files. PIN text, Supabase session tokens, shared backend secrets and
+local encryption keys never sync. Server-managed encryption means the authorized
+Omnia backend can decrypt the vault; account compromise grants access to its
+contents. No additional recovery password is required.
+
+The new migration creates private ciphertext entry/upload/chunk tables and a
+service-only invoker RPC. There are no anon/authenticated table grants or policies.
+The function derives the owner from `auth.getUser`, rejects anonymous sessions,
+and uses AES-GCM with account/entry/revision/chunk AAD. Requests are bounded before
+JSON parsing; responses are no-store. `verify_jwt=false` relies on this explicit
+Auth verification and must never be paired with an unverified JWT decode.
+
+Required **server-only secret names**, never values in repository files:
+`CREDENTIAL_VAULT_KEYS` (JSON key-version → base64 32-byte key) and
+`CREDENTIAL_VAULT_ACTIVE_KEY` (the version to encrypt new writes). Keep old key
+versions while any encrypted entry, attachment or retained backup references them.
+
+The migration requires Supabase's built-in `pg_cron` for hourly bounded orphan/
+retired attachment cleanup. Source limits: 256 KiB ordinary entry, 1 MiB request,
+1,000 active entries, 2,000 total IDs including retained tombstones, 512 KiB playlist
+chunks, 64 MiB per imported playlist, 256 MiB account attachment quota including
+ciphertext/base64 overhead. Deleted IDs remain reserved to prevent stale clients
+resurrecting entries. Large imports can consume more quota than their plaintext
+size. Older apps neither upload nor propagate edits/deletions to this new vault.
+
+**Deployed to Omnia on 2026-10-22:** `credential-vault` version 1 and migration
+`20261022140828` are active. See the [deployment evidence](../docs/research/account-credential-vault-deployment-2026-10-22.md).
+Future changes still follow the separate
+[credential-vault release gate](../INFRASTRUCTURE.md#account-credential-vault-release-gate)
+for migration, secrets, deployment, validation and rollback. The existing pending
+`metadata` function deployment remains a separate operation.
 
 ## Add-on stream boundary
 

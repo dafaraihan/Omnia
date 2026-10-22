@@ -42,8 +42,20 @@ final class AddonCatalogStore {
     private(set) var generation = 0
     private var loadedSignature = ""
     private var loadTask: Task<Void, Never>?
+    private var sessionID = UUID()
     private var lastRequested: [AddonHomeCatalog] = []
     private var loadedAt: Date?
+
+    func resetAfterSignOut() {
+        sessionID = UUID()
+        loadTask?.cancel()
+        loadTask = nil
+        rows = [:]
+        loadedSignature = ""
+        lastRequested = []
+        loadedAt = nil
+        generation += 1
+    }
 
     /// Every catalog that could be a Home row, in add-on install order.
     static func catalogs(in store: OmniaStore) -> [AddonHomeCatalog] {
@@ -122,6 +134,7 @@ final class AddonCatalogStore {
     }
 
     private func fetch(_ catalogs: [AddonHomeCatalog], reshuffles: Bool = false) async {
+        let ticket = sessionID
         let jobs = catalogs.map { catalog in
             Job(
                 key: catalog.key,
@@ -137,7 +150,7 @@ final class AddonCatalogStore {
         let empty = jobs.filter { rows[$0.key]?.items.isEmpty ?? true }
         if !empty.isEmpty {
             let cached = await Self.cachedRows(for: empty)
-            if Task.isCancelled { return }
+            if Task.isCancelled || ticket != sessionID { return }
             for job in empty {
                 guard let row = cached[job.key], rows[job.key]?.items.isEmpty ?? true else { continue }
                 apply(row, to: job, state: rows[job.key]?.state ?? .loading)
@@ -149,6 +162,7 @@ final class AddonCatalogStore {
         await run(jobs) { job -> FirstPage? in
             try? await Self.fetchFirstPage(job)
         } receive: { job, first in
+            guard ticket == sessionID else { return }
             guard let first else {
                 // Offline or a broken add-on: a saved copy beats an error.
                 let hasItems = !(rows[job.key]?.items.isEmpty ?? true)
@@ -162,7 +176,7 @@ final class AddonCatalogStore {
                 Task { await AddonCatalogCache.save(first.row.previews, for: job.cacheKey) }
             }
         }
-        if Task.isCancelled { return }
+        if Task.isCancelled || ticket != sessionID { return }
         if reshuffles { generation += 1 }
 
         // Then the remaining pages, up to 64 titles a row.
@@ -171,6 +185,7 @@ final class AddonCatalogStore {
             guard let first = firstPages[job.key] else { return nil }
             return await Self.fetchRemainingPages(job, after: first)
         } receive: { job, row in
+            guard ticket == sessionID else { return }
             let final = row ?? firstPages[job.key]?.row
             if let row { apply(row, to: job, state: .loaded) }
             if let final {

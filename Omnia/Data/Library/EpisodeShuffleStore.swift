@@ -32,6 +32,13 @@ final class EpisodeShuffleStore {
         shows = data.flatMap { try? JSONDecoder().decode([String: EpisodeShuffleSettings].self, from: $0) } ?? [:]
     }
 
+    func resetAfterSignOut() {
+        shows = [:]
+        shownIDs = [:]
+        lastPickedID = [:]
+        UserDefaults.standard.removeObject(forKey: Self.defaultsKey)
+    }
+
     func settings(for mediaID: String) -> EpisodeShuffleSettings {
         shows[mediaID] ?? EpisodeShuffleSettings()
     }

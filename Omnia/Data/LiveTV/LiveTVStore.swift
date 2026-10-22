@@ -44,6 +44,7 @@ final class LiveTVStore {
     private var detectedGuideURLs: [URL] = []
     private var loadedSignature: String?
     private var loadedGuideSignature: String?
+    private var vaultGeneration = 0
     private var needsChannelReload = false
     private var needsGuideReload = false
 
@@ -148,7 +149,7 @@ final class LiveTVStore {
         }
         let signature = sourcesSignature
         if loadedSignature != signature, channelState != .loading {
-            if let cache = await Self.readSealed(ChannelCache.self, named: Self.channelsFile), cache.signature == signature {
+            if let cache = await Self.readSealed(ChannelCache.self, named: Self.channelsFile), cache.signature == signature, sourcesSignature == signature {
                 apply(cache)
                 loadedSignature = signature
                 channelState = .loaded
@@ -170,7 +171,9 @@ final class LiveTVStore {
         }
         channelState = .loading
         let signature = sourcesSignature
+        let generation = vaultGeneration
         let result = await LiveTVLoader.channels(loadPlan)
+        guard generation == vaultGeneration, signature == sourcesSignature else { return }
         let cache = ChannelCache(
             signature: signature,
             channels: result.channels,
@@ -221,11 +224,13 @@ final class LiveTVStore {
         }
         guideState = .loading
         let signature = guideSignature
+        let generation = vaultGeneration
         let result = await LiveTVLoader.guide(
             urls: guideURLs,
             stalker: configuration.autoDetectsGuides && secrets.stalker?.isEnabled == true ? secrets.stalker : nil,
             channels: channels
         )
+        guard generation == vaultGeneration, signature == guideSignature else { return }
         guide = result.programs
         guideUpdatedAt = Date()
         loadedGuideSignature = signature
@@ -248,6 +253,7 @@ final class LiveTVStore {
     }
 
     private func clearLoadedContent() {
+        vaultGeneration &+= 1
         channels = []
         guide = [:]
         sourceProblems = [:]
@@ -442,8 +448,13 @@ final class LiveTVStore {
 
     /// Keeps a copy of a chosen .m3u file in the encrypted store.
     func addLocalPlaylist(from fileURL: URL) async throws {
+        let generation = vaultGeneration
         let id = UUID().uuidString
         try await Self.importPlaylistFile(fileURL, id: id)
+        guard generation == vaultGeneration, !Task.isCancelled else {
+            LiveTVVault.remove(named: Self.playlistFile(id))
+            throw CancellationError()
+        }
         configuration.playlists.append(LiveTVPlaylist(
             id: id,
             name: fileURL.deletingPathExtension().lastPathComponent.liveTVTrimmed ?? "Playlist",
@@ -489,6 +500,7 @@ final class LiveTVStore {
     }
 
     func connectXtream(server: String, username: String, password: String) async throws {
+        let generation = vaultGeneration
         guard let serverURL = LiveTVAddress.xtreamServer(from: server) else { throw LiveTVFailure.invalidAddress }
         guard LiveTVAddressPolicy.permits(serverURL) else { throw LiveTVFailure.insecureAddress }
         let account = LiveTVXtreamAccount(
@@ -497,6 +509,7 @@ final class LiveTVStore {
             password: password.trimmingCharacters(in: .whitespaces)
         )
         try await LiveTVXtreamClient.verify(account)
+        guard generation == vaultGeneration, !Task.isCancelled else { throw CancellationError() }
         var updated = secrets
         updated.xtream = account
         try saveSecrets(updated)
@@ -511,6 +524,7 @@ final class LiveTVStore {
     }
 
     func connectStalker(portal: String, macAddress: String, username: String, password: String) async throws {
+        let generation = vaultGeneration
         guard let portalURL = LiveTVAddress.stalkerPortal(from: portal),
               let mac = LiveTVAddress.macAddress(from: macAddress) else { throw LiveTVFailure.invalidAddress }
         guard LiveTVAddressPolicy.permits(portalURL) else { throw LiveTVFailure.insecureAddress }
@@ -521,6 +535,7 @@ final class LiveTVStore {
             password: password.trimmingCharacters(in: .whitespaces)
         )
         try await LiveTVStalkerClient.verify(account)
+        guard generation == vaultGeneration, !Task.isCancelled else { throw CancellationError() }
         var updated = secrets
         updated.stalker = account
         try saveSecrets(updated)
@@ -571,15 +586,55 @@ final class LiveTVStore {
         return url
     }
 
+    func vaultSecrets() throws -> LiveTVSecrets {
+        guard let text = try KeychainStore.value(account: Self.secretsAccount) else { return LiveTVSecrets() }
+        return try JSONDecoder().decode(LiveTVSecrets.self, from: Data(text.utf8))
+    }
+
+    func applyVaultConfiguration(_ value: LiveTVConfiguration) throws {
+        let data = try JSONEncoder().encode(value)
+        UserDefaults.standard.set(data, forKey: Self.storageKey)
+        configuration = value
+        clearLoadedContent()
+    }
+
+    func applyVaultSecrets(_ value: LiveTVSecrets?) throws {
+        if let value { try saveSecrets(value) }
+        else {
+            try CredentialVaultLocalStore.replaceCredential(nil, account: Self.secretsAccount)
+            secrets = LiveTVSecrets()
+        }
+        clearLoadedContent()
+    }
+
+    func vaultPlaylist(_ id: String) throws -> Data? {
+        let name = Self.playlistFile(id)
+        let file = LiveTVVault.directory.appending(path: name)
+        guard FileManager.default.fileExists(atPath: file.path) else { return nil }
+        guard let data = LiveTVVault.read(named: name) else { throw LiveTVFailure.fileUnreadable }
+        return data
+    }
+
+    func applyVaultPlaylist(_ data: Data?, id: String) throws {
+        if let data { try LiveTVVault.write(data, named: Self.playlistFile(id)) }
+        else {
+            let file = LiveTVVault.directory.appending(path: Self.playlistFile(id))
+            if FileManager.default.fileExists(atPath: file.path) { try FileManager.default.removeItem(at: file) }
+        }
+        clearLoadedContent()
+    }
+
     private func saveConfiguration() {
         guard let data = try? JSONEncoder().encode(configuration) else { return }
         UserDefaults.standard.set(data, forKey: Self.storageKey)
+        NotificationCenter.default.post(name: .credentialVaultDidChange, object: nil)
     }
 
     private func saveSecrets(_ updated: LiveTVSecrets) throws {
         let data = try JSONEncoder().encode(updated)
         try KeychainStore.save(String(decoding: data, as: UTF8.self), account: Self.secretsAccount)
         secrets = updated
+        NotificationCenter.default.post(name: .credentialVaultDidChange, object: nil)
     }
 
     // MARK: Files

@@ -425,3 +425,10 @@ entrypoint = "./functions/metadata/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/metadata/*.html" ]
+
+[functions.credential-vault]
+enabled = true
+# Auth getUser verifies every request; publishable-only and anonymous callers fail.
+verify_jwt = false
+import_map = "./functions/credential-vault/deno.json"
+entrypoint = "./functions/credential-vault/index.ts"
