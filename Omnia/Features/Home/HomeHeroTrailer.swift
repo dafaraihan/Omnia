@@ -8,7 +8,7 @@ import Observation
 @Observable
 @MainActor
 final class HomeHeroTrailerModel {
-    private(set) var streamURL: URL?
+    private(set) var stream: HeroTrailerSource?
     /// True once the player reports playback, so the trailer never covers
     /// the artwork with a black or loading frame.
     private(set) var isVisible = false
@@ -18,7 +18,7 @@ final class HomeHeroTrailerModel {
     @ObservationIgnored private var appliedStartsWithSound: Bool?
     @ObservationIgnored private var generation = UUID()
 
-    var holdsCarousel: Bool { isPending || streamURL != nil }
+    var holdsCarousel: Bool { isPending || stream != nil }
 
     func load(
         _ item: MediaItem?,
@@ -52,12 +52,12 @@ final class HomeHeroTrailerModel {
         } catch { return }
         let url = await resolvedURL
         guard !Task.isCancelled, generation == requestGeneration else { return }
-        streamURL = url
+        stream = url
         isPending = false
     }
 
-    func handle(_ event: NativeTrailerPlayer.Event, for url: URL) {
-        guard streamURL == url else { return }
+    func handle(_ event: NativeTrailerPlayer.Event, for source: HeroTrailerSource) {
+        guard stream == source else { return }
         switch event {
         case .playing:
             isVisible = true
@@ -68,7 +68,7 @@ final class HomeHeroTrailerModel {
 
     private func reset() {
         generation = UUID()
-        streamURL = nil
+        stream = nil
         isVisible = false
         isPending = false
     }
@@ -108,15 +108,15 @@ struct HomeHeroTrailerLayer: View {
 
     var body: some View {
         ZStack {
-            if let url = model.streamURL {
+            if let source = model.stream {
                 NativeTrailerPlayer(
-                    url: url,
+                    source: source,
                     isMuted: model.isMuted,
                     isPlaying: isPlaying
                 ) { event in
-                    model.handle(event, for: url)
+                    model.handle(event, for: source)
                 }
-                .id(url)
+                .id(source)
 
                 LinearGradient(
                     stops: [

@@ -6,7 +6,7 @@ import AVFoundation
 struct NativeTrailerPlayer {
     enum Event { case playing, ended, failed }
 
-    let url: URL
+    let source: HeroTrailerSource
     var isMuted: Bool
     var isPlaying: Bool
     let onEvent: (Event) -> Void
@@ -16,7 +16,7 @@ struct NativeTrailerPlayer {
 
     fileprivate func configure(_ view: TrailerVideoView, coordinator: Coordinator) {
         coordinator.onEvent = onEvent
-        coordinator.start(url: url, layer: view.videoLayer, muted: isMuted)
+        coordinator.start(source: source, layer: view.videoLayer, muted: isMuted)
         coordinator.update(muted: isMuted, playing: isPlaying && scenePhase == .active)
     }
 
@@ -35,9 +35,19 @@ struct NativeTrailerPlayer {
         private var watchdog: Task<Void, Never>?
         private var wantsPlayback = false
         private var finished = false
+        private var playlistLoader: TrailerPlaylistLoader?
 
-        func start(url: URL, layer: AVPlayerLayer, muted: Bool) {
-            let item = AVPlayerItem(url: url)
+        func start(source: HeroTrailerSource, layer: AVPlayerLayer, muted: Bool) {
+            let asset: AVURLAsset
+            if let playlist = source.playlist {
+                let loader = TrailerPlaylistLoader(playlist: playlist)
+                playlistLoader = loader
+                asset = AVURLAsset(url: loader.url)
+                asset.resourceLoader.setDelegate(loader, queue: loader.queue)
+            } else {
+                asset = AVURLAsset(url: source.url)
+            }
+            let item = AVPlayerItem(asset: asset)
             item.preferredMaximumResolution = CGSize(width: 1_920, height: 1_080)
             let player = AVPlayer(playerItem: item)
             player.isMuted = muted
@@ -59,6 +69,9 @@ struct NativeTrailerPlayer {
                     Task { @MainActor [weak self] in self?.reportPlayback() }
                 },
                 player.observe(\.timeControlStatus, options: [.new]) { [weak self] _, _ in
+                    Task { @MainActor [weak self] in self?.reportPlayback() }
+                },
+                item.observe(\.presentationSize, options: [.new]) { [weak self] _, _ in
                     Task { @MainActor [weak self] in self?.reportPlayback() }
                 }
             ]
@@ -90,7 +103,14 @@ struct NativeTrailerPlayer {
 
         private func reportPlayback() {
             guard !finished, wantsPlayback else { return }
-            if videoLayer?.isReadyForDisplay == true, player?.timeControlStatus == .playing {
+            let size = player?.currentItem?.presentationSize ?? .zero
+            if videoLayer?.isReadyForDisplay == true, player?.timeControlStatus == .playing, size != .zero {
+                // The manifest/format says Full HD; also verify the rendered
+                // track before exposing it, including later size changes.
+                guard size == CGSize(width: 1_920, height: 1_080) else {
+                    finish(.failed)
+                    return
+                }
                 watchdog?.cancel()
                 watchdog = nil
                 onEvent?(.playing)
@@ -122,8 +142,40 @@ struct NativeTrailerPlayer {
             player?.replaceCurrentItem(with: nil)
             videoLayer?.player = nil
             player = nil
+            playlistLoader = nil
             onEvent = nil
         }
+    }
+}
+
+/// Serves only the generated master. Its child playlists remain validated
+/// absolute HTTPS URLs, loaded directly by AVFoundation as before.
+private nonisolated final class TrailerPlaylistLoader: NSObject, AVAssetResourceLoaderDelegate, Sendable {
+    let url = URL(string: "omnia-trailer://preview/\(UUID().uuidString)/master.m3u8")!
+    let queue = DispatchQueue(label: "app.omnia.trailer-playlist")
+    private let playlist: Data
+
+    init(playlist: Data) { self.playlist = playlist }
+
+    func resourceLoader(_ resourceLoader: AVAssetResourceLoader,
+                        shouldWaitForLoadingOfRequestedResource request: AVAssetResourceLoadingRequest) -> Bool {
+        guard request.request.url == url else { return false }
+        request.contentInformationRequest?.contentType = "public.m3u-playlist"
+        request.contentInformationRequest?.contentLength = Int64(playlist.count)
+        request.contentInformationRequest?.isByteRangeAccessSupported = true
+        if let dataRequest = request.dataRequest {
+            let offset = dataRequest.currentOffset
+            guard offset >= 0, offset <= Int64(playlist.count) else {
+                request.finishLoading(with: URLError(.badServerResponse))
+                return true
+            }
+            let start = Int(offset)
+            let count = dataRequest.requestsAllDataToEndOfResource
+                ? playlist.count - start : min(dataRequest.requestedLength, playlist.count - start)
+            dataRequest.respond(with: playlist.subdata(in: start..<(start + count)))
+        }
+        request.finishLoading()
+        return true
     }
 }
 

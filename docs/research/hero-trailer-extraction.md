@@ -1,7 +1,7 @@
 # Native hero trailer extraction
 
 Omnia's Home hero resolves a public YouTube trailer on-device and gives a
-single HLS master playlist or muxed MP4 URL to a dedicated AVPlayerLayer.
+single Full HD HLS source or muxed MP4 URL to a dedicated AVPlayerLayer.
 The main playback session is not involved. No iframe, server deployment,
 additional entitlement, or new package is required.
 
@@ -36,7 +36,14 @@ cancellation deadline. Watch/JSON/manifest reads are capped at 4 MiB/1 MiB/
 256 KiB while streaming, and probes cancel after response headers.
 
 The HLS master is checked for allowed variant and URI-attribute URLs and a
-variant is probed before playback. AVFoundation owns subsequent playlist,
+1920×1080 variant is probed before playback. The extractor builds an in-memory
+master containing only that video variant and preserves audio/subtitle
+renditions with absolute validated HTTPS URLs. A private AVAssetResourceLoader
+delegate serves only this generated master; it exposes no network listener or
+persistent playlist file. MP4 fallback likewise requires an explicit 1920×1080
+format. AVPlayer's rendered presentation size must be 1920×1080 before the
+preview is revealed; a different size fails back to artwork. Missing Full HD
+does not fall back to SD, HD or 4K. AVFoundation owns subsequent playlist,
 segment and media requests, including their redirects; the extractor's
 URLSession delegate does not intercept AVFoundation traffic. Nested playlists
 remain part of the native playback/parser trust boundary in [SECURITY](../../SECURITY.md).
@@ -48,7 +55,8 @@ Signed URLs stay in memory and are never logged or persisted by this flow.
   remains during the configured delay, extraction, and initial buffering.
 - A displayable frame and active playback reveal the preview; its existing
   mute control and carousel hold remain in effect. HLS retains the master
-  playlist so alternate audio renditions are not discarded.
+  playlist filtered to one Full HD video variant, so audio renditions are not
+  discarded and adaptive quality cannot select another resolution.
 - Missing trailers, unavailable networks, rejected responses and extraction
   timeouts release the carousel and leave artwork. Startup or rebuffering
   stalls fail after 15 seconds of active waiting. There is no error overlay
@@ -82,6 +90,29 @@ reported separately from compilation.
 - Full iPhone/iPad, accessibility settings, audio-listening, offline/error,
   end-of-trailer and primary-playback interruption checks remain unverified.
 
+### Full HD selection — 2026-10-22
+
+The prior implementation returned the unrestricted HLS master and accepted
+muxed MP4 heights at or below 1080. AVPlayer's preferred maximum resolution
+was a ceiling preference, not a fixed-quality selection. This allowed varying
+qualities. The current selection restricts both paths to 1920×1080 and gives
+AVPlayer only one video variant while retaining HLS audio.
+
+The signed canonical macOS Debug build passed. JUJUTSU KAISEN played visibly
+in the final build, passing the new runtime presentation-size guard before
+the preview and mute control appeared. Source review found no actionable
+issues, and `git diff --check` passed. One current Omnia.app is retained.
+
+Regression check: select heroes whose YouTube playlists offer SD, HD, FHD and
+4K; only the FHD variant may appear in the generated master, and progressive
+formats must report width 1920 and height 1080. With no reachable FHD format,
+keep artwork rather than selecting another resolution. Retest mute, paging,
+pause/resume and HLS audio. Live unavailable-FHD/offline cases, long playback
+under bandwidth changes, listening verification, and iPhone/iPad checks remain
+unverified; the existing project still lists only `macosx` destinations.
+
 Apple references: [Playing video](https://developer.apple.com/design/human-interface-guidelines/playing-video/),
 [AVPlayerLayer](https://developer.apple.com/documentation/avfoundation/avplayerlayer),
+[preferredMaximumResolution](https://developer.apple.com/documentation/avfoundation/avplayeritem/preferredmaximumresolution),
+[AVAssetResourceLoader](https://developer.apple.com/documentation/avfoundation/avassetresourceloader),
 and [Apple Design Resources](https://developer.apple.com/design/resources/).

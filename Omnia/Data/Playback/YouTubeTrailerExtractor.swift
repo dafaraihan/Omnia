@@ -32,11 +32,11 @@ nonisolated struct YouTubeTrailerExtractor: Sendable {
     ]
 
     @concurrent
-    func resolve(videoID: String) async -> URL? {
+    func resolve(videoID: String) async -> HeroTrailerSource? {
         guard videoID.count == 11,
               videoID.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_" || $0 == "-") })
         else { return nil }
-        return await withTaskGroup(of: URL?.self) { group in
+        return await withTaskGroup(of: HeroTrailerSource?.self) { group in
             group.addTask { try? await Self.extract(videoID: videoID) }
             group.addTask {
                 try? await Task.sleep(for: .seconds(30))
@@ -48,7 +48,7 @@ nonisolated struct YouTubeTrailerExtractor: Sendable {
         }
     }
 
-    private static func extract(videoID: String) async throws -> URL? {
+    private static func extract(videoID: String) async throws -> HeroTrailerSource? {
         let watchURL = URL(string: "https://www.youtube.com/watch?v=\(videoID)&hl=en")!
         var watchRequest = URLRequest(url: watchURL)
         watchRequest.setValue(clients[0].userAgent, forHTTPHeaderField: "User-Agent")
@@ -92,18 +92,18 @@ nonisolated struct YouTubeTrailerExtractor: Sendable {
                 let response = try JSONDecoder().decode(PlayerResponse.self, from: await read(request, limit: 1_024 * 1_024))
                 guard response.playabilityStatus?.status == "OK", let streams = response.streamingData else { continue }
                 if let raw = streams.hlsManifestUrl, let url = mediaURL(raw),
-                   (try? await playableManifest(url)) == true {
-                    return url
+                   let source = try? await fullHDManifest(url) {
+                    return source
                 }
                 // Adaptive files require a separate audio source. Never pass a
                 // silent video-only format to the single-source preview player.
                 let formats = (streams.formats ?? []).filter {
                     $0.mimeType?.hasPrefix("video/mp4") == true &&
-                    $0.mimeType?.contains("mp4a") == true && ($0.height ?? 0) <= 1_080
-                }.sorted { ($0.height ?? 0) > ($1.height ?? 0) }
+                    $0.mimeType?.contains("mp4a") == true && $0.height == 1_080 && $0.width == 1_920
+                }
                 for format in formats.prefix(3) {
                     guard let raw = format.url, let url = mediaURL(raw) else { continue }
-                    if (try? await probe(url)) == true { return url }
+                    if (try? await probe(url)) == true { return HeroTrailerSource(url: url) }
                 }
             } catch {
                 try Task.checkCancellation()
@@ -173,32 +173,52 @@ nonisolated struct YouTubeTrailerExtractor: Sendable {
         return true
     }
 
-    private static func playableManifest(_ url: URL) async throws -> Bool {
+    private static func fullHDManifest(_ url: URL) async throws -> HeroTrailerSource? {
         let data = try await read(URLRequest(url: url), limit: 256 * 1_024)
         let lines = String(decoding: data, as: UTF8.self).components(separatedBy: .newlines)
-        guard lines.first?.trimmingCharacters(in: .whitespacesAndNewlines) == "#EXTM3U" else { return false }
-        var variant: URL?
-        for raw in lines {
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard lines.first == "#EXTM3U" else { return nil }
+        var shared = ["#EXTM3U"]
+        var variants: [(tag: String, url: URL)] = []
+        let uriPattern = try NSRegularExpression(pattern: "URI=\"([^\"]+)\"")
+        for (index, raw) in lines.enumerated() {
             let line = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            if line.isEmpty { continue }
             if !line.hasPrefix("#") {
                 guard let resolved = URL(string: line, relativeTo: url)?.absoluteURL,
-                      mediaURL(resolved.absoluteString) != nil else { return false }
-                variant = variant ?? resolved
+                      mediaURL(resolved.absoluteString) != nil else { return nil }
             }
-            // Validate alternate audio, key and initialization URI attributes.
-            if let regex = try? NSRegularExpression(pattern: "URI=\"([^\"]+)\"") {
-                for match in regex.matches(in: line, range: NSRange(line.startIndex..., in: line)) {
-                    guard let range = Range(match.range(at: 1), in: line),
-                          let resolved = URL(string: String(line[range]), relativeTo: url)?.absoluteURL,
-                          mediaURL(resolved.absoluteString) != nil else { return false }
-                }
+            // Preserve audio/subtitle renditions, rewriting their relative
+            // URLs because the filtered master is served from memory.
+            var rewritten = line
+            for match in uriPattern.matches(in: line, range: NSRange(line.startIndex..., in: line)).reversed() {
+                guard let range = Range(match.range(at: 1), in: line),
+                      let resolved = URL(string: String(line[range]), relativeTo: url)?.absoluteURL,
+                      mediaURL(resolved.absoluteString) != nil,
+                      let replacementRange = Range(match.range(at: 1), in: rewritten) else { return nil }
+                rewritten.replaceSubrange(replacementRange, with: resolved.absoluteString)
+            }
+            if line.hasPrefix("#EXT-X-VERSION:") || line == "#EXT-X-INDEPENDENT-SEGMENTS" ||
+                line.hasPrefix("#EXT-X-MEDIA:") || line.hasPrefix("#EXT-X-SESSION-KEY:") {
+                shared.append(rewritten)
+            }
+            if line.hasPrefix("#EXT-X-STREAM-INF:"),
+               String(line.dropFirst("#EXT-X-STREAM-INF:".count))
+                .range(of: "(?:^|,)RESOLUTION=1920x1080(?:,|$)", options: .regularExpression) != nil,
+               !line.contains("VIDEO=\""),
+               index + 1 < lines.count, !lines[index + 1].hasPrefix("#"),
+               let variant = URL(string: lines[index + 1], relativeTo: url)?.absoluteURL,
+               mediaURL(variant.absoluteString) != nil {
+                variants.append((rewritten, variant))
             }
         }
-        guard let variant else { return false }
-        // Return the master, preserving its audio renditions. A selected video
-        // variant alone may play silently.
-        return try await probe(variant)
+        for variant in variants.prefix(3) {
+            try Task.checkCancellation()
+            guard (try? await probe(variant.url)) == true else { continue }
+            let master = (shared + [variant.tag, variant.url.absoluteString]).joined(separator: "\n") + "\n"
+            return HeroTrailerSource(url: url, playlist: Data(master.utf8))
+        }
+        return nil
     }
 
     private struct PlayerResponse: Decodable {
@@ -211,6 +231,7 @@ nonisolated struct YouTubeTrailerExtractor: Sendable {
             let url: String?
             let mimeType: String?
             let height: Int?
+            let width: Int?
         }
         let playabilityStatus: Playability?
         let streamingData: Streams?
