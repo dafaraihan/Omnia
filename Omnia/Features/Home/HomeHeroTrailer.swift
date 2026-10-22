@@ -3,8 +3,8 @@ import Observation
 
 /// Nuvio Enhanced's hero trailer: after the chosen delay, the featured
 /// title's trailer fades in over its artwork. While a trailer is waiting or
-/// playing, the carousel doesn't advance on its own; it moves on again
-/// once the trailer ends or a title has none.
+/// playing, the carousel doesn't advance on its own; once it ends, Settings ›
+/// Home Layout › Hero › After Trailer decides what happens next.
 @Observable
 @MainActor
 final class HomeHeroTrailerModel {
@@ -15,6 +15,12 @@ final class HomeHeroTrailerModel {
     private(set) var isPending = false
     /// Shared across titles, like Nuvio's speaker button.
     var isMuted = true
+    /// Counts trailers that played to the end, so the hero can move on.
+    private(set) var endCount = 0
+    /// The title whose trailer last played to the end. It isn't played again
+    /// while that title stays in the hero, unless Replay Trailer is chosen.
+    @ObservationIgnored private var endedItemID: String?
+    @ObservationIgnored private var currentItemID: String?
     @ObservationIgnored private var appliedStartsWithSound: Bool?
     @ObservationIgnored private var generation = UUID()
 
@@ -28,7 +34,10 @@ final class HomeHeroTrailerModel {
     ) async {
         reset()
         let requestGeneration = generation
+        currentItemID = item?.id
+        if item?.id != endedItemID { endedItemID = nil }
         guard preferences.autoplay, autoplayAllowed, let item else { return }
+        guard preferences.afterTrailer == .replay || endedItemID != item.id else { return }
         if appliedStartsWithSound != preferences.startsWithSound {
             appliedStartsWithSound = preferences.startsWithSound
             isMuted = !preferences.startsWithSound
@@ -61,7 +70,11 @@ final class HomeHeroTrailerModel {
         switch event {
         case .playing:
             isVisible = true
-        case .ended, .failed:
+        case .ended:
+            reset()
+            endedItemID = currentItemID
+            endCount += 1
+        case .failed:
             reset()
         }
     }
@@ -146,16 +159,6 @@ struct HomeHeroTrailerMuteButton: View {
     @Bindable var model: HomeHeroTrailerModel
     /// In the window's top bar, where the toolbar draws the glass.
     var isInToolbar = false
-
-    /// Distance from the top of a hero that runs beneath the window's top
-    /// bar, so the button sits just below the bar.
-    static var fullBleedTopInset: CGFloat {
-        #if os(macOS)
-        88
-        #else
-        64
-        #endif
-    }
 
     var body: some View {
         if model.isVisible {

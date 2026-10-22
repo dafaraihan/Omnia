@@ -13,16 +13,10 @@ enum MediaBrowseMetrics {
     static let pageInset: CGFloat = 20
     static let posterWidth: CGFloat = 132
     static let posterMaximumGridWidth: CGFloat = 168
-    static let genreCardWidth: CGFloat = 164
-    static let genreCardHeight: CGFloat = 246
-    static let genreMaximumGridWidth: CGFloat = 220
     #else
     static let pageInset: CGFloat = 32
     static let posterWidth: CGFloat = 154
     static let posterMaximumGridWidth: CGFloat = 190
-    static let genreCardWidth: CGFloat = 220
-    static let genreCardHeight: CGFloat = 330
-    static let genreMaximumGridWidth: CGFloat = 280
     #endif
 
     static let shelfSpacing: CGFloat = 16
@@ -39,8 +33,6 @@ enum MediaBrowseMetrics {
     static let posterHeight: CGFloat = posterWidth * 1.5
     static let posterCornerRadius: CGFloat = 14
     static let landscapeCornerRadius: CGFloat = 16
-    static let genreCornerRadius: CGFloat = 16
-    static let genreGridSpacing: CGFloat = 14
 
     /// Poster cards follow Settings › Appearance › Poster Cards. Landscape
     /// posters swap every poster row and grid to backdrop cards.
@@ -84,16 +76,6 @@ enum MediaBrowseMetrics {
         )
     }
 
-    static func genreGridLayout(containerWidth: CGFloat) -> MediaGridLayout {
-        MediaGridLayout.fitting(
-            containerWidth: containerWidth,
-            horizontalInset: pageInset,
-            minimumItemWidth: genreCardWidth,
-            maximumItemWidth: genreMaximumGridWidth,
-            spacing: genreGridSpacing
-        )
-    }
-
     static func landscapeGridLayout(containerWidth: CGFloat) -> MediaGridLayout {
         MediaGridLayout.fitting(
             containerWidth: containerWidth,
@@ -102,14 +84,6 @@ enum MediaBrowseMetrics {
             maximumItemWidth: landscapeCardMaximumGridWidth,
             spacing: gridSpacing
         )
-    }
-
-    static var genreGridColumns: [GridItem] {
-        [GridItem(
-            .adaptive(minimum: genreCardWidth, maximum: genreCardWidth),
-            spacing: genreGridSpacing,
-            alignment: .top
-        )]
     }
 }
 

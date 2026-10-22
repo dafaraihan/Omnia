@@ -31,7 +31,7 @@ struct MediaDetailView: View {
     @State private var posterTransition: PosterTransitionCenter.Anchor?
     @State private var hasTakenPosterTransition = false
     /// The Home hero's trailer, played in this page's hero with the same
-    /// Settings › Home Layout › Hero Trailer options.
+    /// Settings › Home Layout › Hero options.
     @State private var heroTrailer = HomeHeroTrailerModel()
     @State private var trailerToken = UUID()
     /// The trailer pauses while the hero is scrolled away or the window
@@ -216,11 +216,12 @@ struct MediaDetailView: View {
             .accessibilityLabel("Back")
         }
         #endif
-        // In the hero, scrolling away with it (Dafa, 2026-10-22).
-        .overlay(alignment: .topTrailing) {
+        // In the hero's bottom-right corner, scrolling away with it
+        // (Dafa, 2026-10-22).
+        .overlay(alignment: .bottomTrailing) {
             HomeHeroTrailerMuteButton(model: heroTrailer)
                 .padding(.trailing, 28)
-                .padding(.top, HomeHeroTrailerMuteButton.fullBleedTopInset)
+                .padding(.bottom, 34)
                 .animation(.snappy(duration: 0.25), value: heroTrailer.isVisible)
         }
         .frame(maxWidth: .infinity, minHeight: detailHeroHeight, maxHeight: detailHeroHeight)

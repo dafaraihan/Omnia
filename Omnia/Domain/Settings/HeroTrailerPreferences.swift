@@ -1,22 +1,48 @@
 import Foundation
 
-/// Settings › Layout › Home Layout › Hero Trailer, from Nuvio Enhanced:
-/// play the featured title's trailer in the Home hero.
+/// What the Home hero does once a title's trailer has played to the end.
+nonisolated enum HeroTrailerEndAction: String, Codable, CaseIterable, Identifiable, Sendable {
+    /// Move straight on to the next title (Dafa, 2026-10-22).
+    case nextTitle
+    /// Show the artwork again; the carousel moves on at its usual pace.
+    case showArtwork
+    /// Play the same trailer again and keep the title.
+    case replay
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .nextTitle: "Next Title"
+        case .showArtwork: "Show Artwork"
+        case .replay: "Replay Trailer"
+        }
+    }
+}
+
+/// Settings › Layout › Home Layout › Hero, from Nuvio Enhanced: the
+/// carousel's pace and the featured title's trailer in the Home hero.
 nonisolated struct HeroTrailerPreferences: Codable, Equatable, Sendable {
     static let delayRange = 0...10
+    static let intervalRange = 5...20
 
     /// Nuvio Enhanced's "Hero Trailer Playback". Off by default.
     var autoplay = false
     /// Seconds to wait after a title appears before its trailer starts.
     var startDelaySeconds = 0
     var startsWithSound = false
+    var afterTrailer: HeroTrailerEndAction = .nextTitle
+    /// The carousel moves to the next title on its own.
+    var autoAdvance = true
+    /// Seconds a title without a playing trailer stays in the hero.
+    var intervalSeconds = 8
 
     static let `default` = Self()
 
     init() {}
 
     private enum CodingKeys: String, CodingKey {
-        case autoplay, startDelaySeconds, startsWithSound
+        case autoplay, startDelaySeconds, startsWithSound, afterTrailer, autoAdvance, intervalSeconds
     }
 
     init(from decoder: Decoder) throws {
@@ -25,6 +51,10 @@ nonisolated struct HeroTrailerPreferences: Codable, Equatable, Sendable {
         let delay = (try? container.decodeIfPresent(Int.self, forKey: .startDelaySeconds)) ?? 0
         startDelaySeconds = min(max(delay, Self.delayRange.lowerBound), Self.delayRange.upperBound)
         startsWithSound = (try? container.decodeIfPresent(Bool.self, forKey: .startsWithSound)) ?? false
+        afterTrailer = (try? container.decodeIfPresent(HeroTrailerEndAction.self, forKey: .afterTrailer)) ?? .nextTitle
+        autoAdvance = (try? container.decodeIfPresent(Bool.self, forKey: .autoAdvance)) ?? true
+        let interval = (try? container.decodeIfPresent(Int.self, forKey: .intervalSeconds)) ?? 8
+        intervalSeconds = min(max(interval, Self.intervalRange.lowerBound), Self.intervalRange.upperBound)
     }
 
     static func delayTitle(_ seconds: Int) -> String {

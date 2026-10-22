@@ -49,7 +49,6 @@ struct ContentDiscoverySettingsView: View {
                     "Genre",
                     selection: settings.binding(\.searchFilters.genre),
                     options: [String?.none] + SearchFilterChoices.genres(
-                        metadata: metadata,
                         selected: settings.preferences.searchFilters.genre
                     ).map(Optional.some)
                 ) { genre in

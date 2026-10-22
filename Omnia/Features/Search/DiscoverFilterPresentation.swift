@@ -83,9 +83,7 @@ enum DiscoverFilterPresentation {
     ) -> [MediaItem] {
         let filtered = items.filter { item in
             guard state.kind == nil || item.kind == state.kind else { return false }
-            guard state.genre == nil || item.genres.contains(where: {
-                $0.localizedCaseInsensitiveCompare(state.genre ?? "") == .orderedSame
-            }) else { return false }
+            guard BrowseGenre.keeps(item, genreName: state.genre) else { return false }
             guard let year = Int(item.year) else {
                 return state.releasePeriod == .anyDate
             }

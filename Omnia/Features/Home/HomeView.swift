@@ -26,6 +26,8 @@ struct HomeView: View {
     /// The resume prompt is offered once per launch.
     private static var didCheckResumePrompt = false
     @State private var heroTrailer = HomeHeroTrailerModel()
+    /// Bumped to play the same trailer again (After Trailer › Replay).
+    @State private var heroTrailerReplay = 0
     /// The hero trailer and carousel pause while the hero is scrolled away
     /// or the window can't be seen.
     @State private var heroIsOnScreen = true
@@ -354,16 +356,16 @@ struct HomeView: View {
                 autoplayAllowed: !reduceMotion
             )
         }
-        .task(id: "\(heroCandidateKey)-\(heroIndex)-\(isActiveDestination)-\(heroTrailer.holdsCarousel)-\(reduceMotion)-\(heroIsOnScreen)-\(windowIsVisible)") {
+        .task(id: "\(heroCandidateKey)-\(heroIndex)-\(isActiveDestination)-\(heroTrailer.holdsCarousel)-\(reduceMotion)-\(heroIsOnScreen)-\(windowIsVisible)-\(heroCarousel.autoAdvance)-\(heroCarousel.intervalSeconds)") {
             // The carousel pauses while Home sits in a hidden tab, while a
-            // hero trailer is waiting to start or playing, and while nobody
-            // can see the hero.
+            // hero trailer is waiting to start or playing, while nobody can
+            // see the hero, and when Auto-Advance is off.
             guard isActiveDestination, !reduceMotion, heroCandidates.count > 1, !heroTrailer.holdsCarousel,
-                  heroIsOnScreen, windowIsVisible
+                  heroIsOnScreen, windowIsVisible, heroCarousel.autoAdvance
             else { return }
 
             do {
-                try await Task.sleep(for: .seconds(isAddonMode ? 8 : 9))
+                try await Task.sleep(for: .seconds(heroCarousel.intervalSeconds))
                 guard !Task.isCancelled else { return }
                 advanceHero()
             } catch {
@@ -376,6 +378,18 @@ struct HomeView: View {
         }
         .onChange(of: heroCandidateKey) { _, _ in
             heroIndex = 0
+        }
+        // A trailer played to the end: move on rather than showing the same
+        // title's trailer again (Dafa, 2026-10-22).
+        .onChange(of: heroTrailer.endCount) { _, _ in
+            switch heroCarousel.afterTrailer {
+            case .nextTitle:
+                if heroCandidates.count > 1 { advanceHero() }
+            case .replay:
+                heroTrailerReplay += 1
+            case .showArtwork:
+                break
+            }
         }
         .onChange(of: heroCatalogItems, initial: true) { _, items in
             // Add-on hero items are already chosen and shuffled; the built-in
@@ -565,12 +579,11 @@ struct HomeView: View {
             }
         }
         // The trailer's speaker button belongs to the hero, so it scrolls
-        // away with it (Dafa, 2026-10-22). Top right, clear of the window's
-        // top bar when the hero runs full-bleed beneath it.
-        .overlay(alignment: .topTrailing) {
+        // away with it, in the hero's bottom-right corner (Dafa, 2026-10-22).
+        .overlay(alignment: .bottomTrailing) {
             HomeHeroTrailerMuteButton(model: heroTrailer)
                 .padding(.trailing, 28)
-                .padding(.top, isCardHero ? 20 : HomeHeroTrailerMuteButton.fullBleedTopInset)
+                .padding(.bottom, 18)
                 .animation(.snappy(duration: 0.25), value: heroTrailer.isVisible)
         }
         .overlay(alignment: .bottom) {
@@ -606,10 +619,12 @@ struct HomeView: View {
         .accessibilityLabel("Featured: \(featured.title)")
     }
 
+    private var heroCarousel: HeroTrailerPreferences { settings.preferences.heroTrailer }
+
     /// Restarts the trailer for a new title or changed trailer settings.
     private var heroTrailerKey: String {
         let preferences = settings.preferences.heroTrailer
-        return "\(featured?.id ?? "")-\(preferences.autoplay)-\(preferences.startDelaySeconds)-\(preferences.startsWithSound)-\(reduceMotion)"
+        return "\(featured?.id ?? "")-\(preferences.autoplay)-\(preferences.startDelaySeconds)-\(preferences.startsWithSound)-\(reduceMotion)-\(heroTrailerReplay)"
     }
 
     /// The trailer pauses in a hidden tab, while the streams page is open,

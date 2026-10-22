@@ -54,8 +54,9 @@ struct DiscoverView: View {
         metadata.topMovies + metadata.topSeries + metadata.homeCatalogs.flatMap(\.items) + store.library
     }
 
+    /// The same genres as the Browse by Genre cards.
     private var availableGenres: [String] {
-        Set(allKnownItems.flatMap(\.genres)).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        BrowseGenre.allCases.map(\.title)
     }
 
     private var availableYears: [Int] {
@@ -134,7 +135,7 @@ struct DiscoverView: View {
                         onRemove: { history.remove($0) }
                     )
                 }
-                GenreDirectoryShelf(genres: metadata.movieGenres)
+                GenreDirectoryShelf()
                 // Add-on shelves don't depend on Omnia's own metadata, so
                 // Discover only gives up when neither has anything to show.
                 if hasBuiltInCatalogs || !discoverAddonCatalogs.isEmpty {

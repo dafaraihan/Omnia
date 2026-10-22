@@ -103,13 +103,27 @@ struct HomeSettingsView: View {
         }
     }
 
-    /// Nuvio Enhanced's hero trailer options.
+    /// The hero carousel's pace and Nuvio Enhanced's hero trailer options.
     private var heroTrailerSection: some View {
         Section {
+            Toggle(isOn: settings.binding(\.heroTrailer.autoAdvance)) {
+                settingLabel(
+                    "Auto-Advance",
+                    detail: "Move to the next title on its own."
+                )
+            }
+            if settings.preferences.heroTrailer.autoAdvance {
+                SettingsDropdown(
+                    "Title Duration",
+                    subtitle: "How long a title stays in the hero when no trailer is playing.",
+                    selection: settings.binding(\.heroTrailer.intervalSeconds),
+                    options: Array(HeroTrailerPreferences.intervalRange)
+                ) { "\($0) s" }
+            }
             Toggle(isOn: settings.binding(\.heroTrailer.autoplay)) {
                 settingLabel(
                     "Hero Trailer Playback",
-                    detail: "Autoplay trailers in the hero. While one plays, the hero only moves to the next title when you change it."
+                    detail: "Autoplay trailers in the hero. While one plays, the hero stays on its title."
                 )
             }
             if settings.preferences.heroTrailer.autoplay {
@@ -125,13 +139,19 @@ struct HomeSettingsView: View {
                     selection: settings.binding(\.heroTrailer.startDelaySeconds),
                     options: Array(HeroTrailerPreferences.delayRange)
                 ) { HeroTrailerPreferences.delayTitle($0) }
+                SettingsDropdown(
+                    "After Trailer",
+                    subtitle: "What the hero does when a trailer finishes.",
+                    selection: settings.binding(\.heroTrailer.afterTrailer),
+                    options: HeroTrailerEndAction.allCases
+                ) { $0.title }
             }
         } header: {
-            Text("Hero Trailer")
+            Text("Hero")
         } footer: {
             Text(homeLayout.preferences.showsHero
                  ? "Trailers play natively in the hero. If a trailer is unavailable, its artwork stays visible. Reduce Motion pauses autoplay."
-                 : "Turn on Show Hero below to use hero trailers.")
+                 : "Turn on Show Hero below to use these options.")
         }
         .disabled(!homeLayout.preferences.showsHero)
     }

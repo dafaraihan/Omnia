@@ -41,9 +41,6 @@ nonisolated struct SearchFilterPreferences: Codable, Equatable, Sendable {
     /// keeps only titles that list it.
     func keeps(_ item: MediaItem) -> Bool {
         if let kind, item.kind != kind { return false }
-        if let genre {
-            return item.genres.contains { $0.compare(genre, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame }
-        }
-        return true
+        return BrowseGenre.keeps(item, genreName: genre)
     }
 }

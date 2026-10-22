@@ -164,7 +164,7 @@ struct SearchView: View {
                 .omniaNavigationTitle("Search", screen: .search)
                 .toolbar {
                     ToolbarItem(placement: .primaryAction) {
-                        SearchFilterMenu(genresFound: unfilteredResults.flatMap(\.genres))
+                        SearchFilterMenu()
                     }
                     ToolbarSpacer(.fixed, placement: .primaryAction)
                     ToolbarItem(placement: .primaryAction) {
@@ -183,7 +183,7 @@ struct SearchView: View {
                 }
                 .toolbar {
                     ToolbarItem(placement: .primaryAction) {
-                        SearchFilterMenu(genresFound: unfilteredResults.flatMap(\.genres))
+                        SearchFilterMenu()
                     }
                 }
             #endif
@@ -208,7 +208,7 @@ struct SearchView: View {
                         .labelStyle(.iconOnly)
                     }
 
-                    SearchFilterMenu(genresFound: unfilteredResults.flatMap(\.genres))
+                    SearchFilterMenu()
                         .menuStyle(.borderlessButton)
                         .fixedSize()
                 }
@@ -239,7 +239,6 @@ struct SearchView: View {
         Group {
             if trimmedQuery.count < 2 {
                 SearchBrowseDirectoryView(
-                    genres: metadata.movieGenres,
                     recentSearches: trimmedQuery.isEmpty ? history.recentSearches : [],
                     onSelectRecent: { queryBinding.wrappedValue = $0 },
                     onRemoveRecent: { history.remove($0) }
@@ -373,14 +372,12 @@ enum SearchFilterChoices {
         addons.filter { $0.isEnabled && $0.manifest.catalogs.contains(where: \.supportsSearch) }
     }
 
-    /// The metadata service's genres, plus any the current results list.
-    static func genres(metadata: LiveMetadataStore, found: [String] = [], selected: String?) -> [String] {
-        var names = metadata.movieGenres.map(\.name) + metadata.seriesGenres.map(\.name) + found
-        if let selected { names.append(selected) }
-        var seen = Set<String>()
+    /// The same genres as Browse by Genre, plus a choice saved before that
+    /// list existed so it stays visible and can be cleared.
+    static func genres(selected: String?) -> [String] {
+        var names = BrowseGenre.allCases.map(\.title)
+        if let selected, BrowseGenre(name: selected) == nil { names.append(selected) }
         return names
-            .filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
-            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
     /// Named after the providers Metadata routes to, such as
@@ -424,7 +421,6 @@ struct SearchFilterMenu: View {
     @Environment(OmniaStore.self) private var store
     @Environment(LiveMetadataStore.self) private var metadata
     @Environment(SettingsPreferencesStore.self) private var settings
-    var genresFound: [String] = []
 
     private var filters: SearchFilterPreferences { settings.preferences.searchFilters }
 
@@ -460,7 +456,7 @@ struct SearchFilterMenu: View {
 
             Picker(selection: settings.binding(\.searchFilters.genre)) {
                 Text("All Genres").tag(String?.none)
-                ForEach(SearchFilterChoices.genres(metadata: metadata, found: genresFound, selected: filters.genre), id: \.self) { genre in
+                ForEach(SearchFilterChoices.genres(selected: filters.genre), id: \.self) { genre in
                     Text(genre).tag(Optional(genre))
                 }
             } label: {
