@@ -95,6 +95,8 @@ typedef void (^OMMpvTrackSelectionCompletion)(
 - (void)pause;
 - (void)seekBy:(double)seconds;
 - (void)seekTo:(double)seconds;
+/// A quick seek to the nearest keyframe, for following a timeline drag.
+- (void)previewSeekTo:(double)seconds;
 - (void)setVolume:(double)volume;
 - (void)setPlaybackRate:(double)playbackRate;
 - (void)setVideoAspectMode:(OMMpvVideoAspectMode)mode;

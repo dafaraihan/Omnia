@@ -11,6 +11,10 @@ struct DiscoverView: View {
     @Environment(LiveMetadataStore.self) private var metadata
     @AppStorage(HomeShelfPreferences.storageKey) private var disabledHomeShelfIDs = ""
     @State private var filters = DiscoverFilterState()
+    /// Search lives on Discover (Dafa, 2026-10-22): two or more letters
+    /// show results in place of the shelves.
+    @State private var query = ""
+    @State private var history = SearchHistoryStore.shared
 
     private var shelfPreferences: HomeShelfPreferences {
         HomeShelfPreferences(rawValue: disabledHomeShelfIDs)
@@ -73,9 +77,64 @@ struct DiscoverView: View {
         return choices
     }
 
+    private var isSearching: Bool {
+        query.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2
+    }
+
     var body: some View {
+        Group {
+            if isSearching {
+                SearchView(query: $query)
+            } else {
+                browseContent
+            }
+        }
+        .omniaNavigationTitle("Discover", screen: .discover)
+        #if os(macOS)
+        // The Filter button just before the search field, each its own
+        // toolbar item. While searching it holds Search's filters.
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                filterMenu
+            }
+            ToolbarSpacer(.fixed, placement: .primaryAction)
+            ToolbarItem(placement: .primaryAction) {
+                MacSettingsSearchField(text: $query, prompt: "Titles, people, or genres")
+                    .frame(width: 320)
+            }
+        }
+        #else
+        .searchable(text: $query, prompt: "Titles, people, or genres")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                filterMenu
+            }
+        }
+        #endif
+        .navigationDestination(for: MediaItem.self) { MediaDetailView(item: $0) }
+    }
+
+    @ViewBuilder
+    private var filterMenu: some View {
+        if isSearching {
+            SearchFilterMenu()
+        } else {
+            discoverFilterMenu
+        }
+    }
+
+    /// Recent searches and genres, then the shelves.
+    private var browseContent: some View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(alignment: .leading, spacing: 36) {
+                if query.isEmpty, !history.recentSearches.isEmpty {
+                    RecentSearchesSection(
+                        searches: Array(history.recentSearches.prefix(3)),
+                        onSelect: { query = $0 },
+                        onRemove: { history.remove($0) }
+                    )
+                }
+                GenreDirectoryShelf(genres: metadata.movieGenres)
                 // Add-on shelves don't depend on Omnia's own metadata, so
                 // Discover only gives up when neither has anything to show.
                 if hasBuiltInCatalogs || !discoverAddonCatalogs.isEmpty {
@@ -90,13 +149,6 @@ struct DiscoverView: View {
             .padding(.horizontal, MediaBrowseMetrics.pageInset)
             .padding(.vertical, 24)
         }
-        .omniaNavigationTitle("Discover", screen: .discover)
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                discoverFilterMenu
-            }
-        }
-        .navigationDestination(for: MediaItem.self) { MediaDetailView(item: $0) }
     }
 
     private var unavailableState: some View {

@@ -94,11 +94,6 @@ struct AppearanceSettingsView: View {
                     }
                 }
 
-                SettingsDropdown(
-                    "Search",
-                    selection: settings.binding(\.searchStyle),
-                    options: MacSearchStyle.allCases
-                ) { $0.title }
                 Toggle("Hover Preview", isOn: settings.binding(\.display.hoverPreviewEnabled))
                 if settings.preferences.display.hoverPreviewEnabled {
                     SettingsDropdown(

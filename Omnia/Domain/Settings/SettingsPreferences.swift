@@ -203,6 +203,7 @@ struct SettingsPreferences: Codable, Equatable, Sendable {
     var integrations: IntegrationPreferences = .default
     var streams: StreamPagePreferences = .default
     var heroTrailer: HeroTrailerPreferences = .default
+    var searchFilters: SearchFilterPreferences = .default
 
     private enum CodingKeys: String, CodingKey {
         case addonTimeout, continueWatchingLimit, watchlistMode, showUpcoming
@@ -215,6 +216,7 @@ struct SettingsPreferences: Codable, Equatable, Sendable {
         case sdhPreference, animeAudioPreference, subtitleAppearance
         case customSubtitleAppearance, mdblistRatings, showMediaCardLabels, navigationStyle
         case searchStyle, display, playbackBehavior, integrations, streams, heroTrailer
+        case searchFilters
     }
 
     /// Settings replaced by `playbackBehavior`, read once to carry choices over.
@@ -337,6 +339,10 @@ struct SettingsPreferences: Codable, Equatable, Sendable {
         heroTrailer = (try? container.decodeIfPresent(
             HeroTrailerPreferences.self,
             forKey: .heroTrailer
+        )) ?? .default
+        searchFilters = (try? container.decodeIfPresent(
+            SearchFilterPreferences.self,
+            forKey: .searchFilters
         )) ?? .default
         if let behavior = try? container.decodeIfPresent(
             PlaybackBehaviorPreferences.self,

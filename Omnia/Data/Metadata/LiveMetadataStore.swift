@@ -32,7 +32,7 @@ final class LiveMetadataStore {
     var isSearching = false
     var errorMessage: String?
     private var genreCatalogs: [String: [MediaItem]] = [:]
-    private var metadataRouting = MetadataRoutingPreferences()
+    private(set) var metadataRouting = MetadataRoutingPreferences()
 
     init(configuration: SupabaseConfiguration? = nil, loadsBundleConfiguration: Bool = true) {
         let resolvedConfiguration = configuration ?? (loadsBundleConfiguration ? SupabaseConfiguration.load() : nil)

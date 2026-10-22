@@ -85,16 +85,6 @@ struct MediaDetailView: View {
         #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)
         #endif
-        #if os(macOS)
-        // The trailer's speaker button sits in the top bar, level with it.
-        .toolbar {
-            if heroTrailer.isVisible {
-                ToolbarItem(placement: .primaryAction) {
-                    HomeHeroTrailerMuteButton(model: heroTrailer, isInToolbar: true)
-                }
-            }
-        }
-        #endif
         .task(id: item.id) {
             ratingsLoader.cancel()
             let resolved: MediaItem
@@ -226,14 +216,13 @@ struct MediaDetailView: View {
             .accessibilityLabel("Back")
         }
         #endif
-        #if !os(macOS)
+        // In the hero, scrolling away with it (Dafa, 2026-10-22).
         .overlay(alignment: .topTrailing) {
             HomeHeroTrailerMuteButton(model: heroTrailer)
                 .padding(.trailing, 28)
                 .padding(.top, HomeHeroTrailerMuteButton.fullBleedTopInset)
                 .animation(.snappy(duration: 0.25), value: heroTrailer.isVisible)
         }
-        #endif
         .frame(maxWidth: .infinity, minHeight: detailHeroHeight, maxHeight: detailHeroHeight)
         // The hero owns the top safe area on every platform. On macOS the
         // compact system Back control floats above this artwork; it must not

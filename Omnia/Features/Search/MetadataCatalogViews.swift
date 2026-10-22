@@ -284,8 +284,35 @@ struct SearchBrowseDirectoryView: View {
     }
 }
 
+/// Browse by Genre as one row of cards, for Discover.
+struct GenreDirectoryShelf: View {
+    let genres: [MetadataGenre]
+    private static let cardWidth: CGFloat = 168
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Browse by Genre")
+                .font(.title2.weight(.bold))
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: MediaBrowseMetrics.genreGridSpacing) {
+                    ForEach(CuratedGenre.allCases) { genre in
+                        GenreDirectoryCard(
+                            genre: genre,
+                            providerGenre: genre.match(in: genres),
+                            type: .movie,
+                            cardWidth: Self.cardWidth
+                        )
+                    }
+                    AnimeSearchDirectoryCard(cardWidth: Self.cardWidth)
+                }
+            }
+            .scrollClipDisabled()
+        }
+    }
+}
+
 /// Nuvio's Recent Searches list: tap one to search again, or remove it.
-private struct RecentSearchesSection: View {
+struct RecentSearchesSection: View {
     let searches: [String]
     let onSelect: (String) -> Void
     let onRemove: (String) -> Void

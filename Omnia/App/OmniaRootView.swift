@@ -191,9 +191,6 @@ struct OmniaRootView: View {
             Tab("Home", systemImage: AppDestination.home.symbolName, value: .home) {
                 NavigationStack { HomeView().omniaPageDestinations() }
             }
-            Tab("Search", systemImage: AppDestination.search.symbolName, value: .search) {
-                NavigationStack { SearchView().omniaPageDestinations() }
-            }
             Tab("Library", systemImage: AppDestination.library.symbolName, value: .library) {
                 NavigationStack { LibraryView().omniaPageDestinations() }
             }
@@ -417,7 +414,7 @@ struct OmniaRootView: View {
     }
 
     private var macSidebarDestinations: [AppDestination] {
-        [.settings, .home, .library, .discover] + (liveTV.showsInNavigation ? [.liveTV] : []) + [.search]
+        [.settings, .home, .library, .discover] + (liveTV.showsInNavigation ? [.liveTV] : [])
     }
 
     private func macSidebarLabel(for destination: AppDestination) -> some View {

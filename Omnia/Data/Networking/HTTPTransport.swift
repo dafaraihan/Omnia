@@ -144,6 +144,11 @@ nonisolated final class HTTPTransport: HTTPTransporting, Sendable {
         copied.requestCachePolicy = .reloadIgnoringLocalCacheData
         copied.httpCookieStorage = nil
         copied.httpShouldSetCookies = false
+        copied.httpCookieAcceptPolicy = .never
+        copied.urlCredentialStorage = nil
+        // TLS 1.2 or later only, and no request may hang on forever.
+        copied.tlsMinimumSupportedProtocolVersion = .TLSv12
+        copied.timeoutIntervalForResource = 120
         copied.httpMaximumConnectionsPerHost = 8
         return copied
     }

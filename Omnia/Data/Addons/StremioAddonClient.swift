@@ -183,9 +183,13 @@ enum StremioAddonClient {
         }
     }
 
+    /// Every enabled search catalog at once. `onUpdate` gets everything
+    /// found so far each time a catalog answers, so results show without
+    /// waiting for the slowest add-on.
     static func searchCatalogs(
         addons: [InstalledAddon],
-        query: String
+        query: String,
+        onUpdate: (@MainActor @Sendable ([AddonCatalogItem]) -> Void)? = nil
     ) async -> [AddonCatalogItem] {
         let enabledCatalogs = addons.flatMap { addon in
             addon.isEnabled ? addon.manifest.catalogs
@@ -205,7 +209,14 @@ enum StremioAddonClient {
             }
 
             var values: [AddonCatalogItem] = []
-            for await result in group { values.append(contentsOf: result) }
+            for await result in group {
+                guard !result.isEmpty else { continue }
+                values.append(contentsOf: result)
+                if let onUpdate {
+                    let snapshot = values
+                    await onUpdate(snapshot)
+                }
+            }
             return values
         }
     }

@@ -77,7 +77,7 @@ struct AccountSettingsView: View {
         VStack(spacing: 14) {
             ZStack {
                 Circle()
-                    .fill(profile.color.opacity(0.45))
+                    .fill(display.accentColor.opacity(0.45))
                     .frame(width: 180, height: 180)
                     .blur(radius: 50)
                     .scaleEffect(appeared ? 1 : 0.6)
@@ -121,7 +121,7 @@ struct AccountSettingsView: View {
             divider
             stat(value: "\(watchedCount)", label: "Watched", symbol: "checkmark.circle.fill")
             divider
-            stat(value: hoursWatched, label: "Hours Watched", symbol: "clock.fill")
+            stat(value: timeWatched, label: "Time Watched", symbol: "clock.fill")
         }
         .padding(.vertical, 18)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
@@ -129,20 +129,62 @@ struct AccountSettingsView: View {
         .offset(y: appeared ? 0 : 12)
     }
 
-    private var inProgressCount: Int {
-        store.localMediaSnapshots.filter { ($0.item.progress ?? 0) > 0 }.count
-    }
-
-    private var watchedCount: Int {
-        store.localMediaSnapshots.reduce(0) { total, snapshot in
-            let movie = snapshot.watchState.movieWatched == true ? 1 : 0
-            return total + movie + snapshot.watchState.episodeStates.values.filter { $0 }.count
+    /// The library with each title once: add-ons and the metadata service
+    /// can save one title under several ids.
+    private var titleSnapshots: [LocalMediaSnapshot] {
+        var kept: [LocalMediaSnapshot] = []
+        var seen = Set<String>()
+        for snapshot in store.localMediaSnapshots {
+            let keys = snapshot.item.identityKeys.union([snapshot.item.id])
+            guard seen.isDisjoint(with: keys) else { continue }
+            seen.formUnion(keys)
+            kept.append(snapshot)
         }
+        return kept
     }
 
-    private var hoursWatched: String {
-        let hours = profileData.activeWatchSeconds / 3600
-        return hours < 10 ? hours.formatted(.number.precision(.fractionLength(1))) : "\(Int(hours))"
+    /// Titles in Continue Watching: a resume point, counted once per title
+    /// whatever the episode or source.
+    private var inProgressCount: Int {
+        titleSnapshots.filter { snapshot in
+            snapshot.progress != nil && snapshot.watchState.movieWatched != true
+        }.count
+    }
+
+    /// Titles watched: a finished movie, or a show with at least one
+    /// watched episode, each counted once (Dafa, 2026-10-22).
+    private var watchedCount: Int {
+        titleSnapshots.filter { snapshot in
+            snapshot.watchState.movieWatched == true
+                || snapshot.watchState.episodeStates.values.contains(true)
+        }.count
+    }
+
+    /// Playback time counted while watching on this profile, or, when the
+    /// library shows more, an estimate from it: finished movies' running
+    /// time, watched episodes at the show's episode length, and how far
+    /// into each title playback got.
+    private var watchedSeconds: Double {
+        let estimate = titleSnapshots.reduce(0.0) { total, snapshot in
+            let state = snapshot.watchState
+            let length = snapshot.durationSeconds ?? 0
+            let position = snapshot.progress == nil ? 0 : (snapshot.positionSeconds ?? 0)
+            if snapshot.item.kind == .movie {
+                return total + (state.movieWatched == true ? max(length, position) : position)
+            }
+            let episodes = Double(state.episodeStates.values.filter { $0 }.count)
+            return total + episodes * length + position
+        }
+        return max(profileData.activeWatchSeconds, estimate)
+    }
+
+    private var timeWatched: String {
+        let minutes = Int(watchedSeconds / 60)
+        if minutes < 60 { return "\(minutes)m" }
+        let hours = watchedSeconds / 3600
+        return hours < 10
+            ? "\(hours.formatted(.number.precision(.fractionLength(1))))h"
+            : "\(Int(hours))h"
     }
 
     private func stat(value: String, label: String, symbol: String) -> some View {

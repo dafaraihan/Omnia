@@ -154,12 +154,8 @@ struct ProfileTransitionOverlay: View {
         }
     }
 
-    private var glowColor: Color {
-        switch transition.emblem {
-        case .wordmark: display.accentColor
-        case let .profile(profile): Color(profileHex: profile.colorHex)
-        }
-    }
+    /// The theme's accent, for the wordmark and every profile alike.
+    private var glowColor: Color { display.accentColor }
 
     private var accessibilityTitle: String {
         switch transition.emblem {

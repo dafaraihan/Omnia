@@ -311,7 +311,14 @@ nonisolated enum RemoteArtworkFetcher {
         configuration.requestCachePolicy = .returnCacheDataElseLoad
         // Add-ons that draw posters on request can take a while per image.
         configuration.timeoutIntervalForRequest = 45
+        configuration.timeoutIntervalForResource = 90
         configuration.httpMaximumConnectionsPerHost = 6
+        // Posters need no cookies or saved logins, and only modern TLS.
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        configuration.httpCookieAcceptPolicy = .never
+        configuration.urlCredentialStorage = nil
+        configuration.tlsMinimumSupportedProtocolVersion = .TLSv12
         return URLSession(configuration: configuration)
     }()
 

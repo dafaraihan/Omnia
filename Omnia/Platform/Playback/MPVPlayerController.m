@@ -878,7 +878,27 @@ static void OMMpvWakeup(void *context) {
 - (void)play { _paused = NO; [self setFlag:NO forProperty:"pause"]; [_pictureInPictureView refreshControls]; }
 - (void)pause { _paused = YES; [self setFlag:YES forProperty:"pause"]; [_pictureInPictureView refreshControls]; }
 
-- (void)seekBy:(double)seconds { [self seekTo:self.position + seconds]; }
+- (void)seekBy:(double)seconds {
+    if (!_mpv || !_fileLoaded) {
+        [self seekTo:self.position + seconds];
+        return;
+    }
+    // mpv adds relative seeks up, so pressing → three times quickly moves
+    // 30 seconds, and lands on the exact frame rather than a keyframe.
+    NSString *offset = [NSString stringWithFormat:@"%.3f", seconds];
+    const char *command[] = { "seek", offset.UTF8String, "relative+exact", NULL };
+    mpv_command_async(_mpv, 0, command);
+}
+
+- (void)previewSeekTo:(double)seconds {
+    if (!_mpv || !_fileLoaded) {
+        [self seekTo:seconds];
+        return;
+    }
+    NSString *position = [NSString stringWithFormat:@"%.3f", MAX(0, seconds)];
+    const char *command[] = { "seek", position.UTF8String, "absolute+keyframes", NULL };
+    mpv_command_async(_mpv, 0, command);
+}
 
 - (void)seekTo:(double)seconds {
     _pendingPosition = MAX(0, seconds);

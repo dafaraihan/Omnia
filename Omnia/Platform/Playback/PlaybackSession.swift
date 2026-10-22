@@ -553,6 +553,16 @@ final class PlaybackSession {
         #endif
     }
 
+    /// Follows a timeline drag with quick keyframe seeks; the exact seek
+    /// comes when the drag ends.
+    func previewSeek(to seconds: Double) {
+        #if os(macOS)
+        player?.previewSeek(to: seconds)
+        #else
+        seek(to: seconds)
+        #endif
+    }
+
     func requestTimelinePreview(at timestamp: Double) {
         #if os(macOS)
         guard let source, let durationSeconds, durationSeconds > 0 else { return }

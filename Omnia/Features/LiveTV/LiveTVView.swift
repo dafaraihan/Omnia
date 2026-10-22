@@ -23,15 +23,16 @@ struct LiveTVView: View {
         content
             .omniaNavigationTitle("Live TV", screen: .liveTV)
             #if os(macOS)
-            // One toolbar item, so the menu sits right against the search
-            // field; a searchable field always kept a wide gap from it.
+            // The Filter button just before the search field, each its own
+            // toolbar item, as on Search (Dafa, 2026-10-22).
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
-                    HStack(spacing: 8) {
-                        filterMenu
-                        MacSettingsSearchField(text: $searchText, prompt: "Search channels")
-                            .frame(width: 260)
-                    }
+                    filterMenu
+                }
+                ToolbarSpacer(.fixed, placement: .primaryAction)
+                ToolbarItem(placement: .primaryAction) {
+                    MacSettingsSearchField(text: $searchText, prompt: "Search channels")
+                        .frame(width: 260)
                 }
             }
             #else

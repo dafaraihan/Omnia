@@ -20,6 +20,9 @@ struct PlaybackSourceSheet: View {
     /// shows the list.
     var isNextEpisode = false
     var nextEpisodeRequest: StreamAutoPlayRequest? = nil
+    /// Opened over the video: just the sources, without the title's
+    /// artwork and details (Dafa, 2026-10-22).
+    var presentedInPlayer = false
     var onClose: (() -> Void)? = nil
 
     @Environment(OmniaStore.self) private var store
@@ -162,16 +165,14 @@ struct PlaybackSourceSheet: View {
     @ViewBuilder
     private var sourcePage: some View {
         #if os(macOS)
-        StreamsPageLayout(
-            item: pageItem ?? item,
-            episode: episode,
-            resumeAt: resumeAt,
-            background: streamPreferences.background,
-            onClose: { closePresentation() }
-        ) {
-            sourcePanel
+        if presentedInPlayer {
+            StreamsPlayerPanelLayout(onClose: { closePresentation() }) {
+                sourcePanel
+            }
+            .tint(settings.preferences.display.accentColor)
+        } else {
+            streamsPage
         }
-        .tint(settings.preferences.display.accentColor)
         #else
         VStack(spacing: 0) {
             HStack {
@@ -187,6 +188,21 @@ struct PlaybackSourceSheet: View {
         .presentationDetents([.medium, .large])
         #endif
     }
+
+    #if os(macOS)
+    private var streamsPage: some View {
+        StreamsPageLayout(
+            item: pageItem ?? item,
+            episode: episode,
+            resumeAt: resumeAt,
+            background: streamPreferences.background,
+            onClose: { closePresentation() }
+        ) {
+            sourcePanel
+        }
+        .tint(settings.preferences.display.accentColor)
+    }
+    #endif
 
     private var streamPreferences: StreamPagePreferences {
         settings.preferences.streams
@@ -1573,10 +1589,12 @@ struct PlaybackExperienceView: View {
         }
         .contentShape(Rectangle())
         .onTapGesture {
-            // One click shows the controls, the next hides them.
+            // One click shows the controls, the next hides them. While the
+            // loading overlay or a Skip prompt is up a click leaves them
+            // hidden (Dafa, 2026-10-22).
             if showsChrome {
                 concealChrome()
-            } else {
+            } else if !holdsChromeHidden {
                 revealChrome()
             }
         }
@@ -1611,7 +1629,7 @@ struct PlaybackExperienceView: View {
             }
         }
         .overlay {
-            if showsChrome {
+            if showsChrome && !showsLoadingOverlay {
                 PlaybackChrome(
                     isScrubbing: $isScrubbing,
                     close: { playback.stop() },
@@ -1742,6 +1760,7 @@ struct PlaybackExperienceView: View {
                     resumeAt: request.resumeAt,
                     isNextEpisode: true,
                     nextEpisodeRequest: nextSourceAutoSelection,
+                    presentedInPlayer: true,
                     onClose: { nextSourceRequest = nil }
                 )
                 .id(request.id)
@@ -1772,7 +1791,11 @@ struct PlaybackExperienceView: View {
             .frame(width: 0, height: 0)
         }
         .onHover { isHovering in
-            isHovering ? revealChrome() : hideChrome(after: 2.2)
+            if !isHovering {
+                hideChrome(after: 2.2)
+            } else if !holdsChromeHidden {
+                revealChrome()
+            }
         }
         #endif
         #if os(iOS)
@@ -1818,6 +1841,12 @@ struct PlaybackExperienceView: View {
             && playback.playbackError == nil
             && playback.player != nil
             && !playback.hasRenderedVideoFrame
+    }
+
+    /// Clicks and the pointer don't bring the controls up over the loading
+    /// overlay or an on-screen Skip Intro or Outro.
+    private var holdsChromeHidden: Bool {
+        showsLoadingOverlay || showsContextualSkip
     }
 
     private var loadingStatus: String {
@@ -2487,32 +2516,46 @@ private struct PlaybackLoadingOverlay: View {
     let item: MediaItem
     let episode: MediaEpisode?
     let status: String?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var breathes = false
 
     var body: some View {
         ZStack {
             Color.black
+            // The artwork fills the overlay without sizing it, so the
+            // title stays centred in the window whatever the image's shape.
             if let backdrop = item.backdropURL ?? item.artworkURL {
-                RemoteArtworkImage(url: backdrop)
-                    .background {
-                        LinearGradient(colors: item.artworkColors, startPoint: .topLeading, endPoint: .bottomTrailing)
+                Color.clear
+                    .overlay {
+                        RemoteArtworkImage(url: backdrop)
+                            .background {
+                                LinearGradient(colors: item.artworkColors, startPoint: .topLeading, endPoint: .bottomTrailing)
+                            }
                     }
-                .opacity(0.45)
-                .blur(radius: 6)
-                .clipped()
+                    .clipped()
+                    .opacity(0.45)
+                    .blur(radius: 6)
             }
             LinearGradient(colors: [.black.opacity(0.2), .black.opacity(0.85)], startPoint: .top, endPoint: .bottom)
             VStack(spacing: 18) {
-                if let logo = item.logoURL {
-                    TitleLogoView(url: logo, title: item.title, maximumWidth: 420, maximumHeight: 140, alignment: .center)
-                } else {
-                    Text(item.title)
-                        .font(.largeTitle.weight(.bold))
-                        .multilineTextAlignment(.center)
+                Group {
+                    if let logo = item.logoURL {
+                        TitleLogoView(url: logo, title: item.title, maximumWidth: 420, maximumHeight: 140, alignment: .center)
+                    } else {
+                        Text(item.title)
+                            .font(.largeTitle.weight(.bold))
+                            .multilineTextAlignment(.center)
+                    }
                 }
+                // Nuvio's loading pulse: the title grows and shrinks gently
+                // until the first frame arrives.
+                .scaleEffect(breathes ? 1.08 : 0.94)
+                .opacity(breathes ? 1 : 0.8)
                 if let episode {
                     Text("S\(episode.seasonNumber) E\(episode.episodeNumber) · \(episode.title)")
                         .font(.headline)
                         .foregroundStyle(.white.opacity(0.8))
+                        .multilineTextAlignment(.center)
                 }
                 HStack(spacing: 10) {
                     ProgressView()
@@ -2526,9 +2569,18 @@ private struct PlaybackLoadingOverlay: View {
                 }
             }
             .foregroundStyle(.white)
+            .frame(maxWidth: 560)
             .padding(40)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea()
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) {
+                breathes = true
+            }
+        }
         .accessibilityElement(children: .combine)
     }
 }

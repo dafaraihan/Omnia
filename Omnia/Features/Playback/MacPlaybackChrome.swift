@@ -953,9 +953,10 @@ struct MacPlaybackChrome: View {
         }
         scrubValue = value
         let now = Date()
-        guard now.timeIntervalSince(lastScrubSeek) >= 0.2 else { return }
+        // Keyframe seeks are cheap, so the picture can follow more closely.
+        guard now.timeIntervalSince(lastScrubSeek) >= 0.12 else { return }
         lastScrubSeek = now
-        playback.seek(to: value)
+        playback.previewSeek(to: value)
     }
 
     @ViewBuilder

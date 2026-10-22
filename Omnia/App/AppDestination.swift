@@ -65,14 +65,15 @@ enum AppDestination: Hashable {
     case search
     case settings
 
+    /// Search is part of Discover (Dafa, 2026-10-22), so it has no tab.
     static func visibleDestinations(for platform: AppPlatform, showsLiveTV: Bool = false) -> [AppDestination] {
-        let browsing: [AppDestination] = [.home, .library, .discover] + (showsLiveTV ? [.liveTV] : []) + [.search]
+        let browsing: [AppDestination] = [.home, .library, .discover] + (showsLiveTV ? [.liveTV] : [])
         return browsing + [.settings]
     }
 
     /// Live TV sits between Discover and Settings once a source is set up.
     static func macTopBarDestinations(showsLiveTV: Bool) -> [AppDestination] {
-        [.home, .library, .discover] + (showsLiveTV ? [.liveTV] : []) + [.search, .settings]
+        [.home, .library, .discover] + (showsLiveTV ? [.liveTV] : []) + [.settings]
     }
 
     /// Settings is the watching profile's page, named after it.
@@ -136,12 +137,15 @@ final class MacPrimaryNavigationState {
     private var previousContentSelection: AppDestination
 
     init(selection: AppDestination = .home) {
+        let selection = selection == .search ? .discover : selection
         self.selection = selection
-        previousContentSelection = selection == .search ? .home : selection
+        previousContentSelection = selection
     }
 
     func select(_ destination: AppDestination) {
         isSearchPresented = false
+        // Search now lives on Discover.
+        let destination = destination == .search ? .discover : destination
         guard destination != selection else { return }
         selection = destination
         if destination != .search {

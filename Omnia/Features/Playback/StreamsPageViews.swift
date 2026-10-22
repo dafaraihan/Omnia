@@ -64,6 +64,58 @@ struct StreamsPageLayout<Panel: View>: View {
     }
 }
 
+/// The sources over the video in the player: the panel alone on the right,
+/// with the picture dimmed behind it and no artwork or title details.
+struct StreamsPlayerPanelLayout<Panel: View>: View {
+    let onClose: () -> Void
+    @ViewBuilder let panel: () -> Panel
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .trailing) {
+                Color.black.opacity(0.5)
+                    .contentShape(Rectangle())
+                    .onTapGesture(perform: onClose)
+                    .accessibilityHidden(true)
+
+                VStack(spacing: 0) {
+                    HStack {
+                        Spacer()
+                        Button(action: onClose) {
+                            Image(systemName: "xmark")
+                                .font(.body.weight(.semibold))
+                                .frame(width: 32, height: 32)
+                        }
+                        #if os(macOS)
+                        .omniaRoundedGlassButton(cornerRadius: 16, role: .control)
+                        #else
+                        .buttonStyle(.plain)
+                        #endif
+                        .keyboardShortcut(.cancelAction)
+                        .help("Close")
+                        .accessibilityLabel("Close Sources")
+                    }
+                    .padding([.top, .trailing], 14)
+                    panel()
+                }
+                .frame(width: min(560, proxy.size.width - 36))
+                .frame(maxHeight: .infinity)
+                .background(.black.opacity(0.45), in: .rect(cornerRadius: 26, style: .continuous))
+                #if os(macOS)
+                .glassEffect(.clear, in: .rect(cornerRadius: 26, style: .continuous))
+                #endif
+                .clipShape(.rect(cornerRadius: 26, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 26, style: .continuous)
+                        .strokeBorder(.white.opacity(0.08))
+                }
+                .padding(18)
+            }
+        }
+        .environment(\.colorScheme, .dark)
+    }
+}
+
 private struct StreamsPageBackdrop: View {
     let item: MediaItem
     let episode: MediaEpisode?

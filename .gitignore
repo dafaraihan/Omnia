@@ -1,1 +1,9 @@
 .worktrees/
+
+# Xcode per-user state and build output
+xcuserdata/
+*.xcuserstate
+.DS_Store
+build/
+DerivedData/
+*.dmg

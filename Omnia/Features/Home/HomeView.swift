@@ -270,16 +270,6 @@ struct HomeView: View {
         #if os(iOS)
         .toolbarBackground(.hidden, for: .navigationBar)
         #endif
-        #if os(macOS)
-        // The trailer's speaker button sits in the top bar, level with it.
-        .toolbar {
-            if heroTrailer.isVisible {
-                ToolbarItem(placement: .primaryAction) {
-                    HomeHeroTrailerMuteButton(model: heroTrailer, isInToolbar: true)
-                }
-            }
-        }
-        #endif
         .omniaNavigationTitle("Home", screen: .home)
         .navigationDestination(for: MediaItem.self) { MediaDetailView(item: $0) }
         .navigationDestination(for: CollectionFolderRoute.self) { route in
@@ -574,16 +564,15 @@ struct HomeView: View {
                 .padding(.horizontal, 20)
             }
         }
-        #if !os(macOS)
+        // The trailer's speaker button belongs to the hero, so it scrolls
+        // away with it (Dafa, 2026-10-22). Top right, clear of the window's
+        // top bar when the hero runs full-bleed beneath it.
         .overlay(alignment: .topTrailing) {
-            // Top right, clear of the window's top bar when the hero runs
-            // full-bleed beneath it.
             HomeHeroTrailerMuteButton(model: heroTrailer)
                 .padding(.trailing, 28)
                 .padding(.top, isCardHero ? 20 : HomeHeroTrailerMuteButton.fullBleedTopInset)
                 .animation(.snappy(duration: 0.25), value: heroTrailer.isVisible)
         }
-        #endif
         .overlay(alignment: .bottom) {
             if heroCandidates.count > 1 {
                 HeroPageControl(
