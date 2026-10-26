@@ -1622,6 +1622,16 @@ struct PlaybackExperienceView: View {
             }
         }
         .animation(.snappy, value: playback.recoveryNotice)
+        .overlay(alignment: .topLeading) {
+            ContentWarningOverlay(
+                item: playback.mediaItem,
+                playbackKey: "\(playback.mediaItem?.id ?? "")|\(playback.episode?.id ?? "")",
+                hasStarted: playback.hasRenderedVideoFrame,
+                isEnabled: settings.preferences.playbackBehavior.showContentWarnings
+            )
+            .padding(.leading, 40)
+            .padding(.top, 72)
+        }
         .contentShape(Rectangle())
         .onTapGesture {
             // One click shows the controls, the next hides them. While the

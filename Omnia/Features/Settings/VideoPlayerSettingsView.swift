@@ -134,6 +134,10 @@ struct VideoPlayerSettingsView: View {
                     Text("Pause Overlay")
                     Text("Shows the title's details after five seconds paused.")
                 }
+                Toggle(isOn: settings.binding(\.playbackBehavior.showContentWarnings)) {
+                    Text("Content Warnings")
+                    Text("Shows IMDb's parents guide (sex, violence, language, drugs, frightening scenes) for a few seconds when a title starts. Sends the title's IMDb ID to api.tiffara.com, as Nuvio does.")
+                }
             }
 
             #if os(macOS)

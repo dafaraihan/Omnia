@@ -165,6 +165,9 @@ nonisolated struct PlaybackBehaviorPreferences: Codable, Equatable, Sendable {
     var showLoadingOverlay = true
     var showLoadingStatus = true
     var showPauseOverlay = true
+    /// Nuvio's Parental Guide: IMDb's content warnings for a few seconds
+    /// when a title starts.
+    var showContentWarnings = true
 
     // Full screen (macOS): Omnia's own borderless full screen, which also
     // covers the strip beside the camera notch (Dafa, 2026-10-21).
@@ -192,7 +195,7 @@ nonisolated struct PlaybackBehaviorPreferences: Codable, Equatable, Sendable {
         case autoSkipSegments
         case stripSDHSubtitles, useForcedSubtitles, showOnlyPreferredSubtitleLanguages
         case decoderPriority
-        case showLoadingOverlay, showLoadingStatus, showPauseOverlay
+        case showLoadingOverlay, showLoadingStatus, showPauseOverlay, showContentWarnings
         case usesWholeScreen
         case autoSyncsSubtitles
     }
@@ -228,6 +231,7 @@ nonisolated struct PlaybackBehaviorPreferences: Codable, Equatable, Sendable {
         showLoadingOverlay = value(.showLoadingOverlay, defaults.showLoadingOverlay)
         showLoadingStatus = value(.showLoadingStatus, defaults.showLoadingStatus)
         showPauseOverlay = value(.showPauseOverlay, defaults.showPauseOverlay)
+        showContentWarnings = value(.showContentWarnings, defaults.showContentWarnings)
         usesWholeScreen = value(.usesWholeScreen, defaults.usesWholeScreen)
         autoSyncsSubtitles = value(.autoSyncsSubtitles, defaults.autoSyncsSubtitles)
     }
@@ -257,6 +261,7 @@ nonisolated struct PlaybackBehaviorPreferences: Codable, Equatable, Sendable {
         try container.encode(showLoadingOverlay, forKey: .showLoadingOverlay)
         try container.encode(showLoadingStatus, forKey: .showLoadingStatus)
         try container.encode(showPauseOverlay, forKey: .showPauseOverlay)
+        try container.encode(showContentWarnings, forKey: .showContentWarnings)
         try container.encode(usesWholeScreen, forKey: .usesWholeScreen)
         try container.encode(autoSyncsSubtitles, forKey: .autoSyncsSubtitles)
     }

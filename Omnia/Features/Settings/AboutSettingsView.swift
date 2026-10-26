@@ -141,6 +141,14 @@ enum AboutCatalog {
             links: [link(.terms, "IntroDB Terms", "https://introdb.app/docs/terms")]
         ),
         resource(
+            id: "content-warnings",
+            name: "Content Warnings",
+            purpose: "IMDb parents guide ratings shown when a title starts, fetched by IMDb ID from api.tiffara.com as in Nuvio. Turn off in Settings › Playback.",
+            sections: [.metadataAndDiscovery, .attributions, .privacy],
+            attribution: "Parents guide ratings come from IMDb users.",
+            links: [link(.official, "IMDb Parents Guide", "https://help.imdb.com/article/contribution/titles/parents-guide/")]
+        ),
+        resource(
             id: "trakt",
             name: "Trakt",
             purpose: "Scrobbles what you watch to your Trakt account, through the API app you create.",
