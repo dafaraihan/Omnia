@@ -325,6 +325,7 @@ final class PlaybackSession {
     /// Settings › Video Player › Use Whole Screen, read when playback starts.
     @ObservationIgnored private var usesWholeScreen = false
     @ObservationIgnored private let wholeScreen = WholeScreenPresentation()
+    @ObservationIgnored private let displaySleep = DisplaySleepAssertion()
     /// Settings' subtitle delay; delays set in the player are kept per title
     /// instead of replacing it.
     @ObservationIgnored private var defaultSubtitleDelay: Double = 0
@@ -989,6 +990,7 @@ final class PlaybackSession {
         player?.stateChangeHandler = nil
         if persisting { captureContinueWatchingScene() }
         player?.stop()
+        displaySleep.release()
         #else
         player?.pause()
         #endif
@@ -1402,6 +1404,9 @@ final class PlaybackSession {
         if isPaused != state.isPaused {
             isPaused = state.isPaused
         }
+        #if os(macOS)
+        displaySleep.update(isPlaying: player != nil && !state.isPaused && state.errorMessage == nil)
+        #endif
         if playbackRate != state.playbackRate {
             playbackRate = state.playbackRate
         }

@@ -702,12 +702,26 @@ static void OMMpvWakeup(void *context) {
     mpv_set_option_string(_mpv, "input-vo-keyboard", "no");
     // Omnia supplies the complete playback interaction surface.  Disabling
     // mpv's bundled Lua scripts also avoids spinning up its optional JIT
-    // script runtime inside a hardened macOS app.
+    // script runtime inside a hardened macOS app. mpv 0.41 added the select,
+    // positioning, commands and context menu scripts and the OSC still loads
+    // by default; LuaJIT writing code for them got Omnia killed with "Code
+    // Signature Invalid".
     mpv_set_option_string(_mpv, "load-scripts", "no");
     mpv_set_option_string(_mpv, "load-console", "no");
     mpv_set_option_string(_mpv, "load-stats-overlay", "no");
     mpv_set_option_string(_mpv, "load-auto-profiles", "no");
+    mpv_set_option_string(_mpv, "load-select", "no");
+    mpv_set_option_string(_mpv, "load-positioning", "no");
+    mpv_set_option_string(_mpv, "load-commands", "no");
+    mpv_set_option_string(_mpv, "load-context-menu", "no");
+    mpv_set_option_string(_mpv, "osc", "no");
     mpv_set_option_string(_mpv, "ytdl", "no");
+    // ao_coreaudio registers a device listener holding a pointer to its
+    // output and leaves it behind when init fails part way, so the next
+    // device change (AirPods, a display sleeping, a new default output)
+    // calls into freed memory. AVFoundation's output registers none and
+    // follows the system output device on its own.
+    mpv_set_option_string(_mpv, "ao", "avfoundation,coreaudio");
     mpv_set_option_string(_mpv, "keep-open", "yes");
     mpv_set_option_string(_mpv, "osd-level", "0");
     mpv_set_option_string(_mpv, "vo", "libmpv");

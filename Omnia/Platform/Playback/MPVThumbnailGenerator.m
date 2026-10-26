@@ -105,6 +105,12 @@ static void OMMpvThumbnailWakeup(void *context) {
     mpv_set_option_string(_mpv, "load-console", "no");
     mpv_set_option_string(_mpv, "load-stats-overlay", "no");
     mpv_set_option_string(_mpv, "load-auto-profiles", "no");
+    mpv_set_option_string(_mpv, "load-select", "no");
+    mpv_set_option_string(_mpv, "load-positioning", "no");
+    mpv_set_option_string(_mpv, "load-commands", "no");
+    mpv_set_option_string(_mpv, "load-context-menu", "no");
+    mpv_set_option_string(_mpv, "osc", "no");
+    mpv_set_option_string(_mpv, "ytdl", "no");
     mpv_set_option_string(_mpv, "audio", "no");
     mpv_set_option_string(_mpv, "ao", "null");
     mpv_set_option_string(_mpv, "vo", "null");
@@ -112,7 +118,6 @@ static void OMMpvThumbnailWakeup(void *context) {
     mpv_set_option_string(_mpv, "keep-open", "yes");
     mpv_set_option_string(_mpv, "hwdec", "auto-safe");
     mpv_set_option_string(_mpv, "hr-seek", "yes");
-    mpv_set_option_string(_mpv, "ytdl", "no");
     // Previews jump straight to one frame, so reading far ahead is wasted.
     // mpv's default stream cache would keep up to 200 MB per decoder.
     mpv_set_option_string(_mpv, "demuxer-max-bytes", "32MiB");
