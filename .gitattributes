@@ -1,0 +1,2 @@
+# Vendored upstream patches keep their exact bytes, trailing spaces included.
+NativeDependencies/patches/** -whitespace

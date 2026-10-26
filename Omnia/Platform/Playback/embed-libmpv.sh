@@ -7,7 +7,10 @@ set -euo pipefail
 
 [[ "${PLATFORM_NAME:-}" == "macosx" ]] || exit 0
 
-for CANDIDATE in /opt/homebrew/opt/mpv/lib/libmpv.2.dylib /usr/local/opt/mpv/lib/libmpv.2.dylib; do
+# Scripts/build-dev-libmpv.sh builds libmpv with Omnia's MoltenVK patch, which
+# the Metal player needs; Homebrew's libmpv can only draw with OpenGL.
+DEV_LIBMPV="${OMNIA_DEV_LIBMPV_CACHE:-$HOME/Library/Caches/Omnia/dev-libmpv}/current/lib/libmpv.2.dylib"
+for CANDIDATE in "$DEV_LIBMPV" /opt/homebrew/opt/mpv/lib/libmpv.2.dylib /usr/local/opt/mpv/lib/libmpv.2.dylib; do
     if [[ -f "$CANDIDATE" ]]; then
         MPV_LIBRARY="$CANDIDATE"
         break
@@ -43,7 +46,14 @@ copy_library() {
     [[ -f "$destination" ]] || cp -fL "$source" "$destination"
 }
 
-copy_library "$MPV_LIBRARY"
+# libmpv is always replaced, so switching between the patched and Homebrew
+# builds never leaves the other one bundled.
+cp -fL "$MPV_LIBRARY" "$FRAMEWORKS_DIR/libmpv.2.dylib"
+if [[ "$MPV_LIBRARY" == "$DEV_LIBMPV" ]]; then
+    echo "note: bundling the patched libmpv with the Metal (MoltenVK) context"
+else
+    echo "warning: bundling Homebrew's libmpv, which can only use OpenGL; run Scripts/build-dev-libmpv.sh for Metal"
+fi
 # Homebrew exposes both full-version and compatibility symlinks. Keep only
 # the compatibility install name that the linked executable requests.
 find "$FRAMEWORKS_DIR" -maxdepth 1 -type f -name 'libtorrent-rasterbar*.dylib' -delete
@@ -67,6 +77,34 @@ while [[ "$did_copy" == "1" ]]; do
         done < <(otool -L "$binary" | awk 'NR > 1 { print $1 }')
     done < <(find "$FRAMEWORKS_DIR" -maxdepth 1 -type f -name '*.dylib' -print)
 done
+
+# The Vulkan loader finds MoltenVK through an ICD manifest. Homebrew's lives
+# outside the sandbox, so bundle MoltenVK with a manifest that points at it;
+# the player sets VK_DRIVER_FILES to that manifest before creating mpv.
+MOLTENVK_LIBRARY=""
+for CANDIDATE in /opt/homebrew/opt/molten-vk/lib/libMoltenVK.dylib /usr/local/opt/molten-vk/lib/libMoltenVK.dylib; do
+    if [[ -f "$CANDIDATE" ]]; then
+        MOLTENVK_LIBRARY="$CANDIDATE"
+        break
+    fi
+done
+ICD_DIRECTORY="${APP_ROOT}/Contents/Resources/vulkan/icd.d"
+if [[ -n "$MOLTENVK_LIBRARY" && -f "$FRAMEWORKS_DIR/libvulkan.1.dylib" ]]; then
+    cp -fL "$MOLTENVK_LIBRARY" "$FRAMEWORKS_DIR/libMoltenVK.dylib"
+    mkdir -p "$ICD_DIRECTORY"
+    cat > "$ICD_DIRECTORY/MoltenVK_icd.json" <<'JSON'
+{
+    "file_format_version": "1.0.0",
+    "ICD": {
+        "library_path": "../../../Frameworks/libMoltenVK.dylib",
+        "api_version": "1.4.0",
+        "is_portability_driver": true
+    }
+}
+JSON
+else
+    rm -rf "$ICD_DIRECTORY" "$FRAMEWORKS_DIR/libMoltenVK.dylib"
+fi
 
 # Rewrite all bundled install names to @rpath and then rewrite references in
 # every executable/dylib that is part of Omnia's process.
