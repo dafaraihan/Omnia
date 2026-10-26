@@ -113,6 +113,31 @@ nonisolated struct MetadataRoute: Codable, Equatable, Sendable {
         [primary] + (fallbackEnabled ? fallbackOrder : [])
     }
 
+    // MARK: One ordered list
+
+    /// Settings shows a type's sources as one list: those in use in the
+    /// order they're asked (the first is the primary), then the rest
+    /// (Dafa, 2026-10-26).
+    func orderedSources(allowed: [MetadataProviderIdentifier]) -> [MetadataProviderIdentifier] {
+        let inUse = requestedProviders.filter(allowed.contains)
+        return inUse + allowed.filter { !inUse.contains($0) }
+    }
+
+    func isInUse(_ provider: MetadataProviderIdentifier) -> Bool {
+        requestedProviders.contains(provider)
+    }
+
+    /// Uses exactly `order`, first to last: the first is the primary and
+    /// the rest fill in what it's missing. Ignored when nothing is left on.
+    mutating func setSources(inUseOrder order: [MetadataProviderIdentifier], allowed: [MetadataProviderIdentifier]) {
+        var seen = Set<MetadataProviderIdentifier>()
+        let sources = order.filter { allowed.contains($0) && seen.insert($0).inserted }
+        guard let first = sources.first else { return }
+        primary = first
+        fallbackOrder = Array(sources.dropFirst())
+        fallbackEnabled = true
+    }
+
     private static func completeFallbackOrder(
         _ order: [MetadataProviderIdentifier],
         primary: MetadataProviderIdentifier,

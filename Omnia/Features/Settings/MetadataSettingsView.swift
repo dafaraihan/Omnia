@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Settings › Integrations, laid out like Nuvio's: TMDB Enrichment and
 /// MDBList Ratings. Omnia's own metadata routing, which Nuvio doesn't have,
@@ -161,119 +162,184 @@ struct TMDBEnrichmentSettingsView: View {
     }
 }
 
+/// A type's metadata sources as one list (Dafa, 2026-10-26): drag to set
+/// the order, switch a source off to stop using it. The first source that's
+/// on is asked first; the others fill in what it's missing, in order.
 private struct MetadataRouteSection: View {
     @Environment(OmniaStore.self) private var store
+    @State private var draggedSource: MetadataProviderIdentifier?
 
     let contentClass: MetadataContentClass
 
     private var route: MetadataRoute { store.metadataRouting[contentClass] }
     private var allowedSources: [MetadataProviderIdentifier] { contentClass.availableSources }
-    private var eligibleFallbacks: [MetadataProviderIdentifier] {
-        allowedSources.filter { $0 != route.primary }
-    }
+    private var sources: [MetadataProviderIdentifier] { route.orderedSources(allowed: allowedSources) }
+    private var inUse: [MetadataProviderIdentifier] { sources.filter(route.isInUse) }
 
     var body: some View {
         Section {
-            SettingsDropdown(
-                "Primary Source",
-                selection: primaryBinding,
-                options: Array(allowedSources)
-            ) { provider in provider.title }
-
-            Toggle("Enable Fallback", isOn: fallbackEnabledBinding)
-
-            if route.fallbackEnabled {
-                ForEach(eligibleFallbacks) { provider in
-                    Toggle(provider.title, isOn: fallbackBinding(for: provider))
-                }
-
-                if !route.fallbackOrder.isEmpty {
-                    LabeledContent("Fallback Priority") {
-                        Text("First to last")
-                            .foregroundStyle(.secondary)
-                    }
-
-                    ForEach(route.fallbackOrder) { provider in
-                        MetadataFallbackRow(
-                            provider: provider,
-                            canMoveEarlier: provider != route.fallbackOrder.first,
-                            canMoveLater: provider != route.fallbackOrder.last,
-                            move: { direction in move(provider, direction: direction) }
-                        )
-                    }
-                    .onMove(perform: moveFallback)
-                }
+            ForEach(sources) { provider in
+                let isOn = route.isInUse(provider)
+                MetadataSourceRow(
+                    provider: provider,
+                    role: role(of: provider),
+                    isOn: Binding(
+                        get: { isOn },
+                        set: { setInUse(provider, $0) }
+                    ),
+                    // At least one source stays on.
+                    canTurnOff: inUse.count > 1
+                )
+                .opacity(draggedSource == provider ? 0.72 : 1)
+                .modifier(MetadataSourceDragModifier(
+                    provider: provider,
+                    isDraggable: isOn,
+                    inUse: { inUse },
+                    draggedSource: $draggedSource,
+                    move: reorder
+                ))
+                .accessibilityAction(named: "Move Earlier") { step(provider, by: -1) }
+                .accessibilityAction(named: "Move Later") { step(provider, by: 1) }
             }
         } header: {
             Text(contentClass.title)
         } footer: {
-            Text("The primary source is queried first. Enabled fallback sources fill missing metadata in priority order.")
+            Text("Drag to change the order. Omnia asks the first source that's on, then the next ones for anything it's missing.")
         }
     }
 
-    private var primaryBinding: Binding<MetadataProviderIdentifier> {
-        Binding(
-            get: { route.primary },
-            set: { provider in
-                updateRoute { $0.setPrimary(provider, allowed: allowedSources) }
-            }
-        )
+    private func role(of provider: MetadataProviderIdentifier) -> MetadataSourceRow.Role {
+        guard let index = inUse.firstIndex(of: provider) else { return .off }
+        return index == 0 ? .primary : .fallback(index)
     }
 
-    private var fallbackEnabledBinding: Binding<Bool> {
-        Binding(
-            get: { route.fallbackEnabled },
-            set: { enabled in updateRoute { $0.fallbackEnabled = enabled } }
-        )
+    private func setInUse(_ provider: MetadataProviderIdentifier, _ on: Bool) {
+        var order = inUse
+        if on {
+            if !order.contains(provider) { order.append(provider) }
+        } else {
+            guard order.count > 1 else { return }
+            order.removeAll { $0 == provider }
+        }
+        update(order)
     }
 
-    private func fallbackBinding(for provider: MetadataProviderIdentifier) -> Binding<Bool> {
-        Binding(
-            get: { route.fallbackOrder.contains(provider) },
-            set: { enabled in
-                updateRoute {
-                    $0.setFallback(provider, enabled: enabled, allowed: allowedSources)
-                }
-            }
-        )
+    private func reorder(_ order: [MetadataProviderIdentifier]) {
+        update(order)
     }
 
-    private func updateRoute(_ update: (inout MetadataRoute) -> Void) {
+    private func step(_ provider: MetadataProviderIdentifier, by offset: Int) {
+        var order = inUse
+        guard let index = order.firstIndex(of: provider), order.indices.contains(index + offset) else { return }
+        order.swapAt(index, index + offset)
+        update(order)
+    }
+
+    private func update(_ order: [MetadataProviderIdentifier]) {
         var preferences = store.metadataRouting
-        update(&preferences[contentClass])
-        store.metadataRouting = preferences
-    }
-
-    private func move(_ provider: MetadataProviderIdentifier, direction: MetadataFallbackMoveDirection) {
-        updateRoute { $0.moveFallback(provider, direction: direction) }
-    }
-
-    private func moveFallback(from source: IndexSet, to destination: Int) {
-        updateRoute { $0.moveFallback(from: source, to: destination) }
+        preferences[contentClass].setSources(inUseOrder: order, allowed: allowedSources)
+        guard preferences != store.metadataRouting else { return }
+        withAnimation(.easeInOut(duration: 0.16)) {
+            store.metadataRouting = preferences
+        }
     }
 }
 
-private struct MetadataFallbackRow: View {
+private struct MetadataSourceRow: View {
+    enum Role: Equatable {
+        case primary
+        case fallback(Int)
+        case off
+    }
+
     let provider: MetadataProviderIdentifier
-    let canMoveEarlier: Bool
-    let canMoveLater: Bool
-    let move: (MetadataFallbackMoveDirection) -> Void
+    let role: Role
+    @Binding var isOn: Bool
+    let canTurnOff: Bool
 
     var body: some View {
         HStack(spacing: 12) {
+            Image(systemName: "line.3.horizontal")
+                .foregroundStyle(.tertiary)
+                .opacity(role == .off ? 0 : 1)
+                .accessibilityHidden(true)
             MetadataProviderMark(providerID: provider.rawValue)
-            Text(provider.title)
-            Spacer()
-            Menu("Change Priority", systemImage: "arrow.up.arrow.down") {
-                Button("Move Earlier", systemImage: "arrow.up") { move(.earlier) }
-                    .disabled(!canMoveEarlier)
-                Button("Move Later", systemImage: "arrow.down") { move(.later) }
-                    .disabled(!canMoveLater)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(provider.title)
+                Text(roleText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            .labelStyle(.iconOnly)
+            Spacer()
+            Toggle(provider.title, isOn: $isOn)
+                .labelsHidden()
+                .disabled(isOn && !canTurnOff)
+                .help(isOn && !canTurnOff ? "One source has to stay on." : "")
         }
-        .accessibilityAction(named: "Move Earlier") { move(.earlier) }
-        .accessibilityAction(named: "Move Later") { move(.later) }
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+    }
+
+    private var roleText: String {
+        switch role {
+        case .primary: "Asked first"
+        case .fallback(let position): position == 1 ? "Fills in what's missing" : "Then fills in the rest"
+        case .off: "Off"
+        }
+    }
+}
+
+/// Drag and drop between the sources that are on, the way Add-ons reorder.
+private struct MetadataSourceDragModifier: ViewModifier {
+    let provider: MetadataProviderIdentifier
+    let isDraggable: Bool
+    let inUse: () -> [MetadataProviderIdentifier]
+    @Binding var draggedSource: MetadataProviderIdentifier?
+    let move: ([MetadataProviderIdentifier]) -> Void
+
+    func body(content: Content) -> some View {
+        if isDraggable {
+            content
+                .onDrag {
+                    draggedSource = provider
+                    return NSItemProvider(object: provider.rawValue as NSString)
+                }
+                .onDrop(of: [.text], delegate: MetadataSourceDropDelegate(
+                    target: provider,
+                    inUse: inUse,
+                    draggedSource: $draggedSource,
+                    move: move
+                ))
+        } else {
+            content
+        }
+    }
+}
+
+private struct MetadataSourceDropDelegate: DropDelegate {
+    let target: MetadataProviderIdentifier
+    let inUse: () -> [MetadataProviderIdentifier]
+    @Binding var draggedSource: MetadataProviderIdentifier?
+    let move: ([MetadataProviderIdentifier]) -> Void
+
+    func dropEntered(info: DropInfo) {
+        var order = inUse()
+        guard let draggedSource, draggedSource != target,
+              let source = order.firstIndex(of: draggedSource),
+              let destination = order.firstIndex(of: target)
+        else { return }
+        order.remove(at: source)
+        order.insert(draggedSource, at: destination)
+        move(order)
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggedSource = nil
+        return true
     }
 }
 
