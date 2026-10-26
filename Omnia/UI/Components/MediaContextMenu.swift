@@ -118,24 +118,37 @@ private struct MediaContextMenuModifier: ViewModifier {
     let item: MediaItem
     let placement: MediaContextPlacement
 
-    @Environment(OmniaStore.self) private var store
-    @Environment(LiveMetadataStore.self) private var metadata
-
     func body(content: Content) -> some View {
         content
             .contentShape(Rectangle())
             .contextMenu {
-                ForEach(
-                    Array(MediaContextMenuPresentation.commands(
-                        kind: item.kind,
-                        placement: placement,
-                        isSaved: store.isSaved(item)
-                    ).enumerated()),
-                    id: \.offset
-                ) { _, command in
-                    menuItem(for: command)
-                }
+                MediaContextMenuItems(item: item, placement: placement)
             }
+    }
+}
+
+/// The menu's items, in their own view. `isSaved` scans the library and
+/// watch history, and a menu's items are built with the card; here that
+/// work and the library observation stay out of every poster's update, so
+/// saving progress no longer redraws every card on screen.
+private struct MediaContextMenuItems: View {
+    let item: MediaItem
+    let placement: MediaContextPlacement
+
+    @Environment(OmniaStore.self) private var store
+    @Environment(LiveMetadataStore.self) private var metadata
+
+    var body: some View {
+        ForEach(
+            Array(MediaContextMenuPresentation.commands(
+                kind: item.kind,
+                placement: placement,
+                isSaved: store.isSaved(item)
+            ).enumerated()),
+            id: \.offset
+        ) { _, command in
+            menuItem(for: command)
+        }
     }
 
     @ViewBuilder

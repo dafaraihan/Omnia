@@ -58,12 +58,21 @@ private struct PosterTransitionSourceModifier: ViewModifier {
     let prefersBackdrop: Bool
     let cornerRadius: CGFloat
     @Environment(\.displayPreferences) private var display
-    @State private var frame: CGRect = .zero
+    /// Not `@State`: the frame changes on every scrolled frame, and storing
+    /// it as state redrew every poster on screen each time. It is only read
+    /// when a poster is pointed at or tapped.
+    @State private var frameBox = FrameBox()
+
+    private final class FrameBox {
+        var frame: CGRect = .zero
+    }
+
+    private var frame: CGRect { frameBox.frame }
 
     func body(content: Content) -> some View {
         if display.posterTransition {
             content
-                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame = $0 }
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frameBox.frame = $0 }
                 #if os(macOS)
                 // A click on the Mac always follows the pointer entering the
                 // poster, so the hovered poster is the one that opens.

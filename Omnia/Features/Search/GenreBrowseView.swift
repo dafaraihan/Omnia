@@ -5,17 +5,51 @@
 
 import SwiftUI
 
+/// What a Browse by Genre page lists: one of Omnia's genres, or Anime.
+nonisolated enum GenreBrowseTopic: Hashable, Sendable {
+    case genre(BrowseGenre)
+    case anime
+
+    var title: String {
+        switch self {
+        case .genre(let genre): genre.title
+        case .anime: "Anime"
+        }
+    }
+
+    var key: String {
+        switch self {
+        case .genre(let genre): genre.rawValue
+        case .anime: "anime"
+        }
+    }
+
+    /// The option an add-on catalog offers for this topic, if any.
+    func option(in options: [String]) -> String? {
+        switch self {
+        case .genre(let genre):
+            genre.option(in: options)
+        case .anime:
+            options.first {
+                $0.trimmingCharacters(in: .whitespacesAndNewlines)
+                    .compare("Anime", options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+            }
+        }
+    }
+}
+
 /// A Browse by Genre page. Titles come from the user's own add-on catalogs
 /// that offer this genre, with the add-on's posters, and from Omnia's
 /// metadata only when no add-on offers it. More titles load at the bottom,
 /// and Filter narrows the page by kind and catalog and sorts it
-/// (Dafa, 2026-10-22).
+/// (Dafa, 2026-10-22). Anime uses the same page: add-on anime catalogs,
+/// then Omnia's anime route when none are installed (Dafa, 2026-10-26).
 struct GenreBrowseView: View {
     @Environment(\.displayPreferences) private var display
     @Environment(OmniaStore.self) private var store
     @Environment(LiveMetadataStore.self) private var metadata
 
-    let genre: BrowseGenre
+    let topic: GenreBrowseTopic
 
     @State private var kind: MediaItem.Kind?
     /// Empty means the default sources: add-on catalogs when any offer this
@@ -24,28 +58,43 @@ struct GenreBrowseView: View {
     @State private var sort: DiscoverDateSort = .catalogOrder
     @State private var feed = GenreBrowseFeed()
 
-    private var sources: [GenreBrowseSource] {
-        GenreBrowseSource.all(for: genre, store: store, metadata: metadata)
+    init(topic: GenreBrowseTopic) {
+        self.topic = topic
     }
 
-    private var defaultSourceIDs: Set<String> {
-        let addonSources = sources.filter(\.isAddon)
-        return Set((addonSources.isEmpty ? sources : addonSources).map(\.id))
+    init(genre: BrowseGenre) {
+        self.init(topic: .genre(genre))
     }
 
-    private var chosenSourceIDs: Set<String> {
-        selectedSourceIDs.isEmpty ? defaultSourceIDs : selectedSourceIDs
+    /// The page's sources, worked out once per update. Listing them walks
+    /// every catalog of every add-on, so the menu, the empty state and the
+    /// request key share this instead of each listing them again.
+    private struct SourcePlan {
+        let all: [GenreBrowseSource]
+        let defaultIDs: Set<String>
+        let chosenIDs: Set<String>
+        let active: [GenreBrowseSource]
+
+        var requestKey: String { active.map(\.id).joined(separator: ",") }
     }
 
-    private var activeSources: [GenreBrowseSource] {
-        sources.filter { chosenSourceIDs.contains($0.id) && (kind == nil || $0.kind == kind) }
-    }
-
-    private var visibleItems: [MediaItem] {
-        DiscoverFilterPresentation.apply(DiscoverFilterState(kind: kind, sort: sort), to: feed.items)
+    private func sourcePlan() -> SourcePlan {
+        let all = GenreBrowseSource.all(for: topic, store: store, metadata: metadata)
+        let addonSources = all.filter(\.isAddon)
+        let defaultIDs = Set((addonSources.isEmpty ? all : addonSources).map(\.id))
+        let chosenIDs = selectedSourceIDs.isEmpty ? defaultIDs : selectedSourceIDs
+        return SourcePlan(
+            all: all,
+            defaultIDs: defaultIDs,
+            chosenIDs: chosenIDs,
+            active: all.filter { chosenIDs.contains($0.id) && (kind == nil || $0.kind == kind) }
+        )
     }
 
     var body: some View {
+        let plan = sourcePlan()
+        let visibleItems = DiscoverFilterPresentation.apply(DiscoverFilterState(kind: kind, sort: sort), to: feed.items)
+
         ScrollView(.vertical, showsIndicators: false) {
             LazyVGrid(
                 columns: MediaBrowseMetrics.posterGridColumns(display),
@@ -78,43 +127,39 @@ struct GenreBrowseView: View {
         .contentMargins(.vertical, 24, for: .scrollContent)
         .overlay {
             if feed.items.isEmpty && feed.isLoading {
-                ProgressView("Finding \(genre.title) titles…")
+                ProgressView("Finding \(topic.title) titles…")
             } else if visibleItems.isEmpty && !feed.hasMore && !feed.isLoading {
                 ContentUnavailableView {
-                    Label("No \(genre.title) Titles", systemImage: "film.stack")
+                    Label("No \(topic.title) Titles", systemImage: "film.stack")
                 } description: {
-                    Text(activeSources.isEmpty
+                    Text(plan.active.isEmpty
                          ? "None of your catalogs offer this genre for the chosen kind."
                          : "Try another kind or catalog, or check your connection.")
                 } actions: {
                     if feed.didFail {
                         Button("Try Again", systemImage: "arrow.clockwise") {
-                            feed.reset(sources: activeSources)
+                            feed.reset(sources: plan.active)
                         }
                     }
                 }
             }
         }
-        .omniaNavigationTitle(genre.title)
+        .omniaNavigationTitle(topic.title)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                filterMenu
+                filterMenu(plan)
             }
         }
-        .task(id: requestKey) {
-            feed.reset(sources: activeSources)
+        // Sorting only reorders what has loaded; kind and catalogs reload.
+        .task(id: "\(topic.key)|\(plan.requestKey)") {
+            feed.reset(sources: plan.active)
         }
         .navigationDestination(for: MediaItem.self) { MediaDetailView(item: $0) }
     }
 
-    /// Sorting only reorders what has loaded; kind and catalogs reload.
-    private var requestKey: String {
-        "\(genre.rawValue)|\(activeSources.map(\.id).joined(separator: ","))"
-    }
-
     // MARK: Filter
 
-    private var filterMenu: some View {
+    private func filterMenu(_ plan: SourcePlan) -> some View {
         Menu {
             // In a menu, a Picker is already its own submenu.
             Picker(selection: $kind) {
@@ -132,10 +177,10 @@ struct GenreBrowseView: View {
                     set: { if $0 { selectedSourceIDs.removeAll() } }
                 ))
                 Divider()
-                ForEach(sources) { source in
+                ForEach(plan.all) { source in
                     Toggle(isOn: Binding(
-                        get: { chosenSourceIDs.contains(source.id) },
-                        set: { _ in toggle(source.id) }
+                        get: { plan.chosenIDs.contains(source.id) },
+                        set: { _ in toggle(source.id, in: plan) }
                     )) {
                         Text(source.title)
                         Text(source.subtitle)
@@ -154,11 +199,11 @@ struct GenreBrowseView: View {
         } label: {
             Label("Filter and Sort", systemImage: "line.3.horizontal.decrease.circle")
         }
-        .help("Filter and sort \(genre.title)")
+        .help("Filter and sort \(topic.title)")
     }
 
-    private func toggle(_ id: String) {
-        var chosen = chosenSourceIDs
+    private func toggle(_ id: String, in plan: SourcePlan) {
+        var chosen = plan.chosenIDs
         if chosen.contains(id) {
             // Keep at least one catalog chosen.
             guard chosen.count > 1 else { return }
@@ -166,17 +211,20 @@ struct GenreBrowseView: View {
         } else {
             chosen.insert(id)
         }
-        selectedSourceIDs = chosen == defaultSourceIDs ? [] : chosen
+        selectedSourceIDs = chosen == plan.defaultIDs ? [] : chosen
     }
 }
 
 /// One place a genre page loads titles from.
 nonisolated struct GenreBrowseSource: Identifiable, Sendable {
     enum Origin: Sendable {
-        /// An add-on catalog, asked with its own name for the genre.
-        case addon(InstalledAddon, AddonCatalog, genreOption: String)
+        /// An add-on catalog, asked with its own name for the genre, or with
+        /// no genre when the whole catalog is the topic (an anime catalog).
+        case addon(InstalledAddon, AddonCatalog, genreOption: String?)
         /// Omnia's metadata catalog for a provider genre.
         case metadata(MediaType, genreID: Int)
+        /// Omnia's anime route: AniList, TMDB or TVDB, as Settings orders them.
+        case anime(MetadataCatalogCategory)
     }
 
     let id: String
@@ -190,48 +238,80 @@ nonisolated struct GenreBrowseSource: Identifiable, Sendable {
     }
 
     @MainActor
-    static func all(for genre: BrowseGenre, store: OmniaStore, metadata: LiveMetadataStore) -> [GenreBrowseSource] {
+    static func all(for topic: GenreBrowseTopic, store: OmniaStore, metadata: LiveMetadataStore) -> [GenreBrowseSource] {
         var sources: [GenreBrowseSource] = []
         for addon in store.installedAddons where addon.isEnabled {
             for catalog in addon.manifest.catalogs where store.isCatalogEnabled(for: addon, catalog: catalog) {
                 // A catalog that only answers searches can't list a genre.
                 let needsSearch = catalog.extra?.contains { $0.name == "search" && $0.isRequired == true } == true
-                guard !needsSearch,
-                      let options = catalog.extra?.first(where: { $0.name == "genre" })?.options,
-                      let option = genre.option(in: options),
-                      catalog.resolvingExtras(["genre": option]) != nil
-                else { continue }
+                guard !needsSearch else { continue }
+                let genreOption: String?
+                if let options = catalog.extra?.first(where: { $0.name == "genre" })?.options,
+                   let option = topic.option(in: options) {
+                    genreOption = option
+                } else if topic == .anime, isAnimeCatalog(catalog) {
+                    genreOption = nil
+                } else {
+                    continue
+                }
+                let extra = genreOption.map { ["genre": $0] } ?? [:]
+                guard catalog.resolvingExtras(extra) != nil else { continue }
                 let name = catalog.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                 sources.append(GenreBrowseSource(
                     id: "addon:\(store.catalogID(for: addon, catalog: catalog))",
                     title: name.isEmpty ? catalog.id : name,
                     subtitle: addon.displayName,
                     kind: MediaItem.Kind(stremioType: catalog.type) ?? .movie,
-                    origin: .addon(addon, catalog, genreOption: option)
+                    origin: .addon(addon, catalog, genreOption: genreOption)
                 ))
             }
         }
-        let metadataGenres: [(MediaType, MediaItem.Kind, [MetadataGenre])] = [
-            (.movie, .movie, metadata.movieGenres),
-            (.series, .series, metadata.seriesGenres)
-        ]
-        for (type, kind, genres) in metadataGenres {
-            guard let match = genres.first(where: { genre.matches($0.name) }) else { continue }
-            sources.append(GenreBrowseSource(
-                id: "metadata:\(type.rawValue):\(match.id)",
-                title: kind == .movie ? "Popular Movies" : "Popular Series",
-                subtitle: "Omnia Metadata",
-                kind: kind,
-                origin: .metadata(type, genreID: match.id)
-            ))
+        switch topic {
+        case .genre(let genre):
+            let metadataGenres: [(MediaType, MediaItem.Kind, [MetadataGenre])] = [
+                (.movie, .movie, metadata.movieGenres),
+                (.series, .series, metadata.seriesGenres)
+            ]
+            for (type, kind, genres) in metadataGenres {
+                guard let match = genres.first(where: { genre.matches($0.name) }) else { continue }
+                sources.append(GenreBrowseSource(
+                    id: "metadata:\(type.rawValue):\(match.id)",
+                    title: kind == .movie ? "Popular Movies" : "Popular Series",
+                    subtitle: "Omnia Metadata",
+                    kind: kind,
+                    origin: .metadata(type, genreID: match.id)
+                ))
+            }
+        case .anime:
+            let categories: [(MetadataCatalogCategory, String)] = [
+                (.trending, "Trending Anime"),
+                (.popular, "Popular Anime"),
+                (.topRated, "Top Rated Anime")
+            ]
+            for (category, title) in categories {
+                sources.append(GenreBrowseSource(
+                    id: "anime:\(category.rawValue)",
+                    title: title,
+                    subtitle: "Omnia Metadata",
+                    kind: .series,
+                    origin: .anime(category)
+                ))
+            }
         }
         return sources
+    }
+
+    /// Xperience and AIOMetadata type their anime catalogs `anime`,
+    /// `anime.series` or `anime.movie`.
+    private static func isAnimeCatalog(_ catalog: AddonCatalog) -> Bool {
+        let type = catalog.type.lowercased()
+        return type == "anime" || type.hasPrefix("anime.")
     }
 }
 
 /// The genre page's titles. Each page asks every chosen source for its next
-/// page at once and adds the answers in source order, leaving out titles
-/// already shown.
+/// page at once and shows each answer as it arrives, leaving out titles
+/// already shown, so one slow add-on doesn't hold back the others.
 @Observable
 @MainActor
 final class GenreBrowseFeed {
@@ -257,10 +337,10 @@ final class GenreBrowseFeed {
     func reset(sources: [GenreBrowseSource]) {
         generation += 1
         cursors = sources.map { source in
-            if case .metadata = source.origin {
-                Cursor(source: source, position: 1)
-            } else {
+            if case .addon = source.origin {
                 Cursor(source: source, position: 0)
+            } else {
+                Cursor(source: source, position: 1)
             }
         }
         items = []
@@ -278,7 +358,7 @@ final class GenreBrowseFeed {
         defer { if requestGeneration == generation { isLoading = false } }
 
         let pending = cursors.indices.filter { !cursors[$0].isDone }
-        var pages: [Int: Page] = [:]
+        var failures = 0
         await withTaskGroup(of: (Int, Page).self) { group in
             for index in pending {
                 let source = cursors[index].source
@@ -288,31 +368,34 @@ final class GenreBrowseFeed {
                 }
             }
             for await (index, page) in group {
-                pages[index] = page
+                guard requestGeneration == generation, !Task.isCancelled else {
+                    group.cancelAll()
+                    return
+                }
+                if page.failed { failures += 1 }
+                add(page, from: index)
             }
         }
         guard requestGeneration == generation, !Task.isCancelled else { return }
 
-        var failures = 0
-        for index in pending {
-            guard let page = pages[index] else { continue }
-            if page.failed { failures += 1 }
-            let fresh = page.items.filter { seenKeys.insert(Self.key(for: $0)).inserted }
-            // An add-on that doesn't page sends its first page again.
-            if page.received == 0 || fresh.isEmpty {
-                cursors[index].isDone = true
-                continue
-            }
-            if case .metadata = cursors[index].source.origin {
-                cursors[index].position += 1
-            } else {
-                cursors[index].position += page.received
-            }
-            items.append(contentsOf: fresh)
-        }
         didFail = items.isEmpty && failures > 0
         hasMore = cursors.contains { !$0.isDone }
         loadedPages += 1
+    }
+
+    private func add(_ page: Page, from index: Int) {
+        let fresh = page.items.filter { seenKeys.insert(Self.key(for: $0)).inserted }
+        // An add-on that doesn't page sends its first page again.
+        if page.received == 0 || fresh.isEmpty {
+            cursors[index].isDone = true
+            return
+        }
+        if case .addon = cursors[index].source.origin {
+            cursors[index].position += page.received
+        } else {
+            cursors[index].position += 1
+        }
+        items.append(contentsOf: fresh)
     }
 
     private struct Page: Sendable {
@@ -329,16 +412,23 @@ final class GenreBrowseFeed {
     ) async -> Page {
         switch source.origin {
         case .addon(let addon, let catalog, let option):
-            var extra = ["genre": option]
+            var extra: [String: String] = [:]
+            if let option { extra["genre"] = option }
             if position > 0 { extra["skip"] = String(position) }
+            guard let resolved = catalog.resolvingExtras(extra) else {
+                return Page(items: [], received: 0, failed: true)
+            }
             do {
-                let metas = try await StremioAddonClient.fetchCatalog(from: addon, catalog: catalog, extra: extra)
+                let metas = try await StremioAddonClient.fetchCatalog(from: addon, catalog: catalog, extra: resolved)
                 return Page(items: metas.compactMap { $0.mediaItem(addon: addon) }, received: metas.count)
             } catch {
                 return Page(items: [], received: 0, failed: true)
             }
         case .metadata(let type, let genreID):
             let items = await metadata.catalogPage(type: type, category: .popular, genreID: genreID, page: position)
+            return Page(items: items, received: items.count)
+        case .anime(let category):
+            let items = await metadata.animeCatalogPage(category: category, page: position)
             return Page(items: items, received: items.count)
         }
     }

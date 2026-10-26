@@ -154,7 +154,7 @@ private struct GenreTileLink: View {
             .accessibilityLabel("Browse \(genre.title)")
         case .anime:
             OmniaPageLink {
-                AnimeDiscoveryView()
+                GenreBrowseView(topic: .anime)
             } label: {
                 GenreCardLabel(title: "Anime", width: width) { AnimeGenreArtwork() }
             }
