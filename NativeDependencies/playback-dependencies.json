@@ -5,7 +5,7 @@
     "status": "pending",
     "second_reviewer": null,
     "reviewed_at": null,
-      "notes": "The selected source closure is pinned for local development, including libplacebo's Jinja and MarkupSafe build-only submodules. FFmpeg and OpenSSL signatures were validated against fingerprints published on their official sites. VideoLAN's checksum matches, but its libbluray signature uses an expired DSA/SHA-1 release key and is not sufficient release evidence. Remaining signatures, license obligations, reproducible universal artifacts, and the complete closure still require independent review before distribution."
+    "notes": "The selected source closure is pinned for local development, including libplacebo's Jinja and MarkupSafe build-only submodules. FFmpeg and OpenSSL signatures were validated against fingerprints published on their official sites. VideoLAN's checksum matches, but its libbluray signature uses an expired DSA/SHA-1 release key and is not sufficient release evidence. Remaining signatures, license obligations, reproducible universal artifacts, and the complete closure still require independent review before distribution. On 2026-10-27 the closure gained MoltenVK, SPIRV-Cross, cereal, shaderc, glslang, SPIRV-Tools and SPIRV-Headers (and MoltenVK's own pins of SPIRV-Tools, SPIRV-Headers and Vulkan-Headers) for gpu-next on Metal, and mpv carries NativeDependencies/patches/mpv/0001-player-add-moltenvk-context.patch from MPVKit; all are pending the same review."
   },
   "components": [
     {
@@ -225,6 +225,146 @@
         "checksum_url": "https://download.videolan.org/pub/videolan/libbluray/1.5.0/libbluray-1.5.0.tar.xz.sha256",
         "signature_url": "https://download.videolan.org/pub/videolan/libbluray/1.5.0/libbluray-1.5.0.tar.xz.asc",
         "publisher_evidence": "libudfread is embedded in the checksummed libbluray 1.5.0 source archive. That archive's signature is valid only under VideoLAN's expired DSA/SHA-1 key, so alternate provenance and independent review are required before release."
+      }
+    },
+    {
+      "name": "moltenvk",
+      "version": "1.4.2",
+      "top_level": false,
+      "source_url": "https://github.com/KhronosGroup/MoltenVK/archive/refs/tags/v1.4.2.tar.gz",
+      "sha256": "6864db532f1dbbdb621a8d0ec13f24edae318fd9269dd3dd0cdff791334bb1cb",
+      "license": "Apache-2.0",
+      "license_url": "https://github.com/KhronosGroup/MoltenVK/blob/v1.4.2/LICENSE",
+      "build_system": "xcodebuild",
+      "verification": {
+        "status": "pending-independent-review",
+        "publisher_evidence": "Khronos release tag v1.4.2. Runtime Vulkan implementation on Metal for libplacebo/mpv's gpu-next output, linked directly (no Vulkan loader). Official GitHub archive for the pinned revision; its digest was reproduced locally on 2026-10-27. No separately published signature or checksum was found; independent review remains pending."
+      }
+    },
+    {
+      "name": "spirv-cross",
+      "version": "0.68.0",
+      "top_level": false,
+      "source_url": "https://github.com/KhronosGroup/SPIRV-Cross/archive/6c09849fe88c48eaed08413aa022aaa136a3a057.tar.gz",
+      "sha256": "b81b9956289950570953738e666a031ca32ff64e4fc925eba89f227c42109518",
+      "license": "Apache-2.0",
+      "license_url": "https://github.com/KhronosGroup/SPIRV-Cross/blob/6c09849fe88c48eaed08413aa022aaa136a3a057/LICENSE",
+      "build_system": "moltenvk-external",
+      "verification": {
+        "status": "pending-independent-review",
+        "publisher_evidence": "Version is SPIRV-Cross's C ABI version at this revision; the project has no release tags. Revision pinned by MoltenVK v1.4.2 ExternalRevisions/SPIRV-Cross_repo_revision; compiled into libMoltenVK. Official GitHub archive for the pinned revision; its digest was reproduced locally on 2026-10-27. No separately published signature or checksum was found; independent review remains pending."
+      }
+    },
+    {
+      "name": "moltenvk-vulkan-headers",
+      "version": "1.4.357",
+      "top_level": false,
+      "source_url": "https://github.com/KhronosGroup/Vulkan-Headers/archive/e3b1eec08173d6b825cd3ac88c885a63b621504a.tar.gz",
+      "sha256": "f492279345cbc10708b64fcd432b3ff6c8246a5837c4db2b649abba00cf82208",
+      "license": "Apache-2.0",
+      "license_url": "https://github.com/KhronosGroup/Vulkan-Headers/blob/e3b1eec08173d6b825cd3ac88c885a63b621504a/LICENSE.md",
+      "build_system": "moltenvk-external",
+      "verification": {
+        "status": "pending-independent-review",
+        "publisher_evidence": "Revision pinned by MoltenVK v1.4.2 ExternalRevisions/Vulkan-Headers_repo_revision; build-only headers. Official GitHub archive for the pinned revision; its digest was reproduced locally on 2026-10-27. No separately published signature or checksum was found; independent review remains pending."
+      }
+    },
+    {
+      "name": "cereal",
+      "version": "1.3.2",
+      "top_level": false,
+      "source_url": "https://github.com/USCiLab/cereal/archive/a56bad8bbb770ee266e930c95d37fff2a5be7fea.tar.gz",
+      "sha256": "12e10fb541270632f6683286ce8c7e8c321fe4addb53fa91ed498b95c1758f93",
+      "license": "BSD-3-Clause",
+      "license_url": "https://github.com/USCiLab/cereal/blob/a56bad8bbb770ee266e930c95d37fff2a5be7fea/LICENSE",
+      "build_system": "moltenvk-external",
+      "verification": {
+        "status": "pending-independent-review",
+        "publisher_evidence": "Revision pinned by MoltenVK v1.4.2 ExternalRevisions/cereal_repo_revision; header-only, compiled into libMoltenVK. Official GitHub archive for the pinned revision; its digest was reproduced locally on 2026-10-27. No separately published signature or checksum was found; independent review remains pending."
+      }
+    },
+    {
+      "name": "moltenvk-spirv-tools",
+      "version": "2026.3",
+      "top_level": false,
+      "source_url": "https://github.com/KhronosGroup/SPIRV-Tools/archive/0d6fd73ca73830ccab5fa1f00ed5ed40124e2c55.tar.gz",
+      "sha256": "20219c0962dffb0d7644bb3116a5923cfcf0526a569baa0b2a17343dd2fa6e5d",
+      "license": "Apache-2.0",
+      "license_url": "https://github.com/KhronosGroup/SPIRV-Tools/blob/0d6fd73ca73830ccab5fa1f00ed5ed40124e2c55/LICENSE",
+      "build_system": "moltenvk-external",
+      "verification": {
+        "status": "pending-independent-review",
+        "publisher_evidence": "Revision pinned by MoltenVK v1.4.2 ExternalRevisions/SPIRV-Tools_repo_revision; built with MoltenVK's bundled pre-generated headers (Templates/spirv-tools/build.zip), as its fetchDependencies does by default. Official GitHub archive for the pinned revision; its digest was reproduced locally on 2026-10-27. No separately published signature or checksum was found; independent review remains pending."
+      }
+    },
+    {
+      "name": "moltenvk-spirv-headers",
+      "version": "1.6.7",
+      "top_level": false,
+      "source_url": "https://github.com/KhronosGroup/SPIRV-Headers/archive/29981f65241605e08b0ede4cfeb999fe3b723c6a.tar.gz",
+      "sha256": "232899f1ad4104fb5bc377b94596c7621575eee62ad9a9e8f929b63a7dd8a7ad",
+      "license": "MIT",
+      "license_url": "https://github.com/KhronosGroup/SPIRV-Headers/blob/29981f65241605e08b0ede4cfeb999fe3b723c6a/LICENSE",
+      "build_system": "moltenvk-external",
+      "verification": {
+        "status": "pending-independent-review",
+        "publisher_evidence": "Revision pinned by MoltenVK v1.4.2 ExternalRevisions/SPIRV-Headers_repo_revision; build-only headers. Official GitHub archive for the pinned revision; its digest was reproduced locally on 2026-10-27. No separately published signature or checksum was found; independent review remains pending."
+      }
+    },
+    {
+      "name": "shaderc",
+      "version": "2026.4",
+      "top_level": false,
+      "source_url": "https://github.com/google/shaderc/archive/refs/tags/v2026.4.tar.gz",
+      "sha256": "f06ce5bcca94e5df7f34e115743597d0ad2e13c5fe9213c67dc8c76031241947",
+      "license": "Apache-2.0",
+      "license_url": "https://github.com/google/shaderc/blob/v2026.4/LICENSE",
+      "build_system": "cmake",
+      "verification": {
+        "status": "pending-independent-review",
+        "publisher_evidence": "Google release tag v2026.4. libplacebo's GLSL-to-SPIR-V compiler for gpu-next on Vulkan, built as a static library inside libplacebo. Official GitHub archive for the pinned revision; its digest was reproduced locally on 2026-10-27. No separately published signature or checksum was found; independent review remains pending."
+      }
+    },
+    {
+      "name": "glslang",
+      "version": "16.6.0",
+      "top_level": false,
+      "source_url": "https://github.com/KhronosGroup/glslang/archive/e1b562a8bed273a02f30b59b66a5d499793cede5.tar.gz",
+      "sha256": "907174a24713c6202c146f164bf81783f1fbc79c8cb821a30f18f159eb980312",
+      "license": "BSD-3-Clause",
+      "license_url": "https://github.com/KhronosGroup/glslang/blob/e1b562a8bed273a02f30b59b66a5d499793cede5/LICENSE.txt",
+      "build_system": "shaderc-third-party",
+      "verification": {
+        "status": "pending-independent-review",
+        "publisher_evidence": "The pinned commit follows the 16.6.0 release (its CHANGES.md lists 16.6.0 as the latest release). Revision pinned by shaderc v2026.4 DEPS. LICENSE.txt is mainly BSD-3-Clause with MIT and Apache-2.0 parts, plus GPL-3.0-or-later with the Bison special exception for the generated grammar; Omnia is GPL-3.0, which is compatible, but the release review must record it. Official GitHub archive for the pinned revision; its digest was reproduced locally on 2026-10-27. No separately published signature or checksum was found; independent review remains pending."
+      }
+    },
+    {
+      "name": "spirv-tools",
+      "version": "2026.4",
+      "top_level": false,
+      "source_url": "https://github.com/KhronosGroup/SPIRV-Tools/archive/ef96ed763b43b59b33b31b362f09a02b729fa1c9.tar.gz",
+      "sha256": "82c62146083fd558735a3171cf97cfc47903ca7d368482e87f94bd44883c0f00",
+      "license": "Apache-2.0",
+      "license_url": "https://github.com/KhronosGroup/SPIRV-Tools/blob/ef96ed763b43b59b33b31b362f09a02b729fa1c9/LICENSE",
+      "build_system": "shaderc-third-party",
+      "verification": {
+        "status": "pending-independent-review",
+        "publisher_evidence": "Revision pinned by shaderc v2026.4 DEPS. Official GitHub archive for the pinned revision; its digest was reproduced locally on 2026-10-27. No separately published signature or checksum was found; independent review remains pending."
+      }
+    },
+    {
+      "name": "spirv-headers",
+      "version": "1.6.7",
+      "top_level": false,
+      "source_url": "https://github.com/KhronosGroup/SPIRV-Headers/archive/04fd3caa1e8267e4d95c806cad901181728e1006.tar.gz",
+      "sha256": "392f4801409aad9c4f1b77745f179952fd6264e4c8bd0fc1bc45dfa6807bf6d0",
+      "license": "MIT",
+      "license_url": "https://github.com/KhronosGroup/SPIRV-Headers/blob/04fd3caa1e8267e4d95c806cad901181728e1006/LICENSE",
+      "build_system": "shaderc-third-party",
+      "verification": {
+        "status": "pending-independent-review",
+        "publisher_evidence": "Revision pinned by shaderc v2026.4 DEPS; build-only headers. Official GitHub archive for the pinned revision; its digest was reproduced locally on 2026-10-27. No separately published signature or checksum was found; independent review remains pending."
       }
     }
   ]

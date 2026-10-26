@@ -109,9 +109,16 @@ write_build_plan() {
             "-Dtest=disabled", "-Dcompare=disabled", "-Dprofile=disabled",
             "-Dfuzz=disabled", "-Dcheckasm=disabled"
           ],
+          shaderc: [
+            "SHADERC_SKIP_TESTS=ON", "SHADERC_SKIP_EXAMPLES=ON",
+            "SHADERC_SKIP_EXECUTABLES=ON", "SPIRV_SKIP_EXECUTABLES=ON",
+            "ENABLE_GLSLANG_BINARIES=OFF", "BUILD_SHARED_LIBS=OFF"
+          ],
+          moltenvk: ["make macos", "dynamic library linked directly as Vulkan"],
           libplacebo: [
-            "-Dvulkan=disabled", "-Dopengl=disabled", "-Dgl-proc-addr=disabled",
-            "-Dd3d11=disabled", "-Dglslang=disabled", "-Dshaderc=disabled",
+            "-Dvulkan=enabled", "-Dvk-proc-addr=enabled", "-Dopengl=disabled",
+            "-Dgl-proc-addr=disabled", "-Dd3d11=disabled", "-Dglslang=disabled",
+            "-Dshaderc=enabled",
             "-Dlcms=disabled", "-Ddovi=disabled", "-Dlibdovi=disabled",
             "-Ddemos=false", "-Dtests=false", "-Dbench=false", "-Dfuzz=false",
             "-Dunwind=disabled", "-Dxxhash=disabled"
@@ -143,8 +150,10 @@ write_build_plan() {
             "-Duchardet=disabled", "-Dcocoa=disabled", "-Dmacos-cocoa-cb=disabled",
             "-Dmacos-media-player=disabled", "-Dmacos-touchbar=disabled",
             "-Dswift-build=disabled", "-Dgl=enabled", "-Dgl-cocoa=disabled",
+            "-Dvulkan=enabled", "-Dmoltenvk=enabled",
             "-Dtests=false", "-Dfuzzers=false"
-          ]
+          ],
+          patches: ["mpv: NativeDependencies/patches/mpv/0001-player-add-moltenvk-context.patch"]
         }
       }
     ' > "$output_directory/build-plan.json"
@@ -185,21 +194,47 @@ archive_is_confined() {
       END { exit invalid ? 1 : 0 }
     ' || return 1
 
+    # A symlink may point elsewhere inside the archive's top-level directory
+    # (MoltenVK links its headers that way), never above it, to an absolute
+    # path, or through a name with spaces this check can't read.
     tar -tvf "$archive" | awk '
       substr($1, 1, 1) == "h" { invalid = 1 }
       substr($1, 1, 1) == "l" {
-        separator = " -> "
-        separator_index = index($0, separator)
-        if (separator_index == 0) {
+        if (NF != 11 || $10 != "->") {
           invalid = 1
           next
         }
-        target = substr($0, separator_index + length(separator))
-        if (target ~ /^\//) invalid = 1
+        link = $9
+        target = $11
+        if (target ~ /^\//) {
+          invalid = 1
+          next
+        }
+        link_count = split(link, link_parts, "/")
+        top = link_parts[1]
+        depth = 0
+        for (link_index = 1; link_index < link_count; link_index++) {
+          if (link_parts[link_index] == "..") invalid = 1
+          if (link_parts[link_index] != "" && link_parts[link_index] != ".") {
+            depth++
+            resolved[depth] = link_parts[link_index]
+          }
+        }
         target_count = split(target, target_parts, "/")
         for (target_index = 1; target_index <= target_count; target_index++) {
-          if (target_parts[target_index] == "..") invalid = 1
+          part = target_parts[target_index]
+          if (part == "..") {
+            if (depth <= 1) {
+              invalid = 1
+              break
+            }
+            depth--
+          } else if (part != "" && part != ".") {
+            depth++
+            resolved[depth] = part
+          }
         }
+        if (depth < 1 || resolved[1] != top) invalid = 1
       }
       END { exit invalid ? 1 : 0 }
     ' || return 1
@@ -261,7 +296,7 @@ if [[ "$build_mode" == "fetch-only" ]]; then
     exit 0
 fi
 
-for command_name in meson ninja cmake make clang lipo otool install_name_tool file; do
+for command_name in meson ninja cmake make clang lipo otool install_name_tool file xcodebuild patch unzip; do
     command -v "$command_name" >/dev/null 2>&1 || {
         echo "error: required native compilation tool is unavailable: $command_name" >&2
         exit 69
@@ -340,6 +375,127 @@ meson_build() {
     } > "$log" 2>&1; then
         build_log_failure "$component ($architecture)" "$log"
     fi
+}
+
+apply_source_patches() {
+    local patch
+    for patch in "$repo_root"/NativeDependencies/patches/mpv/*.patch; do
+        [[ -f "$patch" ]] || continue
+        echo "patching mpv: $(basename "$patch")"
+        patch -d "$(source_root mpv)" -p1 --forward --silent < "$patch" || {
+            echo "error: mpv patch does not apply: $(basename "$patch")" >&2
+            exit 65
+        }
+    done
+}
+
+# MoltenVK, the Vulkan implementation gpu-next draws through on Metal. Its
+# fetchDependencies script clones over git, so the pinned archives are laid
+# out where it would put them and its Xcode projects are built directly.
+# Xcode's build database fails with "disk I/O error" outside its usual
+# DerivedData folder in a sandboxed shell, so derived data lives there.
+build_moltenvk() {
+    local source external log derived
+    source="$(source_root moltenvk)"
+    external="$source/External"
+    log="$work_directory/Logs/moltenvk.log"
+    derived="${OMNIA_NATIVE_XCODE_DERIVED_DATA:-$HOME/Library/Developer/Xcode/DerivedData/OmniaNativeMoltenVK}"
+    mkdir -p "$external" "$work_directory/Logs"
+    rm -rf "$derived"
+    cp -R "$(source_root cereal)" "$external/cereal"
+    cp -R "$(source_root moltenvk-vulkan-headers)" "$external/Vulkan-Headers"
+    cp -R "$(source_root spirv-cross)" "$external/SPIRV-Cross"
+    cp -R "$(source_root moltenvk-spirv-tools)" "$external/SPIRV-Tools"
+    mkdir -p "$external/SPIRV-Tools/external"
+    cp -R "$(source_root moltenvk-spirv-headers)" "$external/SPIRV-Tools/external/spirv-headers"
+    # SPIRV-Tools' generated headers, as fetchDependencies uses by default.
+    unzip -o -q -d "$external/SPIRV-Tools" "$source/Templates/spirv-tools/build.zip"
+    rm -rf "$external/SPIRV-Tools/__MACOSX"
+    echo "building moltenvk (universal)"
+    if ! {
+        cd "$source"
+        xcodebuild -project ExternalDependencies.xcodeproj \
+            -scheme ExternalDependencies-macOS -destination generic/platform=macOS \
+            -configuration Release -derivedDataPath "$derived/External" \
+            MACOSX_DEPLOYMENT_TARGET="$deployment_target" build &&
+            mkdir -p External/build/Intermediates &&
+            ln -sfn "$derived/External" External/build/Intermediates/macOS &&
+            make macos
+    } > "$log" 2>&1; then
+        build_log_failure moltenvk "$log"
+    fi
+    moltenvk_library="$(find "$source/Package/Release/MoltenVK" -path '*macOS*' -name libMoltenVK.dylib -print -quit)"
+    [[ -n "$moltenvk_library" ]] || {
+        echo "error: MoltenVK produced no macOS dylib" >&2
+        exit 65
+    }
+    moltenvk_headers="$source/Package/Release/MoltenVK/include"
+}
+
+# Vulkan for libplacebo and mpv is MoltenVK itself, linked directly as
+# MPVKit does: no Vulkan loader and no driver manifest in the app.
+install_moltenvk() {
+    local architecture="$1"
+    local prefix="$2"
+    lipo -thin "$architecture" "$moltenvk_library" -output "$prefix/lib/libMoltenVK.dylib" 2>/dev/null ||
+        cp -f "$moltenvk_library" "$prefix/lib/libMoltenVK.dylib"
+    install_name_tool -id "@rpath/libMoltenVK.dylib" "$prefix/lib/libMoltenVK.dylib"
+    cp -R "$moltenvk_headers/." "$prefix/include/"
+    mkdir -p "$prefix/lib/pkgconfig"
+    cat > "$prefix/lib/pkgconfig/vulkan.pc" <<PC
+prefix=$prefix
+libdir=\${prefix}/lib
+includedir=\${prefix}/include
+
+Name: vulkan
+Description: MoltenVK, linked directly as the Vulkan implementation
+Version: $(jq -r '.components[] | select(.name == "moltenvk-vulkan-headers") | .version' "$manifest")
+Libs: -L\${libdir} -lMoltenVK
+Cflags: -I\${includedir}
+PC
+}
+
+# libplacebo compiles GLSL with shaderc, linked statically from its combined
+# archive (glslang and SPIRV-Tools inside) so no extra library ships.
+build_shaderc() {
+    local architecture="$1"
+    local prefix="$2"
+    local source="$work_directory/Build/$architecture/shaderc-source"
+    local build="$work_directory/Build/$architecture/shaderc"
+    local log="$work_directory/Logs/$architecture-shaderc.log"
+    cp -R "$(source_root shaderc)" "$source"
+    cp -R "$(source_root glslang)" "$source/third_party/glslang"
+    cp -R "$(source_root spirv-tools)" "$source/third_party/spirv-tools"
+    cp -R "$(source_root spirv-headers)" "$source/third_party/spirv-headers"
+    echo "building shaderc ($architecture)"
+    if ! {
+        cmake -S "$source" -B "$build" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$prefix" \
+            -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_OSX_ARCHITECTURES="$architecture" \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET="$deployment_target" \
+            -DSHADERC_SKIP_TESTS=ON -DSHADERC_SKIP_EXAMPLES=ON \
+            -DSHADERC_SKIP_EXECUTABLES=ON -DSHADERC_SKIP_COPYRIGHT_CHECK=ON \
+            -DSPIRV_SKIP_EXECUTABLES=ON -DSPIRV_SKIP_TESTS=ON \
+            -DENABLE_GLSLANG_BINARIES=OFF -DGLSLANG_TESTS=OFF \
+            -DBUILD_SHARED_LIBS=OFF &&
+            cmake --build "$build" --parallel "$build_jobs" &&
+            cmake --install "$build"
+    } > "$log" 2>&1; then
+        build_log_failure "shaderc ($architecture)" "$log"
+    fi
+    # The shared libraries aren't shipped; libplacebo links the static one.
+    find "$prefix/lib" -maxdepth 1 \( -name 'libshaderc_shared*.dylib' -o -name 'libSPIRV-Tools-shared*.dylib' \) -delete
+    cat > "$prefix/lib/pkgconfig/shaderc.pc" <<PC
+prefix=$prefix
+libdir=\${prefix}/lib
+includedir=\${prefix}/include
+
+Name: shaderc
+Description: shaderc, linked statically with glslang and SPIRV-Tools
+Version: $(jq -r '.components[] | select(.name == "shaderc") | .version' "$manifest")
+Libs: -L\${libdir} -lshaderc_combined -lc++
+Cflags: -I\${includedir}
+PC
 }
 
 vendor_libplacebo_build_inputs() {
@@ -429,9 +585,11 @@ build_architecture() {
         -Dfontconfig=disabled -Ddirectwrite=disabled -Dcoretext=enabled \
         -Dtest=disabled -Dcompare=disabled -Dprofile=disabled \
         -Dfuzz=disabled -Dcheckasm=disabled
+    install_moltenvk "$architecture" "$prefix"
+    build_shaderc "$architecture" "$prefix"
     meson_build libplacebo "$architecture" "$prefix" "$(source_root libplacebo)" \
-        -Dvulkan=disabled -Dopengl=disabled -Dgl-proc-addr=disabled \
-        -Dd3d11=disabled -Dglslang=disabled -Dshaderc=disabled \
+        -Dvulkan=enabled -Dvk-proc-addr=enabled -Dopengl=disabled \
+        -Dgl-proc-addr=disabled -Dd3d11=disabled -Dglslang=disabled -Dshaderc=enabled \
         -Dlcms=disabled -Ddovi=disabled -Dlibdovi=disabled \
         -Ddemos=false -Dtests=false -Dbench=false -Dfuzz=false \
         -Dunwind=disabled -Dxxhash=disabled
@@ -486,6 +644,7 @@ build_architecture() {
         -Dcocoa=disabled -Dmacos-cocoa-cb=disabled \
         -Dmacos-media-player=disabled -Dmacos-touchbar=disabled \
         -Dswift-build=disabled -Dgl=enabled -Dgl-cocoa=disabled \
+        -Dvulkan=enabled -Dmoltenvk=enabled \
         -Dtests=false -Dfuzzers=false
 }
 
@@ -502,6 +661,8 @@ copy_license() {
 }
 
 vendor_libplacebo_build_inputs
+apply_source_patches
+build_moltenvk
 echo "building native playback dependencies for arm64 and x86_64"
 build_architecture arm64
 build_architecture x86_64
@@ -514,7 +675,7 @@ runtime_libraries=(
     libass.9.dylib libavcodec.62.dylib libavfilter.11.dylib
     libavformat.62.dylib libavutil.60.dylib libbluray.4.dylib
     libcrypto.3.dylib libfreetype.6.dylib libfribidi.0.dylib
-    libharfbuzz.0.dylib libmpv.2.dylib libplacebo.360.dylib
+    libharfbuzz.0.dylib libmpv.2.dylib libplacebo.360.dylib libMoltenVK.dylib
     libssl.3.dylib libswresample.6.dylib libswscale.9.dylib
     libtorrent-rasterbar.2.0.dylib
 )
@@ -555,6 +716,16 @@ copy_license openssl LICENSE.txt
 copy_license jinja LICENSE.txt
 copy_license markupsafe LICENSE.txt
 copy_license vulkan-headers LICENSE.md
+copy_license moltenvk LICENSE
+copy_license spirv-cross LICENSE
+copy_license cereal LICENSE
+copy_license moltenvk-vulkan-headers LICENSE.md
+copy_license moltenvk-spirv-tools LICENSE
+copy_license moltenvk-spirv-headers LICENSE
+copy_license shaderc LICENSE
+copy_license glslang LICENSE.txt
+copy_license spirv-tools LICENSE
+copy_license spirv-headers LICENSE
 cp "$(source_root libbluray)/contrib/libudfread/COPYING" \
     "$output_directory/Licenses/libudfread.txt"
 
@@ -571,6 +742,7 @@ for output_library in "$output_directory"/Runtime/*.dylib; do
         libtorrent-*) license_component=libtorrent ;;
         libbluray.*) license_component=libbluray ;;
         libplacebo.*) license_component=libplacebo ;;
+        libMoltenVK.*) license_component=moltenvk ;;
         libass.*) license_component=libass ;;
         libfreetype.*) license_component=freetype ;;
         libfribidi.*) license_component=fribidi ;;

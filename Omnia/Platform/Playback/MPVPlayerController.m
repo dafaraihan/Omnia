@@ -806,16 +806,22 @@ static void OMMpvWakeup(void *context) {
 /// draws its player (Dafa, 2026-10-27). Returns NO, with the reason kept,
 /// when this build can't; the player then uses OpenGL.
 - (BOOL)configureMetalOutput {
-    NSURL *icd = [NSBundle.mainBundle URLForResource:@"MoltenVK_icd"
-                                       withExtension:@"json"
-                                        subdirectory:@"vulkan/icd.d"];
-    if (!icd) {
+    NSString *moltenVK = [NSBundle.mainBundle.privateFrameworksPath
+        stringByAppendingPathComponent:@"libMoltenVK.dylib"];
+    if (![NSFileManager.defaultManager fileExistsAtPath:moltenVK]) {
         [self noteMetalUnavailable:@"this build doesn't include MoltenVK"];
         return NO;
     }
-    // The Vulkan loader can't read Homebrew's driver list from the sandbox.
-    setenv("VK_DRIVER_FILES", icd.fileSystemRepresentation, 0);
-    setenv("VK_ICD_FILENAMES", icd.fileSystemRepresentation, 0);
+    // Debug builds reach MoltenVK through Homebrew's Vulkan loader, which
+    // can't read Homebrew's driver list from the sandbox; point it at the
+    // bundled one. Release builds link MoltenVK directly and have none.
+    NSURL *icd = [NSBundle.mainBundle URLForResource:@"MoltenVK_icd"
+                                       withExtension:@"json"
+                                        subdirectory:@"vulkan/icd.d"];
+    if (icd) {
+        setenv("VK_DRIVER_FILES", icd.fileSystemRepresentation, 0);
+        setenv("VK_ICD_FILENAMES", icd.fileSystemRepresentation, 0);
+    }
 
     // Homebrew's libmpv has no moltenvk context and rejects the option.
     if (mpv_set_option_string(_mpv, "gpu-context", "moltenvk") < 0) {

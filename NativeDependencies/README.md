@@ -59,3 +59,60 @@ The output includes universal runtime dylibs, headers, exact license texts,
 build/source metadata, the pinned manifest, and an SPDX 2.3 JSON SBOM. Release
 staging additionally validates the manifest in strict mode, so locally built
 artifacts cannot bypass pending independent or legal approval.
+
+## Metal rendering (gpu-next on MoltenVK)
+
+Added 2026-10-27 so libmpv's `gpu-next` output can draw into the player's own
+Metal layer, as Nuvio's player does. Settings › Playback › Rendering › Metal
+Rendering turns it on (off by default); the player falls back to OpenGL and
+records why in Diagnostics when Metal can't start.
+
+**Patch.** `patches/mpv/0001-player-add-moltenvk-context.patch` comes from
+MPVKit (`Sources/BuildScripts/patch/libmpv/`, LGPL-3.0; the file it adds
+carries mpv's LGPL-2.1-or-later header). It adds a `moltenvk` Vulkan context
+that draws into a `CAMetalLayer` passed as `--wid`. It applies unchanged to the
+pinned mpv 0.41.0 source. `.gitattributes` keeps its bytes out of whitespace
+checks.
+
+**New pinned components** (all `pending-independent-review` in the manifest):
+
+| Component | Pin | Licence | Role |
+| --- | --- | --- | --- |
+| moltenvk | v1.4.2 | Apache-2.0 | Vulkan on Metal; ships as `libMoltenVK.dylib` |
+| spirv-cross | MoltenVK's pin | Apache-2.0 | Compiled into MoltenVK |
+| cereal | MoltenVK's pin (1.3.2) | BSD-3-Clause | Compiled into MoltenVK |
+| moltenvk-vulkan-headers | MoltenVK's pin (1.4.357) | Apache-2.0 | Build-only headers |
+| moltenvk-spirv-tools / -headers | MoltenVK's pins | Apache-2.0 / MIT | MoltenVK build inputs |
+| shaderc | v2026.4 | Apache-2.0 | libplacebo's GLSL compiler, static |
+| glslang | shaderc's pin (16.6.0+) | BSD-3-Clause, MIT, Apache-2.0 and GPL-3.0-or-later with the Bison exception for generated files | Inside shaderc |
+| spirv-tools / spirv-headers | shaderc's pins | Apache-2.0 / MIT | Inside shaderc |
+
+glslang's GPL-3.0-or-later part is compatible with Omnia's GPL-3.0 licence, but
+the release review must record it because the rest of the closure is kept
+LGPL. Revisions come from MoltenVK's `ExternalRevisions/` and shaderc's `DEPS`
+at the pinned tags; each archive digest was reproduced locally.
+
+**Build notes.**
+
+- Release (`Scripts/build-playback-dependencies.sh`): applies the patch with
+  `patch -p1`, lays MoltenVK's pinned externals out where its
+  `fetchDependencies` would (using its bundled pre-generated SPIRV-Tools
+  headers), and builds `ExternalDependencies.xcodeproj` then `make macos`.
+  This gives one universal `libMoltenVK.dylib`, thinned per architecture.
+  MoltenVK is linked directly as Vulkan through a generated `vulkan.pc`, as
+  MPVKit does, so no Vulkan loader or driver manifest ships. shaderc is built
+  static and linked into libplacebo from `libshaderc_combined.a`. libplacebo
+  turns on `vulkan`, `vk-proc-addr` and `shaderc`; mpv turns on `vulkan` and
+  `moltenvk`.
+- Xcode's build database fails with "disk I/O error" outside the standard
+  DerivedData folder in a sandboxed shell, so MoltenVK's derived data goes to
+  `~/Library/Developer/Xcode/DerivedData/OmniaNativeMoltenVK`
+  (`OMNIA_NATIVE_XCODE_DERIVED_DATA` overrides it).
+- Debug (`Scripts/build-dev-libmpv.sh`): builds the pinned, patched mpv
+  against Homebrew's libplacebo, shaderc, Vulkan loader and MoltenVK into
+  `~/Library/Caches/Omnia/dev-libmpv`. `embed-libmpv.sh` prefers that build
+  and bundles `libMoltenVK.dylib` with an ICD manifest for the loader. Without
+  it, Debug builds use Homebrew's libmpv and the player stays on OpenGL.
+- Reproducibility: not yet checked. No two-builder reproduction has been
+  done for the new components, and whether MoltenVK's Xcode build is
+  byte-for-byte reproducible is unknown.
