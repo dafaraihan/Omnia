@@ -112,7 +112,7 @@ struct SettingsView: View {
             return "Home, collections, and detail pages"
         case .about:
             return "Resources, attributions, and licenses"
-        case .streamSelection, .playbackResolver, .metadataProvider, .aboutSection, .posterCards, .streams, .continueWatching, .detailPage,
+        case .streamSelection, .playbackResolver, .playbackDiagnostics, .metadataProvider, .aboutSection, .posterCards, .streams, .continueWatching, .detailPage,
              .tmdbEnrichment, .metadataSources, .tracker:
             return nil
         }
@@ -159,6 +159,8 @@ struct SettingsDestinationView: View {
                 StreamSelectionSettingsView()
             case .subtitle:
                 SubtitleAppearanceSettingsView()
+            case .playbackDiagnostics:
+                PlaybackDiagnosticsSettingsView()
             case .playbackResolver:
                 PlaybackResolverSettingsView()
             case .appearance:

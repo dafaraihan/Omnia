@@ -84,6 +84,7 @@ enum SettingsRoute: Hashable, Sendable {
     case streamSelection
     case subtitle
     case playbackResolver
+    case playbackDiagnostics
     case appearance
     case posterCards
     case streams
@@ -107,7 +108,7 @@ enum SettingsRoute: Hashable, Sendable {
         switch self {
         case .appearance: [.home, .catalogs, .collections, .continueWatching, .progress, .upcoming, .posterCards, .detailPage, .streams]
         case .contentDiscovery: [.addons, .mediaServers, .liveTV, .plugins]
-        case .videoPlayer: [.streamSelection, .subtitle, .playbackResolver]
+        case .videoPlayer: [.streamSelection, .subtitle, .playbackResolver, .playbackDiagnostics]
         case .metadata: [.tmdbEnrichment, .metadataProvider("mdblist"), .metadataSources] + TrackerKind.allCases.map(SettingsRoute.tracker)
         default: []
         }
@@ -149,6 +150,7 @@ enum SettingsRoute: Hashable, Sendable {
         case .streamSelection: "Stream Selection"
         case .subtitle: "Subtitle"
         case .playbackResolver: "Playback Resolver"
+        case .playbackDiagnostics: "Playback Diagnostics"
         case .appearance: "Layout"
         case .posterCards: "Poster Card Style"
         case .streams: "Streams"
@@ -185,6 +187,7 @@ enum SettingsRoute: Hashable, Sendable {
         case .streamSelection: "list.bullet.rectangle"
         case .subtitle: "captions.bubble"
         case .playbackResolver: "lock.shield"
+        case .playbackDiagnostics: "stethoscope"
         case .appearance: "circle.lefthalf.filled"
         case .posterCards: "rectangle.portrait.on.rectangle.portrait"
         case .streams: "play.square.stack"
@@ -215,6 +218,7 @@ enum SettingsRoute: Hashable, Sendable {
         case .streamSelection: ["auto play", "autoplay", "first source", "regex", "reuse last link", "binge group", "timeout", "allowed add-ons", "plugins"]
         case .subtitle: ["subtitles", "captions", "SDH", "appearance"]
         case .playbackResolver: ["endpoint", "bearer token", "approved add-ons", "approved HTTPS hosts"]
+        case .playbackDiagnostics: ["diagnostics", "log", "errors", "failures", "could not play", "libmpv", "copy"]
         case .appearance: ["appearance", "theme", "system", "light", "dark", "accent", "color", "AMOLED", "black", "hover preview", "poster", "glow", "gradient", "top bar style", "glass glow", "adaptive", "compact", "expanded", "iPadOS", "standard"]
         case .streams: ["streams", "sources", "badges", "Fusion", "size", "add-on logo", "background", "cinematic", "search bar", "pin"]
         case .posterCards: ["poster", "card", "width", "size", "corner", "radius", "landscape", "depth", "glow", "sheen", "edge"]

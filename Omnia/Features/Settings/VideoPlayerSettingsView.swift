@@ -32,6 +32,12 @@ struct VideoPlayerSettingsView: View {
                     LabeledContent("Local Playback Resolver", value: resolverSummary)
                 }
                 .settingsLinkRow()
+                NavigationLink {
+                    SettingsDestinationView(route: .playbackDiagnostics)
+                } label: {
+                    LabeledContent("Diagnostics", value: "Recent playback failures")
+                }
+                .settingsLinkRow()
             } header: {
                 Text("Sources")
             }

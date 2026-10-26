@@ -1282,6 +1282,20 @@ struct PlaybackSourceSheet: View {
                 releaseUnusedInput(input)
                 return
             }
+            // A streamed source that fails can be fetched again or replaced
+            // from this list; local files and discs can't.
+            if case .stream = input {
+                playback.recoveryContext = PlaybackRecoveryContext(
+                    item: item,
+                    progressItem: progressItem,
+                    episode: episode,
+                    resumeAt: resumeAt,
+                    linkKey: mediaKey,
+                    candidates: candidates.filter { $0.nativePlaybackSource != nil }
+                )
+            } else {
+                playback.recoveryContext = nil
+            }
             PlaybackLauncher.start(
                 input: input,
                 candidate: candidate,
@@ -1570,7 +1584,14 @@ struct PlaybackExperienceView: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            if let playbackError = playback.playbackError {
+            if playback.isRecoveringSource {
+                // A failed source is being fetched again or replaced; the
+                // error shows only if that doesn't work.
+                ProgressView("Reconnecting to the source…")
+                    .controlSize(.large)
+                    .tint(.white)
+                    .foregroundStyle(.white)
+            } else if let playbackError = playback.playbackError {
                 ContentUnavailableView(
                     "Playback Failed",
                     systemImage: "exclamationmark.triangle",
@@ -1587,6 +1608,20 @@ struct PlaybackExperienceView: View {
                     .foregroundStyle(.white)
             }
         }
+        .overlay(alignment: .top) {
+            if let notice = playback.recoveryNotice {
+                Label(notice, systemImage: "arrow.triangle.2.circlepath")
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .glassEffect(.regular, in: .capsule)
+                    .padding(.top, 28)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .accessibilityAddTraits(.updatesFrequently)
+            }
+        }
+        .animation(.snappy, value: playback.recoveryNotice)
         .contentShape(Rectangle())
         .onTapGesture {
             // One click shows the controls, the next hides them. While the
@@ -1737,6 +1772,9 @@ struct PlaybackExperienceView: View {
             // A stream that fails is never offered again by Reuse Last Link.
             if error != nil, let key = playback.currentLinkKey {
                 StreamLinkCacheStore().remove(key)
+            }
+            if let error {
+                Task { await PlaybackRecovery.recover(from: error, playback: playback, store: store, settings: settings) }
             }
         }
         .onChange(of: isScrubbing) { _, isInteracting in

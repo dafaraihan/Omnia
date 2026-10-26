@@ -308,6 +308,14 @@ final class PlaybackSession {
     private(set) var currentCandidate: AddonStreamCandidate?
     /// The Reuse Last Link entry for what is playing, dropped if it fails.
     private(set) var currentLinkKey: MediaPlaybackKey?
+    /// True while a failed source is being fetched again or replaced, so
+    /// the player shows that instead of the error.
+    var isRecoveringSource = false
+    /// "Switched to another source", shown briefly over the video.
+    var recoveryNotice: String?
+    /// What a failed source can be recovered from: the title and the
+    /// source list it was picked from (Dafa, 2026-10-26).
+    @ObservationIgnored var recoveryContext: PlaybackRecoveryContext?
 
     @ObservationIgnored private var progressHandler: (@MainActor (Double, Double?) -> Void)?
     /// Trakt and Simkl scrobbling.
