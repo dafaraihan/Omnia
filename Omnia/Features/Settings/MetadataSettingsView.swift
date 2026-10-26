@@ -27,6 +27,19 @@ struct MetadataSettingsView: View {
             }
 
             Section {
+                IntegrationLinkRow(
+                    route: .streamSorting,
+                    providerID: nil,
+                    title: "Stream Sorting",
+                    detail: settings.preferences.playbackBehavior.streamSorting.profile.title
+                )
+            } header: {
+                Text("Sources")
+            } footer: {
+                Text("The order sources are listed and played in, and which ones are hidden, as in Nuvio's Debrid settings.")
+            }
+
+            Section {
                 ForEach(TrackerKind.allCases) { kind in
                     TrackerLinkRow(kind: kind)
                 }

@@ -93,10 +93,10 @@ struct PlaybackSourceSheet: View {
                 startAutomaticSelection()
                 if let preloaded = playback.takePreloadedSources(for: mediaKey) {
                     resolution = preloaded
-                    candidates = preloaded.candidates
+                    candidates = ranked(preloaded.candidates)
                     pendingSourceCount = 0
                     isResolving = false
-                    autoSelection?.receive(preloaded.candidates, isComplete: true)
+                    autoSelection?.receive(candidates, isComplete: true)
                     return
                 }
                 let result = await PlaybackSourceResolver.resolve(
@@ -112,17 +112,17 @@ struct PlaybackSourceSheet: View {
                     guard !Task.isCancelled, playback.isCurrentSourceSelection(selectionID),
                           !partial.candidates.isEmpty else { return }
                     resolution = partial
-                    candidates = partial.candidates
+                    candidates = ranked(partial.candidates)
                     pendingSourceCount = pending
                     isResolving = false
-                    autoSelection?.receive(partial.candidates, isComplete: false)
+                    autoSelection?.receive(candidates, isComplete: false)
                 }
                 guard !Task.isCancelled, playback.isCurrentSourceSelection(selectionID) else { return }
                 resolution = result
-                candidates = result.candidates
+                candidates = ranked(result.candidates)
                 pendingSourceCount = 0
                 isResolving = false
-                autoSelection?.receive(result.candidates, isComplete: true)
+                autoSelection?.receive(candidates, isComplete: true)
             }
             .confirmationDialog(
                 "Allow Local Peer Playback?",
@@ -427,7 +427,7 @@ struct PlaybackSourceSheet: View {
             guard !Task.isCancelled else { return }
             let updated = resolution.replacingAddonResult(result)
             self.resolution = updated
-            candidates = updated.candidates
+            candidates = ranked(updated.candidates)
             retryingAddonIDs.remove(addonID)
         }
     }
@@ -443,7 +443,7 @@ struct PlaybackSourceSheet: View {
             guard !Task.isCancelled, var updated = resolution else { return }
             for result in results { updated = updated.replacingAddonResult(result) }
             self.resolution = updated
-            candidates = updated.candidates
+            candidates = ranked(updated.candidates)
             retryingAddonIDs.remove(sourceID)
         }
     }
@@ -459,7 +459,7 @@ struct PlaybackSourceSheet: View {
             guard !Task.isCancelled, let current = resolution else { return }
             let updated = current.replacingAddonResult(result)
             self.resolution = updated
-            candidates = updated.candidates
+            candidates = ranked(updated.candidates)
             retryingAddonIDs.remove(sourceID)
         }
     }
@@ -1330,6 +1330,12 @@ struct PlaybackSourceSheet: View {
         }
     }
 
+    /// Sources in the user's Stream Sorting order, best first; the list,
+    /// auto-play and recovery all use it.
+    private func ranked(_ sources: [AddonStreamCandidate]) -> [AddonStreamCandidate] {
+        StreamRanking.rank(sources, preferences: settings.preferences.playbackBehavior.streamSorting)
+    }
+
     private var mediaKey: MediaPlaybackKey {
         PlaybackLauncher.linkKey(item: item, episode: episode)
     }
@@ -2196,12 +2202,13 @@ struct PlaybackExperienceView: View {
         let pluginPlan = plugins.plan(for: item, episode: episode)
         let serverPlan = MediaServerStore.shared.streamPlan()
         let timeout = settings.preferences.addonTimeout
+        let sorting = settings.preferences.playbackBehavior.streamSorting
         nextEpisodeTask?.cancel()
         nextEpisodeTask = Task {
             var outcome: StreamAutoPlayTracker.Outcome?
             let run = StreamAutoSelectionRun(request: request) { outcome = $0 }
             if let preloaded = playback.takePreloadedSources(for: key) {
-                run.receive(preloaded.candidates, isComplete: true)
+                run.receive(StreamRanking.rank(preloaded.candidates, preferences: sorting), isComplete: true)
             } else {
                 let lookup = Task {
                     let result = await PlaybackSourceResolver.resolve(
@@ -2212,10 +2219,10 @@ struct PlaybackExperienceView: View {
                         servers: serverPlan,
                         timeout: timeout
                     ) { partial, _ in
-                        run.receive(partial.candidates, isComplete: false)
+                        run.receive(StreamRanking.rank(partial.candidates, preferences: sorting), isComplete: false)
                     }
                     guard !Task.isCancelled else { return }
-                    run.receive(result.candidates, isComplete: true)
+                    run.receive(StreamRanking.rank(result.candidates, preferences: sorting), isComplete: true)
                 }
                 // Nuvio gives up after two minutes and shows the list.
                 let deadline = Date().addingTimeInterval(120)

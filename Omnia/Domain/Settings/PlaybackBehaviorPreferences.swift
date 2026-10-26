@@ -143,6 +143,10 @@ nonisolated struct PlaybackBehaviorPreferences: Codable, Equatable, Sendable {
     var preferBingeGroup = true
     var reuseBingeGroup = false
 
+    // Stream Sorting (Nuvio's Debrid › sorting and filters): the order sources
+    // are listed, auto-played and recovered in.
+    var streamSorting = StreamSortPreferences()
+
     // Next Episode
     var nextEpisodeThresholdMode: NextEpisodeThresholdMode = .percentage
     var nextEpisodeThresholdPercent = 99.0
@@ -189,7 +193,7 @@ nonisolated struct PlaybackBehaviorPreferences: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case reuseLastLink, lastLinkCacheHours
         case autoSelectionMode, autoSelectionRegex, selectionTimeoutSeconds, selectionScope
-        case allowedAddonIDs, allowedPluginIDs, preferBingeGroup, reuseBingeGroup
+        case allowedAddonIDs, allowedPluginIDs, preferBingeGroup, reuseBingeGroup, streamSorting
         case nextEpisodeThresholdMode, nextEpisodeThresholdPercent, nextEpisodeThresholdMinutes
         case nextEpisodeFallbackToAnySource, preloadNextEpisodeSources
         case autoSkipSegments
@@ -216,6 +220,7 @@ nonisolated struct PlaybackBehaviorPreferences: Codable, Equatable, Sendable {
         allowedPluginIDs = value(.allowedPluginIDs, defaults.allowedPluginIDs)
         preferBingeGroup = value(.preferBingeGroup, defaults.preferBingeGroup)
         reuseBingeGroup = value(.reuseBingeGroup, defaults.reuseBingeGroup)
+        streamSorting = value(.streamSorting, defaults.streamSorting)
         nextEpisodeThresholdMode = value(.nextEpisodeThresholdMode, defaults.nextEpisodeThresholdMode)
         nextEpisodeThresholdPercent = value(.nextEpisodeThresholdPercent, defaults.nextEpisodeThresholdPercent)
         nextEpisodeThresholdMinutes = value(.nextEpisodeThresholdMinutes, defaults.nextEpisodeThresholdMinutes)
@@ -248,6 +253,7 @@ nonisolated struct PlaybackBehaviorPreferences: Codable, Equatable, Sendable {
         try container.encode(allowedPluginIDs.sorted(), forKey: .allowedPluginIDs)
         try container.encode(preferBingeGroup, forKey: .preferBingeGroup)
         try container.encode(reuseBingeGroup, forKey: .reuseBingeGroup)
+        try container.encode(streamSorting, forKey: .streamSorting)
         try container.encode(nextEpisodeThresholdMode, forKey: .nextEpisodeThresholdMode)
         try container.encode(nextEpisodeThresholdPercent, forKey: .nextEpisodeThresholdPercent)
         try container.encode(nextEpisodeThresholdMinutes, forKey: .nextEpisodeThresholdMinutes)

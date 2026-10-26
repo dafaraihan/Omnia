@@ -113,7 +113,7 @@ struct SettingsView: View {
         case .about:
             return "Resources, attributions, and licenses"
         case .streamSelection, .playbackResolver, .playbackDiagnostics, .metadataProvider, .aboutSection, .posterCards, .streams, .continueWatching, .detailPage,
-             .tmdbEnrichment, .metadataSources, .tracker:
+             .tmdbEnrichment, .metadataSources, .tracker, .streamSorting:
             return nil
         }
     }
@@ -187,6 +187,8 @@ struct SettingsDestinationView: View {
                 }
             case let .tracker(kind):
                 TrackerSettingsView(kind: kind)
+            case .streamSorting:
+                StreamSortingSettingsView()
             case let .aboutSection(section):
                 AboutSectionSettingsView(section: section)
             }

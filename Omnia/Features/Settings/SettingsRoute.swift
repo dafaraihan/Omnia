@@ -93,6 +93,7 @@ enum SettingsRoute: Hashable, Sendable {
     case about
     case metadataProvider(String)
     case tracker(TrackerKind)
+    case streamSorting
     case aboutSection(AboutSection)
 
     /// Nuvio's Settings tree: Layout, Content & Discovery, Playback and
@@ -109,7 +110,7 @@ enum SettingsRoute: Hashable, Sendable {
         case .appearance: [.home, .catalogs, .collections, .continueWatching, .progress, .upcoming, .posterCards, .detailPage, .streams]
         case .contentDiscovery: [.addons, .mediaServers, .liveTV, .plugins]
         case .videoPlayer: [.streamSelection, .subtitle, .playbackResolver, .playbackDiagnostics]
-        case .metadata: [.tmdbEnrichment, .metadataProvider("mdblist"), .metadataSources] + TrackerKind.allCases.map(SettingsRoute.tracker)
+        case .metadata: [.tmdbEnrichment, .metadataProvider("mdblist"), .metadataSources, .streamSorting] + TrackerKind.allCases.map(SettingsRoute.tracker)
         default: []
         }
     }
@@ -162,6 +163,7 @@ enum SettingsRoute: Hashable, Sendable {
             MetadataProvider.supported.first { $0.id == id }?.name ?? "Metadata Provider"
         case let .tracker(kind):
             kind.title
+        case .streamSorting: "Stream Sorting"
         case let .aboutSection(section):
             section.title
         }
@@ -181,6 +183,7 @@ enum SettingsRoute: Hashable, Sendable {
         case .metadata, .metadataProvider, .metadataSources: "rectangle.3.group"
         case .tmdbEnrichment: "sparkles.rectangle.stack"
         case .tracker: "checkmark.circle"
+        case .streamSorting: "arrow.up.arrow.down.circle"
         case .progress: "clock.arrow.circlepath"
         case .upcoming: "calendar"
         case .videoPlayer: "play.rectangle"
@@ -226,6 +229,7 @@ enum SettingsRoute: Hashable, Sendable {
         case .detailPage: ["detail", "title page", "background", "episodes", "blur", "spoiler", "sections", "cast", "trailers"]
         case .about: ["resources", "TMDB", "TVDB", "libmpv", "Supabase", "licenses", "privacy"]
         case .metadataProvider: ["metadata provider", title]
+        case .streamSorting: ["sort", "sorting", "ranking", "quality", "resolution", "4K", "HDR", "Dolby Vision", "codec", "HEVC", "size", "debrid", "cached", "filters"]
         case .tracker: ["tracker", "scrobble", "scrobbling", "history", "watched", "Trakt", "Simkl", title]
         case let .aboutSection(section): [section.title]
         }
