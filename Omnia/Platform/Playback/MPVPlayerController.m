@@ -245,8 +245,54 @@ static void *OMOpenGLProcedureAddress(void *context, const char *name) {
 
 @end
 
+/// The layer libmpv's gpu-next output draws into through MoltenVK, after
+/// Nuvio's MetalLayer (iosApp/iosApp/Player/MetalLayer.swift,
+/// NuvioMedia/NuvioMobile, GPL-3.0). mpv holds it by pointer through --wid.
+@interface OMMpvMetalLayer : CAMetalLayer
+@end
+
+@implementation OMMpvMetalLayer
+
+- (instancetype)init {
+    self = [super init];
+    if (!self) return nil;
+    self.framebufferOnly = YES;
+    self.opaque = YES;
+    // HDR titles draw brighter than SDR white on displays that can.
+    self.wantsExtendedDynamicRangeContent = YES;
+    CGColorRef black = CGColorCreateGenericRGB(0, 0, 0, 1);
+    self.backgroundColor = black;
+    CGColorRelease(black);
+    return self;
+}
+
+- (void)setDrawableSize:(CGSize)drawableSize {
+    // A zero-sized drawable makes MoltenVK fail the swapchain.
+    if (drawableSize.width > 1 && drawableSize.height > 1) {
+        [super setDrawableSize:drawableSize];
+    }
+}
+
+- (void)setWantsExtendedDynamicRangeContent:(BOOL)wants {
+    // MoltenVK changes this from mpv's render thread when the colour space
+    // changes; Core Animation expects the main thread.
+    if (NSThread.isMainThread) {
+        [super setWantsExtendedDynamicRangeContent:wants];
+    } else {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [super setWantsExtendedDynamicRangeContent:wants];
+        });
+    }
+}
+
+@end
+
 @interface OMMpvVideoView : NSView
 @property (nonatomic, readonly) OMMpvVideoLayer *videoLayer;
+/// Set once Metal rendering is chosen for this player.
+@property (nonatomic, readonly, nullable) OMMpvMetalLayer *metalLayer;
+- (OMMpvMetalLayer *)useMetalLayer;
+- (void)useOpenGLLayer;
 @end
 
 @implementation OMMpvVideoView
@@ -292,6 +338,36 @@ static void *OMOpenGLProcedureAddress(void *context, const char *name) {
         _videoLayer.contentsScale = scale;
         [_videoLayer scheduleRender];
     }
+    [self updateDrawableSize];
+}
+
+- (OMMpvMetalLayer *)useMetalLayer {
+    if (!_metalLayer) _metalLayer = [OMMpvMetalLayer layer];
+    self.layer = _metalLayer;
+    [self updateDrawableSize];
+    return _metalLayer;
+}
+
+- (void)useOpenGLLayer {
+    self.layer = _videoLayer;
+    [self updateContentsScale];
+}
+
+- (void)setFrameSize:(NSSize)newSize {
+    [super setFrameSize:newSize];
+    [self updateDrawableSize];
+}
+
+/// A CAMetalLayer doesn't follow its bounds on its own; MoltenVK resizes
+/// the swapchain when the drawable size changes.
+- (void)updateDrawableSize {
+    if (!_metalLayer || self.layer != _metalLayer) return;
+    CGFloat scale = self.window.backingScaleFactor > 0 ? self.window.backingScaleFactor : 2;
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    _metalLayer.contentsScale = scale;
+    _metalLayer.drawableSize = CGSizeMake(round(self.bounds.size.width * scale), round(self.bounds.size.height * scale));
+    [CATransaction commit];
 }
 
 @end
@@ -622,9 +698,12 @@ static void OMMpvRequestRedraw(void *context) {
     OMMpvCallbackBox *_wakeupBox;
     OMMpvCallbackBox *_redrawBox;
     NSString *_lastLoadProblem;
+    BOOL _prefersMetalRendering;
+    BOOL _usingMetalRendering;
 }
 @property (nonatomic, readwrite) OMMpvVideoView *videoView;
 @property (nonatomic, readwrite, nullable) NSString *errorMessage;
+@property (nonatomic, readwrite, nullable) NSString *renderingFallbackReason;
 - (void)drainEvents;
 - (void)emitSnapshot;
 - (void)embedVideoViewInHost:(NSView *)hostView;
@@ -677,6 +756,105 @@ static void OMMpvWakeup(void *context) {
 
 - (void)dealloc {
     [self stop];
+}
+
+// MARK: Rendering
+
+- (BOOL)prefersMetalRendering { return _prefersMetalRendering; }
+
+- (void)setPrefersMetalRendering:(BOOL)prefersMetalRendering {
+    if (_didStart) return;
+    _prefersMetalRendering = prefersMetalRendering;
+}
+
+- (BOOL)usingMetalRendering { return _usingMetalRendering; }
+
+/// libmpv's render API, drawing with OpenGL into the video layer.
+- (BOOL)createOpenGLRenderContext {
+    CGLContextObj glContext = _videoView.videoLayer.cglContext;
+    if (!glContext) return NO;
+    mpv_opengl_init_params openGLParameters = {
+        .get_proc_address = OMOpenGLProcedureAddress,
+        .get_proc_address_ctx = NULL,
+    };
+    mpv_render_param renderParameters[] = {
+        { MPV_RENDER_PARAM_API_TYPE, (void *)MPV_RENDER_API_TYPE_OPENGL },
+        { MPV_RENDER_PARAM_OPENGL_INIT_PARAMS, &openGLParameters },
+        { MPV_RENDER_PARAM_INVALID, NULL },
+    };
+    CGLLockContext(glContext);
+    CGLSetCurrentContext(glContext);
+    int createStatus = mpv_render_context_create(&_renderContext, _mpv, renderParameters);
+    CGLSetCurrentContext(NULL);
+    CGLUnlockContext(glContext);
+    if (createStatus < 0) {
+        _renderContext = NULL;
+        return NO;
+    }
+    [_videoView.videoLayer attachRenderContext:_renderContext];
+    _redrawBox = [[OMMpvCallbackBox alloc] initWithTarget:_videoView.videoLayer];
+    mpv_render_context_set_update_callback(
+        _renderContext,
+        OMMpvRequestRedraw,
+        (__bridge void *)_redrawBox
+    );
+    [_videoView.videoLayer scheduleRender];
+    return YES;
+}
+
+/// gpu-next through Omnia's MoltenVK context into a Metal layer, as Nuvio
+/// draws its player (Dafa, 2026-10-27). Returns NO, with the reason kept,
+/// when this build can't; the player then uses OpenGL.
+- (BOOL)configureMetalOutput {
+    NSURL *icd = [NSBundle.mainBundle URLForResource:@"MoltenVK_icd"
+                                       withExtension:@"json"
+                                        subdirectory:@"vulkan/icd.d"];
+    if (!icd) {
+        [self noteMetalUnavailable:@"this build doesn't include MoltenVK"];
+        return NO;
+    }
+    // The Vulkan loader can't read Homebrew's driver list from the sandbox.
+    setenv("VK_DRIVER_FILES", icd.fileSystemRepresentation, 0);
+    setenv("VK_ICD_FILENAMES", icd.fileSystemRepresentation, 0);
+
+    // Homebrew's libmpv has no moltenvk context and rejects the option.
+    if (mpv_set_option_string(_mpv, "gpu-context", "moltenvk") < 0) {
+        [self noteMetalUnavailable:@"this libmpv has no MoltenVK context; run Scripts/build-dev-libmpv.sh"];
+        return NO;
+    }
+    OMMpvMetalLayer *layer = [_videoView useMetalLayer];
+    int64_t layerPointer = (int64_t)(intptr_t)(__bridge void *)layer;
+    mpv_set_option(_mpv, "wid", MPV_FORMAT_INT64, &layerPointer);
+    mpv_set_option_string(_mpv, "vo", "gpu-next");
+    mpv_set_option_string(_mpv, "gpu-api", "vulkan");
+    // Nuvio's HDR handling: tell the display what the video is, and tone
+    // map when it can't show it.
+    mpv_set_option_string(_mpv, "target-colorspace-hint", "yes");
+    mpv_set_option_string(_mpv, "tone-mapping", "auto");
+    mpv_set_option_string(_mpv, "hdr-compute-peak", "yes");
+    return YES;
+}
+
+- (void)noteMetalUnavailable:(NSString *)reason {
+    self.renderingFallbackReason = reason;
+    NSLog(@"[Omnia] Metal rendering unavailable, using OpenGL: %@", reason);
+}
+
+/// The Metal output failed after mpv started (no Vulkan device, MoltenVK
+/// refused the layer): draw with OpenGL from here on.
+- (void)fallBackToOpenGL:(NSString *)reason {
+    if (!_usingMetalRendering || !_mpv) return;
+    _usingMetalRendering = NO;
+    [self noteMetalUnavailable:reason];
+    [_videoView useOpenGLLayer];
+    if (![self createOpenGLRenderContext]) {
+        [self failWithMessage:@"libmpv could not create its OpenGL render context."];
+        return;
+    }
+    mpv_set_property_string(_mpv, "vo", "libmpv");
+    // A video output that failed to open leaves no video track selected.
+    mpv_set_property_string(_mpv, "vid", "auto");
+    [self emitSnapshot];
 }
 
 - (void)startIfNeeded {
@@ -786,6 +964,9 @@ static void OMMpvWakeup(void *context) {
     }
     [self applyPlayerOptions];
     [self applySubtitleStyleOptions];
+    if (_prefersMetalRendering) {
+        _usingMetalRendering = [self configureMetalOutput];
+    }
 
     // "loading failed" alone says nothing; mpv's own warning (HTTP 403, an
     // unknown format, a refused connection) is kept and shown with it.
@@ -801,38 +982,10 @@ static void OMMpvWakeup(void *context) {
     mpv_observe_property(_mpv, 2, "aid", MPV_FORMAT_NONE);
     mpv_observe_property(_mpv, 3, "sid", MPV_FORMAT_NONE);
 
-    CGLContextObj glContext = _videoView.videoLayer.cglContext;
-    if (!glContext) {
+    if (!_usingMetalRendering && ![self createOpenGLRenderContext]) {
         [self failWithMessage:@"libmpv could not create its OpenGL render context."];
         return;
     }
-    mpv_opengl_init_params openGLParameters = {
-        .get_proc_address = OMOpenGLProcedureAddress,
-        .get_proc_address_ctx = NULL,
-    };
-    mpv_render_param renderParameters[] = {
-        { MPV_RENDER_PARAM_API_TYPE, (void *)MPV_RENDER_API_TYPE_OPENGL },
-        { MPV_RENDER_PARAM_OPENGL_INIT_PARAMS, &openGLParameters },
-        { MPV_RENDER_PARAM_INVALID, NULL },
-    };
-    CGLLockContext(glContext);
-    CGLSetCurrentContext(glContext);
-    int createStatus = mpv_render_context_create(&_renderContext, _mpv, renderParameters);
-    CGLSetCurrentContext(NULL);
-    CGLUnlockContext(glContext);
-    if (createStatus < 0) {
-        _renderContext = NULL;
-        [self failWithMessage:@"libmpv could not create its OpenGL render context."];
-        return;
-    }
-    [_videoView.videoLayer attachRenderContext:_renderContext];
-    _redrawBox = [[OMMpvCallbackBox alloc] initWithTarget:_videoView.videoLayer];
-    mpv_render_context_set_update_callback(
-        _renderContext,
-        OMMpvRequestRedraw,
-        (__bridge void *)_redrawBox
-    );
-    [_videoView.videoLayer scheduleRender];
 
     if (_requestHeaders.count > 0) {
         // http-header-fields is a list. Set as one string, mpv split it at
@@ -877,7 +1030,14 @@ static void OMMpvWakeup(void *context) {
 - (double)volume { return _mpv ? [self doubleForProperty:"volume"] : _volume; }
 - (double)playbackRate { return _mpv ? [self doubleForProperty:"speed"] : _playbackRate; }
 - (BOOL)hasRenderedVideoFrame {
-    if (!_videoView.videoLayer.didRenderFrame || !_mpv) return NO;
+    if (!_mpv) return NO;
+    if (_usingMetalRendering) {
+        // gpu-next presents on its own; a configured output with a sized
+        // video means a frame is on screen.
+        if (![self flagForProperty:"vo-configured"]) return NO;
+    } else if (!_videoView.videoLayer.didRenderFrame) {
+        return NO;
+    }
     int64_t videoWidth = 0;
     return mpv_get_property(_mpv, "video-params/w", MPV_FORMAT_INT64, &videoWidth) >= 0 && videoWidth > 0;
 }
@@ -1619,6 +1779,13 @@ static void OMMpvWakeup(void *context) {
         }
         case MPV_EVENT_LOG_MESSAGE: {
             mpv_event_log_message *message = event->data;
+            if (_usingMetalRendering && message && message->prefix && message->text
+                && message->log_level <= MPV_LOG_LEVEL_ERROR
+                && strncmp(message->prefix, "vo", 2) == 0) {
+                NSString *text = [[NSString stringWithUTF8String:message->text]
+                    stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+                [self fallBackToOpenGL:[NSString stringWithFormat:@"%s: %@", message->prefix, text]];
+            }
             NSString *problem = message ? [self loadProblemFromLogMessage:message] : nil;
             // An error outranks the warnings around it.
             if (problem && (message->log_level <= MPV_LOG_LEVEL_ERROR || !_lastLoadProblem)) {
@@ -1666,8 +1833,14 @@ static void OMMpvWakeup(void *context) {
         // mpv_terminate_destroy waits for the demuxer and network stream to
         // shut down, which can take seconds on a slow source. Do it off main
         // so closing the player doesn't freeze the app.
+        // mpv's Metal output holds the layer by pointer, so it lives until
+        // mpv is gone and is released on the main thread.
+        OMMpvMetalLayer *metalLayer = _videoView.metalLayer;
         dispatch_async(OMMpvTeardownQueue(), ^{
             mpv_terminate_destroy(mpv);
+            if (metalLayer) {
+                dispatch_async(dispatch_get_main_queue(), ^{ (void)metalLayer; });
+            }
         });
     }
     self.stateChangeHandler = nil;

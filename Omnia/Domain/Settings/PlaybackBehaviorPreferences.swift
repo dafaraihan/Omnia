@@ -177,6 +177,10 @@ nonisolated struct PlaybackBehaviorPreferences: Codable, Equatable, Sendable {
     // covers the strip beside the camera notch (Dafa, 2026-10-21).
     var usesWholeScreen = false
 
+    // Rendering (macOS): gpu-next on Metal through MoltenVK instead of
+    // OpenGL, as Nuvio draws. Off until proven (Dafa, 2026-10-27).
+    var metalRendering = false
+
     // Subtitles: Nuvio Enhanced's AutoSync. Omnia lines an add-on subtitle
     // up with the speech it hears during the first minutes of playback.
     var autoSyncsSubtitles = false
@@ -201,6 +205,7 @@ nonisolated struct PlaybackBehaviorPreferences: Codable, Equatable, Sendable {
         case decoderPriority
         case showLoadingOverlay, showLoadingStatus, showPauseOverlay, showContentWarnings
         case usesWholeScreen
+        case metalRendering
         case autoSyncsSubtitles
     }
 
@@ -238,6 +243,7 @@ nonisolated struct PlaybackBehaviorPreferences: Codable, Equatable, Sendable {
         showPauseOverlay = value(.showPauseOverlay, defaults.showPauseOverlay)
         showContentWarnings = value(.showContentWarnings, defaults.showContentWarnings)
         usesWholeScreen = value(.usesWholeScreen, defaults.usesWholeScreen)
+        metalRendering = value(.metalRendering, defaults.metalRendering)
         autoSyncsSubtitles = value(.autoSyncsSubtitles, defaults.autoSyncsSubtitles)
     }
 
@@ -269,6 +275,7 @@ nonisolated struct PlaybackBehaviorPreferences: Codable, Equatable, Sendable {
         try container.encode(showPauseOverlay, forKey: .showPauseOverlay)
         try container.encode(showContentWarnings, forKey: .showContentWarnings)
         try container.encode(usesWholeScreen, forKey: .usesWholeScreen)
+        try container.encode(metalRendering, forKey: .metalRendering)
         try container.encode(autoSyncsSubtitles, forKey: .autoSyncsSubtitles)
     }
 

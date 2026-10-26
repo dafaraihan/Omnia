@@ -141,6 +141,15 @@ struct VideoPlayerSettingsView: View {
             }
 
             #if os(macOS)
+            Section {
+                Toggle(isOn: settings.binding(\.playbackBehavior.metalRendering)) {
+                    Text("Metal Rendering (Experimental)")
+                    Text("Draws video with gpu-next on Metal, as Nuvio does, for HDR tone mapping on capable displays. If Metal can't start, the player uses OpenGL and notes why in Diagnostics. Applies from the next video.")
+                }
+            } header: {
+                Text("Rendering")
+            }
+
             Section("Full Screen") {
                 Toggle(isOn: settings.binding(\.playbackBehavior.usesWholeScreen)) {
                     Text("Use Whole Screen")

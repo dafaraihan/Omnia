@@ -79,6 +79,14 @@ typedef void (^OMMpvTrackSelectionCompletion)(
 @property (nonatomic, readonly) NSArray<OMMpvTrack *> *audioTracks;
 @property (nonatomic, readonly) NSArray<OMMpvTrack *> *subtitleTracks;
 @property (nonatomic, copy, nullable) void (^stateChangeHandler)(OMMpvPlaybackSnapshot *snapshot);
+/// Draw with gpu-next on Metal (MoltenVK) instead of OpenGL. Set before
+/// the player starts; ignored afterwards.
+@property (nonatomic) BOOL prefersMetalRendering;
+/// Whether Metal is drawing now. False when it was never asked for or fell
+/// back to OpenGL.
+@property (nonatomic, readonly) BOOL usingMetalRendering;
+/// Why Metal was asked for but OpenGL is drawing, for Diagnostics.
+@property (nonatomic, readonly, nullable) NSString *renderingFallbackReason;
 
 - (instancetype)initWithURL:(NSURL *)URL
               requestHeaders:(NSDictionary<NSString *, NSString *> *)requestHeaders;

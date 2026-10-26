@@ -341,6 +341,8 @@ final class PlaybackSession {
     @ObservationIgnored private var usesWholeScreen = false
     @ObservationIgnored private let wholeScreen = WholeScreenPresentation()
     @ObservationIgnored private let displaySleep = DisplaySleepAssertion()
+    /// Metal fell back to OpenGL for this player and Diagnostics has it.
+    @ObservationIgnored private var didLogRenderingFallback = false
     /// Settings' subtitle delay; delays set in the player are kept per title
     /// instead of replacing it.
     @ObservationIgnored private var defaultSubtitleDelay: Double = 0
@@ -496,6 +498,8 @@ final class PlaybackSession {
         mpv.setPreferredSubtitleLanguages(mediaPolicy.subtitleLanguages ?? [])
         mpv.setSubtitlesDisabled(mediaPolicy.disablesSubtitles)
         mpv.setPlayerOptions(Self.mpvPlayerOptions(for: preferences))
+        mpv.prefersMetalRendering = preferences.playbackBehavior.metalRendering
+        didLogRenderingFallback = false
         usesWholeScreen = preferences.playbackBehavior.usesWholeScreen
         subtitleStyle = preferences.playbackSubtitleStyle.normalized
         defaultSubtitleDelay = subtitleStyle.delaySeconds
@@ -1445,6 +1449,17 @@ final class PlaybackSession {
     #if os(macOS)
     private func apply(_ snapshot: OMMpvPlaybackSnapshot) {
         playbackError = snapshot.errorMessage
+        if !didLogRenderingFallback, let reason = player?.renderingFallbackReason, let mediaItem {
+            didLogRenderingFallback = true
+            let date = PlaybackFailureLog.shared.record(
+                item: mediaItem,
+                episode: episode,
+                candidate: currentCandidate,
+                streamURL: source?.url,
+                message: "Metal rendering unavailable: \(reason)"
+            )
+            PlaybackFailureLog.shared.setOutcome("Played with OpenGL", for: date)
+        }
         audioTracks = snapshot.audioTracks.map(PlaybackTrack.init)
         let previousSubtitle = subtitleTracks.first(where: \.isSelected)?.id
         subtitleTracks = snapshot.subtitleTracks.map(PlaybackTrack.init)
