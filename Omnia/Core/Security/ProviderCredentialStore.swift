@@ -10,6 +10,8 @@ import Foundation
 enum UserManagedProviderCredential: String, CaseIterable, Identifiable, Sendable {
     case mdblist
     case anilist
+    case tmdb
+    case tvdb
 
     var id: String { rawValue }
 
@@ -17,6 +19,8 @@ enum UserManagedProviderCredential: String, CaseIterable, Identifiable, Sendable
         switch self {
         case .mdblist: "MDBList"
         case .anilist: "AniList"
+        case .tmdb: "TMDB"
+        case .tvdb: "TVDB"
         }
     }
 
@@ -24,6 +28,8 @@ enum UserManagedProviderCredential: String, CaseIterable, Identifiable, Sendable
         switch self {
         case .mdblist: "MDBList API Key"
         case .anilist: "AniList Access Token"
+        case .tmdb: "TMDB API Read Access Token or API Key"
+        case .tvdb: "TVDB API Key"
         }
     }
 
@@ -35,6 +41,10 @@ enum UserManagedProviderCredential: String, CaseIterable, Identifiable, Sendable
             "MDBList uses a personal API key for ratings and curated lists."
         case .anilist:
             "AniList public anime metadata does not need a token. Add one only to connect your AniList account and lists."
+        case .tmdb:
+            "Omnia uses your own TMDB key for catalogs, search, details, trailers and cast. Create one free at themoviedb.org › Settings › API; the API Read Access Token or the API Key both work."
+        case .tvdb:
+            "Omnia uses your own TVDB key for series, seasons and episode order. Create one at thetvdb.com › Dashboard › API Keys. For a user-supported key, add your subscriber PIN after a space."
         }
     }
 }

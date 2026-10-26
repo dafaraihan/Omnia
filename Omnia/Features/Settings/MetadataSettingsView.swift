@@ -397,6 +397,7 @@ struct MetadataProviderDetailView: View {
     let provider: MetadataProvider
 
     @Environment(SettingsPreferencesStore.self) private var settings
+    @Environment(LiveMetadataStore.self) private var metadata
     @State private var credentialInput = ""
     @State private var hasStoredCredential = false
     @State private var connectionStatus: String?
@@ -407,6 +408,8 @@ struct MetadataProviderDetailView: View {
         switch provider.id {
         case "mdblist": .mdblist
         case "anilist": .anilist
+        case "tmdb": .tmdb
+        case "tvdb": .tvdb
         default: nil
         }
     }
@@ -579,6 +582,7 @@ struct MetadataProviderDetailView: View {
             credentialInput = ""
             hasStoredCredential = true
             connectionStatus = "Credential saved in the device Keychain."
+            reloadCatalogsIfNeeded(credential)
         } catch {
             connectionStatus = "Unable to save the credential."
         }
@@ -590,9 +594,17 @@ struct MetadataProviderDetailView: View {
             credentialInput = ""
             hasStoredCredential = false
             connectionStatus = "Credential removed from this device."
+            reloadCatalogsIfNeeded(credential)
         } catch {
             connectionStatus = "Unable to remove the credential."
         }
+    }
+
+    /// Omnia's own rows and Discover come from TMDB and TVDB with the
+    /// user's key, so they reload when it changes.
+    private func reloadCatalogsIfNeeded(_ credential: UserManagedProviderCredential) {
+        guard credential == .tmdb || credential == .tvdb else { return }
+        Task { await metadata.loadDefaultCatalogs() }
     }
 
     private func testConnection(_ credential: UserManagedProviderCredential) {
@@ -608,6 +620,10 @@ struct MetadataProviderDetailView: View {
                 case .anilist:
                     let viewerName = try await AniListMetadataClient().viewerName()
                     connectionStatus = "Connected as \(viewerName)."
+                case .tmdb, .tvdb:
+                    let provider: MetadataProviderIdentifier = credential == .tmdb ? .tmdb : .tvdb
+                    try await OnDeviceMetadataService.shared.verify(provider)
+                    connectionStatus = "\(credential.providerName) is connected."
                 }
             } catch {
                 connectionStatus = "The provider could not verify this credential."

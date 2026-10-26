@@ -327,31 +327,19 @@ actor SupabaseMetadataClient {
         try await invoke(.related(kind: kind, id: id, type: type, page: page, language: language), accessToken: nil)
     }
 
+    /// TMDB and TVDB requests run on this device with the user's own keys
+    /// (Dafa, 2026-10-26); Omnia's server and its shared keys are no longer
+    /// asked. Requests and answers keep the server's JSON, so callers are
+    /// unchanged.
     private func invoke<Response: Decodable>(
         _ body: MetadataRequest,
         accessToken: String?
     ) async throws -> Response {
-        let endpoint = configuration.projectURL
-            .appending(path: "functions")
-            .appending(path: "v1")
-            .appending(path: "metadata")
-        var request = URLRequest(url: endpoint)
-        request.httpMethod = "POST"
-        request.httpBody = try encoder.encode(body)
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(configuration.publishableKey, forHTTPHeaderField: "apikey")
-        if let accessToken, !accessToken.isEmpty {
-            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        }
-
-        let (data, urlResponse) = try await session.data(for: request)
-        guard let response = urlResponse as? HTTPURLResponse else {
-            throw SupabaseMetadataError.invalidResponse
-        }
-        guard 200 ..< 300 ~= response.statusCode else {
-            let message = (try? decoder.decode(MetadataErrorEnvelope.self, from: data))?.error.message
-                ?? "Metadata is temporarily unavailable."
-            throw SupabaseMetadataError.server(statusCode: response.statusCode, message: message)
+        let data: Data
+        do {
+            data = try await OnDeviceMetadataService.shared.handle(try encoder.encode(body))
+        } catch let error as OnDeviceMetadataError {
+            throw SupabaseMetadataError.server(statusCode: 0, message: error.errorDescription ?? "Metadata is unavailable.")
         }
         return try decoder.decode(Response.self, from: data)
     }

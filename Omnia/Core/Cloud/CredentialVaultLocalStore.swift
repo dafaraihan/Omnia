@@ -54,6 +54,8 @@ final class CredentialVaultLocalStore {
             switch id {
             case "provider.mdblist": account = UserManagedProviderCredential.mdblist.keychainAccount
             case "provider.anilist": account = UserManagedProviderCredential.anilist.keychainAccount
+            case "provider.tmdb": account = UserManagedProviderCredential.tmdb.keychainAccount
+            case "provider.tvdb": account = UserManagedProviderCredential.tvdb.keychainAccount
             case "provider.plugin-tmdb": account = PluginStore.tmdbKeyAccount
             default: throw Failure.invalidEntry
             }
