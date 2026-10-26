@@ -296,9 +296,10 @@ private struct MetadataProviderMark: View {
     var body: some View {
         Group {
             if let assetName {
+                // Each provider's own logo, in its own colours.
                 Image(assetName)
                     .resizable()
-                    .renderingMode(.template)
+                    .renderingMode(.original)
                     .scaledToFit()
             } else {
                 Image(systemName: "cylinder.split.1x2")

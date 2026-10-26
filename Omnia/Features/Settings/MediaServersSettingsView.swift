@@ -5,6 +5,19 @@
 
 import SwiftUI
 
+/// The server's own logo, Jellyfin's or Emby's, in its own colours.
+private struct MediaServerMark: View {
+    let kind: MediaServerKind
+
+    var body: some View {
+        Image(kind == .jellyfin ? "JellyfinMark" : "EmbyMark")
+            .resizable()
+            .renderingMode(.original)
+            .scaledToFit()
+            .accessibilityHidden(true)
+    }
+}
+
 /// Settings › Content & Discovery › Media Servers, as in Nuvio: connected
 /// servers, then Add Server for Jellyfin and Emby.
 struct MediaServersSettingsView: View {
@@ -33,7 +46,7 @@ struct MediaServersSettingsView: View {
                                         .foregroundStyle(.secondary)
                                 }
                             } icon: {
-                                Image(systemName: "server.rack")
+                                MediaServerMark(kind: connection.kind)
                             }
                         }
                     }
@@ -56,7 +69,7 @@ struct MediaServersSettingsView: View {
                                     .foregroundStyle(.secondary)
                             }
                         } icon: {
-                            Image(systemName: "plus.circle")
+                            MediaServerMark(kind: kind)
                         }
                         .contentShape(Rectangle())
                     }

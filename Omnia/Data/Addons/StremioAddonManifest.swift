@@ -33,6 +33,7 @@ nonisolated struct StremioAddonManifest: Codable, Hashable, Sendable {
     /// Add-on manifests are untrusted. A malformed or insecure optional logo
     /// must not prevent the add-on from working or trigger a cleartext load.
     var presentationLogoURL: URL? {
+        if let bundled = bundledBrandLogoURL { return bundled }
         guard let logo,
               let url = URL(string: logo),
               url.scheme?.lowercased() == "https",
@@ -42,6 +43,23 @@ nonisolated struct StremioAddonManifest: Codable, Hashable, Sendable {
             return nil
         }
         return url
+    }
+
+    /// AIOStreams' default manifest logo is a white glyph on a transparent
+    /// background, so it showed as plain white, and vanished on the add-on
+    /// list's white tile. Its official gradient icon (from the AIOStreams
+    /// repository's branding folder) is shown instead. A logo the user set
+    /// in AIOStreams is kept.
+    private var bundledBrandLogoURL: URL? {
+        guard id.lowercased().hasPrefix("com.aiostreams") else { return nil }
+        if let logo, let url = URL(string: logo) {
+            let path = url.path.lowercased()
+            let isDefault = url.host?.lowercased() == "raw.githubusercontent.com"
+                && path.contains("/viren070/aiostreams/")
+                && (path.hasSuffix("/logo.png") || path.hasSuffix("/logo_alt.png"))
+            guard isDefault else { return nil }
+        }
+        return Bundle.main.url(forResource: "AIOStreamsLogo", withExtension: "png")
     }
 
     /// Applies Stremio's manifest routing rules before an add-on is contacted.

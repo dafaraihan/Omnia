@@ -141,6 +141,36 @@ enum AboutCatalog {
             links: [link(.terms, "IntroDB Terms", "https://introdb.app/docs/terms")]
         ),
         resource(
+            id: "aiostreams-brand",
+            name: "AIOStreams",
+            purpose: "AIOStreams' gradient icon, from its repository's branding folder, shown for AIOStreams add-ons that use the default logo.",
+            sections: [.addonTechnology, .attributions],
+            attribution: "AIOStreams and its logo belong to the AIOStreams project.",
+            links: [
+                link(.official, "AIOStreams", "https://github.com/Viren070/AIOStreams"),
+                link(.license, "AGPL-3.0 License", "https://github.com/Viren070/AIOStreams/blob/main/LICENSE")
+            ]
+        ),
+        resource(
+            id: "jellyfin-brand",
+            name: "Jellyfin",
+            purpose: "The Jellyfin icon in Media Servers, from the jellyfin-ux repository.",
+            sections: [.addonTechnology, .attributions],
+            attribution: "Jellyfin icon © Jellyfin contributors, licensed CC BY-SA 4.0.",
+            links: [
+                link(.official, "Jellyfin", "https://jellyfin.org"),
+                link(.license, "CC BY-SA 4.0", "https://creativecommons.org/licenses/by-sa/4.0/")
+            ]
+        ),
+        resource(
+            id: "emby-brand",
+            name: "Emby",
+            purpose: "The Emby mark in Media Servers, identifying Emby servers.",
+            sections: [.addonTechnology, .attributions],
+            attribution: "Emby and its logo are trademarks of Emby LLC.",
+            links: [link(.official, "Emby", "https://emby.media")]
+        ),
+        resource(
             id: "stremio-addons",
             name: "Stremio-Compatible Add-ons",
             purpose: "HTTPS manifest, catalog, metadata, and stream protocol subset.",
