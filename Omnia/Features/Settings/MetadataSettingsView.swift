@@ -27,6 +27,16 @@ struct MetadataSettingsView: View {
             }
 
             Section {
+                ForEach(TrackerKind.allCases) { kind in
+                    TrackerLinkRow(kind: kind)
+                }
+            } header: {
+                Text("Tracking")
+            } footer: {
+                Text("Scrobble what you watch to your own Trakt or Simkl account, with your own API app.")
+            }
+
+            Section {
                 IntegrationLinkRow(
                     route: .metadataSources,
                     providerID: nil,

@@ -141,6 +141,29 @@ enum AboutCatalog {
             links: [link(.terms, "IntroDB Terms", "https://introdb.app/docs/terms")]
         ),
         resource(
+            id: "trakt",
+            name: "Trakt",
+            purpose: "Scrobbles what you watch to your Trakt account, through the API app you create.",
+            sections: [.metadataAndDiscovery, .attributions, .privacy],
+            attribution: "Trakt and its logo are trademarks of Trakt, Inc.",
+            links: [
+                link(.official, "Trakt", "https://trakt.tv"),
+                link(.terms, "Trakt API Terms", "https://trakt.tv/terms"),
+                link(.privacy, "Trakt Privacy Policy", "https://trakt.tv/privacy")
+            ]
+        ),
+        resource(
+            id: "simkl",
+            name: "Simkl",
+            purpose: "Scrobbles what you watch to your Simkl account, through the API app you create.",
+            sections: [.metadataAndDiscovery, .attributions, .privacy],
+            attribution: "Simkl and its logo are trademarks of Simkl.",
+            links: [
+                link(.official, "Simkl", "https://simkl.com"),
+                link(.terms, "Simkl API", "https://simkl.docs.apiary.io")
+            ]
+        ),
+        resource(
             id: "aiostreams-brand",
             name: "AIOStreams",
             purpose: "AIOStreams' gradient icon, from its repository's branding folder, shown for AIOStreams add-ons that use the default logo.",

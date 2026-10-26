@@ -113,7 +113,7 @@ struct SettingsView: View {
         case .about:
             return "Resources, attributions, and licenses"
         case .streamSelection, .playbackResolver, .metadataProvider, .aboutSection, .posterCards, .streams, .continueWatching, .detailPage,
-             .tmdbEnrichment, .metadataSources:
+             .tmdbEnrichment, .metadataSources, .tracker:
             return nil
         }
     }
@@ -183,6 +183,8 @@ struct SettingsDestinationView: View {
                         description: Text("This metadata provider is not supported by this version of Omnia.")
                     )
                 }
+            case let .tracker(kind):
+                TrackerSettingsView(kind: kind)
             case let .aboutSection(section):
                 AboutSectionSettingsView(section: section)
             }

@@ -310,6 +310,13 @@ final class PlaybackSession {
     private(set) var currentLinkKey: MediaPlaybackKey?
 
     @ObservationIgnored private var progressHandler: (@MainActor (Double, Double?) -> Void)?
+    /// Trakt and Simkl scrobbling.
+    @ObservationIgnored private let trackers = TrackerAccountStore.shared
+    @ObservationIgnored private var trackerMedia: TrackerMedia?
+    private var trackerProgress: Double {
+        guard let durationSeconds, durationSeconds > 0 else { return 0 }
+        return positionSeconds / durationSeconds * 100
+    }
     @ObservationIgnored private var subtitlePreferencesHandler: (@MainActor (PlaybackSubtitlePreferenceUpdate) -> Void)?
     @ObservationIgnored private var stateTask: Task<Void, Never>?
     #if !os(macOS)
@@ -425,8 +432,12 @@ final class PlaybackSession {
 
         let source = input.source
         self.source = source
+        // A title switched without closing the player still stops the last
+        // one on the trackers.
+        trackers.playbackStopped(trackerMedia, progress: trackerProgress)
         mediaItem = item
         self.episode = episode
+        trackerMedia = TrackerMedia(item: item, episode: episode)
         // Live TV has nothing to resume.
         if !item.id.hasPrefix(PlaybackSource.liveTVIDPrefix) {
             ResumePromptMarker.mark(item.id)
@@ -954,6 +965,8 @@ final class PlaybackSession {
     #endif
 
     func stop(persisting: Bool = true) {
+        trackers.playbackStopped(trackerMedia, progress: trackerProgress)
+        trackerMedia = nil
         sourceSelectionID = nil
         ResumePromptMarker.clear()
         shuffledNextEpisode = nil
@@ -1387,6 +1400,7 @@ final class PlaybackSession {
         durationSeconds = duration.isFinite && duration > 0 ? duration : nil
         isPaused = player.timeControlStatus != .playing
         if !hasRenderedVideoFrame, positionSeconds > 0 { hasRenderedVideoFrame = true }
+        trackers.playbackChanged(trackerMedia, progress: trackerProgress, isPlaying: !isPaused && hasRenderedVideoFrame)
         #endif
         persistProgress(force: false)
     }
@@ -1404,9 +1418,11 @@ final class PlaybackSession {
         if isPaused != state.isPaused {
             isPaused = state.isPaused
         }
+        let isPlaying = player != nil && !state.isPaused && state.errorMessage == nil
         #if os(macOS)
-        displaySleep.update(isPlaying: player != nil && !state.isPaused && state.errorMessage == nil)
+        displaySleep.update(isPlaying: isPlaying)
         #endif
+        trackers.playbackChanged(trackerMedia, progress: trackerProgress, isPlaying: isPlaying && hasRenderedVideoFrame)
         if playbackRate != state.playbackRate {
             playbackRate = state.playbackRate
         }
