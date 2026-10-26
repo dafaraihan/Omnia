@@ -42,10 +42,21 @@ It supports iOS, macOS, tvOS and visionOS. Its own README calls Metal "only a
 patch version" and the project "only suitable for learning libmpv".
 
 **Recommendation: don't swap engines; Omnia already has the same one.** What
-Omnia could adopt is the rendering path (see 7.1). Its Homebrew libmpv 0.41
-already lists `vo=gpu-next` and `gpu-context=macvk` (Vulkan through
-MoltenVK), so this needs no new dependency. **Decision for Dafa:** whether to
-move from the OpenGL render API to `gpu-next` + `macvk`.
+Omnia could adopt is the rendering path (see 7.1).
+
+**Correction (2026-10-27):** an earlier version of this note said Omnia's
+libmpv needed no new dependency for this. That was wrong.
+- Homebrew's `gpu-context=macvk` ignores `--wid` and always opens mpv's own
+  window.
+- libmpv's render API offers only OpenGL and software.
+- Omnia's pinned Release build compiles mpv with `-Dvulkan=disabled
+  -Dswift-build=disabled -Dcocoa=disabled`.
+- Nuvio draws into its own `CAMetalLayer` only through MPVKit's
+  `0001-player-add-moltenvk-context.patch`.
+
+Adopting the path therefore means patching mpv, enabling Vulkan, and adding
+MoltenVK and a shader compiler (glslang or shaderc) to the reviewed native
+closure, for Release and Debug builds alike.
 
 ## 7. Decoder and playback engine: Nuvio vs Omnia
 
