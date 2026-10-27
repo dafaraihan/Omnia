@@ -280,7 +280,7 @@ ios_build_target() {
         -Dcocoa=disabled -Dmacos-cocoa-cb=disabled \
         -Dmacos-media-player=disabled -Dmacos-touchbar=disabled \
         -Dswift-build=disabled -Dgl=disabled -Dgl-cocoa=disabled \
-        -Dios-gl=disabled -Dcoreaudio=disabled -Daudiounit=enabled \
+        -Dios-gl=disabled -Dcoreaudio=disabled -Davfoundation=disabled -Daudiounit=enabled \
         -Dvulkan=enabled -Dmoltenvk=enabled \
         -Dtests=false -Dfuzzers=false
 
@@ -355,5 +355,27 @@ build_ios_playback() {
       {schema_version: 1, platform: "ios", deployment_target: $target,
        slices: ["ios-arm64", "ios-arm64-simulator"], artifacts: .}
     ' "$rows" > "$output_directory/build-metadata.json"
+    ios_write_xcode_config
     echo "native playback iOS artifacts built"
+}
+
+# Points this checkout's iPhone and iPad builds at the new MPV.xcframework.
+# The file is local (git ignores it); without it iOS plays with AVPlayer.
+ios_write_xcode_config() {
+    local config="$repo_root/Config/NativePlayback.xcconfig"
+    local xcframework="$output_directory/MPV.xcframework"
+    cat > "$config" <<CONFIG
+// Written by Scripts/build-playback-dependencies.sh (OMNIA_NATIVE_PLATFORM=ios).
+// Local to this Mac; delete it to build iOS with AVPlayer only.
+
+OMNIA_IOS_MPV_XCFRAMEWORK = $xcframework
+HEADER_SEARCH_PATHS[sdk=iphoneos*] = \$(inherited) \$(OMNIA_IOS_MPV_XCFRAMEWORK)/ios-arm64/Headers
+HEADER_SEARCH_PATHS[sdk=iphonesimulator*] = \$(inherited) \$(OMNIA_IOS_MPV_XCFRAMEWORK)/ios-arm64-simulator/Headers
+LIBRARY_SEARCH_PATHS[sdk=iphoneos*] = \$(inherited) \$(OMNIA_IOS_MPV_XCFRAMEWORK)/ios-arm64
+LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*] = \$(inherited) \$(OMNIA_IOS_MPV_XCFRAMEWORK)/ios-arm64-simulator
+OTHER_LDFLAGS[sdk=iphone*] = \$(inherited) -lmpv-omnia -lc++ -lz -liconv -framework Metal -framework QuartzCore -framework IOSurface -framework UIKit -framework CoreGraphics -framework AudioToolbox -framework AVFoundation -framework CoreMedia -framework CoreVideo -framework VideoToolbox -framework CoreText -framework CoreFoundation -framework Security
+SWIFT_ACTIVE_COMPILATION_CONDITIONS[sdk=iphone*] = \$(inherited) OMNIA_MPV
+GCC_PREPROCESSOR_DEFINITIONS[sdk=iphone*] = \$(inherited) OMNIA_IOS_MPV=1
+CONFIG
+    echo "wrote $config"
 }
