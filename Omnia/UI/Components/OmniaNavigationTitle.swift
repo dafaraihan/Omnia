@@ -30,9 +30,12 @@ enum MacToolbarPresentation {
 
     static func navigationTitle(_ proposedTitle: String, for screen: MacToolbarScreen) -> String {
         switch screen {
-        case .home, .mediaDetail:
+        // The Settings root is the profile's own tab, already named in the
+        // tab bar, so the window shows no title there (Dafa, 2026-10-27).
+        // Settings' sub-pages keep their titles.
+        case .home, .mediaDetail, .settings:
             ""
-        case .library, .discover, .liveTV, .search, .settings:
+        case .library, .discover, .liveTV, .search:
             proposedTitle
         }
     }
