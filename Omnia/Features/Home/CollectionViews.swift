@@ -199,6 +199,18 @@ struct CollectionFolderView: View {
         let title: String
     }
 
+    /// A folder drawn as a landscape or wide tile (as imported, or set in
+    /// Settings › Layout › Collections) lists its titles as backdrop cards,
+    /// as Nuvio does; other folders keep the poster style.
+    private var cardDisplay: DisplayPreferences {
+        var cardDisplay = display
+        switch display.collectionCard.shape.resolved(folder.tileShape) {
+        case .landscape, .wide: cardDisplay.landscapePosters = true
+        case .poster, .square: break
+        }
+        return cardDisplay
+    }
+
     private var tabs: [FolderTab] {
         let sourceTabs = sections.filter { $0.state != .unavailable }.map { FolderTab(id: $0.id, title: $0.title) }
         let allTab = collection.showAllTab && sourceTabs.count > 1 ? [FolderTab(id: FolderSection.allID, title: "All")] : []
@@ -395,7 +407,7 @@ struct CollectionFolderView: View {
         let pending = sections.filter { sectionIDs.contains($0.id) }
         let items = filtered(loaded)
         LazyVGrid(
-            columns: MediaBrowseMetrics.posterGridColumns(display),
+            columns: MediaBrowseMetrics.posterGridColumns(cardDisplay),
             alignment: .leading,
             spacing: MediaBrowseMetrics.gridRowSpacing
         ) {
@@ -403,6 +415,7 @@ struct CollectionFolderView: View {
                 MediaPoster(item: item, fillsAvailableWidth: true)
             }
         }
+        .environment(\.displayPreferences, cardDisplay)
 
         // More titles load on their own at the bottom. The marker stays
         // put while a page loads: swapping it for the spinner cancelled
@@ -440,11 +453,12 @@ struct CollectionFolderView: View {
                 } else {
                     ShelfScrollView(
                         items: filtered(section.items),
-                        itemSpan: MediaBrowseMetrics.posterItemSpan(display),
+                        itemSpan: MediaBrowseMetrics.posterItemSpan(cardDisplay),
                         accessibilityLabel: section.title
                     ) { item in
                         MediaPoster(item: item)
                     }
+                    .environment(\.displayPreferences, cardDisplay)
                 }
             }
         }
