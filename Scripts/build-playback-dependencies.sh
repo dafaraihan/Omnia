@@ -738,7 +738,7 @@ for output_library in "$output_directory"/Runtime/*.dylib; do
     library="$(basename "$output_library")"
     case "$library" in
         libmpv.*) license_component=mpv ;;
-        libav*) license_component=ffmpeg ;;
+        libav*|libsw*) license_component=ffmpeg ;;
         libtorrent-*) license_component=libtorrent ;;
         libbluray.*) license_component=libbluray ;;
         libplacebo.*) license_component=libplacebo ;;
