@@ -291,6 +291,8 @@ static void *OMOpenGLProcedureAddress(void *context, const char *name) {
 @property (nonatomic, readonly) OMMpvVideoLayer *videoLayer;
 /// Set once Metal rendering is chosen for this player.
 @property (nonatomic, readonly, nullable) OMMpvMetalLayer *metalLayer;
+/// Called on the main thread when the Metal drawable changes size.
+@property (nonatomic, copy, nullable) void (^drawableSizeDidChange)(void);
 - (OMMpvMetalLayer *)useMetalLayer;
 - (void)useOpenGLLayer;
 @end
@@ -366,8 +368,12 @@ static void *OMOpenGLProcedureAddress(void *context, const char *name) {
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     _metalLayer.contentsScale = scale;
+    CGSize previous = _metalLayer.drawableSize;
     _metalLayer.drawableSize = CGSizeMake(round(self.bounds.size.width * scale), round(self.bounds.size.height * scale));
     [CATransaction commit];
+    if (!CGSizeEqualToSize(previous, _metalLayer.drawableSize) && self.drawableSizeDidChange) {
+        self.drawableSizeDidChange();
+    }
 }
 
 @end
@@ -829,6 +835,8 @@ static void OMMpvWakeup(void *context) {
         return NO;
     }
     OMMpvMetalLayer *layer = [_videoView useMetalLayer];
+    __weak OMMpvPlayerController *weakSelf = self;
+    _videoView.drawableSizeDidChange = ^{ [weakSelf wakeMetalOutput]; };
     int64_t layerPointer = (int64_t)(intptr_t)(__bridge void *)layer;
     mpv_set_option(_mpv, "wid", MPV_FORMAT_INT64, &layerPointer);
     mpv_set_option_string(_mpv, "vo", "gpu-next");
@@ -839,6 +847,17 @@ static void OMMpvWakeup(void *context) {
     mpv_set_option_string(_mpv, "tone-mapping", "auto");
     mpv_set_option_string(_mpv, "hdr-compute-peak", "yes");
     return YES;
+}
+
+/// mpv's Metal output picks up a new drawable size on its next event check,
+/// which only comes when it's working. While paused, nudge an unused
+/// option so it wakes, resizes and redraws now (entering full screen while
+/// paused).
+- (void)wakeMetalOutput {
+    if (!_usingMetalRendering || !_mpv || !self.isPaused) return;
+    double zoom = [self doubleForProperty:"video-zoom"];
+    [self setDouble:zoom + 1e-6 forProperty:"video-zoom"];
+    [self setDouble:zoom forProperty:"video-zoom"];
 }
 
 - (void)noteMetalUnavailable:(NSString *)reason {
@@ -852,6 +871,7 @@ static void OMMpvWakeup(void *context) {
     if (!_usingMetalRendering || !_mpv) return;
     _usingMetalRendering = NO;
     [self noteMetalUnavailable:reason];
+    _videoView.drawableSizeDidChange = nil;
     [_videoView useOpenGLLayer];
     if (![self createOpenGLRenderContext]) {
         [self failWithMessage:@"libmpv could not create its OpenGL render context."];

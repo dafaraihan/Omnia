@@ -1,0 +1,45 @@
+Make the MoltenVK context follow its layer's drawable size.
+
+Omnia's own patch, applied after 0001. The moltenvk context only resized
+its swapchain on video reconfiguration, so after the app resized the
+layer (entering full screen, moving to another display) mpv kept drawing
+at the old size in the corner of the new drawable, subtitles included.
+On every VOCTRL_CHECK_EVENTS it now compares the layer's drawableSize
+with the output size, resizes the swapchain and reports VO_EVENT_RESIZE.
+Licensed like the file it changes (LGPL-2.1-or-later).
+
+diff --git a/video/out/vulkan/context_moltenvk.m b/video/out/vulkan/context_moltenvk.m
+index 445b907..e8257e5 100644
+--- a/video/out/vulkan/context_moltenvk.m
++++ b/video/out/vulkan/context_moltenvk.m
+@@ -22,6 +22,7 @@
+ #include "common.h"
+ #include "context.h"
+ #include "utils.h"
++#include "video/out/vo.h"
+ 
+ struct priv {
+     struct mpvk_ctx vk;
+@@ -81,8 +82,22 @@ static bool moltenvk_reconfig(struct ra_ctx *ctx)
+     return true;
+ }
+ 
++// The app sizes the layer's drawable to its view; follow it on every event
++// check so the video and subtitles keep filling it after a resize, such as
++// entering full screen.
+ static int moltenvk_control(struct ra_ctx *ctx, int *events, int request, void *arg)
+ {
++    struct priv *p = ctx->priv;
++    if (request == VOCTRL_CHECK_EVENTS && p->layer) {
++        CGSize size = p->layer.drawableSize;
++        int width = (int)size.width, height = (int)size.height;
++        if (width > 1 && height > 1 &&
++            (width != ctx->vo->dwidth || height != ctx->vo->dheight) &&
++            ra_vk_ctx_resize(ctx, width, height))
++        {
++            *events |= VO_EVENT_RESIZE;
++        }
++    }
+     return VO_NOTIMPL;
+ }
+ 

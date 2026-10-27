@@ -72,7 +72,10 @@ MPVKit (`Sources/BuildScripts/patch/libmpv/`, LGPL-3.0; the file it adds
 carries mpv's LGPL-2.1-or-later header). It adds a `moltenvk` Vulkan context
 that draws into a `CAMetalLayer` passed as `--wid`. It applies unchanged to the
 pinned mpv 0.41.0 source. `.gitattributes` keeps its bytes out of whitespace
-checks.
+checks. `patches/mpv/0002-moltenvk-follow-layer-size.patch` is Omnia's own
+change on top of it (same licence as the file it changes): the context
+follows the layer's drawable size on every event check, so the picture and
+subtitles keep filling it after a resize such as entering full screen.
 
 **New pinned components** (all `pending-independent-review` in the manifest):
 
