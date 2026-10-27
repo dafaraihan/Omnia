@@ -1,21 +1,21 @@
 //
-//  StreamSortingSettingsView.swift
+//  StreamSortingSections.swift
 //  Omnia
 //
 
 import SwiftUI
 
-/// Settings › Integrations › Stream Sorting, after Nuvio's Debrid › Stream
-/// sorting and filters (Dafa, 2026-10-27). The order set here is the order
-/// sources are listed, the first one auto-play picks, and the order failed
-/// sources are replaced in.
-struct StreamSortingSettingsView: View {
+/// The sorting and filter sections of Settings › Playback › Stream
+/// Selection, after Nuvio's Debrid › Stream sorting and filters (Dafa,
+/// 2026-10-27). The order set here is the order sources are listed, the
+/// first one auto-play picks, and the order failed sources are replaced in.
+struct StreamSortingSections: View {
     @Environment(SettingsPreferencesStore.self) private var settings
 
     private var sorting: StreamSortPreferences { settings.preferences.playbackBehavior.streamSorting }
 
     var body: some View {
-        OmniaSettingsForm {
+        Group {
             Section {
                 Picker(selection: settings.binding(\.playbackBehavior.streamSorting.profile)) {
                     ForEach(StreamSortProfile.allCases) { profile in
@@ -38,7 +38,7 @@ struct StreamSortingSettingsView: View {
                     Text("Sources your debrid service already has (⚡, [RD+]) before ones it would still have to download (⏳).")
                 }
             } header: {
-                Text("Order")
+                Text("Sorting")
             } footer: {
                 Text("Sorting reads each source's name, such as 2160p, REMUX, HDR, DV, Atmos, HEVC and its size. Equal sources keep their add-on's order.")
             }
@@ -72,12 +72,11 @@ struct StreamSortingSettingsView: View {
 
             if sorting != StreamSortPreferences() {
                 Section {
-                    Button("Restore Defaults", systemImage: "arrow.counterclockwise") {
+                    Button("Restore Sorting Defaults", systemImage: "arrow.counterclockwise") {
                         settings.update { $0.playbackBehavior.streamSorting = StreamSortPreferences() }
                     }
                 }
             }
         }
-        .omniaNavigationTitle("Stream Sorting")
     }
 }

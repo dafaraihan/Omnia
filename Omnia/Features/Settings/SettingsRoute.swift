@@ -94,7 +94,6 @@ enum SettingsRoute: Hashable, Sendable {
     case about
     case metadataProvider(String)
     case tracker(TrackerKind)
-    case streamSorting
     case aboutSection(AboutSection)
 
     /// Nuvio's Settings tree: Layout, Content & Discovery, Playback and
@@ -111,7 +110,7 @@ enum SettingsRoute: Hashable, Sendable {
         case .appearance: [.home, .catalogs, .collections, .continueWatching, .progress, .upcoming, .posterCards, .detailPage, .streams]
         case .contentDiscovery: [.addons, .mediaServers, .liveTV, .plugins]
         case .videoPlayer: [.streamSelection, .subtitle, .playbackResolver, .playbackDiagnostics]
-        case .metadata: [.tmdbEnrichment, .animeEnrichment, .metadataProvider("mdblist"), .metadataSources, .streamSorting] + TrackerKind.allCases.map(SettingsRoute.tracker)
+        case .metadata: [.tmdbEnrichment, .animeEnrichment, .metadataProvider("mdblist"), .metadataSources] + TrackerKind.allCases.map(SettingsRoute.tracker)
         default: []
         }
     }
@@ -165,7 +164,6 @@ enum SettingsRoute: Hashable, Sendable {
             MetadataProvider.supported.first { $0.id == id }?.name ?? "Metadata Provider"
         case let .tracker(kind):
             kind.title
-        case .streamSorting: "Stream Sorting"
         case let .aboutSection(section):
             section.title
         }
@@ -186,7 +184,6 @@ enum SettingsRoute: Hashable, Sendable {
         case .tmdbEnrichment: "sparkles.rectangle.stack"
         case .animeEnrichment: "sparkles.tv"
         case .tracker: "checkmark.circle"
-        case .streamSorting: "arrow.up.arrow.down.circle"
         case .progress: "clock.arrow.circlepath"
         case .upcoming: "calendar"
         case .videoPlayer: "play.rectangle"
@@ -222,7 +219,7 @@ enum SettingsRoute: Hashable, Sendable {
         case .progress: ["local progress", "continue watching", "watchlist", "backup"]
         case .upcoming: ["episodes", "look ahead", "Home"]
         case .videoPlayer: ["video player", "player", "skip intro", "auto skip", "recap", "credits", "up next", "next episode", "threshold", "decoder", "hardware", "Metal", "rendering", "gpu-next", "OpenGL", "overlay", "audio", "subtitles", "SDH", "forced", "source selection", "auto play"]
-        case .streamSelection: ["auto play", "autoplay", "first source", "regex", "reuse last link", "binge group", "timeout", "allowed add-ons", "plugins"]
+        case .streamSelection: ["auto play", "autoplay", "first source", "regex", "reuse last link", "binge group", "timeout", "allowed add-ons", "plugins", "sort", "sorting", "ranking", "quality", "resolution", "4K", "HDR", "Dolby Vision", "codec", "HEVC", "size", "debrid", "cached", "filters"]
         case .subtitle: ["subtitles", "captions", "SDH", "appearance"]
         case .playbackResolver: ["endpoint", "bearer token", "approved add-ons", "approved HTTPS hosts"]
         case .playbackDiagnostics: ["diagnostics", "log", "errors", "failures", "could not play", "libmpv", "copy"]
@@ -233,7 +230,6 @@ enum SettingsRoute: Hashable, Sendable {
         case .detailPage: ["detail", "title page", "background", "episodes", "blur", "spoiler", "sections", "cast", "trailers"]
         case .about: ["resources", "TMDB", "TVDB", "libmpv", "Supabase", "licenses", "privacy"]
         case .metadataProvider: ["metadata provider", title]
-        case .streamSorting: ["sort", "sorting", "ranking", "quality", "resolution", "4K", "HDR", "Dolby Vision", "codec", "HEVC", "size", "debrid", "cached", "filters"]
         case .tracker: ["tracker", "scrobble", "scrobbling", "history", "watched", "Trakt", "Simkl", "PublicMetaDB", "PMDB", "AniList", title]
         case let .aboutSection(section): [section.title]
         }

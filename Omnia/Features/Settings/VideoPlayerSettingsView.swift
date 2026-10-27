@@ -258,8 +258,9 @@ struct VideoPlayerSettingsView: View {
     }
 }
 
-/// Settings › Video Player › Stream Selection: Nuvio's Reuse Last Link,
-/// Auto Stream Selection and binge groups.
+/// Settings › Video Player › Stream Selection: how sources are sorted and
+/// filtered, then Nuvio's Reuse Last Link, Auto Stream Selection and binge
+/// groups.
 struct StreamSelectionSettingsView: View {
     @Environment(SettingsPreferencesStore.self) private var settings
     @Environment(OmniaStore.self) private var store
@@ -280,6 +281,8 @@ struct StreamSelectionSettingsView: View {
 
     var body: some View {
         OmniaSettingsForm {
+            StreamSortingSections()
+
             Section {
                 Toggle(isOn: settings.binding(\.playbackBehavior.reuseLastLink)) {
                     Text("Reuse Last Link")
