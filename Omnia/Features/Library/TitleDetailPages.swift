@@ -43,7 +43,7 @@ struct PersonDetailView: View {
                             Button(showsFullBiography ? "Show Less" : "Show More") {
                                 showsFullBiography.toggle()
                             }
-                            .buttonStyle(.link)
+                            .omniaLinkButtonStyle()
                         }
                     }
                     if credits.isEmpty {

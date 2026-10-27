@@ -3,6 +3,7 @@
 //  Omnia
 //
 
+import CoreGraphics
 import Foundation
 #if os(macOS)
 import Observation
