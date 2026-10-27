@@ -313,7 +313,7 @@ final class ProfileStore {
             syncProblem = nil
         } catch {
             guard account.user?.id == userID, !Task.isCancelled else { return }
-            syncProblem = "Profiles are saved on this Mac but couldn't sync with your account."
+            syncProblem = "Profiles are saved on this \(OmniaDevice.name) but couldn't sync with your account."
         }
     }
 

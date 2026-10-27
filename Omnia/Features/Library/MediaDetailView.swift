@@ -79,11 +79,29 @@ struct MediaDetailView: View {
                 posterTransition = PosterTransitionCenter.shared.consume(itemID: item.id)
             }
         }
-        #if os(macOS)
         // Match Home: the scroll container, not merely its first child,
         // owns the top safe area. The detail hero can therefore meet the
-        // stable transparent toolbar instead of leaving a black band.
+        // stable transparent toolbar (or iPad's tab bar) instead of leaving
+        // a band above it.
         .ignoresSafeArea(edges: .top)
+        #if os(iOS)
+        // Outside the page's safe-area override, so it stays below the
+        // status and tab bars and in place while the page scrolls.
+        .overlay(alignment: .topLeading) {
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.body.weight(.bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 42, height: 42)
+                    .background(.black.opacity(0.42), in: Circle())
+            }
+            .buttonStyle(.plain)
+            .padding(.leading, horizontalInset)
+            .padding(.top, 10)
+            .accessibilityLabel("Back")
+        }
         #endif
         .omniaNavigationTitle(displayItem.title, screen: .mediaDetail)
         #if os(iOS)
@@ -213,23 +231,6 @@ struct MediaDetailView: View {
             .padding(.leading, CinematicHeroLayout.horizontalInset)
             .padding(.bottom, 34)
         }
-        #if os(iOS)
-        .overlay(alignment: .topLeading) {
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(.body.weight(.bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 42, height: 42)
-                    .background(.black.opacity(0.42), in: Circle())
-            }
-            .buttonStyle(.plain)
-            .padding(.leading, horizontalInset)
-            .padding(.top, 10)
-            .accessibilityLabel("Back")
-        }
-        #endif
         // In the hero's bottom-right corner, scrolling away with it
         // (Dafa, 2026-10-22).
         .overlay(alignment: .bottomTrailing) {

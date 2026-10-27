@@ -200,7 +200,7 @@ struct AuthPanel: View {
                     .omniaLinkButtonStyle()
                     .font(.callout)
                     .padding(.top, 4)
-                Text("Your profiles and library stay on this Mac. You can sign in later in Settings.")
+                Text("Your profiles and library stay on this \(OmniaDevice.name). You can sign in later in Settings.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

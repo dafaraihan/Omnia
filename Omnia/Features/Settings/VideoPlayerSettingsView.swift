@@ -224,7 +224,7 @@ struct VideoPlayerSettingsView: View {
     }
 
     private var resolverSummary: String {
-        localResolverSettings.preferences.hasCurrentConsent ? "Ready on this Mac" : "Consent required"
+        localResolverSettings.preferences.hasCurrentConsent ? "Ready on this \(OmniaDevice.name)" : "Consent required"
     }
 
     private func minutesTitle(_ value: Double) -> String {

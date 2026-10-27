@@ -294,7 +294,7 @@ struct HomeView: View {
         .modifier(TopBarScrollReporting(destination: .home, hasHero: displayFeatured != nil || showsHeroSlot))
         #endif
         #if os(iOS)
-        .toolbarBackground(.hidden, for: .navigationBar)
+        .ignoresSafeArea(edges: .top)
         #endif
         .omniaNavigationTitle("Home", screen: .home)
         .navigationDestination(for: MediaItem.self) { MediaDetailView(item: $0) }

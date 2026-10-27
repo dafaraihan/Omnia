@@ -60,7 +60,15 @@ extension View {
             self.modifier(MacPushedToolbarTitleModifier(title: title))
         }
         #else
-        self.navigationTitle(title)
+        if screen == .home {
+            // Home's hero runs under the tab bar, as on the Mac; the title
+            // stays for VoiceOver and Back menus.
+            self.navigationTitle(title)
+                .toolbarTitleDisplayMode(.inline)
+                .toolbar(.hidden, for: .navigationBar)
+        } else {
+            self.navigationTitle(title)
+        }
         #endif
     }
 }
