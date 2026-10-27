@@ -1587,6 +1587,19 @@ struct PlaybackExperienceView: View {
         var secondsLeft: Int
     }
 
+    /// The video: libmpv's surface, or AVPlayer's when iOS fell back to it.
+    @ViewBuilder
+    private var playerSurface: some View {
+        if let player = playback.player {
+            NativePlayerView(player: player)
+        }
+        #if OMNIA_MPV && !os(macOS)
+        if playback.player == nil, let fallbackPlayer = playback.fallbackPlayer {
+            AVPlaybackView(player: fallbackPlayer)
+        }
+        #endif
+    }
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
@@ -1604,8 +1617,8 @@ struct PlaybackExperienceView: View {
                     description: Text(playbackError)
                 )
                 .foregroundStyle(.white)
-            } else if let player = playback.player {
-                NativePlayerView(player: player)
+            } else if playback.hasPlayer {
+                playerSurface
                     .ignoresSafeArea()
                     .allowsHitTesting(false)
                     .zIndex(0)
@@ -1666,6 +1679,28 @@ struct PlaybackExperienceView: View {
         }
         .animation(.easeInOut(duration: 0.35), value: showsLoadingOverlay)
         .animation(.easeInOut(duration: 0.35), value: showsPauseOverlay)
+        #if os(iOS)
+        // The controls stay hidden while loading, and an iPhone or iPad has
+        // no Escape key: a source that never loads must still be closable.
+        .overlay(alignment: .topLeading) {
+            if showsLoadingOverlay {
+                Button {
+                    playback.stop()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.body.weight(.bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 34, height: 34)
+                        .glassEffect(.regular.interactive(), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .padding(18)
+                .accessibilityLabel("Close player")
+                .accessibilityHint("Stops loading and returns to Omnia")
+                .transition(.opacity)
+            }
+        }
+        #endif
         .overlay {
             if playback.isPictureInPictureActive {
                 VStack(spacing: 12) {
@@ -1893,7 +1928,7 @@ struct PlaybackExperienceView: View {
     private var showsLoadingOverlay: Bool {
         behavior.showLoadingOverlay
             && playback.playbackError == nil
-            && playback.player != nil
+            && playback.hasPlayer
             && !playback.hasRenderedVideoFrame
     }
 

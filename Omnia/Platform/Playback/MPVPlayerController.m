@@ -5,6 +5,7 @@
 
 #import "MPVPlayerController.h"
 
+#if TARGET_OS_OSX || OMNIA_IOS_MPV
 #if TARGET_OS_OSX
 // mpv's render API needs OpenGL, which macOS still ships but marks as
 // deprecated. libmpv's headers also use @deprecated doc tags without the
@@ -17,6 +18,14 @@
 #pragma clang diagnostic pop
 #import <OpenGL/OpenGL.h>
 #import <OpenGL/gl.h>
+#else
+// iOS has no OpenGL output: mpv always draws with gpu-next on Metal.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdocumentation-deprecated-sync"
+#import <mpv/client.h>
+#import <mpv/render.h>
+#pragma clang diagnostic pop
+#endif
 #import <QuartzCore/QuartzCore.h>
 #import <os/lock.h>
 #import <math.h>
@@ -53,6 +62,7 @@ static dispatch_queue_t OMMpvTeardownQueue(void) {
     return queue;
 }
 
+#if TARGET_OS_OSX
 static void *OMOpenGLProcedureAddress(void *context, const char *name) {
     CFStringRef symbolName = CFStringCreateWithCString(kCFAllocatorDefault, name, kCFStringEncodingASCII);
     void *address = CFBundleGetFunctionPointerForName(
@@ -245,6 +255,8 @@ static void *OMOpenGLProcedureAddress(void *context, const char *name) {
 
 @end
 
+#endif
+
 /// The layer libmpv's gpu-next output draws into through MoltenVK, after
 /// Nuvio's MetalLayer (iosApp/iosApp/Player/MetalLayer.swift,
 /// NuvioMedia/NuvioMobile, GPL-3.0). mpv holds it by pointer through --wid.
@@ -260,9 +272,13 @@ static void *OMOpenGLProcedureAddress(void *context, const char *name) {
     self.opaque = YES;
     // HDR titles draw brighter than SDR white on displays that can.
     self.wantsExtendedDynamicRangeContent = YES;
+    #if TARGET_OS_OSX
     CGColorRef black = CGColorCreateGenericRGB(0, 0, 0, 1);
     self.backgroundColor = black;
     CGColorRelease(black);
+    #else
+    self.backgroundColor = UIColor.blackColor.CGColor;
+    #endif
     return self;
 }
 
@@ -287,6 +303,7 @@ static void *OMOpenGLProcedureAddress(void *context, const char *name) {
 
 @end
 
+#if TARGET_OS_OSX
 @interface OMMpvVideoView : NSView
 @property (nonatomic, readonly) OMMpvVideoLayer *videoLayer;
 /// Set once Metal rendering is chosen for this player.
@@ -590,6 +607,67 @@ static void *OMOpenGLProcedureAddress(void *context, const char *name) {
 
 @end
 
+#else
+/// The iOS video surface: a view hosting the Metal layer mpv draws into.
+@interface OMMpvVideoView : UIView
+@property (nonatomic, readonly) OMMpvMetalLayer *metalLayer;
+/// Called on the main thread when the Metal drawable changes size.
+@property (nonatomic, copy, nullable) void (^drawableSizeDidChange)(void);
+- (OMMpvMetalLayer *)useMetalLayer;
+@end
+
+@implementation OMMpvVideoView
+
+- (instancetype)initWithFrame:(CGRect)frame {
+    self = [super initWithFrame:frame];
+    if (!self) return nil;
+    // Display only: the SwiftUI controls above take every touch.
+    self.userInteractionEnabled = NO;
+    self.backgroundColor = UIColor.blackColor;
+    self.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    // A sublayer, not the view's own layer: MoltenVK changes the layer from
+    // mpv's render thread, and UIKit stops a view's own layer being changed
+    // off the main thread.
+    _metalLayer = [OMMpvMetalLayer layer];
+    [self.layer addSublayer:_metalLayer];
+    return self;
+}
+
+- (OMMpvMetalLayer *)useMetalLayer {
+    [self updateDrawableSize];
+    return self.metalLayer;
+}
+
+- (void)didMoveToWindow {
+    [super didMoveToWindow];
+    [self updateDrawableSize];
+}
+
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    [self updateDrawableSize];
+}
+
+/// A CAMetalLayer doesn't follow its bounds on its own; MoltenVK resizes
+/// the swapchain when the drawable size changes.
+- (void)updateDrawableSize {
+    CGFloat scale = self.traitCollection.displayScale > 0 ? self.traitCollection.displayScale : 2;
+    OMMpvMetalLayer *layer = self.metalLayer;
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    layer.frame = self.layer.bounds;
+    layer.contentsScale = scale;
+    CGSize previous = layer.drawableSize;
+    layer.drawableSize = CGSizeMake(round(self.bounds.size.width * scale), round(self.bounds.size.height * scale));
+    [CATransaction commit];
+    if (!CGSizeEqualToSize(previous, layer.drawableSize) && self.drawableSizeDidChange) {
+        self.drawableSizeDidChange();
+    }
+}
+
+@end
+#endif
+
 @implementation OMMpvTrack
 
 - (instancetype)initWithTrackID:(NSInteger)trackID
@@ -665,6 +743,7 @@ typedef NS_ENUM(NSInteger, OMMpvTrackSelectionKind) {
 @implementation OMMpvPendingTrackSelection
 @end
 
+#if TARGET_OS_OSX
 static void OMMpvRequestRedraw(void *context) {
     // Runs on an mpv thread. The layer coalesces requests and draws on its
     // own queue, so new frames never wait for the main thread.
@@ -673,7 +752,13 @@ static void OMMpvRequestRedraw(void *context) {
     [layer scheduleRender];
 }
 
+#endif
+
+#if TARGET_OS_OSX
 @interface OMMpvPlayerController () <NSWindowDelegate> {
+#else
+@interface OMMpvPlayerController () {
+#endif
     mpv_handle *_mpv;
     mpv_render_context *_renderContext;
     NSURL *_URL;
@@ -693,9 +778,11 @@ static void OMMpvRequestRedraw(void *context) {
     NSDictionary<NSString *, id> *_subtitleStyle;
     BOOL _tracksLoading;
     BOOL _fileLoaded;
-    NSView *_inlineVideoHost;
+    OMMpvPlatformView *_inlineVideoHost;
+    #if TARGET_OS_OSX
     NSPanel *_pictureInPicturePanel;
     OMMpvPictureInPictureView *_pictureInPictureView;
+    #endif
     BOOL _pictureInPictureActive;
     uint64_t _nextTrackSelectionRequestID;
     uint64_t _latestAudioTrackSelectionRequestID;
@@ -712,8 +799,10 @@ static void OMMpvRequestRedraw(void *context) {
 @property (nonatomic, readwrite, nullable) NSString *renderingFallbackReason;
 - (void)drainEvents;
 - (void)emitSnapshot;
-- (void)embedVideoViewInHost:(NSView *)hostView;
+- (void)embedVideoViewInHost:(OMMpvPlatformView *)hostView;
+#if TARGET_OS_OSX
 - (NSPanel *)makePictureInPicturePanel;
+#endif
 - (void)applySubtitleStyleProperties;
 - (void)applyPendingSeekIfReady;
 - (uint64_t)nextTrackSelectionRequestID;
@@ -756,7 +845,7 @@ static void OMMpvWakeup(void *context) {
     _tracksLoading = YES;
     _nextTrackSelectionRequestID = 100;
     _pendingTrackSelections = [NSMutableDictionary dictionary];
-    _videoView = [[OMMpvVideoView alloc] initWithFrame:NSZeroRect];
+    _videoView = [[OMMpvVideoView alloc] initWithFrame:CGRectZero];
     return self;
 }
 
@@ -775,6 +864,7 @@ static void OMMpvWakeup(void *context) {
 
 - (BOOL)usingMetalRendering { return _usingMetalRendering; }
 
+#if TARGET_OS_OSX
 /// libmpv's render API, drawing with OpenGL into the video layer.
 - (BOOL)createOpenGLRenderContext {
     CGLContextObj glContext = _videoView.videoLayer.cglContext;
@@ -807,11 +897,13 @@ static void OMMpvWakeup(void *context) {
     [_videoView.videoLayer scheduleRender];
     return YES;
 }
+#endif
 
 /// gpu-next through Omnia's MoltenVK context into a Metal layer, as Nuvio
 /// draws its player (Dafa, 2026-10-27). Returns NO, with the reason kept,
 /// when this build can't; the player then uses OpenGL.
 - (BOOL)configureMetalOutput {
+    #if TARGET_OS_OSX
     NSString *moltenVK = [NSBundle.mainBundle.privateFrameworksPath
         stringByAppendingPathComponent:@"libMoltenVK.dylib"];
     if (![NSFileManager.defaultManager fileExistsAtPath:moltenVK]) {
@@ -828,6 +920,7 @@ static void OMMpvWakeup(void *context) {
         setenv("VK_DRIVER_FILES", icd.fileSystemRepresentation, 0);
         setenv("VK_ICD_FILENAMES", icd.fileSystemRepresentation, 0);
     }
+    #endif
 
     // Homebrew's libmpv has no moltenvk context and rejects the option.
     if (mpv_set_option_string(_mpv, "gpu-context", "moltenvk") < 0) {
@@ -862,13 +955,24 @@ static void OMMpvWakeup(void *context) {
 
 - (void)noteMetalUnavailable:(NSString *)reason {
     self.renderingFallbackReason = reason;
+    #if TARGET_OS_OSX
     NSLog(@"[Omnia] Metal rendering unavailable, using OpenGL: %@", reason);
+    #else
+    NSLog(@"[Omnia] Metal rendering unavailable: %@", reason);
+    #endif
 }
 
 /// The Metal output failed after mpv started (no Vulkan device, MoltenVK
 /// refused the layer): draw with OpenGL from here on.
 - (void)fallBackToOpenGL:(NSString *)reason {
     if (!_usingMetalRendering || !_mpv) return;
+    #if !TARGET_OS_OSX
+    // iOS has no OpenGL output; Omnia plays the source with AVPlayer instead.
+    _usingMetalRendering = NO;
+    [self noteMetalUnavailable:reason];
+    [self failWithMessage:[NSString stringWithFormat:@"mpv could not draw video (%@).", reason]];
+    return;
+    #else
     _usingMetalRendering = NO;
     [self noteMetalUnavailable:reason];
     _videoView.drawableSizeDidChange = nil;
@@ -881,6 +985,7 @@ static void OMMpvWakeup(void *context) {
     // A video output that failed to open leaves no video track selected.
     mpv_set_property_string(_mpv, "vid", "auto");
     [self emitSnapshot];
+    #endif
 }
 
 - (void)startIfNeeded {
@@ -892,6 +997,9 @@ static void OMMpvWakeup(void *context) {
     if (!_videoView.window) return;
 
     _didStart = YES;
+    #if !TARGET_OS_OSX
+    _prefersMetalRendering = YES;
+    #endif
     _mpv = mpv_create();
     if (!_mpv) {
         [self failWithMessage:@"libmpv could not create a player core."];
@@ -925,7 +1033,11 @@ static void OMMpvWakeup(void *context) {
     // device change (AirPods, a display sleeping, a new default output)
     // calls into freed memory. AVFoundation's output registers none and
     // follows the system output device on its own.
+    #if TARGET_OS_OSX
     mpv_set_option_string(_mpv, "ao", "avfoundation,coreaudio");
+    #else
+    mpv_set_option_string(_mpv, "ao", "audiounit");
+    #endif
     mpv_set_option_string(_mpv, "keep-open", "yes");
     mpv_set_option_string(_mpv, "osd-level", "0");
     mpv_set_option_string(_mpv, "vo", "libmpv");
@@ -1008,10 +1120,18 @@ static void OMMpvWakeup(void *context) {
     mpv_observe_property(_mpv, 2, "aid", MPV_FORMAT_NONE);
     mpv_observe_property(_mpv, 3, "sid", MPV_FORMAT_NONE);
 
+    #if TARGET_OS_OSX
     if (!_usingMetalRendering && ![self createOpenGLRenderContext]) {
         [self failWithMessage:@"libmpv could not create its OpenGL render context."];
         return;
     }
+    #else
+    if (!_usingMetalRendering) {
+        [self failWithMessage:[NSString stringWithFormat:@"mpv could not draw video (%@).",
+            self.renderingFallbackReason ?: @"no Metal output"]];
+        return;
+    }
+    #endif
 
     if (_requestHeaders.count > 0) {
         // http-header-fields is a list. Set as one string, mpv split it at
@@ -1061,22 +1181,35 @@ static void OMMpvWakeup(void *context) {
         // gpu-next presents on its own; a configured output with a sized
         // video means a frame is on screen.
         if (![self flagForProperty:"vo-configured"]) return NO;
-    } else if (!_videoView.videoLayer.didRenderFrame) {
+    } else {
+        #if TARGET_OS_OSX
+        if (!_videoView.videoLayer.didRenderFrame) return NO;
+        #else
         return NO;
+        #endif
     }
     int64_t videoWidth = 0;
     return mpv_get_property(_mpv, "video-params/w", MPV_FORMAT_INT64, &videoWidth) >= 0 && videoWidth > 0;
 }
 - (BOOL)pictureInPictureActive { return _pictureInPictureActive; }
 - (BOOL)pictureInPicturePossible {
+    #if TARGET_OS_OSX
     return !_stopped && _inlineVideoHost != nil && _videoView != nil;
+    #else
+    return NO;
+    #endif
 }
 - (NSArray<OMMpvTrack *> *)audioTracks { return [self tracksOfType:@"audio"]; }
 - (NSArray<OMMpvTrack *> *)subtitleTracks { return [self tracksOfType:@"sub"]; }
 
 - (void)togglePause { self.paused ? [self play] : [self pause]; }
+#if TARGET_OS_OSX
 - (void)play { _paused = NO; [self setFlag:NO forProperty:"pause"]; [_pictureInPictureView refreshControls]; }
 - (void)pause { _paused = YES; [self setFlag:YES forProperty:"pause"]; [_pictureInPictureView refreshControls]; }
+#else
+- (void)play { _paused = NO; [self setFlag:NO forProperty:"pause"]; }
+- (void)pause { _paused = YES; [self setFlag:YES forProperty:"pause"]; }
+#endif
 
 - (void)seekBy:(double)seconds {
     if (!_mpv || !_fileLoaded) {
@@ -1382,7 +1515,7 @@ static void OMMpvWakeup(void *context) {
     mpv_command(_mpv, command);
 }
 
-- (void)attachVideoViewToHost:(NSView *)hostView {
+- (void)attachVideoViewToHost:(OMMpvPlatformView *)hostView {
     NSAssert(NSThread.isMainThread, @"The video surface must be attached on the main thread.");
     if (_inlineVideoHost == hostView && _videoView.superview == hostView) {
         _videoView.frame = hostView.bounds;
@@ -1398,7 +1531,7 @@ static void OMMpvWakeup(void *context) {
     }
 }
 
-- (void)detachVideoViewFromHost:(NSView *)hostView {
+- (void)detachVideoViewFromHost:(OMMpvPlatformView *)hostView {
     NSAssert(NSThread.isMainThread, @"The video surface must be detached on the main thread.");
     if (_inlineVideoHost != hostView) return;
 
@@ -1408,6 +1541,13 @@ static void OMMpvWakeup(void *context) {
     _inlineVideoHost = nil;
 }
 
+#if !TARGET_OS_OSX
+// Picture in Picture on iOS needs an AVPictureInPictureController source;
+// mpv's Metal output doesn't offer one yet.
+- (void)enterPictureInPicture {}
+- (void)exitPictureInPicture {}
+- (void)togglePictureInPicture {}
+#else
 - (void)enterPictureInPicture {
     if (!self.pictureInPicturePossible || _pictureInPictureActive) return;
 
@@ -1488,11 +1628,19 @@ static void OMMpvWakeup(void *context) {
     return YES;
 }
 
-- (void)embedVideoViewInHost:(NSView *)hostView {
+#endif
+
+- (void)embedVideoViewInHost:(OMMpvPlatformView *)hostView {
     if (_videoView.superview == hostView) {
         _videoView.frame = hostView.bounds;
         return;
     }
+    #if !TARGET_OS_OSX
+    [_videoView removeFromSuperview];
+    _videoView.frame = hostView.bounds;
+    [hostView addSubview:_videoView];
+}
+#else
 
     [_videoView removeFromSuperview];
     _videoView.translatesAutoresizingMaskIntoConstraints = YES;
@@ -1557,6 +1705,7 @@ static void OMMpvWakeup(void *context) {
         [_pictureInPicturePanel invalidateShadow];
     }
 }
+#endif
 
 - (BOOL)writeCurrentSceneToURL:(NSURL *)URL {
     if (!_mpv || !URL.isFileURL) return NO;
@@ -1805,9 +1954,12 @@ static void OMMpvWakeup(void *context) {
         }
         case MPV_EVENT_LOG_MESSAGE: {
             mpv_event_log_message *message = event->data;
+            // libplacebo built without LittleCMS reports that once even when
+            // no ICC profile is in use; it doesn't stop the Metal output.
             if (_usingMetalRendering && message && message->prefix && message->text
                 && message->log_level <= MPV_LOG_LEVEL_ERROR
-                && strncmp(message->prefix, "vo", 2) == 0) {
+                && strncmp(message->prefix, "vo", 2) == 0
+                && !strstr(message->text, "without LittleCMS")) {
                 NSString *text = [[NSString stringWithUTF8String:message->text]
                     stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
                 [self fallBackToOpenGL:[NSString stringWithFormat:@"%s: %@", message->prefix, text]];
@@ -1844,12 +1996,14 @@ static void OMMpvWakeup(void *context) {
 }
 
 - (void)destroyPlayer {
+    #if TARGET_OS_OSX
     if (_renderContext) {
         mpv_render_context_set_update_callback(_renderContext, NULL, NULL);
         [_videoView.videoLayer freeRenderContext];
         _renderContext = NULL;
         [_videoView.videoLayer scheduleRender];
     }
+    #endif
     if (_mpv) {
         // Clearing the callback is synchronous, so mpv can't call into the box
         // after this line. Blocks already queued hold the box, not self.

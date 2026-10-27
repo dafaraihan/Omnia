@@ -273,11 +273,35 @@ enum SubtitleSyncStatus: Equatable, Sendable {
 @Observable
 @MainActor
 final class PlaybackSession {
-    #if os(macOS)
+    #if OMNIA_MPV
     private(set) var player: OMMpvPlayerController?
     #else
     private(set) var player: AVPlayer?
     #endif
+    #if OMNIA_MPV && !os(macOS)
+    /// AVPlayer plays a source mpv couldn't draw (no Metal output).
+    private(set) var fallbackPlayer: AVPlayer?
+    /// What started the source, for starting it again with AVPlayer.
+    @ObservationIgnored private var fallbackContext: (preferences: SettingsPreferences, position: Double?)?
+    #endif
+    #if !os(macOS)
+    private var avPlayer: AVPlayer? {
+        #if OMNIA_MPV
+        fallbackPlayer
+        #else
+        player
+        #endif
+    }
+    #endif
+
+    /// Whether a player is open, whichever engine plays it.
+    var hasPlayer: Bool {
+        #if OMNIA_MPV && !os(macOS)
+        player != nil || fallbackPlayer != nil
+        #else
+        player != nil
+        #endif
+    }
 
     private(set) var source: PlaybackSource?
     private(set) var mediaItem: MediaItem?
@@ -329,23 +353,26 @@ final class PlaybackSession {
     @ObservationIgnored private var stateTask: Task<Void, Never>?
     #if !os(macOS)
     @ObservationIgnored private var mediaSelectionTask: Task<Void, Never>?
-    #else
-    @ObservationIgnored private var cacheProtection: LocalPlaybackJobCoordinator.PlaybackProtection?
-    @ObservationIgnored private let outputVolumeController: MacOutputVolumeControlling
+    #endif
+    #if OMNIA_MPV
     @ObservationIgnored private var trackSelectionGate = PlaybackTrackSelectionGate()
     @ObservationIgnored private var pendingSubtitlePreference: (id: Int?, tracks: [PlaybackTrack])?
-    @ObservationIgnored private var timelinePreviewService: PlaybackTimelinePreviewService?
     @ObservationIgnored private var addonSubtitleTask: Task<Void, Never>?
-    @ObservationIgnored private var pictureInPictureAfterFullScreen = false
-    /// Settings › Video Player › Use Whole Screen, read when playback starts.
-    @ObservationIgnored private var usesWholeScreen = false
-    @ObservationIgnored private let wholeScreen = WholeScreenPresentation()
-    @ObservationIgnored private let displaySleep = DisplaySleepAssertion()
     /// Metal fell back to OpenGL for this player and Diagnostics has it.
     @ObservationIgnored private var didLogRenderingFallback = false
     /// Settings' subtitle delay; delays set in the player are kept per title
     /// instead of replacing it.
     @ObservationIgnored private var defaultSubtitleDelay: Double = 0
+    #endif
+    #if os(macOS)
+    @ObservationIgnored private var cacheProtection: LocalPlaybackJobCoordinator.PlaybackProtection?
+    @ObservationIgnored private let outputVolumeController: MacOutputVolumeControlling
+    @ObservationIgnored private var timelinePreviewService: PlaybackTimelinePreviewService?
+    @ObservationIgnored private var pictureInPictureAfterFullScreen = false
+    /// Settings › Video Player › Use Whole Screen, read when playback starts.
+    @ObservationIgnored private var usesWholeScreen = false
+    @ObservationIgnored private let wholeScreen = WholeScreenPresentation()
+    @ObservationIgnored private let displaySleep = DisplaySleepAssertion()
     @ObservationIgnored private var autoSyncsSubtitles = false
     @ObservationIgnored private var didAutoSyncAtStart = false
     @ObservationIgnored private var subtitleSyncTask: Task<Void, Never>?
@@ -467,11 +494,12 @@ final class PlaybackSession {
         isPictureInPictureAvailable = false
         aspectRatioMode = .original
 
-        #if os(macOS)
+        #if OMNIA_MPV
         trackSelectionGate.reset()
         pendingSubtitlePreference = nil
-        cacheProtection = input.cacheProtection
         let mpv: OMMpvPlayerController
+        #if os(macOS)
+        cacheProtection = input.cacheProtection
         switch input {
         case .stream, .cachedStream:
             mpv = OMMpvPlayerController(
@@ -485,6 +513,10 @@ final class PlaybackSession {
                 blurayDeviceURL: request.deviceURL
             )
         }
+        #else
+        mpv = OMMpvPlayerController(url: source.url, requestHeaders: source.requestHeaders)
+        fallbackContext = (preferences, position)
+        #endif
         mpv.stateChangeHandler = { [weak self] snapshot in
             self?.apply(snapshot)
         }
@@ -500,9 +532,10 @@ final class PlaybackSession {
         mpv.setPlayerOptions(Self.mpvPlayerOptions(for: preferences))
         mpv.prefersMetalRendering = preferences.playbackBehavior.metalRendering
         didLogRenderingFallback = false
-        usesWholeScreen = preferences.playbackBehavior.usesWholeScreen
         subtitleStyle = preferences.playbackSubtitleStyle.normalized
         defaultSubtitleDelay = subtitleStyle.delaySeconds
+        #if os(macOS)
+        usesWholeScreen = preferences.playbackBehavior.usesWholeScreen
         if let key = subtitleDelayKey, let remembered = SubtitleDelayMemory.delay(for: key) {
             subtitleStyle.delaySeconds = remembered
         }
@@ -510,11 +543,13 @@ final class PlaybackSession {
         didAutoSyncAtStart = false
         subtitleSyncStatus = .idle
         subtitleCueCache = nil
+        #endif
         var mpvStyle = preferences.subtitleAppearance == .followSystem
             ? [String: Any]()
             : Self.mpvSubtitleStyle(for: preferences)
         mpvStyle.merge(Self.mpvSubtitleOverrides(for: subtitleStyle)) { _, latest in latest }
         mpv.setSubtitleStyle(mpvStyle)
+        #if os(macOS)
         let usesSystemVolume = synchronizeOutputVolume()
         mpv.setVolume(
             MacPlaybackVolumeRouting.playerVolumePercent(
@@ -522,6 +557,9 @@ final class PlaybackSession {
                 systemVolumeAvailable: usesSystemVolume
             )
         )
+        #else
+        mpv.setVolume(volume * 100)
+        #endif
         mpv.setPlaybackRate(playbackRate)
         mpv.setVideoAspectMode(.original)
         if let position, position > 0 { mpv.seek(to: position) }
@@ -529,6 +567,19 @@ final class PlaybackSession {
         refreshState()
         observePlaybackState()
         #else
+        startAVPlayer(source: source, item: item, preferences: preferences, resumeAt: position)
+        isPresentingPlayer = true
+        observePlaybackState()
+        #endif
+    }
+
+    #if !os(macOS)
+    private func startAVPlayer(
+        source: PlaybackSource,
+        item: MediaItem,
+        preferences: SettingsPreferences,
+        resumeAt position: Double?
+    ) {
         let playerItem = AVPlayerItem(url: source.url)
         let player = AVPlayer(playerItem: playerItem)
         applyMediaSelection(
@@ -540,50 +591,77 @@ final class PlaybackSession {
             item: playerItem
         )
         player.volume = Float(volume)
+        #if OMNIA_MPV
+        fallbackPlayer = player
+        #else
         self.player = player
+        #endif
         if let position, position > 0 {
             player.seek(to: CMTime(seconds: position, preferredTimescale: 600))
         }
         player.play()
-        isPresentingPlayer = true
-        observePlaybackState()
-        #endif
     }
+    #endif
+
+    #if OMNIA_MPV && !os(macOS)
+    /// mpv couldn't draw this source (no Metal output on this device), so
+    /// AVPlayer plays it from where it was. Network and format errors stay
+    /// mpv's, since AVPlayer would fail the same way and say less.
+    private func fallBackToAVPlayer(from mpv: OMMpvPlayerController) {
+        guard let source, let mediaItem, let fallbackContext,
+              mpv.renderingFallbackReason != nil || mpv.errorMessage?.hasPrefix("libmpv could not create") == true
+        else { return }
+        let resumeAt = max(positionSeconds, fallbackContext.position ?? 0)
+        self.fallbackContext = nil
+        mpv.stateChangeHandler = nil
+        mpv.stop()
+        player = nil
+        playbackError = nil
+        audioTracks = []
+        subtitleTracks = []
+        areTracksLoading = false
+        startAVPlayer(source: source, item: mediaItem, preferences: fallbackContext.preferences, resumeAt: resumeAt)
+    }
+    #endif
 
     func togglePause() {
-        #if os(macOS)
+        #if OMNIA_MPV
         player?.togglePause()
-        #else
-        guard let player else { return }
-        player.timeControlStatus == .playing ? player.pause() : player.play()
+        #endif
+        #if !os(macOS)
+        if let avPlayer {
+            avPlayer.timeControlStatus == .playing ? avPlayer.pause() : avPlayer.play()
+        }
         #endif
         refreshState()
     }
 
     func seek(by seconds: Double) {
-        #if os(macOS)
+        #if OMNIA_MPV
         player?.seek(by: seconds)
-        #else
-        guard let player else { return }
-        player.seek(to: CMTime(seconds: max(positionSeconds + seconds, 0), preferredTimescale: 600))
+        #endif
+        #if !os(macOS)
+        avPlayer?.seek(to: CMTime(seconds: max(positionSeconds + seconds, 0), preferredTimescale: 600))
         #endif
     }
 
     func seek(to seconds: Double) {
-        #if os(macOS)
+        #if OMNIA_MPV
         player?.seek(to: seconds)
-        #else
-        player?.seek(to: CMTime(seconds: max(seconds, 0), preferredTimescale: 600))
+        #endif
+        #if !os(macOS)
+        avPlayer?.seek(to: CMTime(seconds: max(seconds, 0), preferredTimescale: 600))
         #endif
     }
 
     /// Follows a timeline drag with quick keyframe seeks; the exact seek
     /// comes when the drag ends.
     func previewSeek(to seconds: Double) {
-        #if os(macOS)
+        #if OMNIA_MPV
         player?.previewSeek(to: seconds)
-        #else
-        seek(to: seconds)
+        #endif
+        #if !os(macOS)
+        avPlayer?.seek(to: CMTime(seconds: max(seconds, 0), preferredTimescale: 600))
         #endif
     }
 
@@ -638,7 +716,10 @@ final class PlaybackSession {
             )
         )
         #else
-        player?.volume = Float(volume)
+        #if OMNIA_MPV
+        player?.setVolume(volume * 100)
+        #endif
+        avPlayer?.volume = Float(volume)
         #endif
     }
 
@@ -656,17 +737,19 @@ final class PlaybackSession {
 
     func setPlaybackRate(_ value: Double) {
         playbackRate = min(max(value, 0.25), 4)
-        #if os(macOS)
+        #if OMNIA_MPV
         player?.setPlaybackRate(playbackRate)
-        #else
-        guard let player else { return }
-        player.rate = isPaused ? 0 : Float(playbackRate)
+        #endif
+        #if !os(macOS)
+        if let avPlayer {
+            avPlayer.rate = isPaused ? 0 : Float(playbackRate)
+        }
         #endif
     }
 
     func cycleAspectRatio() {
         aspectRatioMode = aspectRatioMode.next
-        #if os(macOS)
+        #if OMNIA_MPV
         switch aspectRatioMode {
         case .original:
             player?.setVideoAspectMode(.original)
@@ -677,19 +760,19 @@ final class PlaybackSession {
     }
 
     func cycleSubtitles() {
-        #if os(macOS)
+        #if OMNIA_MPV
         player?.cycleSubtitles()
         #endif
     }
 
     func cycleAudioTrack() {
-        #if os(macOS)
+        #if OMNIA_MPV
         player?.cycleAudioTrack()
         #endif
     }
 
     func selectAudioTrack(_ id: Int) {
-        #if os(macOS)
+        #if OMNIA_MPV
         guard let player else { return }
         let requestID = player.selectAudioTrack(id: id) { [weak self] completedID, succeeded, message in
             guard let self, self.trackSelectionGate.finishAudio(completedID) else { return }
@@ -706,7 +789,7 @@ final class PlaybackSession {
     }
 
     func selectSubtitleTrack(_ id: Int?) {
-        #if os(macOS)
+        #if OMNIA_MPV
         guard let player else { return }
         let requestedTracks = subtitleTracks
         let requestID = player.selectSubtitleTrack(id: id.map { NSNumber(value: $0) }) {
@@ -738,49 +821,49 @@ final class PlaybackSession {
 
     func setSubtitleFont(_ fontName: String) {
         subtitleStyle.fontName = fontName
-        #if os(macOS)
+        #if OMNIA_MPV
         applySubtitleStyle()
         #endif
     }
 
     func setSubtitleFontSize(_ size: Double) {
         subtitleStyle.fontSize = size
-        #if os(macOS)
+        #if OMNIA_MPV
         applySubtitleStyle()
         #endif
     }
 
     func setSubtitleScale(_ scale: Double) {
         subtitleStyle.scale = scale
-        #if os(macOS)
+        #if OMNIA_MPV
         applySubtitleStyle()
         #endif
     }
 
     func setSubtitlePosition(_ position: Double) {
         subtitleStyle.position = position
-        #if os(macOS)
+        #if OMNIA_MPV
         applySubtitleStyle()
         #endif
     }
 
     func setSubtitleShadowOpacity(_ opacity: Double) {
         subtitleStyle.shadowOpacity = opacity
-        #if os(macOS)
+        #if OMNIA_MPV
         applySubtitleStyle()
         #endif
     }
 
     func setSubtitleShadowBlurRadius(_ radius: Double) {
         subtitleStyle.shadowBlurRadius = radius
-        #if os(macOS)
+        #if OMNIA_MPV
         applySubtitleStyle()
         #endif
     }
 
     func setSubtitleBackground(_ background: PlaybackSubtitleBackground) {
         subtitleStyle.background = background
-        #if os(macOS)
+        #if OMNIA_MPV
         applySubtitleStyle()
         #endif
     }
@@ -996,15 +1079,17 @@ final class PlaybackSession {
         mediaSelectionTask?.cancel()
         mediaSelectionTask = nil
         #endif
-        #if os(macOS)
+        #if OMNIA_MPV
         addonSubtitleTask?.cancel()
         addonSubtitleTask = nil
+        trackSelectionGate.reset()
+        pendingSubtitlePreference = nil
+        #endif
+        #if os(macOS)
         subtitleSyncTask?.cancel()
         subtitleSyncTask = nil
         subtitleSyncStatus = .idle
         subtitleCueCache = nil
-        trackSelectionGate.reset()
-        pendingSubtitlePreference = nil
         let cacheProtection = cacheProtection
         self.cacheProtection = nil
         if let cacheProtection {
@@ -1012,12 +1097,22 @@ final class PlaybackSession {
                 await LocalPlaybackJobCoordinator.shared.unprotect(cacheProtection)
             }
         }
+        #endif
+        #if OMNIA_MPV
         player?.stateChangeHandler = nil
+        #if os(macOS)
         if persisting { captureContinueWatchingScene() }
+        #endif
         player?.stop()
+        #endif
+        #if os(macOS)
         displaySleep.release()
         #else
-        player?.pause()
+        avPlayer?.pause()
+        #endif
+        #if OMNIA_MPV && !os(macOS)
+        fallbackPlayer = nil
+        fallbackContext = nil
         #endif
         player = nil
         source = nil
@@ -1077,7 +1172,7 @@ final class PlaybackSession {
         videoSize: Int64?,
         preferences: SettingsPreferences
     ) {
-        #if os(macOS)
+        #if OMNIA_MPV
         addonSubtitleTask?.cancel()
         let subtitleAddons = addons.filter { $0.isEnabled && $0.manifest.supportsSubtitles }
         let identifiers = item.streamIdentifierCandidates(for: episode)
@@ -1150,7 +1245,7 @@ final class PlaybackSession {
         #endif
     }
 
-    #if os(macOS)
+    #if OMNIA_MPV
     private func addSubtitle(
         _ subtitle: AddonSubtitle,
         url: URL,
@@ -1239,7 +1334,9 @@ final class PlaybackSession {
         }
         window.toggleFullScreen(nil)
     }
+    #endif
 
+    #if OMNIA_MPV
     /// The style Settings keeps: everything chosen in the player except
     /// the delay, which belongs to this title.
     private var persistedSubtitleStyle: PlaybackSubtitleStyle {
@@ -1379,14 +1476,40 @@ final class PlaybackSession {
     }
 
     private func refreshState() {
-        #if os(macOS)
-        guard let player else { return }
+        #if OMNIA_MPV
+        if let player {
+            refreshState(from: player)
+            persistProgress(force: false)
+            return
+        }
+        #endif
+        #if !os(macOS)
+        guard let player = avPlayer else { return }
+        positionSeconds = max(player.currentTime().seconds, 0)
+        let duration = player.currentItem?.duration.seconds ?? 0
+        durationSeconds = duration.isFinite && duration > 0 ? duration : nil
+        isPaused = player.timeControlStatus != .playing
+        if !hasRenderedVideoFrame, positionSeconds > 0 { hasRenderedVideoFrame = true }
+        trackers.playbackChanged(trackerMedia, progress: trackerProgress, runtimeSeconds: durationSeconds, isPlaying: !isPaused && hasRenderedVideoFrame)
+        persistProgress(force: false)
+        #endif
+    }
+
+    #if OMNIA_MPV
+    private func refreshState(from player: OMMpvPlayerController) {
         let duration = player.duration
         if player.hasRenderedVideoFrame != hasRenderedVideoFrame {
             hasRenderedVideoFrame = player.hasRenderedVideoFrame
+            #if os(macOS)
             autoSyncSubtitlesIfNeeded()
+            #endif
         }
-        if !synchronizeOutputVolume() {
+        #if os(macOS)
+        let usesSystemVolume = synchronizeOutputVolume()
+        #else
+        let usesSystemVolume = false
+        #endif
+        if !usesSystemVolume {
             let nextVolume = min(max(player.volume / 100, 0), 1)
             if volume != nextVolume {
                 volume = nextVolume
@@ -1405,17 +1528,8 @@ final class PlaybackSession {
                 isPictureInPictureAvailable: player.pictureInPicturePossible
             )
         )
-        #else
-        guard let player else { return }
-        positionSeconds = max(player.currentTime().seconds, 0)
-        let duration = player.currentItem?.duration.seconds ?? 0
-        durationSeconds = duration.isFinite && duration > 0 ? duration : nil
-        isPaused = player.timeControlStatus != .playing
-        if !hasRenderedVideoFrame, positionSeconds > 0 { hasRenderedVideoFrame = true }
-        trackers.playbackChanged(trackerMedia, progress: trackerProgress, runtimeSeconds: durationSeconds, isPlaying: !isPaused && hasRenderedVideoFrame)
-        #endif
-        persistProgress(force: false)
     }
+    #endif
 
     func applyPeriodicState(_ state: PlaybackPeriodicState) {
         if playbackError != state.errorMessage {
@@ -1430,7 +1544,7 @@ final class PlaybackSession {
         if isPaused != state.isPaused {
             isPaused = state.isPaused
         }
-        let isPlaying = player != nil && !state.isPaused && state.errorMessage == nil
+        let isPlaying = hasPlayer && !state.isPaused && state.errorMessage == nil
         #if os(macOS)
         displaySleep.update(isPlaying: isPlaying)
         #endif
@@ -1446,9 +1560,16 @@ final class PlaybackSession {
         }
     }
 
-    #if os(macOS)
+    #if OMNIA_MPV
     private func apply(_ snapshot: OMMpvPlaybackSnapshot) {
+        #if !os(macOS)
+        if snapshot.errorMessage != nil, !hasRenderedVideoFrame, let player {
+            fallBackToAVPlayer(from: player)
+            if self.player == nil { return }
+        }
+        #endif
         playbackError = snapshot.errorMessage
+        #if os(macOS)
         if !didLogRenderingFallback, let reason = player?.renderingFallbackReason, let mediaItem {
             didLogRenderingFallback = true
             let date = PlaybackFailureLog.shared.record(
@@ -1460,11 +1581,13 @@ final class PlaybackSession {
             )
             PlaybackFailureLog.shared.setOutcome("Played with OpenGL", for: date)
         }
+        #endif
         audioTracks = snapshot.audioTracks.map(PlaybackTrack.init)
         let previousSubtitle = subtitleTracks.first(where: \.isSelected)?.id
         subtitleTracks = snapshot.subtitleTracks.map(PlaybackTrack.init)
         confirmPendingSubtitlePreference()
         areTracksLoading = snapshot.tracksLoading
+        #if os(macOS)
         // A sync measured against one subtitle file says nothing about
         // another.
         if subtitleTracks.first(where: \.isSelected)?.id != previousSubtitle,
@@ -1472,6 +1595,9 @@ final class PlaybackSession {
             cancelAutomaticSubtitleSync()
         }
         autoSyncSubtitlesIfNeeded()
+        #else
+        _ = previousSubtitle
+        #endif
     }
 
     private func confirmPendingSubtitlePreference() {
@@ -1502,7 +1628,7 @@ final class PlaybackSession {
     }
 }
 
-#if os(macOS)
+#if OMNIA_MPV
 private extension SubtitleAppearance.SemanticColor {
     var mpvColor: String { mpvColor(alphaPercent: 100) }
 

@@ -46,7 +46,7 @@ struct PlaybackTrack: Identifiable, Equatable, Sendable {
         return Locale(identifier: "en").localizedString(forLanguageCode: code) ?? code.uppercased()
     }
 
-    #if os(macOS)
+    #if OMNIA_MPV
     init(_ track: OMMpvTrack) {
         id = track.trackID
         title = track.title
