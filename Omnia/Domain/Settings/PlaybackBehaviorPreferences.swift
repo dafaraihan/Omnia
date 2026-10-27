@@ -178,8 +178,9 @@ nonisolated struct PlaybackBehaviorPreferences: Codable, Equatable, Sendable {
     var usesWholeScreen = false
 
     // Rendering (macOS): gpu-next on Metal through MoltenVK instead of
-    // OpenGL, as Nuvio draws. Off until proven (Dafa, 2026-10-27).
-    var metalRendering = false
+    // OpenGL, as Nuvio draws. On by default since Dafa found it stable
+    // (2026-10-27); a saved choice is kept, and OpenGL remains the fallback.
+    var metalRendering = true
 
     // Subtitles: Nuvio Enhanced's AutoSync. Omnia lines an add-on subtitle
     // up with the speech it hears during the first minutes of playback.
