@@ -349,16 +349,30 @@ enum AddonMetadataResolver {
     /// The add-on's answer per title. The Home hero asks again every time it
     /// rotates back to a title. Identity and progress are applied per call,
     /// so a cached answer never carries stale progress.
-    private static var cache: [String: MediaItem] = [:]
+    private struct CacheKey: Hashable {
+        let titleID: String
+        let sources: [String]
+        let identifiers: [String]
+        let origin: String
+    }
+    private static var cache: [CacheKey: MediaItem] = [:]
 
     static func resolve(_ item: MediaItem, addons: [InstalledAddon]) async -> MediaItem? {
+        let origin = AddonItemProvenance.origin(of: item)
+        let key = CacheKey(
+            titleID: item.id,
+            sources: addons.filter { $0.isEnabled && $0.manifest.supportsMeta }.map { $0.manifestURL.absoluteString },
+            identifiers: item.streamIdentifierCandidates,
+            origin: [origin?.addonID, origin?.metaID, origin?.stremioType].compactMap { $0 }.joined(separator: "|")
+        )
         let addonItem: MediaItem
-        if let cached = cache[item.id] {
+        if let cached = cache[key] {
             addonItem = cached
         } else {
             guard let fetched = await fetchAddonItem(item, addons: addons) else { return nil }
             if cache.count > 200 { cache.removeAll() }
-            cache[item.id] = fetched
+            guard !Task.isCancelled else { return nil }
+            cache[key] = fetched
             addonItem = fetched
         }
         return addonItem.replacingIdentity(with: item).fillingGaps(from: item)

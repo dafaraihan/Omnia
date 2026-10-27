@@ -11,6 +11,7 @@ struct HomeView: View {
     @Environment(SettingsPreferencesStore.self) private var settings
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.displayScale) private var displayScale
     @Environment(AddonCatalogStore.self) private var addonCatalogs
     @Environment(HomeLayoutStore.self) private var homeLayout
     @Environment(CollectionsStore.self) private var collections
@@ -18,6 +19,7 @@ struct HomeView: View {
     @Environment(\.isOnboardingPreview) private var isOnboardingPreview
     @Environment(\.displayPreferences) private var display
     @State private var resolvedFeatured: MediaItem?
+    @State private var resolvedHeroSource = ""
     @State private var upcomingResult: UpcomingResult?
     @State private var isLoadingUpcoming = false
     @State private var heroIndex = 0
@@ -36,6 +38,7 @@ struct HomeView: View {
     /// Settings › Integrations › MDBList Ratings, under the hero's metadata
     /// line as on a title's page.
     @State private var heroRatings = MDBListRatingsLoader()
+    @State private var ratingsCredentialEpoch = UUID()
     @State private var showsMDBListSettings = false
     @State private var servers = MediaServerStore.shared
     @Environment(PlaybackSession.self) private var playback
@@ -327,37 +330,59 @@ struct HomeView: View {
         } message: { item in
             Text(resumePromptMessage(for: item))
         }
-        .task(id: featured?.id) {
+        .task(id: heroMetadataRequestKey) {
             guard let featured else {
                 resolvedFeatured = nil
                 return
             }
+            // Same-title refreshes retain visible content. A different source
+            // configuration must not reuse the previous add-on's private fields.
+            if resolvedHeroSource != heroSourceConfigurationKey { resolvedFeatured = nil }
+            resolvedHeroSource = heroSourceConfigurationKey
             let resolved: MediaItem
             if isAddonMode {
-                // Add-on mode: the hero's logo, synopsis and genres come from
-                // the add-on that listed the title.
-                // Not tied to this task: the hero rotates every few seconds,
-                // and a cancelled lookup never reached the cache, so slow
-                // add-ons left every slide without artwork or logo.
-                let addons = store.installedAddons
-                resolved = await Task { await AddonMetadataResolver.resolve(featured, addons: addons) }.value ?? featured
+                let enrichment = settings.preferences.integrations.tmdb
+                async let provider = loadHeroEnrichment(for: featured, preferences: enrichment)
+                let fromAddon = await AddonMetadataResolver.resolve(featured, addons: store.installedAddons)
+                guard !Task.isCancelled else { return }
+                if let fromAddon {
+                    let available = resolvedFeatured?.id == featured.id ? resolvedFeatured : nil
+                    resolvedFeatured = fromAddon.fillingGaps(from: available ?? featured)
+                }
+                var enriched = await provider
+                if fromAddon == nil, !enrichment.enabled {
+                    enriched = await metadata.details(for: featured)
+                } else if enrichment.enabled, enriched.details == nil, let fromAddon,
+                          fromAddon.externalIDs != featured.externalIDs {
+                    enriched = await metadata.details(for: fromAddon)
+                }
+                resolved = fromAddon.map { $0.fillingGaps(from: enriched.restricted(to: enrichment)) } ?? enriched
             } else {
                 resolved = await metadata.details(for: featured)
             }
             guard !Task.isCancelled else { return }
             resolvedFeatured = resolved
         }
-        .task(id: "\(resolvedFeatured?.id ?? "")-\(settings.preferences.integrations.mdblistEnabled)") {
+        .task(id: heroRatingsRequestKey) {
             heroRatings.cancel()
-            guard !isOnboardingPreview, let resolvedFeatured, settings.preferences.integrations.mdblistEnabled else { return }
-            await heroRatings.load(
-                for: resolvedFeatured,
-                preferences: settings.preferences.mdblistRatings
-            )
+            guard !isOnboardingPreview, isActiveDestination,
+                  let featured = displayFeatured, settings.preferences.integrations.mdblistEnabled else { return }
+            await heroRatings.load(for: featured, preferences: settings.preferences.mdblistRatings)
+            guard !Task.isCancelled else { return }
             if case let .loaded(presentation) = heroRatings.state {
                 settings.recordMDBListRatingProviders(presentation.discoveredProviderIDs)
             }
         }
+        .task(id: nextHeroPreparationKey) {
+            guard !isOnboardingPreview, isActiveDestination, let nextHero else { return }
+            await prepareNextHero(nextHero)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .providerCredentialDidChange)) { change in
+            guard change.object as? String == UserManagedProviderCredential.mdblist.rawValue else { return }
+            heroRatings.reset()
+            ratingsCredentialEpoch = UUID()
+        }
+        .onDisappear { heroRatings.cancel() }
         .sheet(isPresented: $showsMDBListSettings) {
             MDBListSettingsSheet()
         }
@@ -430,8 +455,90 @@ struct HomeView: View {
         #endif
     }
 
-    /// Mark Watched beside View Details, as on a title's page: a movie, or a
-    /// show's resume episode (else its first episode).
+    private var heroSourceConfigurationKey: String {
+        store.installedAddons.filter { $0.isEnabled && $0.manifest.supportsMeta }
+            .map { $0.manifestURL.absoluteString }.joined(separator: "|")
+    }
+
+    private var heroMetadataRequestKey: String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let enrichment = (try? encoder.encode(settings.preferences.integrations.tmdb))?.base64EncodedString() ?? ""
+        return "\(featured?.id ?? "")|\(addonLoadKey)|\(heroSourceConfigurationKey)|\(enrichment)"
+    }
+
+    private var heroRatingsRequestKey: String {
+        let route = displayFeatured.flatMap { try? MDBListMetadataClient.lookupRoute(for: $0) }
+        return "\(featured?.id ?? "")|\(String(describing: route))|\(settings.preferences.integrations.mdblistEnabled)|\(isActiveDestination)|\(ratingsCredentialEpoch)"
+    }
+
+    private var nextHero: MediaItem? {
+        guard heroCandidates.count > 1 else { return nil }
+        return heroCandidates[(heroIndex + 1) % heroCandidates.count]
+    }
+
+    private var nextHeroPreparationKey: String {
+        "\(nextHero?.id ?? "")|\(heroMetadataRequestKey)|\(settings.preferences.integrations.mdblistEnabled)|\(isActiveDestination)|\(displayScale)|\(ratingsCredentialEpoch)"
+    }
+
+    /// Fill gaps as soon as the provider answers, without replacing add-on fields.
+    private func loadHeroEnrichment(for item: MediaItem, preferences: TMDBEnrichmentPreferences) async -> MediaItem {
+        guard preferences.enabled else { return item }
+        let fetched = await metadata.details(for: item)
+        guard !Task.isCancelled else { return item }
+        let base = resolvedFeatured.flatMap { $0.id == item.id ? $0 : nil } ?? item
+        resolvedFeatured = base.fillingGaps(from: fetched.restricted(to: preferences))
+        return fetched
+    }
+
+    /// Prepare only the next candidate, using the existing request caches.
+    private func prepareNextHero(_ item: MediaItem) async {
+        async let initialRatings: Void = prepareRatings(for: item)
+        async let initialLogo: Void = prepareLogo(item.logoURL)
+        let resolved: MediaItem
+        if isAddonMode {
+            let enrichment = settings.preferences.integrations.tmdb
+            async let provider = enrichment.enabled ? metadata.details(for: item) : item
+            let addon = await AddonMetadataResolver.resolve(item, addons: store.installedAddons)
+            var fetched = await provider
+            guard !Task.isCancelled else { return }
+            if addon == nil, !enrichment.enabled {
+                fetched = await metadata.details(for: item)
+            } else if enrichment.enabled, fetched.details == nil, let addon,
+                      addon.externalIDs != item.externalIDs {
+                fetched = await metadata.details(for: addon)
+            }
+            resolved = addon.map { $0.fillingGaps(from: fetched.restricted(to: enrichment)) } ?? fetched
+        } else {
+            resolved = await metadata.details(for: item)
+        }
+        if !Task.isCancelled {
+            async let logo: Void = prepareLogo(resolved.logoURL)
+            if (try? MDBListMetadataClient.lookupRoute(for: resolved)) != (try? MDBListMetadataClient.lookupRoute(for: item)) {
+                await prepareRatings(for: resolved)
+            }
+            await logo
+        }
+        _ = await (initialRatings, initialLogo)
+    }
+
+    private func prepareRatings(for item: MediaItem) async {
+        guard !Task.isCancelled, settings.preferences.integrations.mdblistEnabled else { return }
+        _ = try? await MDBListMetadataClient().titleRatings(for: item)
+    }
+
+    private func prepareLogo(_ url: URL?) async {
+        guard !Task.isCancelled, let url else { return }
+        let scale = max(displayScale, 1) * 1.05
+        let target = RemoteArtworkTarget(
+            width: RemoteArtworkCache.bucket(CinematicHeroLayout.logoWidth * scale),
+            height: RemoteArtworkCache.bucket(CinematicHeroLayout.logoHeight * scale),
+            fills: false
+        )
+        _ = await RemoteArtworkCache.shared.image(for: url, target: target)
+    }
+
+    /// Mark Watched for a movie, or the show's resume/first episode.
     private func heroWatchAction(for featured: MediaItem) -> HeroWatchAction? {
         let episodes = featured.details?.seasons.flatMap(\.episodes) ?? []
         let currentEpisode = featured.resumeEpisode
@@ -548,9 +655,9 @@ struct HomeView: View {
 
                     HeroMetadataLine(item: featured)
 
-                    if settings.preferences.integrations.mdblistEnabled, resolvedFeatured?.id == featured.id {
+                    if settings.preferences.integrations.mdblistEnabled {
                         MDBListRatingsView(
-                            state: heroRatings.state.applying(settings.preferences.mdblistRatings),
+                            state: heroRatings.state(forItemID: featured.id).applying(settings.preferences.mdblistRatings),
                             retry: { retryHeroRatings(for: featured) },
                             openSettings: { showsMDBListSettings = true }
                         )
@@ -568,7 +675,13 @@ struct HomeView: View {
                         width: CinematicHeroLayout.logoWidth,
                         isSaved: store.isSaved(featured),
                         libraryAction: { store.toggleSaved(featured) },
-                        watchAction: heroWatchAction(for: featured)
+                        watchAction: heroWatchAction(for: featured) ?? HeroWatchAction(
+                            systemImage: "eye",
+                            accessibilityLabel: resolvedFeatured?.id == featured.id
+                                ? "Episode information unavailable" : "Loading episode information",
+                            perform: {},
+                            isEnabled: false
+                        )
                     ) {
                         NavigationLink(value: featured) {
                             HeroPrimaryActionLabel(title: "View Details")

@@ -24,6 +24,7 @@ struct MediaDetailView: View {
     @State private var selectedSeasonNumber = 1
     @State private var selectedEpisode: MediaEpisode?
     @State private var ratingsLoader = MDBListRatingsLoader()
+    @State private var ratingsCredentialEpoch = UUID()
     @State private var showsMDBListSettings = false
     @State private var showsShuffle = false
     /// The random episode the Play button starts while shuffle is on.
@@ -117,6 +118,11 @@ struct MediaDetailView: View {
             if case let .loaded(presentation) = ratingsLoader.state {
                 settings.recordMDBListRatingProviders(presentation.discoveredProviderIDs)
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .providerCredentialDidChange)) { change in
+            guard change.object as? String == UserManagedProviderCredential.mdblist.rawValue else { return }
+            ratingsLoader.reset()
+            ratingsCredentialEpoch = UUID()
         }
         .omniaStreamsPage(isPresented: showsSourceSelector) {
             if let request = sourceRequest {
@@ -416,11 +422,8 @@ struct MediaDetailView: View {
     }
 
     private var ratingsRequestKey: String {
-        let title = displayItem
-        return [title.id, title.kind.rawValue, title.metadataProvider?.rawValue ?? "",
-                title.metadataProviderID ?? "",
-                title.externalIDs.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: "|"),
-                String(settings.preferences.integrations.mdblistEnabled)].joined(separator: "|")
+        let route = try? MDBListMetadataClient.lookupRoute(for: displayItem)
+        return "\(item.id)|\(String(describing: route))|\(settings.preferences.integrations.mdblistEnabled)|\(ratingsCredentialEpoch)"
     }
 
     /// Add-on mode (Nuvio's model): the add-on that listed the title is the
@@ -604,7 +607,7 @@ struct MediaDetailView: View {
     }
 
     private var currentRatingsState: MDBListRatingsLoadState {
-        ratingsLoader.state.applying(settings.preferences.mdblistRatings)
+        ratingsLoader.state(forItemID: item.id).applying(settings.preferences.mdblistRatings)
     }
 
     private func retryRatings() {
