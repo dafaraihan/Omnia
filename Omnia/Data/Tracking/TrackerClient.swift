@@ -4,7 +4,8 @@
 //
 //  Trakt and Simkl requests, after Nuvio's TraktAuthRepository,
 //  TraktScrobbleRepository, SimklAuthRepository and SimklMutationRepository
-//  (NuvioMedia/NuvioMobile, GPL-3.0).
+//  (NuvioMedia/NuvioMobile, GPL-3.0). PublicMetaDB requests follow its
+//  External API reference (publicmetadb.com/api-docs).
 //
 
 import Foundation
@@ -45,7 +46,7 @@ nonisolated enum TrackerClientError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidResponse: "The tracker sent an answer Omnia couldn't read."
-        case .http(401), .http(403): "The tracker refused the client ID or the sign-in. Check your app's details."
+        case .http(401), .http(403): "The tracker refused the sign-in. Check your app's details or API key."
         case .http(let status): "The tracker answered with HTTP \(status)."
         }
     }
@@ -54,6 +55,7 @@ nonisolated enum TrackerClientError: LocalizedError {
 nonisolated enum TrackerClient {
     private static let traktBase = URL(string: "https://api.trakt.tv")!
     private static let simklBase = URL(string: "https://api.simkl.com")!
+    private static let pmdbBase = URL(string: "https://publicmetadb.com/api/external")!
     private static let appName = "Omnia"
     private static var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
@@ -72,6 +74,9 @@ nonisolated enum TrackerClient {
 
     static func requestDeviceCode(_ kind: TrackerKind, clientID: String) async throws -> TrackerDeviceCode {
         switch kind {
+        case .pmdb:
+            // Connected with an API key; see `validateAPIKey`.
+            throw TrackerClientError.invalidResponse
         case .trakt:
             let (data, _) = try await send(
                 traktRequest("oauth/device/code", clientID: clientID, body: ["client_id": clientID]),
@@ -131,6 +136,8 @@ nonisolated enum TrackerClient {
                 var connected = app
                 connected.accessToken = token
                 return .connected(connected)
+            case .pmdb:
+                return .failed("PublicMetaDB connects with an API key.")
             }
         } catch {
             // A dropped request mid-wait is retried on the next tick.
@@ -138,7 +145,13 @@ nonisolated enum TrackerClient {
         }
     }
 
-    /// Trakt tokens last three months; Simkl's don't expire.
+    /// Checks a PublicMetaDB key by listing one of the user's lists.
+    static func validateAPIKey(_ key: String) async throws {
+        _ = try await send(pmdbRequest("lists", key: key, query: ["perPage": "1"]), accepting: [200])
+    }
+
+    /// Trakt tokens last three months; Simkl's and PublicMetaDB's keys
+    /// don't expire.
     static func refreshIfNeeded(_ kind: TrackerKind, _ credentials: TrackerCredentials) async throws -> TrackerCredentials {
         guard kind == .trakt, let expiresAt = credentials.expiresAt, expiresAt.timeIntervalSinceNow < 86_400,
               let refreshToken = credentials.refreshToken
@@ -161,10 +174,15 @@ nonisolated enum TrackerClient {
         action: TrackerScrobbleAction,
         media: TrackerMedia,
         progress: Double,
+        runtimeSeconds: Double?,
         credentials: TrackerCredentials
     ) async throws {
         guard let token = credentials.accessToken else { return }
         let progress = (min(max(progress, 0), 100) * 100).rounded() / 100
+        if kind == .pmdb {
+            try await savePMDBResume(action: action, media: media, progress: progress, runtimeSeconds: runtimeSeconds, key: token)
+            return
+        }
         var body = scrobbleBody(media)
         body["progress"] = progress
         var request: URLRequest
@@ -174,6 +192,8 @@ nonisolated enum TrackerClient {
             request = traktRequest("scrobble/\(action.rawValue)", clientID: credentials.clientID, body: body)
         case .simkl:
             request = simklRequest("scrobble/\(action.rawValue)", clientID: credentials.clientID, method: "POST", body: body)
+        case .pmdb:
+            return
         }
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         // 409: already scrobbled a moment ago, which is fine.
@@ -195,6 +215,51 @@ nonisolated enum TrackerClient {
         case let .episode(season, number):
             return ["show": item, "episode": ["season": season, "number": number]]
         }
+    }
+
+    /// PublicMetaDB has no scrobble: it keeps resume points, saved on pause
+    /// and stop as its reference asks (not during playback). A save at 80%
+    /// or more clears the point and answers "completed", and the title is
+    /// then logged as watched.
+    private static func savePMDBResume(
+        action: TrackerScrobbleAction,
+        media: TrackerMedia,
+        progress: Double,
+        runtimeSeconds: Double?,
+        key: String
+    ) async throws {
+        guard action != .start, let runtimeSeconds, runtimeSeconds > 0, var body = pmdbBody(media) else { return }
+        let runtime = Int((runtimeSeconds * 1000).rounded())
+        body["runtime_ms"] = runtime
+        body["position_ms"] = Int((Double(runtime) * progress / 100).rounded())
+        let (data, _) = try await send(pmdbRequest("resume", key: key, method: "POST", body: body), accepting: [200, 201])
+        guard (try? decode(PMDBResumeSaveResponse.self, from: data))?.action == "completed",
+              let watched = pmdbBody(media)
+        else { return }
+        _ = try await send(pmdbRequest("watched", key: key, method: "POST", body: watched), accepting: [200, 201])
+    }
+
+    /// PublicMetaDB matches on TMDB IDs, or on an IMDb ID it maps itself.
+    private static func pmdbBody(_ media: TrackerMedia) -> [String: Any]? {
+        var body: [String: Any]
+        if let tmdb = media.tmdb {
+            body = ["tmdb_id": tmdb]
+        } else if let imdb = media.imdb {
+            body = ["id_type": "imdb", "id_value": imdb]
+        } else if let tvdb = media.tvdb {
+            body = ["id_type": "tvdb", "id_value": String(tvdb)]
+        } else {
+            return nil
+        }
+        switch media.kind {
+        case .movie:
+            body["media_type"] = "movie"
+        case let .episode(season, number):
+            body["media_type"] = "tv"
+            body["season"] = season
+            body["episode"] = number
+        }
+        return body
     }
 
     // MARK: Requests
@@ -234,14 +299,37 @@ nonisolated enum TrackerClient {
         return request
     }
 
-    private static func send(_ request: URLRequest, accepting statuses: Set<Int>) async throws -> (Data, Int) {
+    static func pmdbRequest(
+        _ path: String,
+        key: String,
+        method: String = "GET",
+        query: [String: String] = [:],
+        body: [String: Any]? = nil
+    ) -> URLRequest {
+        var components = URLComponents(url: pmdbBase.appending(path: path), resolvingAgainstBaseURL: false)!
+        if !query.isEmpty {
+            components.queryItems = query.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }
+        }
+        var request = URLRequest(url: components.url!)
+        request.httpMethod = method
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        request.setValue("\(appName)/\(appVersion)", forHTTPHeaderField: "User-Agent")
+        if let body {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        }
+        return request
+    }
+
+    static func send(_ request: URLRequest, accepting statuses: Set<Int>) async throws -> (Data, Int) {
         let (data, response) = try await session.data(for: request)
         guard let status = (response as? HTTPURLResponse)?.statusCode else { throw TrackerClientError.invalidResponse }
         guard statuses.contains(status) else { throw TrackerClientError.http(status) }
         return (data, status)
     }
 
-    private static func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
+    static func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
         do { return try JSONDecoder().decode(type, from: data) } catch { throw TrackerClientError.invalidResponse }
     }
 }
@@ -268,6 +356,10 @@ private nonisolated struct SimklPinResponse: Decodable {
     let verification_url: String?
     let expires_in: Int?
     let interval: Int?
+}
+
+private nonisolated struct PMDBResumeSaveResponse: Decodable {
+    let action: String?
 }
 
 private nonisolated struct SimklPinPollResponse: Decodable {

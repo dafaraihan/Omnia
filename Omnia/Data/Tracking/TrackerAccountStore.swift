@@ -6,9 +6,10 @@
 import Foundation
 import Observation
 
-/// Trakt and Simkl accounts, and scrobbling what plays to them, as Nuvio
-/// does (Dafa, 2026-10-26). Each tracker uses the user's own API app; its
-/// client ID, secret and tokens stay in Keychain on this device.
+/// Trakt, Simkl and PublicMetaDB accounts, and scrobbling what plays to
+/// them, as Nuvio does (Dafa, 2026-10-26). Each tracker uses the user's own
+/// API app or key; its client ID, secret, tokens and keys stay in Keychain
+/// on this device.
 @Observable
 @MainActor
 final class TrackerAccountStore {
@@ -82,6 +83,30 @@ final class TrackerAccountStore {
         }
     }
 
+    /// PublicMetaDB: checks the user's API key, then keeps it.
+    func connect(_ kind: TrackerKind, apiKey: String) {
+        let apiKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard kind.usesAPIKey, !apiKey.isEmpty, apiKey.count <= 512 else {
+            connectStates[kind] = .failed("Enter your \(kind.title) API key.")
+            return
+        }
+        connectTasks[kind]?.cancel()
+        connectStates[kind] = .requestingCode
+        connectTasks[kind] = Task { [weak self] in
+            do {
+                try await TrackerClient.validateAPIKey(apiKey)
+                guard !Task.isCancelled else { return }
+                self?.store(TrackerCredentials(clientID: "", accessToken: apiKey), for: kind)
+                self?.connectStates[kind] = .idle
+            } catch {
+                guard !Task.isCancelled else { return }
+                self?.connectStates[kind] = .failed(
+                    (error as? LocalizedError)?.errorDescription ?? "Couldn't reach \(kind.title)."
+                )
+            }
+        }
+    }
+
     func cancelConnect(_ kind: TrackerKind) {
         connectTasks[kind]?.cancel()
         connectTasks[kind] = nil
@@ -128,28 +153,28 @@ final class TrackerAccountStore {
 
     /// Called as playback changes. Sends start when a title plays and pause
     /// when it pauses, once per change, to every connected tracker.
-    func playbackChanged(_ media: TrackerMedia?, progress: Double, isPlaying: Bool) {
+    func playbackChanged(_ media: TrackerMedia?, progress: Double, runtimeSeconds: Double?, isPlaying: Bool) {
         guard let media, media.hasIdentifier else { return }
         let state = scrobbleState
         if isPlaying {
             guard state?.key != media.key || state?.action != .start else { return }
-            send(.start, media: media, progress: progress)
+            send(.start, media: media, progress: progress, runtimeSeconds: runtimeSeconds)
         } else if state?.key == media.key, state?.action == .start {
-            send(.pause, media: media, progress: progress)
+            send(.pause, media: media, progress: progress, runtimeSeconds: runtimeSeconds)
         }
     }
 
-    /// Called when the player closes. Trakt and Simkl mark the title
+    /// Called when the player closes. Every tracker marks the title
     /// watched when it stops past 80%.
-    func playbackStopped(_ media: TrackerMedia?, progress: Double) {
+    func playbackStopped(_ media: TrackerMedia?, progress: Double, runtimeSeconds: Double?) {
         defer { scrobbleState = nil }
         guard let media, media.hasIdentifier, scrobbleState?.key == media.key,
               scrobbleState?.action != .stop
         else { return }
-        send(.stop, media: media, progress: progress)
+        send(.stop, media: media, progress: progress, runtimeSeconds: runtimeSeconds)
     }
 
-    private func send(_ action: TrackerScrobbleAction, media: TrackerMedia, progress: Double) {
+    private func send(_ action: TrackerScrobbleAction, media: TrackerMedia, progress: Double, runtimeSeconds: Double?) {
         scrobbleState = (media.key, action)
         for kind in TrackerKind.allCases where isConnected(kind) && scrobbles(kind) {
             guard let current = credentials[kind] else { continue }
@@ -157,7 +182,14 @@ final class TrackerAccountStore {
                 do {
                     let refreshed = try await TrackerClient.refreshIfNeeded(kind, current)
                     if refreshed != current { self?.store(refreshed, for: kind) }
-                    try await TrackerClient.scrobble(kind, action: action, media: media, progress: progress, credentials: refreshed)
+                    try await TrackerClient.scrobble(
+                        kind,
+                        action: action,
+                        media: media,
+                        progress: progress,
+                        runtimeSeconds: runtimeSeconds,
+                        credentials: refreshed
+                    )
                     self?.lastScrobbleError[kind] = nil
                 } catch {
                     self?.lastScrobbleError[kind] = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription

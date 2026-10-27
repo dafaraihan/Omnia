@@ -37,17 +37,32 @@ struct TrackerMark: View {
     let kind: TrackerKind
 
     var body: some View {
-        Image(kind.assetName)
-            .resizable()
-            .renderingMode(.original)
-            .scaledToFit()
-            .frame(width: 24, height: 24)
-            .accessibilityHidden(true)
+        Group {
+            if let assetName = kind.assetName {
+                Image(assetName)
+                    .resizable()
+                    .renderingMode(.original)
+                    .scaledToFit()
+            } else {
+                // PublicMetaDB's favicon: its wordmark on a light tile.
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color(white: 0.92))
+                    .overlay {
+                        Text("pmdb")
+                            .font(.system(size: 9, weight: .heavy))
+                            .tracking(-0.5)
+                            .foregroundStyle(Color(white: 0.04))
+                    }
+            }
+        }
+        .frame(width: 24, height: 24)
+        .accessibilityHidden(true)
     }
 }
 
-/// Settings › Integrations › Trakt or Simkl, like Nuvio's: connect with a
-/// code shown here, choose whether to scrobble, disconnect.
+/// Settings › Integrations › Trakt, Simkl or PublicMetaDB, like Nuvio's:
+/// connect with a code shown here (or, for PublicMetaDB, an API key),
+/// choose whether to scrobble, disconnect.
 struct TrackerSettingsView: View {
     let kind: TrackerKind
 
@@ -55,6 +70,7 @@ struct TrackerSettingsView: View {
     @State private var trackers = TrackerAccountStore.shared
     @State private var clientID = ""
     @State private var clientSecret = ""
+    @State private var apiKey = ""
 
     private var isConnected: Bool { trackers.isConnected(kind) }
 
@@ -62,6 +78,8 @@ struct TrackerSettingsView: View {
         OmniaSettingsForm {
             if isConnected {
                 connectedSections
+            } else if kind.usesAPIKey {
+                apiKeySection
             } else {
                 appSection
                 connectSection
@@ -93,6 +111,43 @@ struct TrackerSettingsView: View {
         } footer: {
             Text("\(kind.applicationGuidance) They stay in Keychain on this device; Omnia doesn't ship its own.")
         }
+    }
+
+    private var apiKeySection: some View {
+        Section {
+            SecureField("API Key", text: $apiKey)
+                .autocorrectionDisabled()
+                #if os(iOS)
+                .textInputAutocapitalization(.never)
+                #endif
+            Button("Get a Key on \(kind.title)", systemImage: "arrow.up.right.square") {
+                openURL(kind.applicationURL)
+            }
+            switch trackers.connectState(kind) {
+            case .requestingCode:
+                HStack {
+                    ProgressView().controlSize(.small)
+                    Text("Checking the key with \(kind.title)…")
+                }
+            case .failed(let message):
+                Label(message, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                connectWithKeyButton
+            case .idle, .waiting:
+                connectWithKeyButton
+            }
+        } header: {
+            Text("Your \(kind.title) Key")
+        } footer: {
+            Text("\(kind.applicationGuidance) It stays in Keychain on this device. \(kind.summary)")
+        }
+    }
+
+    private var connectWithKeyButton: some View {
+        Button("Connect \(kind.title)", systemImage: "link") {
+            trackers.connect(kind, apiKey: apiKey)
+        }
+        .disabled(apiKey.trimmingCharacters(in: .whitespaces).isEmpty)
     }
 
     @ViewBuilder
@@ -148,7 +203,9 @@ struct TrackerSettingsView: View {
                 set: { trackers.setScrobbles($0, for: kind) }
             )) {
                 Text("Scrobble Playback")
-                Text("Tell \(kind.title) what you're watching. Titles stopped past 80% are marked watched.")
+                Text(kind.usesAPIKey
+                     ? "Save where you stop to \(kind.title). Titles stopped past 80% are logged as watched."
+                     : "Tell \(kind.title) what you're watching. Titles stopped past 80% are marked watched.")
             }
             if let error = trackers.lastScrobbleError[kind] {
                 Label("Last scrobble failed: \(error)", systemImage: "exclamationmark.triangle.fill")
@@ -169,7 +226,9 @@ struct TrackerSettingsView: View {
                 trackers.disconnect(kind)
             }
         } footer: {
-            Text("Removes your \(kind.title) app details and sign-in from this device.")
+            Text(kind.usesAPIKey
+                 ? "Removes your \(kind.title) API key from this device."
+                 : "Removes your \(kind.title) app details and sign-in from this device.")
         }
     }
 }

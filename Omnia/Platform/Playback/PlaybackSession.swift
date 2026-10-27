@@ -318,7 +318,7 @@ final class PlaybackSession {
     @ObservationIgnored var recoveryContext: PlaybackRecoveryContext?
 
     @ObservationIgnored private var progressHandler: (@MainActor (Double, Double?) -> Void)?
-    /// Trakt and Simkl scrobbling.
+    /// Trakt, Simkl and PublicMetaDB scrobbling.
     @ObservationIgnored private let trackers = TrackerAccountStore.shared
     @ObservationIgnored private var trackerMedia: TrackerMedia?
     private var trackerProgress: Double {
@@ -444,7 +444,7 @@ final class PlaybackSession {
         self.source = source
         // A title switched without closing the player still stops the last
         // one on the trackers.
-        trackers.playbackStopped(trackerMedia, progress: trackerProgress)
+        trackers.playbackStopped(trackerMedia, progress: trackerProgress, runtimeSeconds: durationSeconds)
         mediaItem = item
         self.episode = episode
         trackerMedia = TrackerMedia(item: item, episode: episode)
@@ -977,7 +977,7 @@ final class PlaybackSession {
     #endif
 
     func stop(persisting: Bool = true) {
-        trackers.playbackStopped(trackerMedia, progress: trackerProgress)
+        trackers.playbackStopped(trackerMedia, progress: trackerProgress, runtimeSeconds: durationSeconds)
         trackerMedia = nil
         sourceSelectionID = nil
         ResumePromptMarker.clear()
@@ -1412,7 +1412,7 @@ final class PlaybackSession {
         durationSeconds = duration.isFinite && duration > 0 ? duration : nil
         isPaused = player.timeControlStatus != .playing
         if !hasRenderedVideoFrame, positionSeconds > 0 { hasRenderedVideoFrame = true }
-        trackers.playbackChanged(trackerMedia, progress: trackerProgress, isPlaying: !isPaused && hasRenderedVideoFrame)
+        trackers.playbackChanged(trackerMedia, progress: trackerProgress, runtimeSeconds: durationSeconds, isPlaying: !isPaused && hasRenderedVideoFrame)
         #endif
         persistProgress(force: false)
     }
@@ -1434,7 +1434,7 @@ final class PlaybackSession {
         #if os(macOS)
         displaySleep.update(isPlaying: isPlaying)
         #endif
-        trackers.playbackChanged(trackerMedia, progress: trackerProgress, isPlaying: isPlaying && hasRenderedVideoFrame)
+        trackers.playbackChanged(trackerMedia, progress: trackerProgress, runtimeSeconds: durationSeconds, isPlaying: isPlaying && hasRenderedVideoFrame)
         if playbackRate != state.playbackRate {
             playbackRate = state.playbackRate
         }

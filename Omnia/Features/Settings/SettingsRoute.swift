@@ -230,7 +230,7 @@ enum SettingsRoute: Hashable, Sendable {
         case .about: ["resources", "TMDB", "TVDB", "libmpv", "Supabase", "licenses", "privacy"]
         case .metadataProvider: ["metadata provider", title]
         case .streamSorting: ["sort", "sorting", "ranking", "quality", "resolution", "4K", "HDR", "Dolby Vision", "codec", "HEVC", "size", "debrid", "cached", "filters"]
-        case .tracker: ["tracker", "scrobble", "scrobbling", "history", "watched", "Trakt", "Simkl", title]
+        case .tracker: ["tracker", "scrobble", "scrobbling", "history", "watched", "Trakt", "Simkl", "PublicMetaDB", "PMDB", title]
         case let .aboutSection(section): [section.title]
         }
     }

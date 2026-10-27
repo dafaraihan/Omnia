@@ -6,10 +6,12 @@
 import Foundation
 
 /// Watch trackers Omnia can scrobble to, as Nuvio does (Dafa, 2026-10-26).
-/// Each uses the user's own API app: Omnia ships no client ID or secret.
+/// Each uses the user's own API app or key: Omnia ships no client ID,
+/// secret or key. PublicMetaDB was added 2026-10-27.
 nonisolated enum TrackerKind: String, CaseIterable, Codable, Hashable, Identifiable, Sendable {
     case trakt
     case simkl
+    case pmdb
 
     var id: String { rawValue }
 
@@ -17,6 +19,15 @@ nonisolated enum TrackerKind: String, CaseIterable, Codable, Hashable, Identifia
         switch self {
         case .trakt: "Trakt"
         case .simkl: "Simkl"
+        case .pmdb: "PublicMetaDB"
+        }
+    }
+
+    /// The short name used in menus, like Nuvio's "All PMDB".
+    var shortTitle: String {
+        switch self {
+        case .pmdb: "PMDB"
+        default: title
         }
     }
 
@@ -24,6 +35,7 @@ nonisolated enum TrackerKind: String, CaseIterable, Codable, Hashable, Identifia
         switch self {
         case .trakt: "Scrobble movies and episodes to your Trakt history."
         case .simkl: "Scrobble movies, shows and anime to your Simkl lists."
+        case .pmdb: "Save where you stopped to PublicMetaDB, and log what you finish to your watch history."
         }
     }
 
@@ -31,11 +43,16 @@ nonisolated enum TrackerKind: String, CaseIterable, Codable, Hashable, Identifia
     /// Simkl's PIN needs only the client ID.
     var needsClientSecret: Bool { self == .trakt }
 
+    /// PublicMetaDB connects with an API key from its settings instead of
+    /// a code entered on its site.
+    var usesAPIKey: Bool { self == .pmdb }
+
     /// Where the user creates their own API app.
     var applicationURL: URL {
         switch self {
         case .trakt: URL(string: "https://trakt.tv/oauth/applications/new")!
         case .simkl: URL(string: "https://simkl.com/settings/developer/new/")!
+        case .pmdb: URL(string: "https://publicmetadb.com/settings")!
         }
     }
 
@@ -45,13 +62,17 @@ nonisolated enum TrackerKind: String, CaseIterable, Codable, Hashable, Identifia
             "Create an app on Trakt, use urn:ietf:wg:oauth:2.0:oob as its redirect URI, then paste its Client ID and Client Secret here."
         case .simkl:
             "Create an app on Simkl, use urn:ietf:wg:oauth:2.0:oob as its redirect URI, then paste its Client ID here."
+        case .pmdb:
+            "Create a key under Settings › API on PublicMetaDB (it starts with pm-), then paste it here."
         }
     }
 
-    var assetName: String {
+    /// PublicMetaDB's mark is a wordmark, drawn by `TrackerMark`.
+    var assetName: String? {
         switch self {
         case .trakt: "TraktMark"
         case .simkl: "SimklMark"
+        case .pmdb: nil
         }
     }
 }
