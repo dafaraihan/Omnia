@@ -376,6 +376,8 @@ LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*] = \$(inherited) \$(OMNIA_IOS_MPV_XCFR
 OTHER_LDFLAGS[sdk=iphone*] = \$(inherited) -lmpv-omnia -lc++ -lz -liconv -framework Metal -framework QuartzCore -framework IOSurface -framework UIKit -framework CoreGraphics -framework AudioToolbox -framework AVFoundation -framework CoreMedia -framework CoreVideo -framework VideoToolbox -framework CoreText -framework CoreFoundation -framework Security
 SWIFT_ACTIVE_COMPILATION_CONDITIONS[sdk=iphone*] = \$(inherited) OMNIA_MPV
 GCC_PREPROCESSOR_DEFINITIONS[sdk=iphone*] = \$(inherited) OMNIA_IOS_MPV=1
+// The simulator slice is arm64 only.
+EXCLUDED_ARCHS[sdk=iphonesimulator*] = \$(inherited) x86_64
 CONFIG
     echo "wrote $config"
 }

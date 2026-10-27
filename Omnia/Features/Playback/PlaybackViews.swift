@@ -2412,9 +2412,10 @@ private struct PlaybackChrome: View {
             Spacer()
 
             PlaybackControlSurface(isScrubbing: $isScrubbing)
-                .padding(.bottom, 28)
+                .padding(.bottom, 12)
         }
-        .ignoresSafeArea()
+        // Inside the safe area, so Close stays clear of the status bar and
+        // the controls clear of the home indicator and the notch.
         #endif
     }
 }
@@ -2425,119 +2426,41 @@ private struct PlaybackChrome: View {
 private struct PlaybackControlSurface: View {
     @Environment(PlaybackSession.self) private var playback
     @Environment(\.displayPreferences) private var display
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
     @Binding var isScrubbing: Bool
 
     private var duration: Double { playback.durationSeconds ?? 0 }
     private var position: Double { min(max(playback.positionSeconds, 0), duration) }
 
+    /// iPhone in portrait: one row doesn't fit, and the side buttons
+    /// already set the volume.
+    private var isCompact: Bool {
+        #if os(iOS)
+        horizontalSizeClass == .compact
+        #else
+        false
+        #endif
+    }
+
     var body: some View {
         VStack(spacing: 14) {
-            HStack(spacing: 16) {
-                Image(systemName: playback.volume == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                    .font(.body.weight(.semibold))
-                    .frame(width: 20)
-                    .accessibilityHidden(true)
-
-                Slider(
-                    value: Binding(
-                        get: { playback.volume },
-                        set: { playback.setVolume($0) }
-                    ),
-                    in: 0...1
-                )
-                .frame(width: 128)
-                .accessibilityLabel("Volume")
-
-                Spacer(minLength: 8)
-
-                controlButton("gobackward.10", label: "Back 10 seconds") {
-                    playback.seek(by: -10)
-                }
-
-                controlButton(playback.isPaused ? "play.fill" : "pause.fill", label: playback.isPaused ? "Play" : "Pause", prominent: true) {
-                    playback.togglePause()
-                }
-
-                controlButton("goforward.10", label: "Forward 10 seconds") {
-                    playback.seek(by: 10)
-                }
-
-                Spacer(minLength: 8)
-
-                Menu {
-                    Button {
-                        playback.selectSubtitleTrack(nil)
-                    } label: {
-                        Label("Off", systemImage: playback.subtitleTracks.contains(where: \.isSelected) ? "circle" : "checkmark")
+            if isCompact {
+                HStack(spacing: 28) { transportButtons }
+                HStack(spacing: 20) { trackMenus }
+            } else {
+                HStack(spacing: 16) {
+                    volumeControl
+                    Spacer(minLength: 8)
+                    transportButtons
+                    Spacer(minLength: 8)
+                    trackMenus
+                    #if os(macOS)
+                    controlButton("rectangle.inset.filled", label: "Toggle full screen") {
+                        playback.toggleFullScreen()
                     }
-                    switch PlaybackTrackAvailability(
-                        isLoading: playback.areTracksLoading,
-                        tracks: playback.subtitleTracks
-                    ) {
-                    case .loading:
-                        ProgressView("Tracks still loading")
-                    case .empty:
-                        Text("No embedded subtitles")
-                    case .available:
-                        Divider()
-                        ForEach(playback.subtitleTracks) { track in
-                            Button {
-                                playback.selectSubtitleTrack(track.id)
-                            } label: {
-                                Label(track.displayName, systemImage: track.isSelected ? "checkmark" : "circle")
-                            }
-                        }
-                    }
-                } label: {
-                    Image(systemName: "captions.bubble")
-                        .font(.body.weight(.semibold))
-                        .frame(width: 32, height: 36)
-                        .contentShape(.rect)
-                }
-                .menuStyle(.borderlessButton)
-                .accessibilityLabel("Subtitles")
-
-                Menu {
-                    switch PlaybackTrackAvailability(
-                        isLoading: playback.areTracksLoading,
-                        tracks: playback.audioTracks
-                    ) {
-                    case .loading:
-                        ProgressView("Tracks still loading")
-                    case .empty:
-                        Text("No audio tracks")
-                    case .available:
-                        ForEach(playback.audioTracks) { track in
-                            Button {
-                                playback.selectAudioTrack(track.id)
-                            } label: {
-                                Label(track.displayName, systemImage: track.isSelected ? "checkmark" : "circle")
-                            }
-                        }
-                    }
-                } label: {
-                    Image(systemName: "waveform")
-                        .font(.body.weight(.semibold))
-                        .frame(width: 32, height: 36)
-                        .contentShape(.rect)
-                }
-                .menuStyle(.borderlessButton)
-                .accessibilityLabel("Audio track")
-
-                Menu {
-                    ForEach([0.5, 0.75, 1, 1.25, 1.5, 2], id: \.self) { rate in
-                        Button(playbackRateTitle(rate)) { playback.setPlaybackRate(rate) }
-                    }
-                } label: {
-                    Text(playbackRateTitle(playback.playbackRate))
-                        .font(.subheadline.weight(.semibold))
-                        .frame(minWidth: 28, minHeight: 32)
-                }
-                .menuStyle(.borderlessButton)
-                .accessibilityLabel("Playback speed")
-
-                controlButton("rectangle.inset.filled", label: "Toggle full screen") {
-                    playback.toggleFullScreen()
+                    #endif
                 }
             }
 
@@ -2562,11 +2485,120 @@ private struct PlaybackControlSurface: View {
             .foregroundStyle(.secondary)
         }
         .foregroundStyle(.white)
-        .padding(.horizontal, 22)
+        .padding(.horizontal, isCompact ? 18 : 22)
         .padding(.vertical, 18)
         .frame(maxWidth: 660)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .padding(.horizontal, 24)
+        .padding(.horizontal, isCompact ? 12 : 24)
+    }
+
+    private var volumeControl: some View {
+        HStack(spacing: 16) {
+            Image(systemName: playback.volume == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                .font(.body.weight(.semibold))
+                .frame(width: 20)
+                .accessibilityHidden(true)
+
+            Slider(
+                value: Binding(
+                    get: { playback.volume },
+                    set: { playback.setVolume($0) }
+                ),
+                in: 0...1
+            )
+            .frame(width: 128)
+            .accessibilityLabel("Volume")
+        }
+    }
+
+    @ViewBuilder
+    private var transportButtons: some View {
+        controlButton("gobackward.10", label: "Back 10 seconds") {
+            playback.seek(by: -10)
+        }
+
+        controlButton(playback.isPaused ? "play.fill" : "pause.fill", label: playback.isPaused ? "Play" : "Pause", prominent: true) {
+            playback.togglePause()
+        }
+
+        controlButton("goforward.10", label: "Forward 10 seconds") {
+            playback.seek(by: 10)
+        }
+    }
+
+    @ViewBuilder
+    private var trackMenus: some View {
+        Menu {
+            Button {
+                playback.selectSubtitleTrack(nil)
+            } label: {
+                Label("Off", systemImage: playback.subtitleTracks.contains(where: \.isSelected) ? "circle" : "checkmark")
+            }
+            switch PlaybackTrackAvailability(
+                isLoading: playback.areTracksLoading,
+                tracks: playback.subtitleTracks
+            ) {
+            case .loading:
+                ProgressView("Tracks still loading")
+            case .empty:
+                Text("No embedded subtitles")
+            case .available:
+                Divider()
+                ForEach(playback.subtitleTracks) { track in
+                    Button {
+                        playback.selectSubtitleTrack(track.id)
+                    } label: {
+                        Label(track.displayName, systemImage: track.isSelected ? "checkmark" : "circle")
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "captions.bubble")
+                .font(.body.weight(.semibold))
+                .frame(width: 32, height: 36)
+                .contentShape(.rect)
+        }
+        .menuStyle(.borderlessButton)
+        .accessibilityLabel("Subtitles")
+
+        Menu {
+            switch PlaybackTrackAvailability(
+                isLoading: playback.areTracksLoading,
+                tracks: playback.audioTracks
+            ) {
+            case .loading:
+                ProgressView("Tracks still loading")
+            case .empty:
+                Text("No audio tracks")
+            case .available:
+                ForEach(playback.audioTracks) { track in
+                    Button {
+                        playback.selectAudioTrack(track.id)
+                    } label: {
+                        Label(track.displayName, systemImage: track.isSelected ? "checkmark" : "circle")
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "waveform")
+                .font(.body.weight(.semibold))
+                .frame(width: 32, height: 36)
+                .contentShape(.rect)
+        }
+        .menuStyle(.borderlessButton)
+        .accessibilityLabel("Audio track")
+
+        Menu {
+            ForEach([0.5, 0.75, 1, 1.25, 1.5, 2], id: \.self) { rate in
+                Button(playbackRateTitle(rate)) { playback.setPlaybackRate(rate) }
+            }
+        } label: {
+            Text(playbackRateTitle(playback.playbackRate))
+                .font(.subheadline.weight(.semibold))
+                .frame(minWidth: 28, minHeight: 32)
+        }
+        .menuStyle(.borderlessButton)
+        .accessibilityLabel("Playback speed")
     }
 
     private func controlButton(
@@ -2788,6 +2820,18 @@ private struct PlaybackPauseOverlay: View {
     let episode: MediaEpisode?
     /// Sits higher while the controls are up, so it never runs under them.
     var clearsControls = false
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
+
+    /// iPhone's controls stack in two rows, so they stand taller.
+    private var isCompact: Bool {
+        #if os(iOS)
+        horizontalSizeClass == .compact
+        #else
+        false
+        #endif
+    }
 
     private var overview: String {
         let episodeOverview = episode?.overview.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -2824,8 +2868,9 @@ private struct PlaybackPauseOverlay: View {
                 }
             }
             .foregroundStyle(.white)
-            .padding(.leading, 56)
-            .padding(.bottom, clearsControls ? 170 : 120)
+            .padding(.leading, isCompact ? 24 : 56)
+            .padding(.trailing, isCompact ? 24 : 0)
+            .padding(.bottom, clearsControls ? (isCompact ? 280 : 170) : 120)
             .animation(.easeInOut(duration: 0.2), value: clearsControls)
         }
         .ignoresSafeArea()
