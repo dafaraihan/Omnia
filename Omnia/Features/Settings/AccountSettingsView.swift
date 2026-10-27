@@ -368,6 +368,10 @@ struct AccountSettingsView: View {
                         Button("Keep Account Copy") { credentialVault.resolve(id: id, keepDevice: false) }
                         Button("Keep This Device's Change") { credentialVault.resolve(id: id, keepDevice: true) }
                     }
+                    #if os(iOS)
+                    // In an iOS Form a tap on the row fires every button in it.
+                    .buttonStyle(.borderless)
+                    #endif
                     .disabled(credentialVault.isSyncing)
                 }
             }

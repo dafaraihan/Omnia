@@ -192,6 +192,10 @@ struct PosterCardSettingsView: View {
                 }
                 .disabled(display.customPosterURLPattern.isEmpty && posterPatternDraft.isEmpty)
             }
+            #if os(iOS)
+            // In an iOS Form a tap on the row fires every button in it.
+            .buttonStyle(.borderless)
+            #endif
             Label(
                 display.customPosterURLPattern.isEmpty ? "No pattern configured" : "Custom poster source active",
                 systemImage: display.customPosterURLPattern.isEmpty ? "circle.dashed" : "checkmark.circle.fill"
