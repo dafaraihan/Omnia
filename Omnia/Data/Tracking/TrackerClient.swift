@@ -56,6 +56,7 @@ nonisolated enum TrackerClient {
     private static let traktBase = URL(string: "https://api.trakt.tv")!
     private static let simklBase = URL(string: "https://api.simkl.com")!
     private static let pmdbBase = URL(string: "https://publicmetadb.com/api/external")!
+    private static let anilistBase = URL(string: "https://graphql.anilist.co")!
     private static let appName = "Omnia"
     private static var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
@@ -74,8 +75,8 @@ nonisolated enum TrackerClient {
 
     static func requestDeviceCode(_ kind: TrackerKind, clientID: String) async throws -> TrackerDeviceCode {
         switch kind {
-        case .pmdb:
-            // Connected with an API key; see `validateAPIKey`.
+        case .pmdb, .anilist:
+            // Connected with a key or pasted token; see `validateAPIKey`.
             throw TrackerClientError.invalidResponse
         case .trakt:
             let (data, _) = try await send(
@@ -136,8 +137,8 @@ nonisolated enum TrackerClient {
                 var connected = app
                 connected.accessToken = token
                 return .connected(connected)
-            case .pmdb:
-                return .failed("PublicMetaDB connects with an API key.")
+            case .pmdb, .anilist:
+                return .failed("\(kind.title) connects with a key or token.")
             }
         } catch {
             // A dropped request mid-wait is retried on the next tick.
@@ -145,9 +146,16 @@ nonisolated enum TrackerClient {
         }
     }
 
-    /// Checks a PublicMetaDB key by listing one of the user's lists.
-    static func validateAPIKey(_ key: String) async throws {
-        _ = try await send(pmdbRequest("lists", key: key, query: ["perPage": "1"]), accepting: [200])
+    /// Checks a PublicMetaDB key by listing one of the user's lists, or an
+    /// AniList token by asking who it belongs to.
+    static func validateAPIKey(_ kind: TrackerKind, _ key: String) async throws {
+        switch kind {
+        case .anilist:
+            let viewer: AniListViewerID = try await anilistQuery("query { Viewer { id } }", variables: [:], token: key)
+            guard viewer.Viewer?.id != nil else { throw TrackerClientError.http(401) }
+        default:
+            _ = try await send(pmdbRequest("lists", key: key, query: ["perPage": "1"]), accepting: [200])
+        }
     }
 
     /// Trakt tokens last three months; Simkl's and PublicMetaDB's keys
@@ -179,6 +187,11 @@ nonisolated enum TrackerClient {
     ) async throws {
         guard let token = credentials.accessToken else { return }
         let progress = (min(max(progress, 0), 100) * 100).rounded() / 100
+        if kind == .anilist {
+            try await updateAniList(action: action, media: media, progress: progress, token: token)
+            return
+        }
+        guard media.hasVideoIdentifier else { return }
         if kind == .pmdb {
             try await savePMDBResume(action: action, media: media, progress: progress, runtimeSeconds: runtimeSeconds, key: token)
             return
@@ -192,7 +205,7 @@ nonisolated enum TrackerClient {
             request = traktRequest("scrobble/\(action.rawValue)", clientID: credentials.clientID, body: body)
         case .simkl:
             request = simklRequest("scrobble/\(action.rawValue)", clientID: credentials.clientID, method: "POST", body: body)
-        case .pmdb:
+        case .pmdb, .anilist:
             return
         }
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -237,6 +250,46 @@ nonisolated enum TrackerClient {
               let watched = pmdbBody(media)
         else { return }
         _ = try await send(pmdbRequest("watched", key: key, method: "POST", body: watched), accepting: [200, 201])
+    }
+
+    /// AniList keeps a count of episodes watched, not live playback: an
+    /// episode or film stopped past 80% moves the anime's list entry on,
+    /// and the last episode completes it.
+    private static func updateAniList(action: TrackerScrobbleAction, media: TrackerMedia, progress: Double, token: String) async throws {
+        guard action == .stop, progress >= 80, media.anilist != nil || media.mal != nil else { return }
+        let lookup: AniListMediaLookup = try await anilistQuery(
+            media.anilist != nil
+                ? "query ($id: Int) { Media(id: $id, type: ANIME) { id episodes } }"
+                : "query ($id: Int) { Media(idMal: $id, type: ANIME) { id episodes } }",
+            variables: ["id": media.anilist ?? media.mal ?? 0],
+            token: token
+        )
+        guard let anime = lookup.Media else { return }
+        let watched: Int
+        switch media.kind {
+        case .movie: watched = anime.episodes ?? 1
+        case let .episode(_, number): watched = number
+        }
+        let completed = anime.episodes.map { watched >= $0 } ?? false
+        let _: AniListSaved = try await anilistQuery(
+            "mutation ($mediaId: Int, $progress: Int, $status: MediaListStatus) { SaveMediaListEntry(mediaId: $mediaId, progress: $progress, status: $status) { id } }",
+            variables: ["mediaId": anime.id, "progress": watched, "status": completed ? "COMPLETED" : "CURRENT"],
+            token: token
+        )
+    }
+
+    /// One AniList GraphQL request with the user's token.
+    static func anilistQuery<T: Decodable>(_ document: String, variables: [String: Any], token: String) async throws -> T {
+        var request = URLRequest(url: anilistBase)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("\(appName)/\(appVersion)", forHTTPHeaderField: "User-Agent")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["query": document, "variables": variables])
+        let (data, _) = try await send(request, accepting: [200])
+        guard let payload = try decode(AniListPayload<T>.self, from: data).data else { throw TrackerClientError.invalidResponse }
+        return payload
     }
 
     /// PublicMetaDB matches on TMDB IDs, or on an IMDb ID it maps itself.
@@ -356,6 +409,28 @@ private nonisolated struct SimklPinResponse: Decodable {
     let verification_url: String?
     let expires_in: Int?
     let interval: Int?
+}
+
+private nonisolated struct AniListPayload<T: Decodable>: Decodable {
+    let data: T?
+}
+
+private nonisolated struct AniListViewerID: Decodable {
+    struct Viewer: Decodable { let id: Int? }
+    let Viewer: Viewer?
+}
+
+private nonisolated struct AniListMediaLookup: Decodable {
+    struct Media: Decodable {
+        let id: Int
+        let episodes: Int?
+    }
+    let Media: Media?
+}
+
+private nonisolated struct AniListSaved: Decodable {
+    struct Entry: Decodable { let id: Int? }
+    let SaveMediaListEntry: Entry?
 }
 
 private nonisolated struct PMDBResumeSaveResponse: Decodable {

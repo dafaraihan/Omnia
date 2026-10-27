@@ -46,16 +46,23 @@ struct HomeView: View {
     /// Continue Watching from a tracker instead of Omnia's own progress.
     @State private var trackerLibrary = TrackerLibraryStore.shared
 
-    private var continueWatchingTracker: TrackerKind? {
-        trackerLibrary.effectiveSource(trackerLibrary.continueWatchingSource).tracker
+    private var continueWatchingSource: TrackerLibrarySource {
+        trackerLibrary.effectiveSource(trackerLibrary.continueWatchingSource)
     }
 
     private var continuing: [MediaItem] {
         if isOnboardingPreview { return [] }
-        if let tracker = continueWatchingTracker {
-            let sorted = display.continueWatchingSort.sorted(trackerLibrary.items(.progress, from: tracker))
+        if continueWatchingSource.tracker != nil || continueWatchingSource.addsAniListAnime {
+            let local = continueWatchingSource.tracker == nil ? localContinuing : []
+            let items = trackerLibrary.progressItems(continueWatchingSource, local: local)
+            let sorted = display.continueWatchingSort.sorted(items)
             return settings.preferences.continueWatchingLimit.value.map { Array(sorted.prefix($0)) } ?? sorted
         }
+        return localContinuing
+    }
+
+    /// Omnia's own progress, plus media servers that import theirs.
+    private var localContinuing: [MediaItem] {
         // Newest played first. The stored order puts a title in My List by
         // the day it was added, so a show watched again stayed where it was.
         let values = store.localMediaSnapshots
@@ -184,7 +191,7 @@ struct HomeView: View {
                 LazyVStack(alignment: .leading, spacing: 34) {
                     // A tracker's row stays, even empty, so its menu can
                     // switch back.
-                    if showsContinueWatching, !isOnboardingPreview, !continuing.isEmpty || continueWatchingTracker != nil {
+                    if showsContinueWatching, !isOnboardingPreview, !continuing.isEmpty || continueWatchingSource != .local {
                         continueWatchingShelf(continuing)
                     }
 
@@ -717,13 +724,13 @@ struct HomeView: View {
                         .padding(.leading, 6)
                 }
             }
-            if let tracker = continueWatchingTracker {
+            ForEach(continueWatchingSource.trackers) { tracker in
                 TrackerSyncStatusLine(kind: tracker)
             }
-            if items.isEmpty, let tracker = continueWatchingTracker {
-                Text(trackerLibrary.state(tracker) == .syncing
-                     ? "Reading \(tracker.shortTitle)…"
-                     : "Nothing in progress on \(tracker.shortTitle).")
+            if items.isEmpty, continueWatchingSource != .local {
+                Text(continueWatchingSource.trackers.contains { trackerLibrary.state($0) == .syncing }
+                     ? "Reading \(continueWatchingSource.title)…"
+                     : "Nothing in progress on \(continueWatchingSource.title).")
                     .foregroundStyle(.secondary)
             } else {
                 ShelfScrollView(
@@ -737,9 +744,10 @@ struct HomeView: View {
                 }
             }
         }
-        .task(id: continueWatchingTracker) {
-            guard let tracker = continueWatchingTracker else { return }
-            trackerLibrary.syncIfNeeded(tracker, addons: store.installedAddons)
+        .task(id: continueWatchingSource) {
+            for tracker in continueWatchingSource.trackers {
+                trackerLibrary.syncIfNeeded(tracker, addons: store.installedAddons)
+            }
         }
     }
 

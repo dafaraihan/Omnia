@@ -19,13 +19,15 @@ struct TrackerSourceMenu: View {
         Menu {
             Picker("Source", selection: $selection) {
                 ForEach(trackers.availableSources) { option in
-                    Text("All \(option.title)").tag(option)
+                    Text(option.menuTitle).tag(option)
                 }
             }
             .pickerStyle(.inline)
 
-            if let kind = source.tracker {
+            if !source.trackers.isEmpty {
                 Divider()
+            }
+            ForEach(source.trackers) { kind in
                 Button("Sync \(kind.shortTitle) Now", systemImage: "arrow.triangle.2.circlepath") {
                     trackers.sync(kind, addons: store.installedAddons)
                 }
@@ -36,9 +38,9 @@ struct TrackerSourceMenu: View {
             }
         } label: {
             HStack(spacing: 4) {
-                if let kind = source.tracker, trackers.state(kind) == .syncing {
+                if source.trackers.contains(where: { trackers.state($0) == .syncing }) {
                     ProgressView().controlSize(.mini)
-                } else if let kind = source.tracker {
+                } else if let kind = source.trackers.first {
                     TrackerMark(kind: kind)
                         .scaleEffect(0.7)
                         .frame(width: 17, height: 17)

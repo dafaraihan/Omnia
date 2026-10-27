@@ -26,13 +26,13 @@ struct ProgressSettingsView: View {
                     "Progress",
                     subtitle: storageDetail(trackerLibrary.continueWatchingSource),
                     selection: $trackerLibrary.continueWatchingSource,
-                    options: storageOptions(including: trackerLibrary.continueWatchingSource)
+                    options: storageOptions(trackerLibrary.availableSources, including: trackerLibrary.continueWatchingSource)
                 ) { storageTitle($0) }
                 SettingsDropdown(
                     "Watchlist",
                     subtitle: storageDetail(trackerLibrary.watchlistSource),
                     selection: $trackerLibrary.watchlistSource,
-                    options: storageOptions(including: trackerLibrary.watchlistSource)
+                    options: storageOptions(trackerLibrary.availableWatchlistSources, including: trackerLibrary.watchlistSource)
                 ) { storageTitle($0) }
                 ForEach(TrackerKind.allCases) { kind in
                     TrackerSyncStatusLine(kind: kind)
@@ -128,24 +128,33 @@ struct ProgressSettingsView: View {
 
     /// Local plus every connected tracker, and the current choice even if
     /// its tracker was disconnected, so the menu always shows it.
-    private func storageOptions(including current: TrackerLibrarySource) -> [TrackerLibrarySource] {
-        let available = trackerLibrary.availableSources
-        return available.contains(current) ? available : available + [current]
+    private func storageOptions(
+        _ available: [TrackerLibrarySource],
+        including current: TrackerLibrarySource
+    ) -> [TrackerLibrarySource] {
+        available.contains(current) ? available : available + [current]
     }
 
     private func storageTitle(_ source: TrackerLibrarySource) -> String {
+        let local = account.user != nil ? "Omnia Account" : "This Device"
         switch source {
-        case .local: account.user != nil ? "Omnia Account" : "This Device"
-        default: source.tracker?.title ?? source.title
+        case .local: return local
+        case .localAniList: return "\(local) + AniList Anime"
+        case .traktAniList: return source.title
+        default: return source.tracker?.title ?? source.title
         }
     }
 
     private func storageDetail(_ source: TrackerLibrarySource) -> String {
-        guard let tracker = source.tracker else { return account.storageSummary }
+        guard !source.trackers.isEmpty else { return account.storageSummary }
         guard trackerLibrary.effectiveSource(source) == source else {
-            return "\(tracker.title) isn't connected, so Omnia's own is shown"
+            let missing = source.trackers.filter { !TrackerAccountStore.shared.isConnected($0) }.map(\.title)
+            return "\(missing.formatted(.list(type: .and))) isn't connected, so Omnia's own is shown"
         }
-        return "Read from your \(tracker.title) account"
+        if source.addsAniListAnime {
+            return "Anime from your AniList Watching list, the rest from \(source.tracker?.title ?? "Omnia")"
+        }
+        return "Read from your \(source.tracker?.title ?? "") account"
     }
 
     private var importConfirmationPresentation: Binding<Bool> {

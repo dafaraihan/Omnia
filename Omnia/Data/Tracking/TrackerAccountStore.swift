@@ -83,20 +83,24 @@ final class TrackerAccountStore {
         }
     }
 
-    /// PublicMetaDB: checks the user's API key, then keeps it.
-    func connect(_ kind: TrackerKind, apiKey: String) {
+    /// PublicMetaDB's API key, or the token AniList shows after signing in:
+    /// checks it with the tracker, then keeps it.
+    func connect(_ kind: TrackerKind, apiKey: String, clientID: String = "") {
         let apiKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard kind.usesAPIKey, !apiKey.isEmpty, apiKey.count <= 512 else {
-            connectStates[kind] = .failed("Enter your \(kind.title) API key.")
+        let clientID = clientID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard kind.usesAPIKey || kind.usesPastedToken, !apiKey.isEmpty, apiKey.count <= 4096 else {
+            connectStates[kind] = .failed(kind.usesPastedToken
+                ? "Paste the token \(kind.title) showed after you signed in."
+                : "Enter your \(kind.title) API key.")
             return
         }
         connectTasks[kind]?.cancel()
         connectStates[kind] = .requestingCode
         connectTasks[kind] = Task { [weak self] in
             do {
-                try await TrackerClient.validateAPIKey(apiKey)
+                try await TrackerClient.validateAPIKey(kind, apiKey)
                 guard !Task.isCancelled else { return }
-                self?.store(TrackerCredentials(clientID: "", accessToken: apiKey), for: kind)
+                self?.store(TrackerCredentials(clientID: clientID, accessToken: apiKey), for: kind)
                 self?.connectStates[kind] = .idle
             } catch {
                 guard !Task.isCancelled else { return }
@@ -247,7 +251,15 @@ extension TrackerMedia {
         } else {
             kind = .movie
         }
+        func animeID(_ keys: [String], prefix: String) -> Int? {
+            if let value = id(keys).flatMap({ Int($0) }) { return value }
+            let parts = item.id.split(separator: ":")
+            guard parts.count >= 2, parts[0] == prefix else { return nil }
+            return Int(parts[1])
+        }
         self.init(kind: kind, title: item.title, year: Int(item.year.prefix(4)), imdb: imdb, tmdb: tmdb, tvdb: tvdb)
+        anilist = animeID(["anilist", "anilist_id"], prefix: "anilist")
+        mal = animeID(["mal", "mal_id", "myanimelist"], prefix: "mal")
         guard hasIdentifier else { return nil }
     }
 }

@@ -155,9 +155,9 @@ struct LibraryView: View {
 
     private var libraryFilterMenu: some View {
         Menu {
-            if trackerLibrary.availableSources.count > 1 {
+            if trackerLibrary.availableWatchlistSources.count > 1 {
                 Picker("Source", selection: $trackerLibrary.watchlistSource) {
-                    ForEach(trackerLibrary.availableSources) { source in
+                    ForEach(trackerLibrary.availableWatchlistSources) { source in
                         Text(source.title).tag(source)
                     }
                 }

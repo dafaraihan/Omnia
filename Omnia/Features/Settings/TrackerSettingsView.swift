@@ -80,6 +80,8 @@ struct TrackerSettingsView: View {
                 connectedSections
             } else if kind.usesAPIKey {
                 apiKeySection
+            } else if kind.usesPastedToken {
+                pastedTokenSection
             } else {
                 appSection
                 connectSection
@@ -143,6 +145,53 @@ struct TrackerSettingsView: View {
         }
     }
 
+    /// AniList: the user's client ID, sign-in in the browser, then the
+    /// token AniList's PIN page shows.
+    private var pastedTokenSection: some View {
+        Section {
+            TextField("Client ID", text: $clientID)
+                .autocorrectionDisabled()
+                #if os(iOS)
+                .textInputAutocapitalization(.never)
+                #endif
+            Button("Create a Client on \(kind.title)", systemImage: "arrow.up.right.square") {
+                openURL(kind.applicationURL)
+            }
+            Button("Sign In on \(kind.title)", systemImage: "safari") {
+                if let url = kind.authorizationURL(clientID: clientID.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                    openURL(url)
+                }
+            }
+            .disabled(clientID.trimmingCharacters(in: .whitespaces).isEmpty)
+            SecureField("Token", text: $apiKey)
+                .autocorrectionDisabled()
+            switch trackers.connectState(kind) {
+            case .requestingCode:
+                HStack {
+                    ProgressView().controlSize(.small)
+                    Text("Checking the token with \(kind.title)…")
+                }
+            case .failed(let message):
+                Label(message, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                connectWithTokenButton
+            case .idle, .waiting:
+                connectWithTokenButton
+            }
+        } header: {
+            Text("Your \(kind.title) Client")
+        } footer: {
+            Text("\(kind.applicationGuidance) The token stays in Keychain on this device and lasts a year. \(kind.summary)")
+        }
+    }
+
+    private var connectWithTokenButton: some View {
+        Button("Connect \(kind.title)", systemImage: "link") {
+            trackers.connect(kind, apiKey: apiKey, clientID: clientID)
+        }
+        .disabled(apiKey.trimmingCharacters(in: .whitespaces).isEmpty)
+    }
+
     private var connectWithKeyButton: some View {
         Button("Connect \(kind.title)", systemImage: "link") {
             trackers.connect(kind, apiKey: apiKey)
@@ -203,7 +252,9 @@ struct TrackerSettingsView: View {
                 set: { trackers.setScrobbles($0, for: kind) }
             )) {
                 Text("Scrobble Playback")
-                Text(kind.usesAPIKey
+                Text(kind == .anilist
+                     ? "Move your \(kind.title) anime list on when an episode is stopped past 80%."
+                     : kind.usesAPIKey
                      ? "Save where you stop to \(kind.title). Titles stopped past 80% are logged as watched."
                      : "Tell \(kind.title) what you're watching. Titles stopped past 80% are marked watched.")
             }
@@ -218,7 +269,7 @@ struct TrackerSettingsView: View {
                 TrackerMark(kind: kind)
             }
         } footer: {
-            Text("Movies and episodes need an IMDb, TMDB or TVDB ID to be scrobbled; Live TV isn't.")
+            Text(kind == .anilist ? "Only anime with an AniList or MyAnimeList ID update your list." : "Movies and episodes need an IMDb, TMDB or TVDB ID to be scrobbled; Live TV isn't.")
         }
 
         Section {
@@ -226,8 +277,8 @@ struct TrackerSettingsView: View {
                 trackers.disconnect(kind)
             }
         } footer: {
-            Text(kind.usesAPIKey
-                 ? "Removes your \(kind.title) API key from this device."
+            Text(kind.usesAPIKey || kind.usesPastedToken
+                 ? "Removes your \(kind.title) key or token from this device."
                  : "Removes your \(kind.title) app details and sign-in from this device.")
         }
     }

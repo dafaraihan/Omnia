@@ -9,22 +9,37 @@ import Observation
 /// Where Continue Watching and the watchlist come from: Omnia's own
 /// progress (in the Omnia account or on this device), or a connected
 /// tracker, as Nuvio's "All Local / All Trakt / All PMDB" switch does
-/// (Dafa, 2026-10-27).
+/// (Dafa, 2026-10-27). The "+ AniList Anime" choices take anime from the
+/// AniList Watching list and everything else from Trakt or Omnia, as
+/// Nuvio's do.
 nonisolated enum TrackerLibrarySource: String, CaseIterable, Codable, Hashable, Identifiable, Sendable {
     case local
     case trakt
     case simkl
     case pmdb
+    case anilist
+    case traktAniList
+    case localAniList
 
     var id: String { rawValue }
 
+    /// Where everything (or, with AniList anime added, everything but
+    /// anime) comes from; nil for Omnia's own.
     var tracker: TrackerKind? {
         switch self {
-        case .local: nil
-        case .trakt: .trakt
+        case .local, .localAniList: nil
+        case .trakt, .traktAniList: .trakt
         case .simkl: .simkl
         case .pmdb: .pmdb
+        case .anilist: .anilist
         }
+    }
+
+    var addsAniListAnime: Bool { self == .traktAniList || self == .localAniList }
+
+    /// Every tracker this source reads.
+    var trackers: [TrackerKind] {
+        (tracker.map { [$0] } ?? []) + (addsAniListAnime ? [.anilist] : [])
     }
 
     init(_ tracker: TrackerKind) {
@@ -32,10 +47,20 @@ nonisolated enum TrackerLibrarySource: String, CaseIterable, Codable, Hashable, 
         case .trakt: self = .trakt
         case .simkl: self = .simkl
         case .pmdb: self = .pmdb
+        case .anilist: self = .anilist
         }
     }
 
-    var title: String { tracker?.shortTitle ?? "Local" }
+    var title: String {
+        switch self {
+        case .traktAniList: "Trakt + AniList Anime"
+        case .localAniList: "Local + AniList Anime"
+        default: tracker?.shortTitle ?? "Local"
+        }
+    }
+
+    /// Nuvio's menu wording: "All Local", "All Trakt", "Trakt + AniList Anime".
+    var menuTitle: String { addsAniListAnime ? title : "All \(title)" }
 }
 
 /// Each connected tracker's in-progress titles and watchlist, read from the
@@ -89,13 +114,39 @@ final class TrackerLibraryStore {
     /// The source in use: a tracker that has since been disconnected falls
     /// back to Omnia's own.
     func effectiveSource(_ source: TrackerLibrarySource) -> TrackerLibrarySource {
-        guard let tracker = source.tracker, TrackerAccountStore.shared.isConnected(tracker) else { return .local }
-        return source
+        source.trackers.allSatisfy(TrackerAccountStore.shared.isConnected) ? source : .local
     }
 
-    /// Local plus each connected tracker, for the pickers.
+    /// Local, each connected tracker, and the AniList anime blends, for
+    /// Continue Watching's pickers.
     var availableSources: [TrackerLibrarySource] {
-        [.local] + TrackerKind.allCases.filter { TrackerAccountStore.shared.isConnected($0) }.map(TrackerLibrarySource.init)
+        TrackerLibrarySource.allCases.filter { $0 == .local || effectiveSource($0) == $0 }
+    }
+
+    /// The Library's choices: the blends are for Continue Watching only.
+    var availableWatchlistSources: [TrackerLibrarySource] {
+        availableSources.filter { !$0.addsAniListAnime }
+    }
+
+    /// Continue Watching from `source`: a tracker's paused titles, or
+    /// Omnia's own (`local`), with AniList's Watching list in place of
+    /// their anime when the source adds it.
+    func progressItems(_ source: TrackerLibrarySource, local: [MediaItem]) -> [MediaItem] {
+        let base = source.tracker.map { items(.progress, from: $0) } ?? local
+        guard source.addsAniListAnime else { return base }
+        let anime = items(.progress, from: .anilist)
+        let rest = base.filter { item in
+            !Self.isAnime(item) && !anime.contains { $0.isSameTitle(as: item) }
+        }
+        return anime + rest
+    }
+
+    private static func isAnime(_ item: MediaItem) -> Bool {
+        let animeKeys = ["anilist", "anilist_id", "mal", "mal_id", "myanimelist", "kitsu", "kitsu_id"]
+        if animeKeys.contains(where: { item.externalIDs[$0] != nil }) { return true }
+        let prefix = item.id.split(separator: ":").first.map { String($0).lowercased() } ?? ""
+        if ["anilist", "mal", "kitsu", "anidb"].contains(prefix) { return true }
+        return item.genres.contains { $0.caseInsensitiveCompare("Anime") == .orderedSame }
     }
 
     func items(_ list: TrackerLibraryList, from kind: TrackerKind) -> [MediaItem] {
@@ -204,7 +255,7 @@ final class TrackerLibraryStore {
         defaults.set(source.rawValue, forKey: key)
         // Choosing a tracker as the store turns its scrobbling on, so what
         // plays is written there too.
-        if let tracker = source.tracker { TrackerAccountStore.shared.setScrobbles(true, for: tracker) }
+        for tracker in source.trackers { TrackerAccountStore.shared.setScrobbles(true, for: tracker) }
     }
 
     private static func key(for addons: [InstalledAddon]) -> String {
@@ -257,7 +308,8 @@ nonisolated extension TrackerLibraryEntry {
     /// The title's ID in Omnia: its IMDb ID, as Cinemeta and most stream
     /// add-ons use, or a prefixed TMDB or TVDB ID.
     var mediaID: String {
-        imdb ?? tmdb.map { "tmdb:\($0)" } ?? tvdb.map { "tvdb:\($0)" } ?? title
+        imdb ?? tmdb.map { "tmdb:\($0)" } ?? tvdb.map { "tvdb:\($0)" }
+            ?? anilist.map { "anilist:\($0)" } ?? mal.map { "mal:\($0)" } ?? title
     }
 
     /// The bare title before the add-ons fill it in.
@@ -266,6 +318,8 @@ nonisolated extension TrackerLibraryEntry {
         if let imdb { externalIDs["imdb"] = imdb }
         if let tmdb { externalIDs["tmdb"] = String(tmdb) }
         if let tvdb { externalIDs["tvdb"] = String(tvdb) }
+        if let anilist { externalIDs["anilist"] = String(anilist) }
+        if let mal { externalIDs["mal"] = String(mal) }
         let isSeries = kind == .series
         let position = progress.flatMap { progress in runtimeSeconds.map { progress * $0 } }
         return MediaItem(
@@ -277,6 +331,8 @@ nonisolated extension TrackerLibraryEntry {
             genres: [],
             symbol: isSeries ? "tv.fill" : "film.fill",
             artworkColors: MediaItem.placeholderArtworkColors,
+            artworkURL: posterURL,
+            backdropURL: backdropURL,
             externalIDs: externalIDs,
             progress: progress,
             positionSeconds: position,

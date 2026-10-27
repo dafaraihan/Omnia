@@ -52,7 +52,7 @@ struct MetadataSettingsView: View {
             } header: {
                 Text("Tracking")
             } footer: {
-                Text("Scrobble what you watch to your own Trakt, Simkl or PublicMetaDB account, with your own API app or key.")
+                Text("Scrobble what you watch to your own Trakt, Simkl, PublicMetaDB or AniList account, with your own API app or key.")
             }
 
             Section {

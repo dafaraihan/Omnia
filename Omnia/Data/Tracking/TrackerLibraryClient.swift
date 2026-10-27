@@ -2,8 +2,8 @@
 //  TrackerLibraryClient.swift
 //  Omnia
 //
-//  Reads what is in progress and on the watchlist from Trakt, Simkl and
-//  PublicMetaDB, after Nuvio's TraktProgressRepository,
+//  Reads what is in progress and on the watchlist from Trakt, Simkl,
+//  PublicMetaDB and AniList, after Nuvio's TraktProgressRepository,
 //  TraktLibraryRepository and SimklSyncRemote (NuvioMedia/NuvioMobile,
 //  GPL-3.0) and PublicMetaDB's External API reference.
 //
@@ -24,6 +24,12 @@ nonisolated struct TrackerLibraryEntry: Codable, Hashable, Sendable {
     var imdb: String?
     var tmdb: Int?
     var tvdb: Int?
+    var anilist: Int?
+    var mal: Int?
+    /// AniList sends its own artwork; the other trackers leave it to the
+    /// add-ons.
+    var posterURL: URL?
+    var backdropURL: URL?
     /// The episode a series is paused in.
     var season: Int?
     var episode: Int?
@@ -34,7 +40,10 @@ nonisolated struct TrackerLibraryEntry: Codable, Hashable, Sendable {
     /// The tracker's own ID for the paused playback, for removing it.
     var playbackID: String?
 
-    var hasIdentifier: Bool { imdb != nil || tmdb != nil || tvdb != nil }
+    var hasIdentifier: Bool { imdb != nil || tmdb != nil || tvdb != nil || anilist != nil || mal != nil }
+
+    /// AniList, Kitsu and MyAnimeList IDs mark a title as anime.
+    var isAnime: Bool { anilist != nil || mal != nil }
 }
 
 nonisolated enum TrackerLibraryList: String, Sendable {
@@ -99,6 +108,10 @@ nonisolated enum TrackerLibraryClient {
                 query: ["perPage": "500"]
             )
             entries = await withIMDbIDs(page.items?.compactMap(\.entry) ?? [], key: token)
+        case (.anilist, .progress):
+            entries = try await anilistList(["CURRENT", "REPEATING"], token: token, inProgress: true)
+        case (.anilist, .watchlist):
+            entries = try await anilistList(["PLANNING"], token: token, inProgress: false)
         }
         let newestFirst = entries
             .filter(\.hasIdentifier)
@@ -115,9 +128,36 @@ nonisolated enum TrackerLibraryClient {
         case .trakt: request = traktRequest("sync/playback/\(id)", token: token, clientID: credentials.clientID)
         case .simkl: request = simklRequest("sync/playback/\(id)", token: token, clientID: credentials.clientID)
         case .pmdb: request = TrackerClient.pmdbRequest("resume/\(id)", key: token)
+        case .anilist: return
         }
         request.httpMethod = "DELETE"
         _ = try await TrackerClient.send(request, accepting: [200, 204, 404])
+    }
+
+    // MARK: AniList
+
+    /// The signed-in user's anime list entries with these statuses: Watching
+    /// (and Rewatching) for Continue Watching, Planning for the watchlist.
+    private static func anilistList(_ statuses: [String], token: String, inProgress: Bool) async throws -> [TrackerLibraryEntry] {
+        let viewer: AniListViewer = try await TrackerClient.anilistQuery("query { Viewer { id } }", variables: [:], token: token)
+        guard let userID = viewer.Viewer?.id else { throw TrackerClientError.invalidResponse }
+        let collection: AniListCollection = try await TrackerClient.anilistQuery(
+            """
+            query ($userId: Int, $status: [MediaListStatus]) {
+              MediaListCollection(userId: $userId, type: ANIME, status_in: $status, sort: UPDATED_TIME_DESC) {
+                lists { entries {
+                  progress updatedAt
+                  media { id idMal format episodes startDate { year }
+                    title { english userPreferred romaji }
+                    coverImage { extraLarge large } bannerImage }
+                } }
+              }
+            }
+            """,
+            variables: ["userId": userID, "status": statuses],
+            token: token
+        )
+        return (collection.MediaListCollection?.lists ?? []).flatMap { $0.entries ?? [] }.map { $0.entry(inProgress: inProgress) }
     }
 
     // MARK: PublicMetaDB IDs
@@ -335,6 +375,68 @@ private nonisolated struct SimklAllItems: Decodable {
             return entry
         }
     }
+}
+
+private nonisolated struct AniListViewer: Decodable {
+    struct Viewer: Decodable { let id: Int? }
+    let Viewer: Viewer?
+}
+
+private nonisolated struct AniListCollection: Decodable {
+    struct Title: Decodable {
+        let english: String?
+        let userPreferred: String?
+        let romaji: String?
+    }
+
+    struct Cover: Decodable {
+        let extraLarge: String?
+        let large: String?
+    }
+
+    struct DateParts: Decodable { let year: Int? }
+
+    struct Media: Decodable {
+        let id: Int
+        let idMal: Int?
+        let format: String?
+        let episodes: Int?
+        let startDate: DateParts?
+        let title: Title?
+        let coverImage: Cover?
+        let bannerImage: String?
+    }
+
+    struct Entry: Decodable {
+        let progress: Int?
+        let updatedAt: Int?
+        let media: Media
+
+        func entry(inProgress: Bool) -> TrackerLibraryEntry {
+            let isMovie = media.format == "MOVIE"
+            let watched = progress ?? 0
+            // The next episode to watch, within what has aired.
+            let next = media.episodes.map { min(watched + 1, $0) } ?? watched + 1
+            return TrackerLibraryEntry(
+                kind: isMovie ? .movie : .series,
+                title: media.title?.english ?? media.title?.userPreferred ?? media.title?.romaji ?? "",
+                year: media.startDate?.year,
+                anilist: media.id,
+                mal: media.idMal,
+                posterURL: (media.coverImage?.extraLarge ?? media.coverImage?.large).flatMap(URL.init(string:)),
+                backdropURL: media.bannerImage.flatMap(URL.init(string:)),
+                season: inProgress && !isMovie ? 1 : nil,
+                episode: inProgress && !isMovie ? next : nil,
+                progress: inProgress ? media.episodes.flatMap { $0 > 0 ? Double(watched) / Double($0) : nil } ?? 0 : nil,
+                updatedAt: updatedAt.map { Date(timeIntervalSince1970: TimeInterval($0)) }
+            )
+        }
+    }
+
+    struct List: Decodable { let entries: [Entry]? }
+    struct Collection: Decodable { let lists: [List]? }
+
+    let MediaListCollection: Collection?
 }
 
 private nonisolated struct PMDBPage<Item: Decodable>: Decodable {
