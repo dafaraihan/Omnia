@@ -170,16 +170,6 @@ struct VideoPlayerSettingsView: View {
             }
 
             Section {
-                LanguagePicker("Preferred subtitles", selection: settings.binding(\.preferredSubtitleLanguage), includesNone: true)
-                LanguagePicker("Subtitle fallback", selection: settings.binding(\.subtitleFallbackLanguage), includesNone: true)
-                Toggle("Prefer SDH Captions", isOn: Binding(
-                    get: { settings.preferences.sdhPreference == .prefer },
-                    set: { newValue in
-                        settings.update {
-                            $0.sdhPreference = newValue ? .prefer : .followSystem
-                        }
-                    }
-                ))
                 Toggle(isOn: settings.binding(\.playbackBehavior.stripSDHSubtitles)) {
                     Text("Strip SDH Text")
                     Text("Removes sound descriptions and speaker names, like [door creaks].")
@@ -214,7 +204,8 @@ struct VideoPlayerSettingsView: View {
                 }
                 .disabled(settings.preferences.playbackSubtitleStyle.delaySeconds == 0)
                 #endif
-                NavigationLink("Subtitle") {
+                // Languages and SDH live with the subtitle style, in one place.
+                NavigationLink("Subtitle Languages and Style") {
                     SettingsDestinationView(route: .subtitle)
                 }
                 .settingsLinkRow()

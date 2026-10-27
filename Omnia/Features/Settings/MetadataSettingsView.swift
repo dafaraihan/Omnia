@@ -101,7 +101,9 @@ struct MetadataSourcesSettingsView: View {
             }
 
             Section("Providers") {
-                ForEach(MetadataProvider.supported.filter { $0.id != "mdblist" }) { provider in
+                // MDBList's key is under MDBList Ratings; AniList's account
+                // under Account › Tracking (its metadata needs no key).
+                ForEach(MetadataProvider.supported.filter { $0.id != "mdblist" && $0.id != "anilist" }) { provider in
                     NavigationLink {
                         SettingsDestinationView(route: .metadataProvider(provider.id))
                     } label: {
