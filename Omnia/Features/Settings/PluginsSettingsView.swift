@@ -158,9 +158,9 @@ struct PluginsSettingsView: View {
                     repositoryToRemove = repository
                 }
             }
-            #if os(macOS)
+            // Borderless on iOS too: in a Form a tap on the row fires every
+            // button in it.
             .buttonStyle(.borderless)
-            #endif
         } header: {
             Text(repository.name)
         }
@@ -204,6 +204,9 @@ struct PluginsSettingsView: View {
                         .lineLimit(2)
                 }
             }
+            #if os(iOS)
+            .buttonStyle(.borderless)
+            #endif
             .font(.callout)
             #if os(macOS)
             .buttonStyle(.borderless)

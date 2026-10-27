@@ -4,16 +4,16 @@
 
 **A native, cinematic media player for your own Stremio add-ons.**
 
-Built with SwiftUI and libmpv for macOS, with iPhone and iPad builds from the same project.
+Built with SwiftUI and libmpv for macOS, iPhone and iPad, from one project.
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-macOS%2026%2B-black)
 ![Built with SwiftUI](https://img.shields.io/badge/built%20with-SwiftUI-orange)
-[![Latest release](https://img.shields.io/github/v/release/Laviora/OmniaDesktop)](https://github.com/Laviora/OmniaDesktop/releases/latest)
+[![Latest release](https://img.shields.io/github/v/release/Laviora/Omnia)](https://github.com/Laviora/Omnia/releases/latest)
 
-### [⬇&nbsp;&nbsp;Download Omnia for macOS (.dmg)](https://github.com/Laviora/OmniaDesktop/releases/download/v0.3.1/Omnia-0.3.1.dmg)
+### [⬇&nbsp;&nbsp;Download Omnia for macOS (.dmg)](https://github.com/Laviora/Omnia/releases/download/v0.3.1/Omnia-0.3.1.dmg)
 
-Apple silicon · macOS 26 or later · [All releases](https://github.com/Laviora/OmniaDesktop/releases)
+Apple silicon · macOS 26 or later · [All releases](https://github.com/Laviora/Omnia/releases)
 
 [Features](#features) · [Install](#install) · [Build from source](#build-from-source)
 
@@ -64,7 +64,7 @@ Screenshots are not included yet. Omnia only shows what your own add-ons provide
 
 ## Install
 
-1. [Download Omnia-0.3.1.dmg](https://github.com/Laviora/OmniaDesktop/releases/download/v0.3.1/Omnia-0.3.1.dmg), or pick a version from [Releases](https://github.com/Laviora/OmniaDesktop/releases).
+1. [Download Omnia-0.3.1.dmg](https://github.com/Laviora/Omnia/releases/download/v0.3.1/Omnia-0.3.1.dmg), or pick a version from [Releases](https://github.com/Laviora/Omnia/releases).
 2. Open the `.dmg` and drag **Omnia** into **Applications**.
 3. Open Omnia from Applications.
 
@@ -92,7 +92,7 @@ After that, Omnia opens normally.
 
 ```sh
 brew install mpv libtorrent-rasterbar
-git clone https://github.com/Laviora/OmniaDesktop.git
+git clone https://github.com/Laviora/Omnia.git
 cd Omnia
 open Omnia.xcodeproj
 ```
@@ -107,6 +107,12 @@ The macOS build copies libmpv and its Homebrew dependencies into the app automat
 
 ```sh
 xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'generic/platform=iOS Simulator' build
+```
+
+iPhone and iPad play with AVPlayer until libmpv is built for iOS. Build it once (about 35 minutes); the script also writes the git-ignored `Config/NativePlayback.xcconfig` that points Xcode at it, and iOS then plays with mpv:
+
+```sh
+OMNIA_NATIVE_PLATFORM=ios Scripts/build-playback-dependencies.sh NativeDependencies/playback-dependencies.json ~/Library/Caches/Omnia/native-ios
 ```
 
 The optional cloud features (account sync and the metadata service) use Supabase; see the [Supabase guide](supabase/README.md) to run them locally.

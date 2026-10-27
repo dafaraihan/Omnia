@@ -292,7 +292,7 @@ struct ProfileEditorView: View {
                                     dismiss()
                                 }
                             } message: {
-                                Text("Their library, progress and settings are removed from this Mac and your account.")
+                                Text("Their library, progress and settings are removed from this \(OmniaDevice.name) and your account.")
                             }
                     }
                 }
@@ -438,7 +438,7 @@ struct ProfileEditorView: View {
                             let digits = String(value.filter { $0.isASCII && $0.isNumber }.prefix(4))
                             if digits != value { newPIN = digits }
                         }
-                    Text("Asked for when switching to this profile. It stays on this Mac.")
+                    Text("Asked for when switching to this profile. It stays on this \(OmniaDevice.name).")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Spacer()

@@ -1,5 +1,7 @@
 #import "MPVThumbnailGenerator.h"
 
+#if TARGET_OS_OSX
+
 #import <mpv/client.h>
 #import <math.h>
 
@@ -437,3 +439,5 @@ static void OMMpvThumbnailWakeup(void *context) {
 }
 
 @end
+
+#endif

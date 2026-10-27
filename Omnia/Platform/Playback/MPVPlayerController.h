@@ -6,8 +6,14 @@
 #import <Foundation/Foundation.h>
 #import <TargetConditionals.h>
 
+#if TARGET_OS_OSX || OMNIA_IOS_MPV
 #if TARGET_OS_OSX
 #import <AppKit/AppKit.h>
+typedef NSView OMMpvPlatformView;
+#else
+#import <UIKit/UIKit.h>
+typedef UIView OMMpvPlatformView;
+#endif
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -66,7 +72,7 @@ typedef void (^OMMpvTrackSelectionCompletion)(
 /// the video output attached to `videoView`.
 @interface OMMpvPlayerController : NSObject
 
-@property (nonatomic, readonly) NSView *videoView;
+@property (nonatomic, readonly) OMMpvPlatformView *videoView;
 @property (nonatomic, readonly, nullable) NSString *errorMessage;
 @property (nonatomic, readonly, getter=isPaused) BOOL paused;
 @property (nonatomic, readonly) double position;
@@ -95,7 +101,7 @@ typedef void (^OMMpvTrackSelectionCompletion)(
               blurayDeviceURL:(nullable NSURL *)blurayDeviceURL NS_DESIGNATED_INITIALIZER;
 - (instancetype)init NS_UNAVAILABLE;
 
-/// Starts only once `videoView` belongs to a real macOS window. Calling this
+/// Starts only once `videoView` belongs to a real window. Calling this
 /// repeatedly is safe and lets SwiftUI finish mounting the native view first.
 - (void)startIfNeeded;
 - (void)togglePause;
@@ -134,8 +140,8 @@ typedef void (^OMMpvTrackSelectionCompletion)(
 - (nullable NSNumber *)speechActivityLevel;
 - (void)cycleSubtitles;
 - (void)cycleAudioTrack;
-- (void)attachVideoViewToHost:(NSView *)hostView;
-- (void)detachVideoViewFromHost:(NSView *)hostView;
+- (void)attachVideoViewToHost:(OMMpvPlatformView *)hostView;
+- (void)detachVideoViewFromHost:(OMMpvPlatformView *)hostView;
 - (void)enterPictureInPicture;
 - (void)exitPictureInPicture;
 - (void)togglePictureInPicture;

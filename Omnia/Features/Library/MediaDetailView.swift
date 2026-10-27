@@ -12,6 +12,10 @@ struct MediaDetailView: View {
     @Environment(SettingsPreferencesStore.self) private var settings
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+    #endif
     @Environment(\.displayPreferences) private var display
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.isActiveDestination) private var isActiveDestination
@@ -62,7 +66,8 @@ struct MediaDetailView: View {
                 detailInformation
             }
         }
-        .background(screenBackground)
+        // Under the home indicator too, so the page doesn't end in a band.
+        .background { screenBackground.ignoresSafeArea() }
         .overlay {
             if let posterTransition {
                 PosterTransitionOverlay(anchor: posterTransition) {
@@ -79,11 +84,31 @@ struct MediaDetailView: View {
                 posterTransition = PosterTransitionCenter.shared.consume(itemID: item.id)
             }
         }
-        #if os(macOS)
         // Match Home: the scroll container, not merely its first child,
         // owns the top safe area. The detail hero can therefore meet the
-        // stable transparent toolbar instead of leaving a black band.
+        // stable transparent toolbar (or iPad's tab bar) instead of leaving
+        // a band above it.
         .ignoresSafeArea(edges: .top)
+        #if os(iOS)
+        // Outside the page's safe-area override, so it stays below the
+        // status and tab bars and in place while the page scrolls.
+        .overlay(alignment: .topLeading) {
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.body.weight(.bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 42, height: 42)
+                    // Tinted glass stays visible over light artwork and over
+                    // the dark page once the hero scrolls away.
+                    .glassEffect(.regular.tint(.black.opacity(0.35)).interactive(), in: Circle())
+            }
+            .buttonStyle(.plain)
+            .padding(.leading, horizontalInset)
+            .padding(.top, 10)
+            .accessibilityLabel("Back")
+        }
         #endif
         .omniaNavigationTitle(displayItem.title, screen: .mediaDetail)
         #if os(iOS)
@@ -199,7 +224,15 @@ struct MediaDetailView: View {
 
     private var detailHero: some View {
         ZStack(alignment: .bottomLeading) {
+            #if os(iOS)
+            if horizontalSizeClass == .compact && verticalSizeClass == .regular {
+                PortraitHeroArtwork(item: displayItem)
+            } else {
+                HeroArtworkCanvas(item: displayItem, source: .detail, artworkAlignment: .topTrailing)
+            }
+            #else
             HeroArtworkCanvas(item: displayItem, source: .detail, artworkAlignment: .topTrailing)
+            #endif
 
             HomeHeroTrailerLayer(model: heroTrailer, isPlaying: heroTrailerIsPlaying)
 
@@ -213,23 +246,6 @@ struct MediaDetailView: View {
             .padding(.leading, CinematicHeroLayout.horizontalInset)
             .padding(.bottom, 34)
         }
-        #if os(iOS)
-        .overlay(alignment: .topLeading) {
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(.body.weight(.bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 42, height: 42)
-                    .background(.black.opacity(0.42), in: Circle())
-            }
-            .buttonStyle(.plain)
-            .padding(.leading, horizontalInset)
-            .padding(.top, 10)
-            .accessibilityLabel("Back")
-        }
-        #endif
         // In the hero's bottom-right corner, scrolling away with it
         // (Dafa, 2026-10-22).
         .overlay(alignment: .bottomTrailing) {
@@ -830,7 +846,13 @@ struct MediaDetailView: View {
         #if os(macOS)
         Color.clear
         #else
-        pageBackground
+        // The same accent as the info sections, so the page doesn't end in
+        // a light band under them or when it bounces.
+        if usesArtworkBackground {
+            HeroAccentBackground(item: displayItem)
+        } else {
+            pageBackground
+        }
         #endif
     }
 

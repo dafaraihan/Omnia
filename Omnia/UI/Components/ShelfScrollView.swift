@@ -19,7 +19,20 @@ struct ShelfScrollView<Item: Identifiable, Content: View>: View {
 
     @State private var leadingItemID: Item.ID?
     @State private var controlsVisible = false
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
     @State private var concealTask: Task<Void, Never>?
+
+    /// On an iPhone the arrows would cover the cards a swipe already
+    /// scrolls.
+    private var showsArrows: Bool {
+        #if os(iOS)
+        horizontalSizeClass != .compact
+        #else
+        true
+        #endif
+    }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -57,7 +70,7 @@ struct ShelfScrollView<Item: Identifiable, Content: View>: View {
                     showControls()
                 }
 
-                if controlsVisible, items.count > 1 {
+                if controlsVisible, showsArrows, items.count > 1 {
                     // This button is its intrinsic 40 × 62 pt hit target. It
                     // is aligned to the edge rather than wrapped in a
                     // full-width overlay, so all remaining shelf content
@@ -75,7 +88,7 @@ struct ShelfScrollView<Item: Identifiable, Content: View>: View {
                 }
             }
             .overlay(alignment: .trailing) {
-                if controlsVisible, currentIndex < items.count - 1 {
+                if controlsVisible, showsArrows, currentIndex < items.count - 1 {
                     Button {
                         move(by: 1, proxy: proxy)
                     } label: {

@@ -314,7 +314,7 @@ final class ProfileDataSync {
             problem = nil
         } catch {
             guard generation == ticket, account.user?.id == userID else { return }
-            problem = "Couldn't sync with your account. Everything stays on this Mac and syncs again later."
+            problem = "Couldn't sync with your account. Everything stays on this \(OmniaDevice.name) and syncs again later."
         }
     }
 
@@ -334,7 +334,7 @@ final class ProfileDataSync {
             problem = nil
         } catch {
             guard generation == ticket, account.user?.id == userID else { return }
-            problem = "Couldn't sync with your account. Everything stays on this Mac and syncs again later."
+            problem = "Couldn't sync with your account. Everything stays on this \(OmniaDevice.name) and syncs again later."
         }
     }
 

@@ -1,3 +1,6 @@
+#import <TargetConditionals.h>
+
+#if TARGET_OS_OSX
 #import <AppKit/AppKit.h>
 
 NS_ASSUME_NONNULL_BEGIN
@@ -23,3 +26,5 @@ typedef void (^OMMpvThumbnailCompletion)(
 @end
 
 NS_ASSUME_NONNULL_END
+
+#endif

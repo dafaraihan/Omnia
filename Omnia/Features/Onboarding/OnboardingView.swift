@@ -306,7 +306,7 @@ private struct PosterWall: View {
         .opacity(colorScheme == .dark ? 0.55 : 0.4)
         .overlay {
             RadialGradient(
-                colors: [.clear, Color(nsColor: .windowBackgroundColor).opacity(0.9)],
+                colors: [.clear, Color.omniaWindowBackground.opacity(0.9)],
                 center: .center, startRadius: 120, endRadius: 720
             )
         }

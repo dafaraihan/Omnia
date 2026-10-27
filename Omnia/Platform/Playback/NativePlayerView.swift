@@ -49,10 +49,57 @@ struct NativePlayerView: NSViewRepresentable {
 }
 #else
 import AVKit
+import UIKit
 
-/// libmpv is macOS-only in Omnia; this keeps the iPhone/iPad target usable
-/// until an iOS libmpv distribution is deliberately bundled.
-struct NativePlayerView: View {
+#if OMNIA_MPV
+final class PlaybackVideoHostView: UIView {
+    weak var player: OMMpvPlayerController?
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .black
+        isUserInteractionEnabled = false
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        backgroundColor = .black
+        isUserInteractionEnabled = false
+    }
+}
+
+/// Hosts the view libmpv draws into with Metal, as on the Mac. SwiftUI owns
+/// the controls above it.
+struct NativePlayerView: UIViewRepresentable {
+    let player: OMMpvPlayerController
+
+    func makeUIView(context: Context) -> PlaybackVideoHostView {
+        let view = PlaybackVideoHostView()
+        view.player = player
+        player.attachVideoView(toHost: view)
+        DispatchQueue.main.async {
+            player.startIfNeeded()
+        }
+        return view
+    }
+
+    func updateUIView(_ view: PlaybackVideoHostView, context: Context) {
+        view.player = player
+        if player.videoView.superview !== view {
+            player.attachVideoView(toHost: view)
+        }
+        player.startIfNeeded()
+    }
+
+    static func dismantleUIView(_ view: PlaybackVideoHostView, coordinator: ()) {
+        view.player?.detachVideoView(fromHost: view)
+        view.player = nil
+    }
+}
+#endif
+
+/// AVPlayer playback: builds without libmpv, and sources mpv couldn't draw.
+struct AVPlaybackView: View {
     let player: AVPlayer
 
     var body: some View {
@@ -60,4 +107,8 @@ struct NativePlayerView: View {
             .background(.black)
     }
 }
+
+#if !OMNIA_MPV
+typealias NativePlayerView = AVPlaybackView
+#endif
 #endif

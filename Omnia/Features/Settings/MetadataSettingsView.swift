@@ -468,6 +468,7 @@ struct MetadataProviderDetailView: View {
         case "anilist": .anilist
         case "tmdb": .tmdb
         case "tvdb": .tvdb
+        case "fanart": .fanart
         default: nil
         }
     }
@@ -682,6 +683,9 @@ struct MetadataProviderDetailView: View {
                     let provider: MetadataProviderIdentifier = credential == .tmdb ? .tmdb : .tvdb
                     try await OnDeviceMetadataService.shared.verify(provider)
                     connectionStatus = "\(credential.providerName) is connected."
+                case .fanart:
+                    try await PortraitArtworkResolver.shared.verifyFanartKey()
+                    connectionStatus = "fanart.tv is connected."
                 }
             } catch {
                 connectionStatus = "The provider could not verify this credential."

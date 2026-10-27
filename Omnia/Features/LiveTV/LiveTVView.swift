@@ -389,34 +389,58 @@ private struct LastWatchedChannelCard: View {
     let play: () -> Void
 
     var body: some View {
-        HStack(spacing: 18) {
-            LiveTVChannelLogo(channel: channel, side: 84)
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Last Watched Channel")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                Text(channel.name)
-                    .font(.title2.weight(.semibold))
-                    .lineLimit(1)
-                LiveTVNowNext(programs: programs)
+        // One row where it fits; on an iPhone, Continue gets its own row
+        // instead of wrapping letter by letter.
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 18) {
+                LiveTVChannelLogo(channel: channel, side: 84)
+                details
+                Spacer(minLength: 12)
+                continueButton(fullWidth: false)
             }
-            Spacer(minLength: 12)
-            Button(action: play) {
-                if isStarting {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Label("Continue", systemImage: "play.fill")
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 14) {
+                    LiveTVChannelLogo(channel: channel, side: 64)
+                    details
+                    Spacer(minLength: 0)
                 }
+                continueButton(fullWidth: true)
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
         }
         .padding(18)
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .fill(Color.accentColor.opacity(0.12))
         )
+    }
+
+    private var details: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Last Watched Channel")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+            Text(channel.name)
+                .font(.title2.weight(.semibold))
+                .lineLimit(2)
+            LiveTVNowNext(programs: programs)
+        }
+    }
+
+    private func continueButton(fullWidth: Bool) -> some View {
+        Button(action: play) {
+            Group {
+                if isStarting {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Label("Continue", systemImage: "play.fill")
+                        .fixedSize()
+                }
+            }
+            .frame(maxWidth: fullWidth ? .infinity : nil)
+        }
+        .buttonStyle(.borderedProminent)
+        .controlSize(.large)
     }
 }
 

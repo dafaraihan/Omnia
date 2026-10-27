@@ -13,7 +13,7 @@ struct PlaybackResolverSettingsView: View {
     var body: some View {
         OmniaSettingsForm {
             Section {
-                LabeledContent("Resolver", value: "On this Mac")
+                LabeledContent("Resolver", value: "On this \(OmniaDevice.name)")
                 LabeledContent(
                     "Peer access",
                     value: localSettings.preferences.hasCurrentConsent ? "Allowed" : "Consent required"
@@ -26,7 +26,7 @@ struct PlaybackResolverSettingsView: View {
                 } else {
                     Button("Allow Local Peer Playback") {
                         localSettings.acceptConsent()
-                        statusMessage = "Local peer playback was enabled on this Mac."
+                        statusMessage = "Local peer playback was enabled on this \(OmniaDevice.name)."
                     }
                 }
             } header: {
@@ -73,7 +73,7 @@ struct PlaybackResolverSettingsView: View {
                 } header: {
                     Text("Legacy Remote Resolver")
                 } footer: {
-                    Text("Remote resolving is no longer used. This only deletes the old token from this Mac’s Keychain.")
+                    Text("Remote resolving is no longer used. This only deletes the old token from this \(OmniaDevice.name)’s Keychain.")
                 }
             }
 

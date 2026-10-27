@@ -98,7 +98,7 @@ struct AuthPanel: View {
                 HStack {
                     Spacer()
                     Button("Forgot password?") { switchMode(.forgotPassword) }
-                        .buttonStyle(.link)
+                        .omniaLinkButtonStyle()
                         .font(.callout)
                 }
             }
@@ -197,10 +197,10 @@ struct AuthPanel: View {
             }
             if let skipTitle, let onSkip {
                 Button(skipTitle, action: onSkip)
-                    .buttonStyle(.link)
+                    .omniaLinkButtonStyle()
                     .font(.callout)
                     .padding(.top, 4)
-                Text("Your profiles and library stay on this Mac. You can sign in later in Settings.")
+                Text("Your profiles and library stay on this \(OmniaDevice.name). You can sign in later in Settings.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -253,7 +253,7 @@ struct AuthPanel: View {
                     account.cancelCode()
                 }
             }
-            .buttonStyle(.link)
+            .omniaLinkButtonStyle()
             .font(.callout)
             Text("The email also has a button that signs you in, if that's easier.")
                 .font(.caption)
@@ -349,7 +349,7 @@ struct AuthPanel: View {
     private func linkRow(_ prompt: String, action title: String, action: @escaping () -> Void) -> some View {
         HStack(spacing: 4) {
             Text(prompt).foregroundStyle(.secondary)
-            Button(title, action: action).buttonStyle(.link)
+            Button(title, action: action).omniaLinkButtonStyle()
         }
         .font(.callout)
     }

@@ -14,3 +14,11 @@ OMNIA_MDBLIST_CLIENT_ID =
 OMNIA_ANILIST_CLIENT_ID =
 
 #include? "Secrets.xcconfig"
+
+// libmpv plays video on the Mac. iPhone and iPad builds use it once
+// Scripts/build-playback-dependencies.sh has built it for iOS
+// (OMNIA_NATIVE_PLATFORM=ios), which writes Config/NativePlayback.xcconfig;
+// without that file they play with AVPlayer.
+SWIFT_ACTIVE_COMPILATION_CONDITIONS[sdk=macosx*] = $(inherited) OMNIA_MPV
+
+#include? "NativePlayback.xcconfig"

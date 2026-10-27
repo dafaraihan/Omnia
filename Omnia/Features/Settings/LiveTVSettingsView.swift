@@ -96,6 +96,10 @@ struct LiveTVSettingsView: View {
                         .disabled(playlistAddress.trimmingCharacters(in: .whitespaces).isEmpty)
                     Button("Add Local M3U", systemImage: "doc.badge.plus") { importsFile = true }
                 }
+                #if os(iOS)
+                // In an iOS Form a tap on the row fires every button in it.
+                .buttonStyle(.borderless)
+                #endif
             } header: {
                 Text("Playlists")
             } footer: {

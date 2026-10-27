@@ -11,6 +11,15 @@ manifest="$1"
 output_directory="$2"
 build_mode="${OMNIA_NATIVE_BUILD_MODE:-build}"
 
+native_platform="${OMNIA_NATIVE_PLATFORM:-macos}"
+case "$native_platform" in
+    macos|ios) ;;
+    *)
+        echo "error: OMNIA_NATIVE_PLATFORM must be macos or ios" >&2
+        exit 64
+        ;;
+esac
+
 case "$build_mode" in
     build|fetch-only|plan-only) ;;
     *)
@@ -659,6 +668,15 @@ copy_license() {
     }
     cp "$source" "$output_directory/Licenses/$component.txt"
 }
+
+# iPhone and iPad: static libraries packaged as MPV.xcframework
+# (Scripts/build-playback-ios.sh).
+if [[ "$native_platform" == "ios" ]]; then
+    # shellcheck source=build-playback-ios.sh
+    source "$script_directory/build-playback-ios.sh"
+    build_ios_playback
+    exit 0
+fi
 
 vendor_libplacebo_build_inputs
 apply_source_patches

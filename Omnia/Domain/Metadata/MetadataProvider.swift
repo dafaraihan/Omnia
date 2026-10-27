@@ -20,6 +20,7 @@ struct MetadataProvider: Identifiable, Hashable, Sendable {
         .init(id: "tmdb", name: "TMDB", summary: "Titles, people, artwork, and discovery.", credentialStrategy: .userManaged),
         .init(id: "tvdb", name: "TVDB", summary: "Series, seasons, episode ordering, and artwork.", credentialStrategy: .userManaged),
         .init(id: "mdblist", name: "MDBList", summary: "Ratings aggregation and curated lists.", credentialStrategy: .userManaged),
-        .init(id: "anilist", name: "AniList", summary: "Anime metadata and lists.", credentialStrategy: .userManaged)
+        .init(id: "anilist", name: "AniList", summary: "Anime metadata and lists.", credentialStrategy: .userManaged),
+        .init(id: "fanart", name: "fanart.tv", summary: "Textless posters for the iPhone's portrait hero.", credentialStrategy: .userManaged)
     ]
 }
