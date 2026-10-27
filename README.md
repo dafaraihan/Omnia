@@ -11,7 +11,7 @@ Built with SwiftUI and libmpv for macOS, with iPhone and iPad builds from the sa
 ![Built with SwiftUI](https://img.shields.io/badge/built%20with-SwiftUI-orange)
 [![Latest release](https://img.shields.io/github/v/release/Laviora/Omnia)](https://github.com/Laviora/Omnia/releases/latest)
 
-### [⬇&nbsp;&nbsp;Download Omnia for macOS (.dmg)](https://github.com/Laviora/Omnia/releases/download/v0.2.0/Omnia-0.2.0.dmg)
+### [⬇&nbsp;&nbsp;Download Omnia for macOS (.dmg)](https://github.com/Laviora/Omnia/releases/download/v0.3.0/Omnia-0.3.0.dmg)
 
 Apple silicon · macOS 26 or later · [All releases](https://github.com/Laviora/Omnia/releases)
 
@@ -64,7 +64,7 @@ Screenshots are not included yet. Omnia only shows what your own add-ons provide
 
 ## Install
 
-1. [Download Omnia-0.2.0.dmg](https://github.com/Laviora/Omnia/releases/download/v0.2.0/Omnia-0.2.0.dmg), or pick a version from [Releases](https://github.com/Laviora/Omnia/releases).
+1. [Download Omnia-0.3.0.dmg](https://github.com/Laviora/Omnia/releases/download/v0.3.0/Omnia-0.3.0.dmg), or pick a version from [Releases](https://github.com/Laviora/Omnia/releases).
 2. Open the `.dmg` and drag **Omnia** into **Applications**.
 3. Open Omnia from Applications.
 
