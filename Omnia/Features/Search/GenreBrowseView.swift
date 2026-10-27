@@ -266,6 +266,9 @@ nonisolated struct GenreBrowseSource: Identifiable, Sendable {
                 ))
             }
         }
+        if topic == .anime {
+            sources += xperienceAnimeSources(store: store, listed: Set(sources.map(\.id)))
+        }
         switch topic {
         case .genre(let genre):
             let metadataGenres: [(MediaType, MediaItem.Kind, [MetadataGenre])] = [
@@ -295,6 +298,52 @@ nonisolated struct GenreBrowseSource: Identifiable, Sendable {
                     subtitle: "Omnia Metadata",
                     kind: .series,
                     origin: .anime(category)
+                ))
+            }
+        }
+        return sources
+    }
+
+    /// Xperience's anime catalogs. Its manifest lists only the catalogs
+    /// picked in its web configuration, and none of those is anime unless
+    /// chosen there, yet Xperience answers these for every configuration
+    /// (as Home collections already rely on), with its posters.
+    static let xperienceAnimeCatalogs: [(type: String, id: String, name: String)] = [
+        ("series", "anime_trending_series", "Trending Anime"),
+        ("movie", "anime_trending_movies", "Trending Anime Movies"),
+        ("series", "anime_airing_series", "Airing Anime"),
+        ("series", "anime_latest_series", "Latest Anime"),
+        ("movie", "anime_latest_movies", "Latest Anime Movies"),
+        ("series", "anime_toprated_series", "Top Rated Anime"),
+        ("movie", "anime_toprated_movies", "Top Rated Anime Movies"),
+        ("series", "anime_best_series", "Best Anime"),
+        ("movie", "anime_best_movies", "Best Anime Movies"),
+        ("series", "anime_upcoming_series", "Upcoming Anime"),
+        ("movie", "anime_upcoming_movies", "Upcoming Anime Movies")
+    ]
+
+    @MainActor
+    private static func xperienceAnimeSources(store: OmniaStore, listed: Set<String>) -> [GenreBrowseSource] {
+        var sources: [GenreBrowseSource] = []
+        for addon in store.installedAddons
+        where addon.isEnabled && addon.manifest.id.hasPrefix("app.xperience.") && addon.manifest.supportsCatalogs {
+            for entry in xperienceAnimeCatalogs {
+                // A catalog the configuration already lists was added above.
+                guard !addon.manifest.catalogs.contains(where: { $0.id == entry.id && $0.type == entry.type }) else { continue }
+                let catalog = AddonCatalog(
+                    type: entry.type,
+                    id: entry.id,
+                    name: entry.name,
+                    extra: [AddonCatalogExtra(name: "skip", isRequired: false, options: nil, optionsLimit: nil)]
+                )
+                let id = "addon:\(store.catalogID(for: addon, catalog: catalog))"
+                guard !listed.contains(id), store.isCatalogEnabled(for: addon, catalog: catalog) else { continue }
+                sources.append(GenreBrowseSource(
+                    id: id,
+                    title: entry.name,
+                    subtitle: addon.displayName,
+                    kind: entry.type == "movie" ? .movie : .series,
+                    origin: .addon(addon, catalog, genreOption: nil)
                 ))
             }
         }
