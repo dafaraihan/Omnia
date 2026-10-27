@@ -43,8 +43,11 @@ nonisolated enum TrackerAppCredentials {
     static func app(for kind: TrackerKind) -> TrackerCredentials? {
         switch kind {
         case .trakt:
-            guard let id = value("TraktClientID"), let secret = value("TraktClientSecret") else { return nil }
-            return TrackerCredentials(clientID: id, clientSecret: secret)
+            // Trakt's new apps get no secret: sign-in is PKCE or the device
+            // code, which need only the client ID. Older apps may still have
+            // one; it's sent only when set.
+            guard let id = value("TraktClientID") else { return nil }
+            return TrackerCredentials(clientID: id, clientSecret: value("TraktClientSecret"))
         case .simkl:
             return value("SimklClientID").map { TrackerCredentials(clientID: $0) }
         case .mdblist:
@@ -56,8 +59,9 @@ nonisolated enum TrackerAppCredentials {
         }
     }
 
-    /// The redirect URI Omnia's Trakt app was created with, which Trakt asks
-    /// for again when refreshing a token.
+    /// The redirect URI Omnia's Trakt app was created with, which Trakt
+    /// requires (exactly) when refreshing a token. The device code sign-in
+    /// never opens it.
     static var traktRedirectURI: String {
         value("TraktRedirectURI") ?? "urn:ietf:wg:oauth:2.0:oob"
     }
@@ -123,24 +127,6 @@ nonisolated enum TrackerClient {
             // Connected with a key or in the browser; see `validateAPIKey`
             // and `anilistAuthorizationURL`.
             throw TrackerClientError.invalidResponse
-        case .mdblist:
-            let (data, _) = try await send(
-                mdblistForm("oauth/device-authorization/", ["client_id": clientID, "scope": "write"]),
-                accepting: [200]
-            )
-            let response = try decode(MDBListDeviceResponse.self, from: data)
-            guard let userCode = response.user_code, !userCode.isEmpty,
-                  let deviceCode = response.device_code, !deviceCode.isEmpty,
-                  let url = (response.verification_uri_complete ?? response.verification_uri).flatMap(URL.init(string:)),
-                  url.scheme == "https", url.host == "mdblist.com"
-            else { throw TrackerClientError.invalidResponse }
-            return TrackerDeviceCode(
-                userCode: userCode,
-                verificationURL: url,
-                pollingCode: deviceCode,
-                interval: TimeInterval(min(max(response.interval ?? 5, 5), 60)),
-                expiresAt: .now.addingTimeInterval(TimeInterval(response.expires_in ?? 600))
-            )
         case .trakt:
             let (data, _) = try await send(
                 traktRequest("oauth/device/code", clientID: clientID, body: ["client_id": clientID]),
@@ -155,16 +141,16 @@ nonisolated enum TrackerClient {
                 interval: TimeInterval(max(response.interval, 5)),
                 expiresAt: .now.addingTimeInterval(TimeInterval(response.expires_in))
             )
+        case .mdblist:
+            return try await deviceAuthorization(
+                oauthForm(mdblistBase, "oauth/device-authorization/", ["client_id": clientID, "scope": "write"]),
+                host: "mdblist.com"
+            )
         case .simkl:
-            let (data, _) = try await send(simklRequest("oauth/pin", clientID: clientID, method: "GET"), accepting: [200])
-            let response = try decode(SimklPinResponse.self, from: data)
-            guard !response.user_code.isEmpty else { throw TrackerClientError.invalidResponse }
-            return TrackerDeviceCode(
-                userCode: response.user_code,
-                verificationURL: URL(string: response.verification_url ?? "") ?? URL(string: "https://simkl.com/pin")!,
-                pollingCode: response.user_code,
-                interval: TimeInterval(max(response.interval ?? 5, 5)),
-                expiresAt: .now.addingTimeInterval(TimeInterval(response.expires_in ?? 900))
+            // Simkl AUTH V2's device flow, which every app type may use.
+            return try await deviceAuthorization(
+                oauthForm(simklBase, "oauth2/device", ["client_id": clientID, "scope": "media:read media:write"]),
+                host: "simkl.com"
             )
         }
     }
@@ -173,11 +159,9 @@ nonisolated enum TrackerClient {
         do {
             switch kind {
             case .trakt:
-                let request = traktRequest("oauth/device/token", clientID: app.clientID, body: [
-                    "code": code.pollingCode,
-                    "client_id": app.clientID,
-                    "client_secret": app.clientSecret ?? ""
-                ])
+                var body: [String: Any] = ["code": code.pollingCode, "client_id": app.clientID]
+                if let secret = app.clientSecret, !secret.isEmpty { body["client_secret"] = secret }
+                let request = traktRequest("oauth/device/token", clientID: app.clientID, body: body)
                 let (data, status) = try await send(request, accepting: [200, 400, 404, 409, 410, 418, 429])
                 switch status {
                 case 200:
@@ -189,35 +173,18 @@ nonisolated enum TrackerClient {
                 default: return .failed("Trakt didn't accept the code. Try again.")
                 }
             case .simkl:
-                let (data, _) = try await send(
-                    simklRequest("oauth/pin/\(code.pollingCode)", clientID: app.clientID, method: "GET"),
-                    accepting: [200]
-                )
-                let response = try decode(SimklPinPollResponse.self, from: data)
-                guard response.result?.uppercased() == "OK", let token = response.access_token, !token.isEmpty else {
-                    return .pending
-                }
-                var connected = app
-                connected.accessToken = token
-                return .connected(connected)
+                return try await pollDeviceToken(oauthForm(simklBase, "oauth2/token", [
+                    "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+                    "device_code": code.pollingCode,
+                    "client_id": app.clientID
+                ]), app: app, title: kind.title)
             case .mdblist:
-                let request = mdblistForm("oauth/token/", [
+                return try await pollDeviceToken(oauthForm(mdblistBase, "oauth/token/", [
                     "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
                     "device_code": code.pollingCode,
                     "client_id": app.clientID,
                     "scope": "write"
-                ])
-                let (data, status) = try await send(request, accepting: [200, 400, 401, 403, 429])
-                if status == 200 {
-                    return .connected(app.with(try decode(OAuthTokenResponse.self, from: data)))
-                }
-                switch (try? decode(OAuthErrorResponse.self, from: data))?.error {
-                case "authorization_pending": return .pending
-                case "slow_down": return .slowDown
-                case "access_denied": return .failed("You declined the request on MDBList.")
-                case "expired_token": return .failed("The code expired. Try again.")
-                default: return status == 429 ? .slowDown : .failed("MDBList didn't accept the code. Try again.")
-                }
+                ]), app: app, title: kind.title)
             case .pmdb, .anilist:
                 return .failed("\(kind.title) connects with a key or in the browser.")
             }
@@ -239,24 +206,27 @@ nonisolated enum TrackerClient {
         }
     }
 
-    /// Trakt and MDBList tokens expire and are refreshed shortly before;
-    /// Simkl's, PublicMetaDB's and AniList's (a year) are used as they are.
+    /// Trakt, Simkl (AUTH V2) and MDBList tokens expire and are refreshed
+    /// shortly before; PublicMetaDB's keys and AniList's (a year) tokens, and
+    /// Simkl's older V1 tokens, are used as they are.
     static func refreshIfNeeded(_ kind: TrackerKind, _ credentials: TrackerCredentials) async throws -> TrackerCredentials {
-        guard kind == .trakt || kind == .mdblist, let expiresAt = credentials.expiresAt,
-              expiresAt.timeIntervalSinceNow < (kind == .trakt ? 3_600 : 120),
+        // Trakt's tokens last 7 days and each refresh token works once.
+        guard [.trakt, .simkl, .mdblist].contains(kind), let expiresAt = credentials.expiresAt,
+              expiresAt.timeIntervalSinceNow < (kind == .mdblist ? 120 : 86_400),
               let refreshToken = credentials.refreshToken
         else { return credentials }
         let request: URLRequest
         if kind == .trakt {
-            request = traktRequest("oauth/token", clientID: credentials.clientID, body: [
+            var body: [String: Any] = [
                 "refresh_token": refreshToken,
                 "client_id": credentials.clientID,
-                "client_secret": credentials.clientSecret ?? "",
                 "redirect_uri": TrackerAppCredentials.traktRedirectURI,
                 "grant_type": "refresh_token"
-            ])
+            ]
+            if let secret = credentials.clientSecret, !secret.isEmpty { body["client_secret"] = secret }
+            request = traktRequest("oauth/token", clientID: credentials.clientID, body: body)
         } else {
-            request = mdblistForm("oauth/token/", [
+            request = oauthForm(kind == .simkl ? simklBase : mdblistBase, kind == .simkl ? "oauth2/token" : "oauth/token/", [
                 "grant_type": "refresh_token",
                 "refresh_token": refreshToken,
                 "client_id": credentials.clientID
@@ -474,9 +444,44 @@ nonisolated enum TrackerClient {
         }
     }
 
-    /// An MDBList OAuth form request.
-    private static func mdblistForm(_ path: String, _ fields: [String: String]) -> URLRequest {
-        var request = URLRequest(url: mdblistBase.appending(path: path))
+    /// RFC 8628 device authorization (Simkl AUTH V2, MDBList): the code to
+    /// show, and the page it's entered on, which must be the tracker's own.
+    private static func deviceAuthorization(_ request: URLRequest, host: String) async throws -> TrackerDeviceCode {
+        let (data, _) = try await send(request, accepting: [200])
+        let response = try decode(DeviceAuthorizationResponse.self, from: data)
+        guard let userCode = response.user_code, !userCode.isEmpty,
+              let deviceCode = response.device_code, !deviceCode.isEmpty,
+              let url = (response.verification_uri_complete ?? response.verification_uri).flatMap(URL.init(string:)),
+              url.scheme == "https", url.host == host
+        else { throw TrackerClientError.invalidResponse }
+        return TrackerDeviceCode(
+            userCode: userCode,
+            verificationURL: url,
+            pollingCode: deviceCode,
+            interval: TimeInterval(min(max(response.interval ?? 5, 5), 60)),
+            expiresAt: .now.addingTimeInterval(TimeInterval(min(response.expires_in ?? 600, 1_800)))
+        )
+    }
+
+    /// One RFC 8628 token poll.
+    private static func pollDeviceToken(_ request: URLRequest, app: TrackerCredentials, title: String) async throws -> TrackerPollResult {
+        let (data, status) = try await send(request, accepting: [200, 400, 401, 403, 429])
+        if status == 200 {
+            return .connected(app.with(try decode(OAuthTokenResponse.self, from: data)))
+        }
+        switch (try? decode(OAuthErrorResponse.self, from: data))?.error {
+        case "authorization_pending": return .pending
+        case "slow_down": return .slowDown
+        case "access_denied": return .failed("You declined the request on \(title).")
+        case "expired_token": return .failed("The code expired. Try again.")
+        case "invalid_client": return .failed("\(title) didn't recognise Omnia's app. Check its client ID.")
+        default: return status == 429 ? .slowDown : .failed("\(title) didn't accept the code. Try again.")
+        }
+    }
+
+    /// An OAuth form request.
+    private static func oauthForm(_ base: URL, _ path: String, _ fields: [String: String]) -> URLRequest {
+        var request = URLRequest(url: base.appending(path: path))
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -601,14 +606,7 @@ private nonisolated struct OAuthTokenResponse: Decodable {
     let created_at: Int?
 }
 
-private nonisolated struct SimklPinResponse: Decodable {
-    let user_code: String
-    let verification_url: String?
-    let expires_in: Int?
-    let interval: Int?
-}
-
-private nonisolated struct MDBListDeviceResponse: Decodable {
+private nonisolated struct DeviceAuthorizationResponse: Decodable {
     let device_code: String?
     let user_code: String?
     let verification_uri: String?
@@ -668,11 +666,6 @@ private nonisolated struct AniListSaved: Decodable {
 
 private nonisolated struct PMDBResumeSaveResponse: Decodable {
     let action: String?
-}
-
-private nonisolated struct SimklPinPollResponse: Decodable {
-    let result: String?
-    let access_token: String?
 }
 
 private extension TrackerCredentials {
