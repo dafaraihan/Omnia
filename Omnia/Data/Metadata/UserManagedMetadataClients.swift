@@ -3,6 +3,7 @@
 //  Omnia
 //
 
+import CryptoKit
 import Foundation
 import SwiftUI
 
@@ -68,10 +69,16 @@ final class MDBListMetadataClient: MDBListRatingServing {
             return nil
         }
 
-        let route = try lookupRoute(for: item)
-        return try await cache.value(for: route, bypassCache: bypassCache) { [self] in
+        let route = try Self.lookupRoute(for: item)
+        let credentialScope = SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
+        let response = try await cache.value(for: route, credentialScope: credentialScope, bypassCache: bypassCache) { [self] in
             try await fetchRatings(for: route, key: key)
         }
+        // A completed request may outlive the key that authorized it.
+        guard try credentialReader()?.trimmingCharacters(in: .whitespacesAndNewlines) == key else {
+            throw CancellationError()
+        }
+        return response
     }
 
     private func fetchRatings(
@@ -127,7 +134,7 @@ final class MDBListMetadataClient: MDBListRatingServing {
         _ = try await titleRatings(for: placeholder)
     }
 
-    private func lookupRoute(for item: MediaItem) throws -> MDBListLookupRoute {
+    static func lookupRoute(for item: MediaItem) throws -> MDBListLookupRoute {
         let mediaType: MDBListLookupRoute.MediaType = item.kind == .movie ? .movie : .show
         let candidates: [(MDBListLookupRoute.Provider, [String?])] = [
             (

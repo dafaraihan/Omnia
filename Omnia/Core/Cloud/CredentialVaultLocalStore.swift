@@ -62,6 +62,9 @@ final class CredentialVaultLocalStore {
             let value = try payload.map { try decoder.decode(String.self, from: $0) }
             if let value { guard !value.isEmpty, value.utf8.count <= 64 * 1_024 else { throw Failure.invalidEntry } }
             try Self.replaceCredential(value, account: account)
+            if id == "provider.mdblist" {
+                NotificationCenter.default.post(name: .providerCredentialDidChange, object: UserManagedProviderCredential.mdblist.rawValue)
+            }
             if id == "provider.plugin-tmdb" { PluginStore.vaultCredentialChanged() }
         } else if id.hasPrefix("pin."), let uuid = UUID(uuidString: String(id.dropFirst(4))) {
             let value = try payload.map { try decoder.decode(String.self, from: $0) }

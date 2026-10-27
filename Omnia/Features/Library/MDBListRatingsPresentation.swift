@@ -134,6 +134,11 @@ final class MDBListRatingsLoader {
     private let service: any MDBListRatingServing
     private var requestTask: Task<Void, Never>?
     private var requestToken = UUID()
+    private var titleID: String?
+
+    func state(forItemID id: String) -> MDBListRatingsLoadState {
+        titleID == id ? state : .loading
+    }
 
     init(service: any MDBListRatingServing) {
         self.service = service
@@ -166,6 +171,12 @@ final class MDBListRatingsLoader {
         )
     }
 
+    func reset() {
+        cancel()
+        titleID = nil
+        state = .idle
+    }
+
     func cancel() {
         requestToken = UUID()
         requestTask?.cancel()
@@ -183,7 +194,13 @@ final class MDBListRatingsLoader {
         requestTask?.cancel()
         let token = UUID()
         requestToken = token
-        state = .loading
+        // Identifier enrichment can change the route without changing the title.
+        // Retain useful same-title ratings while its new route is requested.
+        let keepsRatings: Bool
+        if titleID == item.id, case .loaded = state { keepsRatings = true }
+        else { keepsRatings = false }
+        titleID = item.id
+        if !keepsRatings { state = .loading }
 
         let task = Task { [weak self, service] in
             do {
@@ -193,6 +210,7 @@ final class MDBListRatingsLoader {
                 )
                 guard let self, self.requestToken == token else { return }
                 guard let response else {
+                    if keepsRatings { return }
                     self.state = .empty
                     return
                 }
@@ -203,13 +221,16 @@ final class MDBListRatingsLoader {
                     preferences: preferences
                 ))
             } catch is CancellationError {
-                // A navigation change or newer title owns the visible state.
+                // Explicit cancel/new requests change the token. A cancellation
+                // still owned here (for example key revocation) must settle loading.
+                guard let self, self.requestToken == token else { return }
+                self.state = .empty
             } catch let error as MDBListMetadataError {
                 guard let self, self.requestToken == token else { return }
-                self.apply(error)
+                if !keepsRatings { self.apply(error) }
             } catch {
                 guard let self, self.requestToken == token else { return }
-                self.state = .failed(.temporarilyUnavailable, recovery: .retry)
+                if !keepsRatings { self.state = .failed(.temporarilyUnavailable, recovery: .retry) }
             }
         }
         requestTask = task

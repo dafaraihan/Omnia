@@ -49,6 +49,10 @@ enum UserManagedProviderCredential: String, CaseIterable, Identifiable, Sendable
     }
 }
 
+extension Notification.Name {
+    static let providerCredentialDidChange = Notification.Name("omnia.provider-credential-did-change")
+}
+
 enum ProviderCredentialStore {
     static func value(for credential: UserManagedProviderCredential) throws -> String? {
         try KeychainStore.value(account: credential.keychainAccount)
@@ -57,11 +61,13 @@ enum ProviderCredentialStore {
     static func save(_ value: String, for credential: UserManagedProviderCredential) throws {
         try KeychainStore.save(value, account: credential.keychainAccount)
         NotificationCenter.default.post(name: .credentialVaultDidChange, object: nil)
+        NotificationCenter.default.post(name: .providerCredentialDidChange, object: credential.rawValue)
     }
 
     static func delete(_ credential: UserManagedProviderCredential) throws {
         try KeychainStore.delete(account: credential.keychainAccount)
         NotificationCenter.default.post(name: .credentialVaultDidChange, object: nil)
+        NotificationCenter.default.post(name: .providerCredentialDidChange, object: credential.rawValue)
     }
 
     static func isConfigured(_ credential: UserManagedProviderCredential) -> Bool {
