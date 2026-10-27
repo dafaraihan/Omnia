@@ -32,6 +32,7 @@ final class TrackerAccountStore {
     @ObservationIgnored private var connectTasks: [TrackerKind: Task<Void, Never>] = [:]
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private var scrobbleState: (key: String, action: TrackerScrobbleAction)?
+    @ObservationIgnored private var lastUsernameRefresh = Date.distantPast
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -207,7 +208,17 @@ final class TrackerAccountStore {
         return refreshed
     }
 
-    /// Looks up the account's name for "Connected as".
+    /// At launch and when Omnia comes back to the front: every connected
+    /// account's name, at most every ten minutes, silently.
+    func refreshUsernamesIfStale() {
+        guard Date.now.timeIntervalSince(lastUsernameRefresh) > 600 else { return }
+        lastUsernameRefresh = .now
+        for kind in TrackerKind.allCases where isConnected(kind) { refreshUsername(kind) }
+    }
+
+    /// Looks up the account's name for "Connected as". Asked again whenever
+    /// Tracking opens, on Sync Now and at launch, so a name changed on the
+    /// tracker shows here too (Trakt may serve the old one for a short while).
     func refreshUsername(_ kind: TrackerKind) {
         guard let current = credentials[kind], current.isConnected else { return }
         Task { [weak self] in
@@ -215,6 +226,7 @@ final class TrackerAccountStore {
             guard let name = await TrackerClient.username(kind, credentials: refreshed), let self,
                   self.credentials[kind]?.accessToken == current.accessToken
             else { return }
+            guard name != refreshed.username || refreshed != current else { return }
             var updated = refreshed
             updated.username = name
             self.persist(updated, for: kind)

@@ -75,6 +75,11 @@ struct TrackingSettingsView: View {
             }
         }
         .omniaNavigationTitle("Tracking")
+        .task {
+            for kind in TrackerKind.allCases where TrackerAccountStore.shared.isConnected(kind) {
+                TrackerAccountStore.shared.refreshUsername(kind)
+            }
+        }
     }
 
     private func options(
@@ -162,6 +167,7 @@ private struct TrackerAccountCard: View {
         HStack(spacing: 10) {
             Button {
                 library.sync(kind, addons: store.installedAddons)
+                trackers.refreshUsername(kind)
             } label: {
                 Label(library.state(kind) == .syncing ? "Syncing…" : "Sync Now", systemImage: "arrow.triangle.2.circlepath")
             }

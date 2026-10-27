@@ -179,6 +179,7 @@ struct OmniaApp: App {
                 await profileData.activate()
                 await account.restoreSession()
                 isPrepared = true
+                TrackerAccountStore.shared.refreshUsernamesIfStale()
                 metadata.configure(metadataRouting: store.metadataRouting)
                 await metadata.loadDefaultCatalogs()
             }
@@ -208,6 +209,7 @@ struct OmniaApp: App {
             }
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .active, isPrepared else { return }
+                TrackerAccountStore.shared.refreshUsernamesIfStale()
                 Task { await credentialVault.sync() }
             }
             .onReceive(NotificationCenter.default.publisher(for: .credentialVaultDidChange)) { _ in
