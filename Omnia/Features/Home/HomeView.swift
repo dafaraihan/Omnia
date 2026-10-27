@@ -18,6 +18,10 @@ struct HomeView: View {
     @Environment(\.isActiveDestination) private var isActiveDestination
     @Environment(\.isOnboardingPreview) private var isOnboardingPreview
     @Environment(\.displayPreferences) private var display
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+    #endif
     @State private var resolvedFeatured: MediaItem?
     @State private var resolvedHeroSource = ""
     @State private var upcomingResult: UpcomingResult?
@@ -578,12 +582,17 @@ struct HomeView: View {
                 LinearGradient(colors: featured.artworkColors, startPoint: .topLeading, endPoint: .bottomTrailing)
             }
 
-            HeroArtworkCanvas(
-                item: featured,
-                source: .home,
-                artworkAlignment: .topTrailing,
-                drawsArtworkLocally: isCardHero
-            )
+            Group {
+                #if os(iOS)
+                if isPortraitPhone {
+                    PortraitHeroArtwork(item: featured)
+                } else {
+                    landscapeHeroArtwork(featured)
+                }
+                #else
+                landscapeHeroArtwork(featured)
+                #endif
+            }
                 .id(featured.id)
                 .transition(.opacity)
 
@@ -994,6 +1003,23 @@ struct HomeView: View {
     private var usesDynamicBackground: Bool {
         homeLayout.preferences.dynamicBackground
     }
+
+    private func landscapeHeroArtwork(_ featured: MediaItem) -> some View {
+        HeroArtworkCanvas(
+            item: featured,
+            source: .home,
+            artworkAlignment: .topTrailing,
+            drawsArtworkLocally: isCardHero
+        )
+    }
+
+    #if os(iOS)
+    /// An iPhone held upright: a backdrop would be cropped to a sliver, so
+    /// the hero draws portrait art.
+    private var isPortraitPhone: Bool {
+        horizontalSizeClass == .compact && verticalSizeClass == .regular
+    }
+    #endif
 
     /// Settings › Layout › Home Layout › Hero Style.
     private var isCardHero: Bool {
