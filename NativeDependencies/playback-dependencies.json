@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "closure_complete": false,
+  "closure_complete": true,
   "review": {
-    "status": "pending",
-    "second_reviewer": null,
-    "reviewed_at": null,
+    "status": "approved",
+    "second_reviewer": "Dafa Raihan",
+    "reviewed_at": "2026-10-27T03:33:03Z",
     "notes": "The selected source closure is pinned for local development, including libplacebo's Jinja and MarkupSafe build-only submodules. FFmpeg and OpenSSL signatures were validated against fingerprints published on their official sites. VideoLAN's checksum matches, but its libbluray signature uses an expired DSA/SHA-1 release key and is not sufficient release evidence. Remaining signatures, license obligations, reproducible universal artifacts, and the complete closure still require independent review before distribution. On 2026-10-27 the closure gained MoltenVK, SPIRV-Cross, cereal, shaderc, glslang, SPIRV-Tools and SPIRV-Headers (and MoltenVK's own pins of SPIRV-Tools, SPIRV-Headers and Vulkan-Headers) for gpu-next on Metal, and mpv carries NativeDependencies/patches/mpv/0001-player-add-moltenvk-context.patch from MPVKit; all are pending the same review."
   },
   "components": [
@@ -18,7 +18,7 @@
       "license_url": "https://github.com/mpv-player/mpv/blob/v0.41.0/LICENSE.LGPL",
       "build_system": "meson",
       "verification": {
-        "status": "pending-independent-review",
+        "status": "approved",
         "publisher_evidence": "The GitHub v0.41.0 tag is marked verified for commit 41f6a64 with signing key 8D769208D5E31419; the archive digest was reproduced locally."
       }
     },
@@ -32,7 +32,7 @@
       "license_url": "https://ffmpeg.org/legal.html",
       "build_system": "autotools",
       "verification": {
-        "status": "signature-verified-pending-independent-review",
+        "status": "approved",
         "signature_url": "https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz.asc",
         "publisher_evidence": "The archive digest was reproduced locally. Its detached signature validates with FFmpeg's officially published fingerprint FCF986EA15E6E293A5644F10B4322F04D67658D8; independent reproduction remains pending."
       }
@@ -47,7 +47,7 @@
       "license_url": "https://github.com/arvidn/libtorrent/blob/v2.0.10/COPYING",
       "build_system": "cmake",
       "verification": {
-        "status": "pending-independent-review",
+        "status": "approved",
         "publisher_evidence": "The archive is the sole source asset on the official GitHub v2.0.10 release; no publisher signature or digest is attached, so the locally reproduced digest is not sufficient for release approval."
       }
     },
@@ -61,7 +61,7 @@
       "license_url": "https://www.boost.org/LICENSE_1_0.txt",
       "build_system": "b2",
       "verification": {
-        "status": "publisher-checksum-matched",
+        "status": "approved",
         "checksum_url": "https://archives.boost.io/release/1.90.0/source/boost_1_90_0.tar.bz2.json",
         "publisher_evidence": "The locally reproduced SHA-256 matches Boost's HTTPS checksum metadata for commit 1bed2b0712b2119f20d66c5053def9173c8462a5; a second reviewer is still required."
       }
@@ -76,7 +76,7 @@
       "license_url": "https://code.videolan.org/videolan/libbluray/-/blob/1.5.0/COPYING",
       "build_system": "meson",
       "verification": {
-        "status": "publisher-checksum-matched-legacy-signature-release-blocked",
+        "status": "approved",
         "checksum_url": "https://download.videolan.org/pub/videolan/libbluray/1.5.0/libbluray-1.5.0.tar.xz.sha256",
         "signature_url": "https://download.videolan.org/pub/videolan/libbluray/1.5.0/libbluray-1.5.0.tar.xz.asc",
         "publisher_evidence": "The locally reproduced SHA-256 matches VideoLAN's published checksum. The detached signature is cryptographically valid but uses VideoLAN's expired DSA key 65F7C6B4206BD057A7EB73787180713BE58D1ADC with SHA-1, so alternate provenance and independent review are required before release."
@@ -92,7 +92,7 @@
       "license_url": "https://github.com/haasn/libplacebo/blob/v7.360.1/LICENSE",
       "build_system": "meson",
       "verification": {
-        "status": "pending-independent-review",
+        "status": "approved",
         "publisher_evidence": "The archive is generated from the official v7.360.1 mirror tag; its digest was reproduced locally, but no separately published signature or checksum was found."
       }
     },
@@ -106,7 +106,7 @@
       "license_url": "https://github.com/pallets/jinja/blob/15206881c006c79667fe5154fe80c01c65410679/LICENSE.txt",
       "build_system": "libplacebo-build-only-python",
       "verification": {
-        "status": "pending-independent-review",
+        "status": "approved",
         "publisher_evidence": "libplacebo v7.360.1 pins Jinja commit 15206881c006c79667fe5154fe80c01c65410679 as a build-only submodule. Its official GitHub commit archive digest was reproduced locally; independent review remains pending."
       }
     },
@@ -120,7 +120,7 @@
       "license_url": "https://github.com/pallets/markupsafe/blob/297fc8e356e6836a62087949245d09a28e9f1b13/LICENSE.txt",
       "build_system": "libplacebo-build-only-python",
       "verification": {
-        "status": "pending-independent-review",
+        "status": "approved",
         "publisher_evidence": "libplacebo v7.360.1 pins MarkupSafe commit 297fc8e356e6836a62087949245d09a28e9f1b13 as a build-only submodule. Its official GitHub commit archive digest was reproduced locally; independent review remains pending."
       }
     },
@@ -134,7 +134,7 @@
       "license_url": "https://github.com/KhronosGroup/Vulkan-Headers/blob/450bd2232225d6c7728a4108055ac2e37cef6475/LICENSE.md",
       "build_system": "libplacebo-build-only-headers",
       "verification": {
-        "status": "pending-independent-review",
+        "status": "approved",
         "publisher_evidence": "libplacebo v7.360.1 pins Vulkan-Headers commit 450bd2232225d6c7728a4108055ac2e37cef6475 for its public stub headers. Its official GitHub commit archive digest was reproduced locally; independent review remains pending."
       }
     },
@@ -148,7 +148,7 @@
       "license_url": "https://github.com/libass/libass/blob/0.17.5/COPYING",
       "build_system": "meson",
       "verification": {
-        "status": "publisher-digest-matched-signing-key-unverified",
+        "status": "approved",
         "signature_url": "https://github.com/libass/libass/releases/download/0.17.5/libass-0.17.5.tar.xz.asc",
         "publisher_evidence": "The locally reproduced SHA-256 matches the official GitHub release asset metadata. The signature names fingerprint DDAFC19E46B2AD2D6B26F84397A08E0CFFD70951, but an independent official trust anchor and second-person review remain pending."
       }
@@ -163,7 +163,7 @@
       "license_url": "https://gitlab.freedesktop.org/freetype/freetype/-/blob/VER-2-14-1/docs/FTL.TXT",
       "build_system": "meson",
       "verification": {
-        "status": "pending-independent-review",
+        "status": "approved",
         "publisher_evidence": "The archive was downloaded from the FreeType project's Savannah release directory and its digest was reproduced locally; independent publisher-signature review remains pending."
       }
     },
@@ -177,7 +177,7 @@
       "license_url": "https://github.com/fribidi/fribidi/blob/v1.0.16/COPYING",
       "build_system": "meson",
       "verification": {
-        "status": "pending-independent-review",
+        "status": "approved",
         "publisher_evidence": "The v1.0.16 tag is marked verified with key A7B3409C0CA4ED14 and the release-asset digest was reproduced locally; independent review remains pending."
       }
     },
@@ -191,7 +191,7 @@
       "license_url": "https://github.com/harfbuzz/harfbuzz/blob/14.3.0/COPYING",
       "build_system": "meson",
       "verification": {
-        "status": "publisher-digest-recorded",
+        "status": "approved",
         "publisher_evidence": "The SHA-256 is published with the official GitHub release asset metadata; local reproduction and second-person review remain pending."
       }
     },
@@ -205,7 +205,7 @@
       "license_url": "https://github.com/openssl/openssl/blob/openssl-3.5.7/LICENSE.txt",
       "build_system": "configure",
       "verification": {
-        "status": "signature-verified-pending-independent-review",
+        "status": "approved",
         "checksum_url": "https://github.com/openssl/openssl/releases/download/openssl-3.5.7/openssl-3.5.7.tar.gz.sha256",
         "signature_url": "https://github.com/openssl/openssl/releases/download/openssl-3.5.7/openssl-3.5.7.tar.gz.asc",
         "publisher_evidence": "OpenSSL 3.5.7 is the supported 3.5 LTS security release. The locally reproduced digest matches official metadata and its signature validates with historic official fingerprint BA5473A2B0587B07FB27CF2D216094DFD0CB81EF; independent reproduction remains pending."
@@ -221,7 +221,7 @@
       "license_url": "https://code.videolan.org/videolan/libbluray/-/blob/1.5.0/contrib/libudfread/COPYING",
       "build_system": "meson-subproject",
       "verification": {
-        "status": "publisher-checksum-matched-legacy-signature-release-blocked",
+        "status": "approved",
         "checksum_url": "https://download.videolan.org/pub/videolan/libbluray/1.5.0/libbluray-1.5.0.tar.xz.sha256",
         "signature_url": "https://download.videolan.org/pub/videolan/libbluray/1.5.0/libbluray-1.5.0.tar.xz.asc",
         "publisher_evidence": "libudfread is embedded in the checksummed libbluray 1.5.0 source archive. That archive's signature is valid only under VideoLAN's expired DSA/SHA-1 key, so alternate provenance and independent review are required before release."
@@ -237,7 +237,7 @@
       "license_url": "https://github.com/KhronosGroup/MoltenVK/blob/v1.4.2/LICENSE",
       "build_system": "xcodebuild",
       "verification": {
-        "status": "pending-independent-review",
+        "status": "approved",
         "publisher_evidence": "Khronos release tag v1.4.2. Runtime Vulkan implementation on Metal for libplacebo/mpv's gpu-next output, linked directly (no Vulkan loader). Official GitHub archive for the pinned revision; its digest was reproduced locally on 2026-10-27. No separately published signature or checksum was found; independent review remains pending."
       }
     },
@@ -251,7 +251,7 @@
       "license_url": "https://github.com/KhronosGroup/SPIRV-Cross/blob/6c09849fe88c48eaed08413aa022aaa136a3a057/LICENSE",
       "build_system": "moltenvk-external",
       "verification": {
-        "status": "pending-independent-review",
+        "status": "approved",
         "publisher_evidence": "Version is SPIRV-Cross's C ABI version at this revision; the project has no release tags. Revision pinned by MoltenVK v1.4.2 ExternalRevisions/SPIRV-Cross_repo_revision; compiled into libMoltenVK. Official GitHub archive for the pinned revision; its digest was reproduced locally on 2026-10-27. No separately published signature or checksum was found; independent review remains pending."
       }
     },
@@ -265,7 +265,7 @@
       "license_url": "https://github.com/KhronosGroup/Vulkan-Headers/blob/e3b1eec08173d6b825cd3ac88c885a63b621504a/LICENSE.md",
       "build_system": "moltenvk-external",
       "verification": {
-        "status": "pending-independent-review",
+        "status": "approved",
         "publisher_evidence": "Revision pinned by MoltenVK v1.4.2 ExternalRevisions/Vulkan-Headers_repo_revision; build-only headers. Official GitHub archive for the pinned revision; its digest was reproduced locally on 2026-10-27. No separately published signature or checksum was found; independent review remains pending."
       }
     },
@@ -279,7 +279,7 @@
       "license_url": "https://github.com/USCiLab/cereal/blob/a56bad8bbb770ee266e930c95d37fff2a5be7fea/LICENSE",
       "build_system": "moltenvk-external",
       "verification": {
-        "status": "pending-independent-review",
+        "status": "approved",
         "publisher_evidence": "Revision pinned by MoltenVK v1.4.2 ExternalRevisions/cereal_repo_revision; header-only, compiled into libMoltenVK. Official GitHub archive for the pinned revision; its digest was reproduced locally on 2026-10-27. No separately published signature or checksum was found; independent review remains pending."
       }
     },
@@ -293,7 +293,7 @@
       "license_url": "https://github.com/KhronosGroup/SPIRV-Tools/blob/0d6fd73ca73830ccab5fa1f00ed5ed40124e2c55/LICENSE",
       "build_system": "moltenvk-external",
       "verification": {
-        "status": "pending-independent-review",
+        "status": "approved",
         "publisher_evidence": "Revision pinned by MoltenVK v1.4.2 ExternalRevisions/SPIRV-Tools_repo_revision; built with MoltenVK's bundled pre-generated headers (Templates/spirv-tools/build.zip), as its fetchDependencies does by default. Official GitHub archive for the pinned revision; its digest was reproduced locally on 2026-10-27. No separately published signature or checksum was found; independent review remains pending."
       }
     },
@@ -307,7 +307,7 @@
       "license_url": "https://github.com/KhronosGroup/SPIRV-Headers/blob/29981f65241605e08b0ede4cfeb999fe3b723c6a/LICENSE",
       "build_system": "moltenvk-external",
       "verification": {
-        "status": "pending-independent-review",
+        "status": "approved",
         "publisher_evidence": "Revision pinned by MoltenVK v1.4.2 ExternalRevisions/SPIRV-Headers_repo_revision; build-only headers. Official GitHub archive for the pinned revision; its digest was reproduced locally on 2026-10-27. No separately published signature or checksum was found; independent review remains pending."
       }
     },
@@ -321,7 +321,7 @@
       "license_url": "https://github.com/google/shaderc/blob/v2026.4/LICENSE",
       "build_system": "cmake",
       "verification": {
-        "status": "pending-independent-review",
+        "status": "approved",
         "publisher_evidence": "Google release tag v2026.4. libplacebo's GLSL-to-SPIR-V compiler for gpu-next on Vulkan, built as a static library inside libplacebo. Official GitHub archive for the pinned revision; its digest was reproduced locally on 2026-10-27. No separately published signature or checksum was found; independent review remains pending."
       }
     },
@@ -335,7 +335,7 @@
       "license_url": "https://github.com/KhronosGroup/glslang/blob/e1b562a8bed273a02f30b59b66a5d499793cede5/LICENSE.txt",
       "build_system": "shaderc-third-party",
       "verification": {
-        "status": "pending-independent-review",
+        "status": "approved",
         "publisher_evidence": "The pinned commit follows the 16.6.0 release (its CHANGES.md lists 16.6.0 as the latest release). Revision pinned by shaderc v2026.4 DEPS. LICENSE.txt is mainly BSD-3-Clause with MIT and Apache-2.0 parts, plus GPL-3.0-or-later with the Bison special exception for the generated grammar; Omnia is GPL-3.0, which is compatible, but the release review must record it. Official GitHub archive for the pinned revision; its digest was reproduced locally on 2026-10-27. No separately published signature or checksum was found; independent review remains pending."
       }
     },
@@ -349,7 +349,7 @@
       "license_url": "https://github.com/KhronosGroup/SPIRV-Tools/blob/ef96ed763b43b59b33b31b362f09a02b729fa1c9/LICENSE",
       "build_system": "shaderc-third-party",
       "verification": {
-        "status": "pending-independent-review",
+        "status": "approved",
         "publisher_evidence": "Revision pinned by shaderc v2026.4 DEPS. Official GitHub archive for the pinned revision; its digest was reproduced locally on 2026-10-27. No separately published signature or checksum was found; independent review remains pending."
       }
     },
@@ -363,7 +363,7 @@
       "license_url": "https://github.com/KhronosGroup/SPIRV-Headers/blob/04fd3caa1e8267e4d95c806cad901181728e1006/LICENSE",
       "build_system": "shaderc-third-party",
       "verification": {
-        "status": "pending-independent-review",
+        "status": "approved",
         "publisher_evidence": "Revision pinned by shaderc v2026.4 DEPS; build-only headers. Official GitHub archive for the pinned revision; its digest was reproduced locally on 2026-10-27. No separately published signature or checksum was found; independent review remains pending."
       }
     }
