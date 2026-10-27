@@ -1,21 +1,20 @@
 <div align="center">
 
-# Omnia
+# Omnia for iPhone and iPad
 
-**A native, cinematic media player for your own Stremio add-ons.**
+**A native, cinematic media player for your own Stremio add-ons — on iPhone and iPad.**
 
-Built with SwiftUI and libmpv for macOS, with iPhone and iPad builds from the same project.
+This is OmniaMobile, the iPhone and iPad app. The Mac app lives in
+[OmniaDesktop](https://github.com/Laviora/OmniaDesktop); both share most of
+their code and history.
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-![Platform](https://img.shields.io/badge/platform-macOS%2026%2B-black)
+![Platform](https://img.shields.io/badge/platform-iOS%20%7C%20iPadOS%2026%2B-black)
 ![Built with SwiftUI](https://img.shields.io/badge/built%20with-SwiftUI-orange)
-[![Latest release](https://img.shields.io/github/v/release/Laviora/Omnia)](https://github.com/Laviora/Omnia/releases/latest)
 
-### [⬇&nbsp;&nbsp;Download Omnia for macOS (.dmg)](https://github.com/Laviora/Omnia/releases/download/v0.3.0/Omnia-0.3.0.dmg)
-
-Apple silicon · macOS 26 or later · [All releases](https://github.com/Laviora/Omnia/releases)
-
-[Features](#features) · [Install](#install) · [Build from source](#build-from-source)
+**Status:** in development — builds and launches on iPhone and iPad simulators.
+See the [iPad and iPhone plan](docs/plans/ios-ipad-iphone.md).
+Looking for the Mac app? [Download Omnia for macOS](https://github.com/Laviora/OmniaDesktop/releases/latest).
 
 </div>
 
