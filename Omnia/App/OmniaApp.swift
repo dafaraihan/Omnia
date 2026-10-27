@@ -225,7 +225,9 @@ struct OmniaApp: App {
                 metadata.animeEnrichment = enrichment
             }
             .onOpenURL { url in
-                if let manifestURL = AddonInstallCallback.manifestURL(from: url) {
+                if TrackerAccountStore.shared.handleCallback(url) {
+                    // AniList's sign-in returning to omnia://anilist.
+                } else if let manifestURL = AddonInstallCallback.manifestURL(from: url) {
                     Task { try? await store.installAddon(manifestURL: manifestURL) }
                 } else {
                     account.handle(callback: url)

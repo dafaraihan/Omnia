@@ -54,6 +54,7 @@ nonisolated enum TrackerLibraryList: String, Sendable {
 nonisolated enum TrackerLibraryClient {
     private static let traktBase = URL(string: "https://api.trakt.tv")!
     private static let simklBase = URL(string: "https://api.simkl.com")!
+    private static let mdblistBase = URL(string: "https://api.mdblist.com")!
     /// Bounds on what one sync reads, so a huge library can't stall Home.
     private static let maximumEntries = 500
     private static let maximumPMDBMappingLookups = 60
@@ -108,6 +109,11 @@ nonisolated enum TrackerLibraryClient {
                 query: ["perPage": "500"]
             )
             entries = await withIMDbIDs(page.items?.compactMap(\.entry) ?? [], key: token)
+        case (.mdblist, .progress):
+            entries = try await mdblistGET("sync/playback", [MDBListPlayback]?.self, token: token)?
+                .compactMap(\.entry) ?? []
+        case (.mdblist, .watchlist):
+            entries = try await mdblistGET("watchlist/items", MDBListItems?.self, token: token)?.entries ?? []
         case (.anilist, .progress):
             entries = try await anilistList(["CURRENT", "REPEATING"], token: token, inProgress: true)
         case (.anilist, .watchlist):
@@ -128,6 +134,7 @@ nonisolated enum TrackerLibraryClient {
         case .trakt: request = traktRequest("sync/playback/\(id)", token: token, clientID: credentials.clientID)
         case .simkl: request = simklRequest("sync/playback/\(id)", token: token, clientID: credentials.clientID)
         case .pmdb: request = TrackerClient.pmdbRequest("resume/\(id)", key: token)
+        case .mdblist: request = mdblistRequest("sync/playback/\(id)", token: token)
         case .anilist: return
         }
         request.httpMethod = "DELETE"
@@ -210,6 +217,22 @@ nonisolated enum TrackerLibraryClient {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         return request
+    }
+
+    private static func mdblistRequest(_ path: String, token: String) -> URLRequest {
+        var request = URLRequest(url: mdblistBase.appending(path: path))
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        return request
+    }
+
+    /// MDBList answers an empty list with `[]` or `{}`, decoded as nil.
+    private static func mdblistGET<T: Decodable>(_ path: String, _ type: T?.Type, token: String) async throws -> T? {
+        let (data, _) = try await TrackerClient.send(mdblistRequest(path, token: token), accepting: [200])
+        let text = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.isEmpty || text == "null" || text == "[]" || text == "{}" { return nil }
+        return try TrackerClient.decode(type, from: data)
     }
 
     private static func traktGET<T: Decodable>(_ path: String, _ type: T.Type, token: String, clientID: String) async throws -> T {
@@ -437,6 +460,133 @@ private nonisolated struct AniListCollection: Decodable {
     struct Collection: Decodable { let lists: [List]? }
 
     let MediaListCollection: Collection?
+}
+
+/// MDBList's IDs: `imdb`/`tmdb`/`tvdb`, sometimes as `imdbid`/`tmdbid`.
+private nonisolated struct MDBListIDs: Decodable {
+    let imdb: String?
+    let tmdb: Int?
+    let tvdb: Int?
+
+    private enum CodingKeys: String, CodingKey { case imdb, imdbid, tmdb, tmdbid, tvdb, tvdbid }
+
+    init(imdb: String?, tmdb: Int?, tvdb: Int?) {
+        self.imdb = imdb
+        self.tmdb = tmdb
+        self.tvdb = tvdb
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        func int(_ keys: CodingKeys...) -> Int? {
+            for key in keys {
+                if let value = try? c.decodeIfPresent(Int.self, forKey: key) { return value }
+                if let value = (try? c.decodeIfPresent(String.self, forKey: key))?.flatMap({ Int($0) }) { return value }
+            }
+            return nil
+        }
+        let imdb: String? = ((try? c.decodeIfPresent(String.self, forKey: .imdb)) ?? nil)
+            ?? ((try? c.decodeIfPresent(String.self, forKey: .imdbid)) ?? nil)
+        self.imdb = imdb?.hasPrefix("tt") == true ? imdb : nil
+        tmdb = int(.tmdb, .tmdbid)
+        tvdb = int(.tvdb, .tvdbid)
+    }
+}
+
+private nonisolated struct MDBListMediaWire: Decodable {
+    let title: String?
+    let name: String?
+    let year: Int?
+    let ids: MDBListIDs?
+}
+
+private nonisolated struct MDBListPlayback: Decodable {
+    struct Episode: Decodable {
+        let season: Int?
+        let number: Int?
+        let episode: Int?
+        let show: MDBListMediaWire?
+    }
+
+    let id: Int?
+    let type: String?
+    let progress: Double?
+    let paused_at: String?
+    let updated_at: String?
+    let movie: MDBListMediaWire?
+    let show: MDBListMediaWire?
+    let episode: Episode?
+
+    var entry: TrackerLibraryEntry? {
+        let isMovie = type == "movie"
+        guard let media = isMovie ? movie : (show ?? episode?.show), let ids = media.ids else { return nil }
+        return TrackerLibraryEntry(
+            kind: isMovie ? .movie : .series,
+            title: media.title ?? media.name ?? "",
+            year: media.year,
+            imdb: ids.imdb,
+            tmdb: ids.tmdb,
+            tvdb: ids.tvdb,
+            season: isMovie ? nil : episode?.season,
+            episode: isMovie ? nil : (episode?.number ?? episode?.episode),
+            progress: progress.map { min(max($0 / 100, 0), 1) },
+            updatedAt: TrackerLibraryClient.date(paused_at ?? updated_at),
+            playbackID: id.map(String.init)
+        )
+    }
+}
+
+/// MDBList's watchlist: `{movies, shows}` or `{items}`.
+private nonisolated struct MDBListItems: Decodable {
+    struct Item: Decodable {
+        let id: Int?
+        let imdb_id: String?
+        let tvdb_id: Int?
+        let ids: MDBListIDs?
+        let title: String?
+        let release_year: Int?
+        let mediatype: String?
+        let type: String?
+        let listed_at: String?
+        let poster: String?
+
+        func entry(defaultKind: TrackerLibraryEntry.Kind?) -> TrackerLibraryEntry? {
+            let declared = (mediatype ?? type)?.lowercased()
+            let kind: TrackerLibraryEntry.Kind
+            switch declared {
+            case "movie": kind = .movie
+            case "show", "series", "tv": kind = .series
+            case nil: guard let defaultKind else { return nil }; kind = defaultKind
+            default: return nil
+            }
+            let imdb = ids?.imdb ?? imdb_id.flatMap { $0.hasPrefix("tt") ? $0 : nil }
+            let posterURL: URL? = poster.flatMap { value in
+                if value.hasPrefix("https://") { return URL(string: value) }
+                if value.hasPrefix("/") { return URL(string: "https://image.tmdb.org/t/p/w500\(value)") }
+                return nil
+            }
+            return TrackerLibraryEntry(
+                kind: kind,
+                title: title ?? "",
+                year: release_year,
+                imdb: imdb,
+                tmdb: ids?.tmdb ?? id,
+                tvdb: ids?.tvdb ?? tvdb_id,
+                posterURL: posterURL,
+                updatedAt: TrackerLibraryClient.date(listed_at)
+            )
+        }
+    }
+
+    let movies: [Item]?
+    let shows: [Item]?
+    let items: [Item]?
+
+    var entries: [TrackerLibraryEntry] {
+        (movies ?? []).compactMap { $0.entry(defaultKind: .movie) }
+            + (shows ?? []).compactMap { $0.entry(defaultKind: .series) }
+            + (items ?? []).compactMap { $0.entry(defaultKind: nil) }
+    }
 }
 
 private nonisolated struct PMDBPage<Item: Decodable>: Decodable {

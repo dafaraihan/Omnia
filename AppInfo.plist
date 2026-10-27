@@ -70,6 +70,8 @@
 		<string>$(OMNIA_TRAKT_CLIENT_ID)</string>
 		<key>TraktClientSecret</key>
 		<string>$(OMNIA_TRAKT_CLIENT_SECRET)</string>
+		<key>TraktRedirectURI</key>
+		<string>$(OMNIA_TRAKT_REDIRECT_URI)</string>
 		<key>SimklClientID</key>
 		<string>$(OMNIA_SIMKL_CLIENT_ID)</string>
 		<key>MDBListClientID</key>

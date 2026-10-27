@@ -17,6 +17,8 @@ struct MediaDetailView: View {
     @Environment(\.isActiveDestination) private var isActiveDestination
     @Environment(\.isOnboardingPreview) private var isOnboardingPreview
     @Environment(PlaybackSession.self) private var playback
+    /// Account › Tracking: More Like This source and Trakt comments.
+    @State private var trackerLibrary = TrackerLibraryStore.shared
     @State private var resolvedItem: MediaItem?
     @State private var sourceRequest: PlaybackRequest?
     @State private var showsSynopsis = false
@@ -315,6 +317,10 @@ struct MediaDetailView: View {
             ForEach(display.orderedDetailSections) { section in
                 detailSection(section)
             }
+            // Account › Tracking › Trakt Comments.
+            if trackerLibrary.showsTraktComments, TraktExtrasClient.clientID != nil {
+                TraktCommentsSection(item: displayItem)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, horizontalInset)
@@ -411,13 +417,23 @@ struct MediaDetailView: View {
                 }
             }
         case .recommendations:
-            if let details = displayItem.details, !details.recommendations.isEmpty {
-                relatedShelf(.recommendations, title: "More Like This", items: details.recommendations, details: details)
+            // Account › Tracking › More Like This Source.
+            if trackerLibrary.moreLikeThisSource == .trakt, TraktExtrasClient.clientID != nil {
+                TraktRelatedShelf(item: displayItem) { tmdbRecommendations }
+            } else {
+                tmdbRecommendations
             }
         case .similar:
             if let details = displayItem.details, !details.similar.isEmpty {
                 relatedShelf(.similar, title: "Similar Titles", items: details.similar, details: details)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var tmdbRecommendations: some View {
+        if let details = displayItem.details, !details.recommendations.isEmpty {
+            relatedShelf(.recommendations, title: "More Like This", items: details.recommendations, details: details)
         }
     }
 

@@ -16,6 +16,7 @@ nonisolated enum TrackerLibrarySource: String, CaseIterable, Codable, Hashable, 
     case local
     case trakt
     case simkl
+    case mdblist
     case pmdb
     case anilist
     case traktAniList
@@ -30,6 +31,7 @@ nonisolated enum TrackerLibrarySource: String, CaseIterable, Codable, Hashable, 
         case .local, .localAniList: nil
         case .trakt, .traktAniList: .trakt
         case .simkl: .simkl
+        case .mdblist: .mdblist
         case .pmdb: .pmdb
         case .anilist: .anilist
         }
@@ -46,6 +48,7 @@ nonisolated enum TrackerLibrarySource: String, CaseIterable, Codable, Hashable, 
         switch tracker {
         case .trakt: self = .trakt
         case .simkl: self = .simkl
+        case .mdblist: self = .mdblist
         case .pmdb: self = .pmdb
         case .anilist: self = .anilist
         }
@@ -61,6 +64,22 @@ nonisolated enum TrackerLibrarySource: String, CaseIterable, Codable, Hashable, 
 
     /// Nuvio's menu wording: "All Local", "All Trakt", "Trakt + AniList Anime".
     var menuTitle: String { addsAniListAnime ? title : "All \(title)" }
+}
+
+/// Where a title page's More Like This comes from, as Nuvio's More Like
+/// This source.
+nonisolated enum MoreLikeThisSource: String, CaseIterable, Identifiable, Sendable {
+    case tmdb
+    case trakt
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .tmdb: "TMDB"
+        case .trakt: "Trakt"
+        }
+    }
 }
 
 /// Each connected tracker's in-progress titles and watchlist, read from the
@@ -91,12 +110,32 @@ final class TrackerLibraryStore {
         didSet { save(watchlistSource, key: Self.watchlistKey) }
     }
 
+    /// Nuvio's Trakt Continue Watching Window: only titles paused on Trakt
+    /// within this many days; 0 shows all.
+    var traktContinueWatchingDays: Int {
+        didSet { defaults.set(traktContinueWatchingDays, forKey: Self.traktWindowKey) }
+    }
+
+    static let traktContinueWatchingDayOptions = [7, 14, 30, 60, 90, 180, 365, 0]
+
+    var moreLikeThisSource: MoreLikeThisSource {
+        didSet { defaults.set(moreLikeThisSource.rawValue, forKey: Self.moreLikeThisKey) }
+    }
+
+    /// Nuvio's Trakt Comments: Trakt reviews on title pages.
+    var showsTraktComments: Bool {
+        didSet { defaults.set(showsTraktComments, forKey: Self.traktCommentsKey) }
+    }
+
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private var syncTasks: [TrackerKind: Task<Void, Never>] = [:]
     @ObservationIgnored private var lastSync: [TrackerKind: Date] = [:]
     @ObservationIgnored private var addonsKey = ""
     private static let continueWatchingKey = "tracker-continue-watching-source"
     private static let watchlistKey = "tracker-watchlist-source"
+    private static let traktWindowKey = "trakt-continue-watching-days"
+    private static let moreLikeThisKey = "more-like-this-source"
+    private static let traktCommentsKey = "trakt-comments"
     /// A tracker is read again when Home or Library appears after this long.
     private static let refreshInterval: TimeInterval = 5 * 60
 
@@ -104,6 +143,9 @@ final class TrackerLibraryStore {
         self.defaults = defaults
         continueWatchingSource = defaults.string(forKey: Self.continueWatchingKey).flatMap(TrackerLibrarySource.init) ?? .local
         watchlistSource = defaults.string(forKey: Self.watchlistKey).flatMap(TrackerLibrarySource.init) ?? .local
+        traktContinueWatchingDays = defaults.object(forKey: Self.traktWindowKey) as? Int ?? 60
+        moreLikeThisSource = defaults.string(forKey: Self.moreLikeThisKey).flatMap(MoreLikeThisSource.init) ?? .tmdb
+        showsTraktComments = defaults.object(forKey: Self.traktCommentsKey) as? Bool ?? true
         for kind in TrackerKind.allCases {
             entries[kind] = Self.loadCache(kind)
         }
@@ -132,13 +174,24 @@ final class TrackerLibraryStore {
     /// Omnia's own (`local`), with AniList's Watching list in place of
     /// their anime when the source adds it.
     func progressItems(_ source: TrackerLibrarySource, local: [MediaItem]) -> [MediaItem] {
-        let base = source.tracker.map { items(.progress, from: $0) } ?? local
+        let base = source.tracker.map { tracker in
+            tracker == .trakt ? traktProgressWithinWindow : items(.progress, from: tracker)
+        } ?? local
         guard source.addsAniListAnime else { return base }
         let anime = items(.progress, from: .anilist)
         let rest = base.filter { item in
             !Self.isAnime(item) && !anime.contains { $0.isSameTitle(as: item) }
         }
         return anime + rest
+    }
+
+    /// Trakt's paused titles within the Continue Watching Window.
+    private var traktProgressWithinWindow: [MediaItem] {
+        let drawn = items(.progress, from: .trakt)
+        let entries = entries[.trakt]?[.progress] ?? []
+        guard traktContinueWatchingDays > 0, entries.count == drawn.count else { return drawn }
+        let cutoff = Date.now.addingTimeInterval(-Double(traktContinueWatchingDays) * 86_400)
+        return zip(entries, drawn).filter { entry, _ in (entry.updatedAt ?? .distantFuture) >= cutoff }.map(\.1)
     }
 
     private static func isAnime(_ item: MediaItem) -> Bool {
@@ -168,13 +221,14 @@ final class TrackerLibraryStore {
 
     /// Continue Watching's "Sync Now".
     func sync(_ kind: TrackerKind, addons: [InstalledAddon]) {
-        guard let credentials = TrackerAccountStore.shared.credentials[kind], credentials.isConnected else { return }
+        guard TrackerAccountStore.shared.isConnected(kind) else { return }
         addonsKey = Self.key(for: addons)
         syncTasks[kind]?.cancel()
         syncStates[kind] = .syncing
         lastSync[kind] = .now
         syncTasks[kind] = Task { [weak self] in
             do {
+                guard let credentials = await TrackerAccountStore.shared.validCredentials(kind) else { return }
                 async let progress = TrackerLibraryClient.fetch(.progress, from: kind, credentials: credentials)
                 async let watchlist = TrackerLibraryClient.fetch(.watchlist, from: kind, credentials: credentials)
                 let fetched: [TrackerLibraryList: [TrackerLibraryEntry]] = [.progress: try await progress, .watchlist: try await watchlist]

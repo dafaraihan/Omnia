@@ -27,6 +27,7 @@ struct AccountSettingsView: View {
                     stats
                 }
                 profilesCard
+                trackingCard
                 accountCard
             }
             .frame(maxWidth: 640)
@@ -384,6 +385,39 @@ struct AccountSettingsView: View {
         if let problem = profileData.problem ?? profiles.syncProblem { return problem }
         guard let date = profileData.lastSyncedAt else { return "Syncs when something changes" }
         return "Synced \(date.formatted(.relative(presentation: .named)))"
+    }
+
+    // MARK: Tracking
+
+    /// Account › Tracking: Trakt, Simkl, MDBList, PublicMetaDB and AniList,
+    /// as Nuvio's Account page has.
+    private var trackingCard: some View {
+        card(title: "Tracking", detail: trackingDetail) {
+            NavigationLink {
+                SettingsDestinationView(route: .tracking)
+            } label: {
+                HStack(spacing: 12) {
+                    HStack(spacing: -6) {
+                        ForEach(TrackerKind.allCases) { kind in
+                            TrackerMark(kind: kind, size: 26)
+                                .background(Circle().fill(.background).padding(-2))
+                        }
+                    }
+                    Text("Accounts, sources and Trakt features")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .foregroundStyle(.tertiary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var trackingDetail: String {
+        let connected = TrackerKind.allCases.filter(TrackerAccountStore.shared.isConnected).count
+        return connected == 0 ? "Not connected" : "\(connected) connected"
     }
 
     // MARK: Pieces

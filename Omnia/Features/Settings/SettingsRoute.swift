@@ -93,7 +93,7 @@ enum SettingsRoute: Hashable, Sendable {
     case detailPage
     case about
     case metadataProvider(String)
-    case tracker(TrackerKind)
+    case tracking
     case aboutSection(AboutSection)
 
     /// Nuvio's Settings tree: Layout, Content & Discovery, Playback and
@@ -110,7 +110,8 @@ enum SettingsRoute: Hashable, Sendable {
         case .appearance: [.home, .catalogs, .collections, .continueWatching, .progress, .upcoming, .posterCards, .detailPage, .streams]
         case .contentDiscovery: [.addons, .mediaServers, .liveTV, .plugins]
         case .videoPlayer: [.streamSelection, .subtitle, .playbackResolver, .playbackDiagnostics]
-        case .metadata: [.tmdbEnrichment, .animeEnrichment, .metadataProvider("mdblist"), .metadataSources] + TrackerKind.allCases.map(SettingsRoute.tracker)
+        case .account: [.tracking]
+        case .metadata: [.tmdbEnrichment, .animeEnrichment, .metadataProvider("mdblist"), .metadataSources]
         default: []
         }
     }
@@ -162,8 +163,8 @@ enum SettingsRoute: Hashable, Sendable {
         case .metadataProvider("mdblist"): "MDBList Ratings"
         case let .metadataProvider(id):
             MetadataProvider.supported.first { $0.id == id }?.name ?? "Metadata Provider"
-        case let .tracker(kind):
-            kind.title
+        case .tracking:
+            "Tracking"
         case let .aboutSection(section):
             section.title
         }
@@ -183,7 +184,7 @@ enum SettingsRoute: Hashable, Sendable {
         case .metadata, .metadataProvider, .metadataSources: "rectangle.3.group"
         case .tmdbEnrichment: "sparkles.rectangle.stack"
         case .animeEnrichment: "sparkles.tv"
-        case .tracker: "checkmark.circle"
+        case .tracking: "checkmark.circle"
         case .progress: "clock.arrow.circlepath"
         case .upcoming: "calendar"
         case .videoPlayer: "play.rectangle"
@@ -230,7 +231,7 @@ enum SettingsRoute: Hashable, Sendable {
         case .detailPage: ["detail", "title page", "background", "episodes", "blur", "spoiler", "sections", "cast", "trailers"]
         case .about: ["resources", "TMDB", "TVDB", "libmpv", "Supabase", "licenses", "privacy"]
         case .metadataProvider: ["metadata provider", title]
-        case .tracker: ["tracker", "scrobble", "scrobbling", "history", "watched", "Trakt", "Simkl", "PublicMetaDB", "PMDB", "AniList", title]
+        case .tracking: ["tracking", "tracker", "scrobble", "scrobbling", "history", "watched", "Trakt", "Simkl", "MDBList", "PublicMetaDB", "PMDB", "AniList", "library source", "watch progress", "continue watching", "more like this", "comments", "sign in"]
         case let .aboutSection(section): [section.title]
         }
     }

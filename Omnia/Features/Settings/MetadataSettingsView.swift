@@ -33,16 +33,6 @@ struct MetadataSettingsView: View {
             }
 
             Section {
-                ForEach(TrackerKind.allCases) { kind in
-                    TrackerLinkRow(kind: kind)
-                }
-            } header: {
-                Text("Tracking")
-            } footer: {
-                Text("Scrobble what you watch to your own Trakt, Simkl, PublicMetaDB or AniList account, with your own API app or key.")
-            }
-
-            Section {
                 IntegrationLinkRow(
                     route: .metadataSources,
                     providerID: nil,

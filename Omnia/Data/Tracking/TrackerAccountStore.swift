@@ -6,10 +6,11 @@
 import Foundation
 import Observation
 
-/// Trakt, Simkl and PublicMetaDB accounts, and scrobbling what plays to
-/// them, as Nuvio does (Dafa, 2026-10-26). Each tracker uses the user's own
-/// API app or key; its client ID, secret, tokens and keys stay in Keychain
-/// on this device.
+/// Trakt, Simkl, MDBList, PublicMetaDB and AniList accounts, and scrobbling
+/// what plays to them, as Nuvio does (Dafa, 2026-10-26). Users sign in with
+/// Omnia's own apps (a code, or AniList in the browser) or, for
+/// PublicMetaDB, their API key; tokens and keys stay in Keychain on this
+/// device.
 @Observable
 @MainActor
 final class TrackerAccountStore {
@@ -19,6 +20,7 @@ final class TrackerAccountStore {
         case idle
         case requestingCode
         case waiting(TrackerDeviceCode)
+        case waitingForBrowser
         case failed(String)
     }
 
@@ -54,23 +56,23 @@ final class TrackerAccountStore {
         credentials[kind] = credentials[kind]
     }
 
-    /// Saves the user's API app and shows a code to enter on the tracker's
-    /// site, then waits for them to approve it.
-    func connect(_ kind: TrackerKind, clientID: String, clientSecret: String?) {
-        let clientID = clientID.trimmingCharacters(in: .whitespacesAndNewlines)
-        let clientSecret = clientSecret?.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !clientID.isEmpty, !kind.needsClientSecret || clientSecret?.isEmpty == false else {
-            connectStates[kind] = .failed(kind.needsClientSecret
-                ? "Enter your app's Client ID and Client Secret."
-                : "Enter your app's Client ID.")
+    /// Whether this build has Omnia's own app for `kind` (from
+    /// Config/Secrets.xcconfig).
+    func isAvailable(_ kind: TrackerKind) -> Bool { TrackerAppCredentials.app(for: kind) != nil }
+
+    /// Trakt, Simkl and MDBList: shows a code to enter on the tracker's site,
+    /// then waits for the user to approve Omnia there.
+    func connect(_ kind: TrackerKind) {
+        guard kind.connection == .code else { return }
+        guard let app = TrackerAppCredentials.app(for: kind) else {
+            connectStates[kind] = .failed("This build of Omnia has no \(kind.title) app set up.")
             return
         }
-        let app = TrackerCredentials(clientID: clientID, clientSecret: kind.needsClientSecret ? clientSecret : nil)
         connectTasks[kind]?.cancel()
         connectStates[kind] = .requestingCode
         connectTasks[kind] = Task { [weak self] in
             do {
-                let code = try await TrackerClient.requestDeviceCode(kind, clientID: clientID)
+                let code = try await TrackerClient.requestDeviceCode(kind, clientID: app.clientID)
                 guard !Task.isCancelled else { return }
                 self?.connectStates[kind] = .waiting(code)
                 await self?.waitForApproval(kind, code: code, app: app)
@@ -83,15 +85,11 @@ final class TrackerAccountStore {
         }
     }
 
-    /// PublicMetaDB's API key, or the token AniList shows after signing in:
-    /// checks it with the tracker, then keeps it.
-    func connect(_ kind: TrackerKind, apiKey: String, clientID: String = "") {
+    /// PublicMetaDB's API key: checks it with PublicMetaDB, then keeps it.
+    func connect(_ kind: TrackerKind, apiKey: String) {
         let apiKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        let clientID = clientID.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard kind.usesAPIKey || kind.usesPastedToken, !apiKey.isEmpty, apiKey.count <= 4096 else {
-            connectStates[kind] = .failed(kind.usesPastedToken
-                ? "Paste the token \(kind.title) showed after you signed in."
-                : "Enter your \(kind.title) API key.")
+        guard kind.usesAPIKey, !apiKey.isEmpty, apiKey.count <= 4096 else {
+            connectStates[kind] = .failed("Enter your \(kind.title) API key.")
             return
         }
         connectTasks[kind]?.cancel()
@@ -100,7 +98,7 @@ final class TrackerAccountStore {
             do {
                 try await TrackerClient.validateAPIKey(kind, apiKey)
                 guard !Task.isCancelled else { return }
-                self?.store(TrackerCredentials(clientID: clientID, accessToken: apiKey), for: kind)
+                self?.store(TrackerCredentials(clientID: "", accessToken: apiKey), for: kind)
                 self?.connectStates[kind] = .idle
             } catch {
                 guard !Task.isCancelled else { return }
@@ -109,6 +107,46 @@ final class TrackerAccountStore {
                 )
             }
         }
+    }
+
+    /// AniList: the sign-in page to open in the browser. Its return link is
+    /// accepted only while this sign-in is waiting.
+    func beginBrowserSignIn(_ kind: TrackerKind) -> URL? {
+        guard kind.connection == .browser else { return nil }
+        guard let app = TrackerAppCredentials.app(for: kind),
+              let url = TrackerClient.anilistAuthorizationURL(clientID: app.clientID)
+        else {
+            connectStates[kind] = .failed("This build of Omnia has no \(kind.title) app set up.")
+            return nil
+        }
+        connectTasks[kind]?.cancel()
+        connectStates[kind] = .waitingForBrowser
+        return url
+    }
+
+    /// Handles omnia://anilist#access_token=…; true when the link was
+    /// AniList's.
+    @discardableResult
+    func handleCallback(_ url: URL) -> Bool {
+        guard let returned = TrackerClient.anilistToken(from: url) else { return false }
+        let kind = TrackerKind.anilist
+        guard connectState(kind) == .waitingForBrowser, let app = TrackerAppCredentials.app(for: kind) else { return true }
+        connectStates[kind] = .requestingCode
+        connectTasks[kind] = Task { [weak self] in
+            do {
+                try await TrackerClient.validateAPIKey(kind, returned.token)
+                guard !Task.isCancelled else { return }
+                var credentials = app
+                credentials.accessToken = returned.token
+                credentials.expiresAt = returned.expiresIn.map { Date.now.addingTimeInterval($0) }
+                self?.store(credentials, for: kind)
+                self?.connectStates[kind] = .idle
+            } catch {
+                guard !Task.isCancelled else { return }
+                self?.connectStates[kind] = .failed("AniList didn't accept the sign-in. Try again.")
+            }
+        }
+        return true
     }
 
     func cancelConnect(_ kind: TrackerKind) {
@@ -150,8 +188,37 @@ final class TrackerAccountStore {
     private func store(_ value: TrackerCredentials, for kind: TrackerKind) {
         credentials[kind] = value
         lastScrobbleError[kind] = nil
+        if value.username == nil { refreshUsername(kind) }
+        persist(value, for: kind)
+    }
+
+    private func persist(_ value: TrackerCredentials, for kind: TrackerKind) {
+        credentials[kind] = value
         guard let data = try? JSONEncoder.tracker.encode(value), let text = String(data: data, encoding: .utf8) else { return }
         try? KeychainStore.save(text, account: Self.keychainAccount(kind))
+    }
+
+    /// The tracker's credentials with an expiring token refreshed (and kept)
+    /// first, for reading lists.
+    func validCredentials(_ kind: TrackerKind) async -> TrackerCredentials? {
+        guard let current = credentials[kind], current.isConnected else { return nil }
+        guard let refreshed = try? await TrackerClient.refreshIfNeeded(kind, current) else { return current }
+        if refreshed != current, credentials[kind]?.accessToken == current.accessToken { persist(refreshed, for: kind) }
+        return refreshed
+    }
+
+    /// Looks up the account's name for "Connected as".
+    func refreshUsername(_ kind: TrackerKind) {
+        guard let current = credentials[kind], current.isConnected else { return }
+        Task { [weak self] in
+            let refreshed = (try? await TrackerClient.refreshIfNeeded(kind, current)) ?? current
+            guard let name = await TrackerClient.username(kind, credentials: refreshed), let self,
+                  self.credentials[kind]?.accessToken == current.accessToken
+            else { return }
+            var updated = refreshed
+            updated.username = name
+            self.persist(updated, for: kind)
+        }
     }
 
     // MARK: Scrobbling

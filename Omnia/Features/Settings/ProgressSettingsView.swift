@@ -22,21 +22,12 @@ struct ProgressSettingsView: View {
     var body: some View {
         OmniaSettingsForm {
             Section {
-                SettingsDropdown(
-                    "Progress",
-                    subtitle: storageDetail(trackerLibrary.continueWatchingSource),
-                    selection: $trackerLibrary.continueWatchingSource,
-                    options: storageOptions(trackerLibrary.availableSources, including: trackerLibrary.continueWatchingSource)
-                ) { storageTitle($0) }
-                SettingsDropdown(
-                    "Watchlist",
-                    subtitle: storageDetail(trackerLibrary.watchlistSource),
-                    selection: $trackerLibrary.watchlistSource,
-                    options: storageOptions(trackerLibrary.availableWatchlistSources, including: trackerLibrary.watchlistSource)
-                ) { storageTitle($0) }
-                ForEach(TrackerKind.allCases) { kind in
-                    TrackerSyncStatusLine(kind: kind)
+                NavigationLink {
+                    SettingsDestinationView(route: .tracking)
+                } label: {
+                    LabeledContent("Watch Progress & Library", value: sourcesSummary)
                 }
+                .settingsLinkRow()
                 if account.user != nil {
                     Label("Omnia's own progress is synced for this profile on every device you sign in on", systemImage: "checkmark.icloud")
                         .foregroundStyle(.secondary)
@@ -47,7 +38,7 @@ struct ProgressSettingsView: View {
             } header: {
                 Text("Storage")
             } footer: {
-                Text("Choose where Continue Watching and the Library read from. A tracker's progress and watchlist come from your account there, and what you play is scrobbled back to it. Connect Trakt, Simkl or PublicMetaDB under Integrations to add them here. Omnia keeps its own progress either way.")
+                Text("Where Continue Watching and the Library read from is chosen in Account › Tracking, with the tracker accounts. Omnia keeps its own progress either way.")
             }
 
             Section {
@@ -126,35 +117,13 @@ struct ProgressSettingsView: View {
         }
     }
 
-    /// Local plus every connected tracker, and the current choice even if
-    /// its tracker was disconnected, so the menu always shows it.
-    private func storageOptions(
-        _ available: [TrackerLibrarySource],
-        including current: TrackerLibrarySource
-    ) -> [TrackerLibrarySource] {
-        available.contains(current) ? available : available + [current]
-    }
-
-    private func storageTitle(_ source: TrackerLibrarySource) -> String {
-        let local = account.user != nil ? "Omnia Account" : "This Device"
-        switch source {
-        case .local: return local
-        case .localAniList: return "\(local) + AniList Anime"
-        case .traktAniList: return source.title
-        default: return source.tracker?.title ?? source.title
+    private var sourcesSummary: String {
+        let progress = trackerLibrary.effectiveSource(trackerLibrary.continueWatchingSource)
+        let watchlist = trackerLibrary.effectiveSource(trackerLibrary.watchlistSource)
+        func title(_ source: TrackerLibrarySource) -> String {
+            source == .local ? (account.user != nil ? "Omnia Account" : "This Device") : source.title
         }
-    }
-
-    private func storageDetail(_ source: TrackerLibrarySource) -> String {
-        guard !source.trackers.isEmpty else { return account.storageSummary }
-        guard trackerLibrary.effectiveSource(source) == source else {
-            let missing = source.trackers.filter { !TrackerAccountStore.shared.isConnected($0) }.map(\.title)
-            return "\(missing.formatted(.list(type: .and))) isn't connected, so Omnia's own is shown"
-        }
-        if source.addsAniListAnime {
-            return "Anime from your AniList Watching list, the rest from \(source.tracker?.title ?? "Omnia")"
-        }
-        return "Read from your \(source.tracker?.title ?? "") account"
+        return progress == watchlist ? title(progress) : "\(title(progress)) · \(title(watchlist))"
     }
 
     private var importConfirmationPresentation: Binding<Bool> {

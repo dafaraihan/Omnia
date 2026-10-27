@@ -5,14 +5,29 @@
 
 import Foundation
 
-/// Watch trackers Omnia can scrobble to, as Nuvio does (Dafa, 2026-10-26).
-/// Each uses the user's own API app or key: Omnia ships no client ID,
-/// secret or key. PublicMetaDB and AniList were added 2026-10-27.
+/// Watch trackers Omnia can scrobble to and read from, as Nuvio does (Dafa,
+/// 2026-10-26). Trakt, Simkl, MDBList and AniList sign in with Omnia's own
+/// registered apps, as Nuvio's do (built in from Config/Secrets.xcconfig);
+/// PublicMetaDB takes the user's API key. PublicMetaDB, AniList and MDBList
+/// were added 2026-10-27.
 nonisolated enum TrackerKind: String, CaseIterable, Codable, Hashable, Identifiable, Sendable {
     case trakt
     case simkl
+    case mdblist
     case pmdb
     case anilist
+
+    /// How the user signs in.
+    enum Connection: Sendable {
+        /// A code shown in Omnia and entered on the tracker's site, which
+        /// Omnia polls until it's approved (Trakt, Simkl's PIN, MDBList).
+        case code
+        /// The tracker's API key, pasted in (PublicMetaDB).
+        case apiKey
+        /// The tracker's sign-in page in the browser, which returns to Omnia
+        /// through the omnia:// link (AniList).
+        case browser
+    }
 
     var id: String { rawValue }
 
@@ -20,6 +35,7 @@ nonisolated enum TrackerKind: String, CaseIterable, Codable, Hashable, Identifia
         switch self {
         case .trakt: "Trakt"
         case .simkl: "Simkl"
+        case .mdblist: "MDBList"
         case .pmdb: "PublicMetaDB"
         case .anilist: "AniList"
         }
@@ -35,64 +51,45 @@ nonisolated enum TrackerKind: String, CaseIterable, Codable, Hashable, Identifia
 
     var summary: String {
         switch self {
-        case .trakt: "Scrobble movies and episodes to your Trakt history."
-        case .simkl: "Scrobble movies, shows and anime to your Simkl lists."
+        case .trakt: "Sync your watchlist, watch progress, continue watching and scrobbles with Trakt."
+        case .simkl: "Sync your plan-to-watch list, watch progress and scrobbles with Simkl."
+        case .mdblist: "Sync your watchlist, watch progress and scrobbles with MDBList."
         case .pmdb: "Save where you stopped to PublicMetaDB, and log what you finish to your watch history."
-        case .anilist: "Update your AniList anime list as you finish episodes."
+        case .anilist: "Sync your anime Watching and Planning lists, and update them as you finish episodes."
         }
     }
 
-    /// Trakt's device code needs the app's secret to become a token;
-    /// Simkl's PIN needs only the client ID.
-    var needsClientSecret: Bool { self == .trakt }
-
-    /// PublicMetaDB connects with an API key from its settings instead of
-    /// a code entered on its site.
-    var usesAPIKey: Bool { self == .pmdb }
-
-    /// AniList signs in in the browser with the user's client ID, then
-    /// shows a token to paste back (its PIN redirect).
-    var usesPastedToken: Bool { self == .anilist }
-
-    /// The page that asks the user to approve their AniList client.
-    func authorizationURL(clientID: String) -> URL? {
-        guard self == .anilist else { return nil }
-        var components = URLComponents(string: "https://anilist.co/api/v2/oauth/authorize")!
-        components.queryItems = [
-            URLQueryItem(name: "client_id", value: clientID),
-            URLQueryItem(name: "response_type", value: "token")
-        ]
-        return components.url
-    }
-
-    /// Where the user creates their own API app.
-    var applicationURL: URL {
+    var connection: Connection {
         switch self {
-        case .trakt: URL(string: "https://trakt.tv/oauth/applications/new")!
-        case .simkl: URL(string: "https://simkl.com/settings/developer/new/")!
-        case .pmdb: URL(string: "https://publicmetadb.com/settings")!
-        case .anilist: URL(string: "https://anilist.co/settings/developer")!
+        case .trakt, .simkl, .mdblist: .code
+        case .pmdb: .apiKey
+        case .anilist: .browser
         }
     }
 
-    var applicationGuidance: String {
+    var usesAPIKey: Bool { connection == .apiKey }
+
+    /// The tracker's own site, for "Visit".
+    var websiteURL: URL {
         switch self {
-        case .trakt:
-            "Create an app on Trakt, use urn:ietf:wg:oauth:2.0:oob as its redirect URI, then paste its Client ID and Client Secret here."
-        case .simkl:
-            "Create an app on Simkl, use urn:ietf:wg:oauth:2.0:oob as its redirect URI, then paste its Client ID here."
-        case .pmdb:
-            "Create a key under Settings › API on PublicMetaDB (it starts with pm-), then paste it here."
-        case .anilist:
-            "Create a client on AniList with https://anilist.co/api/v2/oauth/pin as its redirect URL, paste its Client ID here, sign in, then paste the token AniList shows."
+        case .trakt: URL(string: "https://trakt.tv")!
+        case .simkl: URL(string: "https://simkl.com")!
+        case .mdblist: URL(string: "https://mdblist.com")!
+        case .pmdb: URL(string: "https://publicmetadb.com")!
+        case .anilist: URL(string: "https://anilist.co")!
         }
     }
 
-    /// PublicMetaDB's mark is a wordmark, drawn by `TrackerMark`.
+    /// Where a PublicMetaDB user creates their API key.
+    var apiKeyURL: URL? {
+        self == .pmdb ? URL(string: "https://publicmetadb.com/settings")! : nil
+    }
+
     var assetName: String? {
         switch self {
         case .trakt: "TraktMark"
         case .simkl: "SimklMark"
+        case .mdblist: "MDBListMark"
         case .pmdb: nil
         case .anilist: "AniListMark"
         }

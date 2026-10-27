@@ -2,24 +2,65 @@
 //  TrackerClient.swift
 //  Omnia
 //
-//  Trakt and Simkl requests, after Nuvio's TraktAuthRepository,
-//  TraktScrobbleRepository, SimklAuthRepository and SimklMutationRepository
-//  (NuvioMedia/NuvioMobile, GPL-3.0). PublicMetaDB requests follow its
-//  External API reference (publicmetadb.com/api-docs).
+//  Trakt, Simkl and MDBList requests, after Nuvio's TraktAuthRepository,
+//  TraktScrobbleRepository, SimklAuthRepository, SimklMutationRepository,
+//  MdbListAuthRepository and MdbListScrobbleService (NuvioMedia/NuvioMobile,
+//  GPL-3.0). PublicMetaDB requests follow its External API reference
+//  (publicmetadb.com/api-docs); AniList's its OAuth implicit grant.
 //
 
 import Foundation
 
-/// The user's own API app and, once connected, their tokens. Kept together
-/// as one Keychain item per tracker.
+/// The app a tracker was connected with and the user's tokens. Kept
+/// together as one Keychain item per tracker. Accounts connected before
+/// Omnia had built-in apps keep the user's own app details here.
 nonisolated struct TrackerCredentials: Codable, Equatable, Sendable {
     var clientID: String
     var clientSecret: String?
     var accessToken: String?
     var refreshToken: String?
     var expiresAt: Date?
+    /// The account's name, for "Connected as".
+    var username: String?
 
     var isConnected: Bool { accessToken?.isEmpty == false }
+}
+
+/// Omnia's own registered tracker apps, built in from Config/Secrets.xcconfig
+/// through Info.plist (OmniaTrackerApps), as Nuvio builds in its own.
+nonisolated enum TrackerAppCredentials {
+    private static var apps: [String: String] {
+        Bundle.main.object(forInfoDictionaryKey: "OmniaTrackerApps") as? [String: String] ?? [:]
+    }
+
+    private static func value(_ key: String) -> String? {
+        let value = apps[key]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        // An unset build setting can arrive empty or as its own `$(NAME)`.
+        return value.isEmpty || value.hasPrefix("$(") ? nil : value
+    }
+
+    /// The app to sign in with, or nil when this build doesn't have one.
+    static func app(for kind: TrackerKind) -> TrackerCredentials? {
+        switch kind {
+        case .trakt:
+            guard let id = value("TraktClientID"), let secret = value("TraktClientSecret") else { return nil }
+            return TrackerCredentials(clientID: id, clientSecret: secret)
+        case .simkl:
+            return value("SimklClientID").map { TrackerCredentials(clientID: $0) }
+        case .mdblist:
+            return value("MDBListClientID").map { TrackerCredentials(clientID: $0) }
+        case .anilist:
+            return value("AniListClientID").map { TrackerCredentials(clientID: $0) }
+        case .pmdb:
+            return TrackerCredentials(clientID: "")
+        }
+    }
+
+    /// The redirect URI Omnia's Trakt app was created with, which Trakt asks
+    /// for again when refreshing a token.
+    static var traktRedirectURI: String {
+        value("TraktRedirectURI") ?? "urn:ietf:wg:oauth:2.0:oob"
+    }
 }
 
 /// A code the user enters on the tracker's site to connect Omnia.
@@ -57,6 +98,9 @@ nonisolated enum TrackerClient {
     private static let simklBase = URL(string: "https://api.simkl.com")!
     private static let pmdbBase = URL(string: "https://publicmetadb.com/api/external")!
     private static let anilistBase = URL(string: "https://graphql.anilist.co")!
+    private static let mdblistBase = URL(string: "https://api.mdblist.com")!
+    /// Where AniList returns after sign-in; registered on Omnia's AniList app.
+    static let anilistRedirect = URL(string: "omnia://anilist")!
     private static let appName = "Omnia"
     private static var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
@@ -76,8 +120,27 @@ nonisolated enum TrackerClient {
     static func requestDeviceCode(_ kind: TrackerKind, clientID: String) async throws -> TrackerDeviceCode {
         switch kind {
         case .pmdb, .anilist:
-            // Connected with a key or pasted token; see `validateAPIKey`.
+            // Connected with a key or in the browser; see `validateAPIKey`
+            // and `anilistAuthorizationURL`.
             throw TrackerClientError.invalidResponse
+        case .mdblist:
+            let (data, _) = try await send(
+                mdblistForm("oauth/device-authorization/", ["client_id": clientID, "scope": "write"]),
+                accepting: [200]
+            )
+            let response = try decode(MDBListDeviceResponse.self, from: data)
+            guard let userCode = response.user_code, !userCode.isEmpty,
+                  let deviceCode = response.device_code, !deviceCode.isEmpty,
+                  let url = (response.verification_uri_complete ?? response.verification_uri).flatMap(URL.init(string:)),
+                  url.scheme == "https", url.host == "mdblist.com"
+            else { throw TrackerClientError.invalidResponse }
+            return TrackerDeviceCode(
+                userCode: userCode,
+                verificationURL: url,
+                pollingCode: deviceCode,
+                interval: TimeInterval(min(max(response.interval ?? 5, 5), 60)),
+                expiresAt: .now.addingTimeInterval(TimeInterval(response.expires_in ?? 600))
+            )
         case .trakt:
             let (data, _) = try await send(
                 traktRequest("oauth/device/code", clientID: clientID, body: ["client_id": clientID]),
@@ -118,12 +181,12 @@ nonisolated enum TrackerClient {
                 let (data, status) = try await send(request, accepting: [200, 400, 404, 409, 410, 418, 429])
                 switch status {
                 case 200:
-                    return .connected(app.with(try decode(TraktTokenResponse.self, from: data)))
+                    return .connected(app.with(try decode(OAuthTokenResponse.self, from: data)))
                 case 400: return .pending
                 case 429: return .slowDown
                 case 418: return .failed("You declined the request on Trakt.")
                 case 410: return .failed("The code expired. Try again.")
-                default: return .failed("Trakt didn't accept the code. Check your Client ID and Secret.")
+                default: return .failed("Trakt didn't accept the code. Try again.")
                 }
             case .simkl:
                 let (data, _) = try await send(
@@ -137,8 +200,26 @@ nonisolated enum TrackerClient {
                 var connected = app
                 connected.accessToken = token
                 return .connected(connected)
+            case .mdblist:
+                let request = mdblistForm("oauth/token/", [
+                    "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+                    "device_code": code.pollingCode,
+                    "client_id": app.clientID,
+                    "scope": "write"
+                ])
+                let (data, status) = try await send(request, accepting: [200, 400, 401, 403, 429])
+                if status == 200 {
+                    return .connected(app.with(try decode(OAuthTokenResponse.self, from: data)))
+                }
+                switch (try? decode(OAuthErrorResponse.self, from: data))?.error {
+                case "authorization_pending": return .pending
+                case "slow_down": return .slowDown
+                case "access_denied": return .failed("You declined the request on MDBList.")
+                case "expired_token": return .failed("The code expired. Try again.")
+                default: return status == 429 ? .slowDown : .failed("MDBList didn't accept the code. Try again.")
+                }
             case .pmdb, .anilist:
-                return .failed("\(kind.title) connects with a key or token.")
+                return .failed("\(kind.title) connects with a key or in the browser.")
             }
         } catch {
             // A dropped request mid-wait is retried on the next tick.
@@ -158,21 +239,95 @@ nonisolated enum TrackerClient {
         }
     }
 
-    /// Trakt tokens last three months; Simkl's and PublicMetaDB's keys
-    /// don't expire.
+    /// Trakt and MDBList tokens expire and are refreshed shortly before;
+    /// Simkl's, PublicMetaDB's and AniList's (a year) are used as they are.
     static func refreshIfNeeded(_ kind: TrackerKind, _ credentials: TrackerCredentials) async throws -> TrackerCredentials {
-        guard kind == .trakt, let expiresAt = credentials.expiresAt, expiresAt.timeIntervalSinceNow < 86_400,
+        guard kind == .trakt || kind == .mdblist, let expiresAt = credentials.expiresAt,
+              expiresAt.timeIntervalSinceNow < (kind == .trakt ? 3_600 : 120),
               let refreshToken = credentials.refreshToken
         else { return credentials }
-        let request = traktRequest("oauth/token", clientID: credentials.clientID, body: [
-            "refresh_token": refreshToken,
-            "client_id": credentials.clientID,
-            "client_secret": credentials.clientSecret ?? "",
-            "redirect_uri": "urn:ietf:wg:oauth:2.0:oob",
-            "grant_type": "refresh_token"
-        ])
+        let request: URLRequest
+        if kind == .trakt {
+            request = traktRequest("oauth/token", clientID: credentials.clientID, body: [
+                "refresh_token": refreshToken,
+                "client_id": credentials.clientID,
+                "client_secret": credentials.clientSecret ?? "",
+                "redirect_uri": TrackerAppCredentials.traktRedirectURI,
+                "grant_type": "refresh_token"
+            ])
+        } else {
+            request = mdblistForm("oauth/token/", [
+                "grant_type": "refresh_token",
+                "refresh_token": refreshToken,
+                "client_id": credentials.clientID
+            ])
+        }
         let (data, _) = try await send(request, accepting: [200])
-        return credentials.with(try decode(TraktTokenResponse.self, from: data))
+        return credentials.with(try decode(OAuthTokenResponse.self, from: data))
+    }
+
+    /// The signed-in account's name, for "Connected as". PublicMetaDB has
+    /// no profile endpoint.
+    static func username(_ kind: TrackerKind, credentials: TrackerCredentials) async -> String? {
+        guard let token = credentials.accessToken else { return nil }
+        do {
+            switch kind {
+            case .trakt:
+                var request = traktRequest("users/settings", clientID: credentials.clientID, body: [:])
+                request.httpMethod = "GET"
+                request.httpBody = nil
+                request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                let (data, _) = try await send(request, accepting: [200])
+                let settings = try decode(TraktUserSettings.self, from: data)
+                return settings.user?.username ?? settings.user?.name
+            case .simkl:
+                var request = simklRequest("users/settings", clientID: credentials.clientID, method: "GET")
+                request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                let (data, _) = try await send(request, accepting: [200])
+                return try decode(SimklUserSettings.self, from: data).user?.name
+            case .mdblist:
+                var request = URLRequest(url: mdblistBase.appending(path: "user"))
+                request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                request.setValue("\(appName)/\(appVersion)", forHTTPHeaderField: "User-Agent")
+                let (data, _) = try await send(request, accepting: [200])
+                let user = try decode(MDBListUser.self, from: data)
+                return user.username ?? user.name
+            case .anilist:
+                let viewer: AniListViewerName = try await anilistQuery("query { Viewer { name } }", variables: [:], token: token)
+                return viewer.Viewer?.name
+            case .pmdb:
+                return nil
+            }
+        } catch {
+            return nil
+        }
+    }
+
+    // MARK: AniList sign-in
+
+    /// AniList's sign-in page for Omnia's app; it returns to omnia://anilist
+    /// with the token in the fragment.
+    static func anilistAuthorizationURL(clientID: String) -> URL? {
+        var components = URLComponents(string: "https://anilist.co/api/v2/oauth/authorize")
+        components?.queryItems = [
+            URLQueryItem(name: "client_id", value: clientID),
+            URLQueryItem(name: "response_type", value: "token")
+        ]
+        return components?.url
+    }
+
+    /// The token in AniList's return link, if this is one.
+    static func anilistToken(from url: URL) -> (token: String, expiresIn: TimeInterval?)? {
+        guard url.scheme?.lowercased() == anilistRedirect.scheme, url.host?.lowercased() == anilistRedirect.host,
+              let fragment = url.fragment ?? URLComponents(url: url, resolvingAgainstBaseURL: false)?.query
+        else { return nil }
+        var fields: [String: String] = [:]
+        for pair in fragment.split(separator: "&") {
+            let parts = pair.split(separator: "=", maxSplits: 1).map(String.init)
+            if parts.count == 2 { fields[parts[0]] = parts[1].removingPercentEncoding ?? parts[1] }
+        }
+        guard let token = fields["access_token"], !token.isEmpty, token.count <= 4_096 else { return nil }
+        return (token, fields["expires_in"].flatMap(TimeInterval.init))
     }
 
     // MARK: Scrobbling
@@ -192,6 +347,18 @@ nonisolated enum TrackerClient {
             return
         }
         guard media.hasVideoIdentifier else { return }
+        if kind == .mdblist {
+            var body = mdblistScrobbleBody(media)
+            body["progress"] = progress
+            var request = URLRequest(url: mdblistBase.appending(path: "scrobble/\(action.rawValue)"))
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.setValue("\(appName)/\(appVersion)", forHTTPHeaderField: "User-Agent")
+            request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+            _ = try await send(request, accepting: [200, 201, 204, 409])
+            return
+        }
         if kind == .pmdb {
             try await savePMDBResume(action: action, media: media, progress: progress, runtimeSeconds: runtimeSeconds, key: token)
             return
@@ -205,7 +372,7 @@ nonisolated enum TrackerClient {
             request = traktRequest("scrobble/\(action.rawValue)", clientID: credentials.clientID, body: body)
         case .simkl:
             request = simklRequest("scrobble/\(action.rawValue)", clientID: credentials.clientID, method: "POST", body: body)
-        case .pmdb, .anilist:
+        case .pmdb, .anilist, .mdblist:
             return
         }
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -290,6 +457,36 @@ nonisolated enum TrackerClient {
         let (data, _) = try await send(request, accepting: [200])
         guard let payload = try decode(AniListPayload<T>.self, from: data).data else { throw TrackerClientError.invalidResponse }
         return payload
+    }
+
+    /// MDBList's scrobble body: like Trakt's, but an episode's season and
+    /// number sit inside `show`.
+    private static func mdblistScrobbleBody(_ media: TrackerMedia) -> [String: Any] {
+        var ids: [String: Any] = [:]
+        if let imdb = media.imdb { ids["imdb"] = imdb }
+        if let tmdb = media.tmdb { ids["tmdb"] = tmdb }
+        if let tvdb = media.tvdb { ids["tvdb"] = tvdb }
+        switch media.kind {
+        case .movie:
+            return ["movie": ["ids": ids]]
+        case let .episode(season, number):
+            return ["show": ["ids": ids, "season": season, "episode": number]]
+        }
+    }
+
+    /// An MDBList OAuth form request.
+    private static func mdblistForm(_ path: String, _ fields: [String: String]) -> URLRequest {
+        var request = URLRequest(url: mdblistBase.appending(path: path))
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("\(appName)/\(appVersion)", forHTTPHeaderField: "User-Agent")
+        var components = URLComponents()
+        components.queryItems = fields.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }
+        request.httpBody = components.percentEncodedQuery?
+            .replacingOccurrences(of: "+", with: "%2B")
+            .data(using: .utf8)
+        return request
     }
 
     /// PublicMetaDB matches on TMDB IDs, or on an IMDb ID it maps itself.
@@ -397,7 +594,7 @@ private nonisolated struct TraktDeviceCodeResponse: Decodable {
     let interval: Int
 }
 
-private nonisolated struct TraktTokenResponse: Decodable {
+private nonisolated struct OAuthTokenResponse: Decodable {
     let access_token: String
     let refresh_token: String?
     let expires_in: Int?
@@ -409,6 +606,42 @@ private nonisolated struct SimklPinResponse: Decodable {
     let verification_url: String?
     let expires_in: Int?
     let interval: Int?
+}
+
+private nonisolated struct MDBListDeviceResponse: Decodable {
+    let device_code: String?
+    let user_code: String?
+    let verification_uri: String?
+    let verification_uri_complete: String?
+    let expires_in: Int?
+    let interval: Int?
+}
+
+private nonisolated struct OAuthErrorResponse: Decodable {
+    let error: String?
+}
+
+private nonisolated struct MDBListUser: Decodable {
+    let username: String?
+    let name: String?
+}
+
+private nonisolated struct TraktUserSettings: Decodable {
+    struct User: Decodable {
+        let username: String?
+        let name: String?
+    }
+    let user: User?
+}
+
+private nonisolated struct SimklUserSettings: Decodable {
+    struct User: Decodable { let name: String? }
+    let user: User?
+}
+
+private nonisolated struct AniListViewerName: Decodable {
+    struct Viewer: Decodable { let name: String? }
+    let Viewer: Viewer?
 }
 
 private nonisolated struct AniListPayload<T: Decodable>: Decodable {
@@ -443,7 +676,7 @@ private nonisolated struct SimklPinPollResponse: Decodable {
 }
 
 private extension TrackerCredentials {
-    nonisolated func with(_ token: TraktTokenResponse) -> TrackerCredentials {
+    nonisolated func with(_ token: OAuthTokenResponse) -> TrackerCredentials {
         var copy = self
         copy.accessToken = token.access_token
         copy.refreshToken = token.refresh_token ?? refreshToken
