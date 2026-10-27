@@ -13,6 +13,7 @@ struct ProgressSettingsView: View {
     @State private var importConfirmation = SettingsConfirmation<ImportAction>()
     @State private var isWorking = false
     @State private var statusMessage: String?
+    @State private var trackerLibrary = TrackerLibraryStore.shared
 
     private enum ImportAction: Equatable {
         case replace
@@ -20,16 +21,33 @@ struct ProgressSettingsView: View {
 
     var body: some View {
         OmniaSettingsForm {
-            Section("Storage") {
-                LabeledContent("Progress", value: account.storageSummary)
-                LabeledContent("Watchlist", value: account.storageSummary)
+            Section {
+                SettingsDropdown(
+                    "Progress",
+                    subtitle: storageDetail(trackerLibrary.continueWatchingSource),
+                    selection: $trackerLibrary.continueWatchingSource,
+                    options: storageOptions(including: trackerLibrary.continueWatchingSource)
+                ) { storageTitle($0) }
+                SettingsDropdown(
+                    "Watchlist",
+                    subtitle: storageDetail(trackerLibrary.watchlistSource),
+                    selection: $trackerLibrary.watchlistSource,
+                    options: storageOptions(including: trackerLibrary.watchlistSource)
+                ) { storageTitle($0) }
+                ForEach(TrackerKind.allCases) { kind in
+                    TrackerSyncStatusLine(kind: kind)
+                }
                 if account.user != nil {
-                    Label("Synced for this profile on every device you sign in on", systemImage: "checkmark.icloud")
+                    Label("Omnia's own progress is synced for this profile on every device you sign in on", systemImage: "checkmark.icloud")
                         .foregroundStyle(.secondary)
                 } else {
-                    Label("Sign in under Account to keep them in your Omnia account", systemImage: "laptopcomputer")
+                    Label("Sign in under Account to keep Omnia's own progress in your Omnia account", systemImage: "laptopcomputer")
                         .foregroundStyle(.secondary)
                 }
+            } header: {
+                Text("Storage")
+            } footer: {
+                Text("Choose where Continue Watching and the Library read from. A tracker's progress and watchlist come from your account there, and what you play is scrobbled back to it. Connect Trakt, Simkl or PublicMetaDB under Integrations to add them here. Omnia keeps its own progress either way.")
             }
 
             Section {
@@ -106,6 +124,28 @@ struct ProgressSettingsView: View {
         .fileImporter(isPresented: $showsImporter, allowedContentTypes: [.json]) { result in
             reviewImport(result)
         }
+    }
+
+    /// Local plus every connected tracker, and the current choice even if
+    /// its tracker was disconnected, so the menu always shows it.
+    private func storageOptions(including current: TrackerLibrarySource) -> [TrackerLibrarySource] {
+        let available = trackerLibrary.availableSources
+        return available.contains(current) ? available : available + [current]
+    }
+
+    private func storageTitle(_ source: TrackerLibrarySource) -> String {
+        switch source {
+        case .local: account.user != nil ? "Omnia Account" : "This Device"
+        default: source.tracker?.title ?? source.title
+        }
+    }
+
+    private func storageDetail(_ source: TrackerLibrarySource) -> String {
+        guard let tracker = source.tracker else { return account.storageSummary }
+        guard trackerLibrary.effectiveSource(source) == source else {
+            return "\(tracker.title) isn't connected, so Omnia's own is shown"
+        }
+        return "Read from your \(tracker.title) account"
     }
 
     private var importConfirmationPresentation: Binding<Bool> {

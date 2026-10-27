@@ -29,13 +29,34 @@ struct LibraryView: View {
     @State private var selectedKind: MediaItem.Kind?
     @State private var sourcePlaybackItem: MediaItem?
     @AppStorage("library-sort") private var savedSortOrder = LibrarySortOrder.recentAdded.rawValue
+    /// Library from a tracker's watchlist and progress instead of Omnia's,
+    /// like Nuvio's library source switch.
+    @State private var trackerLibrary = TrackerLibraryStore.shared
+
+    private var tracker: TrackerKind? {
+        trackerLibrary.effectiveSource(trackerLibrary.watchlistSource).tracker
+    }
 
     private var sections: [LibrarySection] {
         LibraryCollectionPresentation.sections(
-            snapshots: store.localMediaSnapshots,
+            snapshots: tracker.map(trackerSnapshots) ?? store.localMediaSnapshots,
             kind: selectedKind,
             sort: sortOrder
         )
+    }
+
+    /// A tracker's lists in the shape Omnia's own library has: paused
+    /// titles under Continue Watching, the watchlist under My List.
+    private func trackerSnapshots(_ kind: TrackerKind) -> [LocalMediaSnapshot] {
+        let progress = trackerLibrary.items(.progress, from: kind).map {
+            LocalMediaSnapshot(item: $0, isInWatchlist: false, savedAt: nil, lastPlayedAt: nil)
+        }
+        let watchlist = trackerLibrary.items(.watchlist, from: kind).map { item in
+            var item = item
+            item.progress = nil
+            return LocalMediaSnapshot(item: item, isInWatchlist: true, savedAt: nil, lastPlayedAt: nil)
+        }
+        return progress + watchlist
     }
 
     private var sortOrder: LibrarySortOrder {
@@ -44,7 +65,23 @@ struct LibraryView: View {
 
     var body: some View {
         ScrollView {
-            if sections.allSatisfy(\.items.isEmpty) {
+            if let tracker {
+                TrackerSyncStatusLine(kind: tracker)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, MediaBrowseMetrics.pageInset)
+                    .padding(.top, 12)
+            }
+            if sections.allSatisfy(\.items.isEmpty), let tracker, trackerLibrary.state(tracker) == .syncing {
+                ProgressView("Reading \(tracker.shortTitle)…")
+                    .frame(maxWidth: .infinity, minHeight: 360)
+            } else if sections.allSatisfy(\.items.isEmpty), let tracker {
+                ContentUnavailableView(
+                    "Nothing on \(tracker.shortTitle)",
+                    systemImage: "rectangle.stack",
+                    description: Text("Titles on your \(tracker.title) watchlist or in progress there show here.")
+                )
+                .frame(maxWidth: .infinity, minHeight: 360)
+            } else if sections.allSatisfy(\.items.isEmpty) {
                 ContentUnavailableView(
                     "Your Library Is Empty",
                     systemImage: "rectangle.stack",
@@ -80,6 +117,10 @@ struct LibraryView: View {
                 )
             }
         }
+        .task(id: tracker) {
+            guard let tracker else { return }
+            trackerLibrary.syncIfNeeded(tracker, addons: store.installedAddons)
+        }
     }
 
     @ViewBuilder
@@ -114,6 +155,21 @@ struct LibraryView: View {
 
     private var libraryFilterMenu: some View {
         Menu {
+            if trackerLibrary.availableSources.count > 1 {
+                Picker("Source", selection: $trackerLibrary.watchlistSource) {
+                    ForEach(trackerLibrary.availableSources) { source in
+                        Text(source.title).tag(source)
+                    }
+                }
+                if let tracker {
+                    Button("Sync \(tracker.shortTitle) Now", systemImage: "arrow.triangle.2.circlepath") {
+                        trackerLibrary.sync(tracker, addons: store.installedAddons)
+                    }
+                    .disabled(trackerLibrary.state(tracker) == .syncing)
+                }
+                Divider()
+            }
+
             Picker("Kind", selection: $selectedKind) {
                 Text("All Media").tag(MediaItem.Kind?.none)
                 ForEach(MediaItem.Kind.allCases, id: \.self) { kind in
@@ -129,7 +185,7 @@ struct LibraryView: View {
         } label: {
             Label("Filter and Sort", systemImage: "line.3.horizontal.decrease.circle")
         }
-        .help("Filter and sort every Library shelf")
+        .help("Choose the Library's source, and filter and sort every shelf")
     }
 
     private var showsSourcePicker: Binding<Bool> {

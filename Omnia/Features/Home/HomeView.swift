@@ -43,9 +43,19 @@ struct HomeView: View {
     /// Settings › Home › Continue Watching › Show on Home.
     static let continueWatchingVisibilityKey = "home-show-continue-watching"
     @AppStorage(HomeShelfPreferences.storageKey) private var disabledHomeShelfIDs = ""
+    /// Continue Watching from a tracker instead of Omnia's own progress.
+    @State private var trackerLibrary = TrackerLibraryStore.shared
+
+    private var continueWatchingTracker: TrackerKind? {
+        trackerLibrary.effectiveSource(trackerLibrary.continueWatchingSource).tracker
+    }
 
     private var continuing: [MediaItem] {
         if isOnboardingPreview { return [] }
+        if let tracker = continueWatchingTracker {
+            let sorted = display.continueWatchingSort.sorted(trackerLibrary.items(.progress, from: tracker))
+            return settings.preferences.continueWatchingLimit.value.map { Array(sorted.prefix($0)) } ?? sorted
+        }
         // Newest played first. The stored order puts a title in My List by
         // the day it was added, so a show watched again stayed where it was.
         let values = store.localMediaSnapshots
@@ -172,7 +182,9 @@ struct HomeView: View {
                 // Lazy so only the rows on screen are built. An add-on such as
                 // Xperience adds dozens of rows, each with its own posters.
                 LazyVStack(alignment: .leading, spacing: 34) {
-                    if showsContinueWatching, !continuing.isEmpty {
+                    // A tracker's row stays, even empty, so its menu can
+                    // switch back.
+                    if showsContinueWatching, !isOnboardingPreview, !continuing.isEmpty || continueWatchingTracker != nil {
                         continueWatchingShelf(continuing)
                     }
 
@@ -699,16 +711,35 @@ struct HomeView: View {
     /// retain the title/year beneath the landscape artwork.
     private func continueWatchingShelf(_ items: [MediaItem]) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionHeader(title: "Continue Watching")
-            ShelfScrollView(
-                items: items,
-                itemSpan: continueWatchingCardSpan,
-                accessibilityLabel: "Continue Watching"
-            ) { item in
-                ContinueWatchingCard(item: item) {
-                    sourcePlaybackItem = item
+            SectionHeader(title: "Continue Watching") {
+                if trackerLibrary.availableSources.count > 1 {
+                    TrackerSourceMenu(selection: $trackerLibrary.continueWatchingSource)
+                        .padding(.leading, 6)
                 }
             }
+            if let tracker = continueWatchingTracker {
+                TrackerSyncStatusLine(kind: tracker)
+            }
+            if items.isEmpty, let tracker = continueWatchingTracker {
+                Text(trackerLibrary.state(tracker) == .syncing
+                     ? "Reading \(tracker.shortTitle)…"
+                     : "Nothing in progress on \(tracker.shortTitle).")
+                    .foregroundStyle(.secondary)
+            } else {
+                ShelfScrollView(
+                    items: items,
+                    itemSpan: continueWatchingCardSpan,
+                    accessibilityLabel: "Continue Watching"
+                ) { item in
+                    ContinueWatchingCard(item: item) {
+                        sourcePlaybackItem = item
+                    }
+                }
+            }
+        }
+        .task(id: continueWatchingTracker) {
+            guard let tracker = continueWatchingTracker else { return }
+            trackerLibrary.syncIfNeeded(tracker, addons: store.installedAddons)
         }
     }
 

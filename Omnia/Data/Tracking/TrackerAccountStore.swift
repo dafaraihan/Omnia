@@ -118,6 +118,7 @@ final class TrackerAccountStore {
         try? KeychainStore.delete(account: Self.keychainAccount(kind))
         credentials[kind] = nil
         lastScrobbleError[kind] = nil
+        TrackerLibraryStore.shared.forget(kind)
     }
 
     private func waitForApproval(_ kind: TrackerKind, code: TrackerDeviceCode, app: TrackerCredentials) async {

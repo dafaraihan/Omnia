@@ -445,6 +445,11 @@ final class OmniaStore {
     }
 
     func removeFromContinueWatching(_ item: MediaItem) {
+        // A tracker's Continue Watching also clears the tracker's playback.
+        let trackerLibrary = TrackerLibraryStore.shared
+        if let tracker = trackerLibrary.effectiveSource(trackerLibrary.continueWatchingSource).tracker {
+            trackerLibrary.removeFromProgress(item, kind: tracker)
+        }
         guard let localMediaStore else {
             removeFromContinueWatchingInMemory(item)
             return
