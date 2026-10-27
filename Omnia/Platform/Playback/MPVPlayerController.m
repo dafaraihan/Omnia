@@ -1805,9 +1805,12 @@ static void OMMpvWakeup(void *context) {
         }
         case MPV_EVENT_LOG_MESSAGE: {
             mpv_event_log_message *message = event->data;
+            // libplacebo built without LittleCMS reports that once even when
+            // no ICC profile is in use; it doesn't stop the Metal output.
             if (_usingMetalRendering && message && message->prefix && message->text
                 && message->log_level <= MPV_LOG_LEVEL_ERROR
-                && strncmp(message->prefix, "vo", 2) == 0) {
+                && strncmp(message->prefix, "vo", 2) == 0
+                && !strstr(message->text, "without LittleCMS")) {
                 NSString *text = [[NSString stringWithUTF8String:message->text]
                     stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
                 [self fallBackToOpenGL:[NSString stringWithFormat:@"%s: %@", message->prefix, text]];
