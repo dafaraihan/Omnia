@@ -1,0 +1,15 @@
+// Omnia app target settings.
+//
+// Tracker sign-in uses Omnia's own registered apps, as Nuvio does: users
+// sign in with a code or in the browser and never create an app themselves.
+// The IDs (and Trakt's secret) come from Config/Secrets.xcconfig, which git
+// ignores. Copy Config/Secrets.example.xcconfig to Config/Secrets.xcconfig
+// and fill it in; without it, those sign-ins say they aren't configured.
+
+OMNIA_TRAKT_CLIENT_ID =
+OMNIA_TRAKT_CLIENT_SECRET =
+OMNIA_SIMKL_CLIENT_ID =
+OMNIA_MDBLIST_CLIENT_ID =
+OMNIA_ANILIST_CLIENT_ID =
+
+#include? "Secrets.xcconfig"

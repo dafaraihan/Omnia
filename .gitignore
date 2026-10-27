@@ -7,3 +7,6 @@ xcuserdata/
 build/
 DerivedData/
 *.dmg
+
+# Omnia app credentials for tracker sign-in (see Config/Secrets.example.xcconfig)
+Config/Secrets.xcconfig

@@ -12,6 +12,7 @@
 
 /* Begin PBXFileReference section */
 		9D577E413018EA5D0066A3C3 /* Omnia.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Omnia.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C0F1A0013018EA5D0066A3C3 /* Omnia.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Omnia.xcconfig; path = Config/Omnia.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -52,6 +53,7 @@
 			isa = PBXGroup;
 			children = (
 				9D577E433018EA5D0066A3C3 /* Omnia */,
+				C0F1A0013018EA5D0066A3C3 /* Omnia.xcconfig */,
 				9D577E423018EA5D0066A3C3 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -307,6 +309,7 @@
 		};
 		9D577E4D3018EA5D0066A3C3 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = C0F1A0013018EA5D0066A3C3 /* Omnia.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -409,6 +412,7 @@
 		};
 		9D577E4E3018EA5D0066A3C3 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = C0F1A0013018EA5D0066A3C3 /* Omnia.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;

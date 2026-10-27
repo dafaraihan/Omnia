@@ -198,6 +198,17 @@ owned by [the credential-vault runbook](INFRASTRUCTURE.md#account-credential-vau
   managed Edge Function secrets. The native app must never receive them. Rotate
   a secret after suspected exposure and invalidate affected sessions where
   applicable.
+- **Exception — tracker app credentials (owner decision, 2026-10-27).** Tracker
+  sign-in uses Omnia's own registered apps, as Nuvio does, so users never
+  create one: the Trakt client ID and secret and the Simkl, MDBList and AniList
+  client IDs are built into the app from `Config/Secrets.xcconfig`, which git
+  ignores (`Config/Secrets.example.xcconfig` is the committed template). They
+  reach `Info.plist` and can be extracted from a shipped binary. Client IDs are
+  public by design. The Trakt secret only completes Trakt's device sign-in, which
+  still needs the user's approval on trakt.tv; it grants no access to any
+  account on its own. Never commit the filled-in file, never log these values,
+  and rotate the Trakt secret in its developer console if it is abused. Users'
+  tokens stay in Keychain as before.
 - Enable RLS on every exposed table. Client policies must name the intended role
   and enforce ownership, including both `USING` and `WITH CHECK` for updates.
   Keep service-role operations in a small server-only module and never use them
