@@ -12,6 +12,7 @@ enum UserManagedProviderCredential: String, CaseIterable, Identifiable, Sendable
     case anilist
     case tmdb
     case tvdb
+    case fanart
 
     var id: String { rawValue }
 
@@ -21,6 +22,7 @@ enum UserManagedProviderCredential: String, CaseIterable, Identifiable, Sendable
         case .anilist: "AniList"
         case .tmdb: "TMDB"
         case .tvdb: "TVDB"
+        case .fanart: "fanart.tv"
         }
     }
 
@@ -30,6 +32,7 @@ enum UserManagedProviderCredential: String, CaseIterable, Identifiable, Sendable
         case .anilist: "AniList Access Token"
         case .tmdb: "TMDB API Read Access Token or API Key"
         case .tvdb: "TVDB API Key"
+        case .fanart: "fanart.tv Personal API Key"
         }
     }
 
@@ -45,6 +48,8 @@ enum UserManagedProviderCredential: String, CaseIterable, Identifiable, Sendable
             "Omnia uses your own TMDB key for catalogs, search, details, trailers and cast. Create one free at themoviedb.org › Settings › API; the API Read Access Token or the API Key both work."
         case .tvdb:
             "Omnia uses your own TVDB key for series, seasons and episode order. Create one at thetvdb.com › Dashboard › API Keys. For a user-supported key, add your subscriber PIN after a space."
+        case .fanart:
+            "On iPhone, Omnia uses fanart.tv for textless posters TMDB doesn't have. Get a free personal API key at fanart.tv › your profile › API Key."
         }
     }
 }
