@@ -603,6 +603,10 @@ nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
     var posterWidth: PosterWidthPreset = .standard
     var posterCorner: PosterCornerPreset = .rounded
     var landscapePosters = false
+    /// Nuvio's Custom Poster Source: a poster service URL pattern such as
+    /// `https://api.ratingposterdb.com/KEY/imdb/poster-default/{imdb_id}.jpg`.
+    /// Empty uses each title's own poster (Dafa, 2026-10-27).
+    var customPosterURLPattern = ""
     var cardDepth: CardDepthPreferences = .default
     var cardHover: CardHoverPreferences = .default
 
@@ -660,6 +664,7 @@ nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
         posterWidth = (try? c.decodeIfPresent(PosterWidthPreset.self, forKey: .posterWidth)) ?? d.posterWidth
         posterCorner = (try? c.decodeIfPresent(PosterCornerPreset.self, forKey: .posterCorner)) ?? d.posterCorner
         landscapePosters = (try? c.decodeIfPresent(Bool.self, forKey: .landscapePosters)) ?? d.landscapePosters
+        customPosterURLPattern = (try? c.decodeIfPresent(String.self, forKey: .customPosterURLPattern)) ?? d.customPosterURLPattern
         cardDepth = (try? c.decodeIfPresent(CardDepthPreferences.self, forKey: .cardDepth)) ?? d.cardDepth
         cardHover = (try? c.decodeIfPresent(CardHoverPreferences.self, forKey: .cardHover)) ?? d.cardHover
         hoverPreviewEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .hoverPreviewEnabled)) ?? d.hoverPreviewEnabled

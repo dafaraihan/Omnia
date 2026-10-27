@@ -17,11 +17,27 @@ struct ArtworkView: View {
         prefersBackdrop ? item.backdropURL ?? item.artworkURL : item.artworkURL
     }
 
+    /// Settings › Layout › Poster Cards › Custom Poster Source. Backdrop
+    /// cards use it only when the pattern can ask for a landscape image.
+    private var customURL: URL? {
+        let pattern = display.customPosterURLPattern
+        guard !pattern.isEmpty else { return nil }
+        if prefersBackdrop {
+            guard pattern.contains("{shape}") else { return nil }
+            return CustomPosterURLResolver.url(for: item, pattern: pattern, shape: "landscape")
+        }
+        return CustomPosterURLResolver.url(for: item, pattern: pattern)
+    }
+
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             fallbackArtwork
 
-            if let artworkURL = imageURL {
+            if let customURL {
+                // A failed custom poster falls back to the title's own.
+                RemoteArtworkImage(url: customURL, fallbackURL: imageURL)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let artworkURL = imageURL {
                 RemoteArtworkImage(url: artworkURL)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -72,6 +88,9 @@ struct ArtworkView: View {
 /// It fills its frame, and is decoded at the size it is drawn.
 struct RemoteArtworkImage: View {
     let url: URL
+    /// Shown instead when `url` fails, such as a custom poster service that
+    /// has no image for the title.
+    var fallbackURL: URL? = nil
     @State private var size = CGSize.zero
 
     var body: some View {
@@ -88,6 +107,15 @@ struct RemoteArtworkImage: View {
                             .resizable()
                             .scaledToFill()
                             .transition(.opacity)
+                    } else if case .failure = phase, let fallbackURL, fallbackURL != url {
+                        CachedArtworkImage(url: fallbackURL, size: size, transaction: .init(animation: .easeInOut)) { fallback in
+                            if let image = fallback.image {
+                                image
+                                    .resizable()
+                                    .scaledToFill()
+                                    .transition(.opacity)
+                            }
+                        }
                     }
                 }
             }

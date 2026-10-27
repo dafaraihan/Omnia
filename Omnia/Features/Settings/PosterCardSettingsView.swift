@@ -4,8 +4,13 @@ import SwiftUI
 /// Depth Effect. Every poster row, grid and card reads these values.
 struct PosterCardSettingsView: View {
     @Environment(SettingsPreferencesStore.self) private var settings
+    @State private var posterPatternDraft = ""
 
     private var display: DisplayPreferences { settings.preferences.display }
+
+    private var trimmedPosterPattern: String {
+        posterPatternDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
     var body: some View {
         OmniaSettingsForm {
@@ -37,6 +42,8 @@ struct PosterCardSettingsView: View {
             } header: {
                 Text("Poster Card Style")
             }
+
+            customPosterSourceSection
 
             Section {
                 Toggle("Card Depth Effect", isOn: settings.binding(\.display.cardDepth.isEnabled))
@@ -153,6 +160,54 @@ struct PosterCardSettingsView: View {
             }
         }
         .omniaNavigationTitle("Poster Cards")
+        .onAppear { posterPatternDraft = display.customPosterURLPattern }
+    }
+
+    /// Nuvio's Custom Poster Source: a URL pattern from a poster service.
+    private var customPosterSourceSection: some View {
+        Section {
+            TextField(
+                "Poster URL Pattern",
+                text: $posterPatternDraft,
+                prompt: Text("https://example.com/poster?id={id}&id_type={id_type}&type={type}")
+            )
+            .font(.body.monospaced())
+            .autocorrectionDisabled()
+            #if os(iOS)
+            .textInputAutocapitalization(.never)
+            .keyboardType(.URL)
+            #endif
+            .onSubmit(savePosterPattern)
+            if !trimmedPosterPattern.isEmpty, !CustomPosterURLResolver.isValidPattern(trimmedPosterPattern) {
+                Label("Enter an http or https address.", systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+            }
+            HStack {
+                Button("Save", action: savePosterPattern)
+                    .disabled(trimmedPosterPattern == display.customPosterURLPattern
+                              || (!trimmedPosterPattern.isEmpty && !CustomPosterURLResolver.isValidPattern(trimmedPosterPattern)))
+                Button("Clear", role: .destructive) {
+                    posterPatternDraft = ""
+                    settings.update { $0.display.customPosterURLPattern = "" }
+                }
+                .disabled(display.customPosterURLPattern.isEmpty && posterPatternDraft.isEmpty)
+            }
+            Label(
+                display.customPosterURLPattern.isEmpty ? "No pattern configured" : "Custom poster source active",
+                systemImage: display.customPosterURLPattern.isEmpty ? "circle.dashed" : "checkmark.circle.fill"
+            )
+            .foregroundStyle(.secondary)
+        } header: {
+            Text("Custom Poster Source")
+        } footer: {
+            Text("Provide a poster URL pattern from an external service, such as RPDB. Placeholders: {id}, {id_type}, {typed_id}, {type}, {shape}, {imdb_id}, {tmdb_id}, {tvdb_id}, {kitsu_id}, {anilist_id}, {mal_id}, {anidb_id}. Add ? for an optional one ({imdb_id?}) or | for the first available ({imdb_id|tmdb_id}). If a placeholder has no value for a title, or the image fails to load, its original poster is used. Landscape cards use the pattern only when it includes {shape}.")
+        }
+    }
+
+    private func savePosterPattern() {
+        let pattern = trimmedPosterPattern
+        guard pattern.isEmpty || CustomPosterURLResolver.isValidPattern(pattern) else { return }
+        settings.update { $0.display.customPosterURLPattern = pattern }
     }
 
     private var hoverColorBinding: Binding<Color> {
