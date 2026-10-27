@@ -301,11 +301,20 @@ nonisolated struct GenreBrowseSource: Identifiable, Sendable {
         return sources
     }
 
-    /// Xperience and AIOMetadata type their anime catalogs `anime`,
-    /// `anime.series` or `anime.movie`.
-    private static func isAnimeCatalog(_ catalog: AddonCatalog) -> Bool {
+    /// Add-ons mark anime catalogs in different ways: AIOMetadata types them
+    /// `anime`, `anime.series` or `anime.movie`; Xperience and others keep a
+    /// series or movie type and say "Anime" in the catalog's name or id
+    /// ("Trending Anime", `anime-popular`), or list an anime database
+    /// (MyAnimeList, Kitsu, AniList, AniDB) in the id.
+    static func isAnimeCatalog(_ catalog: AddonCatalog) -> Bool {
         let type = catalog.type.lowercased()
-        return type == "anime" || type.hasPrefix("anime.")
+        if type == "anime" || type.hasPrefix("anime.") || type.hasSuffix(".anime") { return true }
+        let words = [catalog.id, catalog.name ?? ""]
+            .joined(separator: " ")
+            .lowercased()
+            .split { !$0.isLetter && !$0.isNumber }
+        let animeWords: Set<Substring> = ["anime", "animes", "mal", "myanimelist", "kitsu", "anilist", "anidb"]
+        return words.contains { animeWords.contains($0) }
     }
 }
 
