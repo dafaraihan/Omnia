@@ -17,6 +17,12 @@ struct MetadataSettingsView: View {
                     detail: tmdbSummary
                 )
                 IntegrationLinkRow(
+                    route: .animeEnrichment,
+                    providerID: "anilist",
+                    title: "Anime Enrichment",
+                    detail: animeSummary
+                )
+                IntegrationLinkRow(
                     route: .metadataProvider("mdblist"),
                     providerID: "mdblist",
                     title: "MDBList Ratings",
@@ -59,7 +65,7 @@ struct MetadataSettingsView: View {
             } header: {
                 Text("Omnia")
             } footer: {
-                Text("Add-ons describe the titles they list. Metadata Sources choose TMDB, TVDB or AniList for Omnia's built-in rows and fill in titles no add-on describes.")
+                Text("Add-ons describe the titles they list. Metadata Sources choose TMDB, TVDB, AniList, Kitsu or MyAnimeList for Omnia's built-in rows and fill in titles no add-on describes.")
             }
         }
         .omniaNavigationTitle("Integrations")
@@ -69,6 +75,13 @@ struct MetadataSettingsView: View {
         let tmdb = settings.preferences.integrations.tmdb
         guard tmdb.enabled else { return "Off: add-on data only" }
         return "\(tmdb.enabledModuleCount) of \(TMDBEnrichmentPreferences.moduleCount) modules on"
+    }
+
+    private var animeSummary: String {
+        let anime = settings.preferences.integrations.anime
+        guard anime.enabled else { return "Off" }
+        let modules = [anime.useBasicInfo, anime.useArtwork].filter { $0 }.count
+        return "\(modules) of 2 modules on"
     }
 
     private var mdblistSummary: String {
@@ -179,6 +192,58 @@ struct TMDBEnrichmentSettingsView: View {
         _ keyPath: WritableKeyPath<TMDBEnrichmentPreferences, Bool>
     ) -> some View {
         Toggle(isOn: settings.binding((\SettingsPreferences.integrations.tmdb).appending(path: keyPath))) {
+            Text(title)
+            Text(detail)
+        }
+    }
+}
+
+/// Anime Enrichment, after TMDB Enrichment: AniList, Kitsu and MyAnimeList
+/// fill in what an anime title's add-on and TMDB left out (Dafa,
+/// 2026-10-27). They're asked in the Anime order under Metadata Sources.
+struct AnimeEnrichmentSettingsView: View {
+    @Environment(SettingsPreferencesStore.self) private var settings
+    @Environment(OmniaStore.self) private var store
+
+    private var enabled: Bool { settings.preferences.integrations.anime.enabled }
+
+    private var sourcesInUse: String {
+        let sources = store.metadataRouting.anime.requestedProviders.filter(\.isAnimeDatabase).map(\.title)
+        return sources.isEmpty ? "none: turn one on under Metadata Sources › Anime" : sources.formatted(.list(type: .and))
+    }
+
+    var body: some View {
+        OmniaSettingsForm {
+            Section {
+                Toggle(isOn: settings.binding(\.integrations.anime.enabled)) {
+                    Text("Enable Anime Enrichment")
+                    Text("Use anime databases to fill in what your add-ons and TMDB leave out.")
+                }
+            } header: {
+                Text("Anime Enrichment")
+            } footer: {
+                Text("Asks \(sourcesInUse), in that order. Only titles with an AniList, Kitsu or MyAnimeList ID are looked up, and none of them needs a key.")
+            }
+
+            Section {
+                module("Basic Info", "Synopsis, genres and year.", \.useBasicInfo)
+                module("Artwork", "Poster and banner images.", \.useArtwork)
+            } header: {
+                Text("Modules")
+            } footer: {
+                Text("A turned-off module leaves that part to your add-on and TMDB.")
+            }
+            .disabled(!enabled)
+        }
+        .omniaNavigationTitle("Anime Enrichment")
+    }
+
+    private func module(
+        _ title: String,
+        _ detail: String,
+        _ keyPath: WritableKeyPath<AnimeEnrichmentPreferences, Bool>
+    ) -> some View {
+        Toggle(isOn: settings.binding((\SettingsPreferences.integrations.anime).appending(path: keyPath))) {
             Text(title)
             Text(detail)
         }
@@ -378,6 +443,7 @@ private struct MetadataProviderMark: View {
         case "tvdb": "TheTVDBMark"
         case "mdblist": "MDBListMark"
         case "anilist": "AniListMark"
+        case "myanimelist": "RatingMyAnimeListMark"
         default: nil
         }
     }

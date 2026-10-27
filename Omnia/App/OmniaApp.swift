@@ -221,6 +221,9 @@ struct OmniaApp: App {
                 metadata.configure(metadataRouting: routing)
                 Task { await metadata.loadDefaultCatalogs() }
             }
+            .onChange(of: settings.preferences.integrations.anime, initial: true) { _, enrichment in
+                metadata.animeEnrichment = enrichment
+            }
             .onOpenURL { url in
                 if let manifestURL = AddonInstallCallback.manifestURL(from: url) {
                     Task { try? await store.installAddon(manifestURL: manifestURL) }

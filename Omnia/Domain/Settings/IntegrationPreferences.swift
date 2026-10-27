@@ -1,9 +1,10 @@
 import Foundation
 
-/// Settings › Integrations, laid out like Nuvio's: TMDB Enrichment and
-/// MDBList Ratings.
+/// Settings › Integrations, laid out like Nuvio's: TMDB Enrichment, Anime
+/// Enrichment and MDBList Ratings.
 nonisolated struct IntegrationPreferences: Codable, Equatable, Sendable {
     var tmdb = TMDBEnrichmentPreferences()
+    var anime = AnimeEnrichmentPreferences()
     /// Nuvio's "Enable MDBList Ratings". On by default so ratings keep
     /// showing for anyone who already saved an MDBList key.
     var mdblistEnabled = true
@@ -13,12 +14,13 @@ nonisolated struct IntegrationPreferences: Codable, Equatable, Sendable {
     init() {}
 
     private enum CodingKeys: String, CodingKey {
-        case tmdb, mdblistEnabled
+        case tmdb, anime, mdblistEnabled
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         tmdb = (try? container.decodeIfPresent(TMDBEnrichmentPreferences.self, forKey: .tmdb)) ?? .init()
+        anime = (try? container.decodeIfPresent(AnimeEnrichmentPreferences.self, forKey: .anime)) ?? .init()
         mdblistEnabled = (try? container.decodeIfPresent(Bool.self, forKey: .mdblistEnabled)) ?? true
     }
 }
@@ -74,7 +76,51 @@ nonisolated struct TMDBEnrichmentPreferences: Codable, Equatable, Sendable {
     static let moduleCount = 9
 }
 
+/// What AniList, Kitsu and MyAnimeList may fill in on an anime title's page
+/// when the add-on and TMDB left it out (Dafa, 2026-10-27). The anime
+/// sources are asked in their Metadata Sources › Anime order.
+nonisolated struct AnimeEnrichmentPreferences: Codable, Equatable, Sendable {
+    var enabled = true
+    var useBasicInfo = true
+    var useArtwork = true
+
+    init() {}
+
+    private enum CodingKeys: String, CodingKey {
+        case enabled, useBasicInfo, useArtwork
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        func flag(_ key: CodingKeys) -> Bool {
+            (try? container.decodeIfPresent(Bool.self, forKey: key)) ?? true
+        }
+        enabled = flag(.enabled)
+        useBasicInfo = flag(.useBasicInfo)
+        useArtwork = flag(.useArtwork)
+    }
+}
+
 extension MediaItem {
+    /// An anime database's record with the fields a turned-off Anime
+    /// Enrichment module covers removed.
+    nonisolated func restricted(to modules: AnimeEnrichmentPreferences) -> MediaItem {
+        MediaItem(
+            id: id,
+            title: title,
+            year: modules.useBasicInfo ? year : "—",
+            kind: kind,
+            overview: modules.useBasicInfo ? overview : "",
+            genres: modules.useBasicInfo ? genres : [],
+            symbol: symbol,
+            artworkColors: artworkColors,
+            artworkURL: modules.useArtwork ? artworkURL : nil,
+            backdropURL: modules.useArtwork ? backdropURL : nil,
+            externalIDs: externalIDs,
+            progress: progress
+        )
+    }
+
     /// The TMDB record with every field a turned-off module covers removed,
     /// so `fillingGaps(from:)` can't copy those fields onto an add-on title.
     nonisolated func restricted(to modules: TMDBEnrichmentPreferences) -> MediaItem {

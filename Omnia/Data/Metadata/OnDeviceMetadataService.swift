@@ -65,7 +65,7 @@ actor OnDeviceMetadataService {
         case .tvdb:
             tvdbToken = nil
             _ = try await tvdbLoginToken()
-        case .anilist: return
+        case .anilist, .kitsu, .myanimelist: return
         }
     }
 

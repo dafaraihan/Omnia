@@ -77,6 +77,7 @@ enum SettingsRoute: Hashable, Sendable {
     case collections
     case metadata
     case tmdbEnrichment
+    case animeEnrichment
     case metadataSources
     case progress
     case upcoming
@@ -110,7 +111,7 @@ enum SettingsRoute: Hashable, Sendable {
         case .appearance: [.home, .catalogs, .collections, .continueWatching, .progress, .upcoming, .posterCards, .detailPage, .streams]
         case .contentDiscovery: [.addons, .mediaServers, .liveTV, .plugins]
         case .videoPlayer: [.streamSelection, .subtitle, .playbackResolver, .playbackDiagnostics]
-        case .metadata: [.tmdbEnrichment, .metadataProvider("mdblist"), .metadataSources, .streamSorting] + TrackerKind.allCases.map(SettingsRoute.tracker)
+        case .metadata: [.tmdbEnrichment, .animeEnrichment, .metadataProvider("mdblist"), .metadataSources, .streamSorting] + TrackerKind.allCases.map(SettingsRoute.tracker)
         default: []
         }
     }
@@ -144,6 +145,7 @@ enum SettingsRoute: Hashable, Sendable {
         case .collections: "Collections"
         case .metadata: "Integrations"
         case .tmdbEnrichment: "TMDB Enrichment"
+        case .animeEnrichment: "Anime Enrichment"
         case .metadataSources: "Metadata Sources"
         case .progress: "Progress"
         case .upcoming: "Upcoming"
@@ -182,6 +184,7 @@ enum SettingsRoute: Hashable, Sendable {
         case .collections: "square.stack.3d.up"
         case .metadata, .metadataProvider, .metadataSources: "rectangle.3.group"
         case .tmdbEnrichment: "sparkles.rectangle.stack"
+        case .animeEnrichment: "sparkles.tv"
         case .tracker: "checkmark.circle"
         case .streamSorting: "arrow.up.arrow.down.circle"
         case .progress: "clock.arrow.circlepath"
@@ -214,7 +217,8 @@ enum SettingsRoute: Hashable, Sendable {
         case .collections: ["collections", "folders", "Nuvio", "Xperience", "import", "export", "pin"]
         case .metadata: ["metadata", "TMDB", "TVDB", "MDBList", "AniList", "providers", "fallback", "ratings", "enrichment"]
         case .tmdbEnrichment: ["TMDB", "enrichment", "trailers", "artwork", "logo", "backdrop", "cast", "credits", "episodes", "more like this", "collections", "productions"]
-        case .metadataSources: ["metadata", "TMDB", "TVDB", "AniList", "fallback", "anime", "primary source"]
+        case .animeEnrichment: ["anime", "enrichment", "AniList", "Kitsu", "MyAnimeList", "MAL", "synopsis", "artwork", "genres"]
+        case .metadataSources: ["metadata", "TMDB", "TVDB", "AniList", "Kitsu", "MyAnimeList", "MAL", "Jikan", "fallback", "anime", "primary source"]
         case .progress: ["local progress", "continue watching", "watchlist", "backup"]
         case .upcoming: ["episodes", "look ahead", "Home"]
         case .videoPlayer: ["video player", "player", "skip intro", "auto skip", "recap", "credits", "up next", "next episode", "threshold", "decoder", "hardware", "overlay", "audio", "subtitles", "SDH", "forced", "source selection", "auto play"]

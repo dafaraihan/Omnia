@@ -24,7 +24,7 @@ nonisolated enum MetadataContentClass: String, CaseIterable, Codable, Identifiab
     var availableSources: [MetadataProviderIdentifier] {
         switch self {
         case .movies, .series: [.tmdb, .tvdb]
-        case .anime: [.anilist, .tvdb, .tmdb]
+        case .anime: [.anilist, .kitsu, .myanimelist, .tvdb, .tmdb]
         }
     }
 }
@@ -36,6 +36,10 @@ nonisolated enum MetadataProviderIdentifier: String, Codable, CaseIterable, Iden
     case tmdb
     case tvdb
     case anilist
+    /// Kitsu and MyAnimeList (through Jikan) were added 2026-10-27; both
+    /// are public, like AniList.
+    case kitsu
+    case myanimelist
 
     var id: String { rawValue }
 
@@ -44,8 +48,18 @@ nonisolated enum MetadataProviderIdentifier: String, Codable, CaseIterable, Iden
         case .tmdb: "TMDB"
         case .tvdb: "TVDB"
         case .anilist: "AniList"
+        case .kitsu: "Kitsu"
+        case .myanimelist: "MyAnimeList"
         }
     }
+
+    /// TMDB and TVDB go through Omnia's metadata service; the anime
+    /// databases are asked directly.
+    var isServedByMetadataService: Bool { self == .tmdb || self == .tvdb }
+
+    /// Sources that look a title up by its anime database ID, for Anime
+    /// Enrichment.
+    var isAnimeDatabase: Bool { !isServedByMetadataService }
 }
 
 nonisolated enum MetadataFallbackMoveDirection: Equatable, Sendable {

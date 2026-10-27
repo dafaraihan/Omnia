@@ -155,6 +155,8 @@ nonisolated struct MediaItem: Identifiable, Hashable, Sendable {
             case .tmdb: identifiers.append("tmdb:\(metadataProviderID)")
             case .tvdb: identifiers.append("tvdb:\(metadataProviderID)")
             case .anilist: identifiers.append("anilist:\(metadataProviderID)")
+            case .kitsu: identifiers.append("kitsu:\(metadataProviderID)")
+            case .myanimelist: identifiers.append("mal:\(metadataProviderID)")
             case .none: identifiers.append(metadataProviderID)
             }
         }
@@ -320,6 +322,8 @@ nonisolated struct MediaItem: Identifiable, Hashable, Sendable {
             case .tmdb: add("tmdb", metadataProviderID, scoped: true)
             case .tvdb: add("tvdb", metadataProviderID, scoped: true)
             case .anilist: add("anilist", metadataProviderID)
+            case .kitsu: add("kitsu", metadataProviderID)
+            case .myanimelist: add("mal", metadataProviderID)
             case .none: break
             }
         }

@@ -17,6 +17,8 @@ import SwiftUI
 final class LiveMetadataStore {
     private let client: SupabaseMetadataClient?
     private let aniListClient = AniListMetadataClient()
+    private let kitsuClient = KitsuMetadataClient()
+    private let jikanClient = JikanMetadataClient()
 
     var movieCatalog: [MediaItem] = []
     var seriesCatalog: [MediaItem] = []
@@ -33,6 +35,11 @@ final class LiveMetadataStore {
     var errorMessage: String?
     private var genreCatalogs: [String: [MediaItem]] = [:]
     private(set) var metadataRouting = MetadataRoutingPreferences()
+    /// Settings › Integrations › Anime Enrichment.
+    var animeEnrichment = AnimeEnrichmentPreferences()
+    /// Anime database records by source and title, so a title page and its
+    /// hero don't each ask again.
+    private var animeRecords: [String: MediaItem?] = [:]
 
     init(configuration: SupabaseConfiguration? = nil, loadsBundleConfiguration: Bool = true) {
         let resolvedConfiguration = configuration ?? (loadsBundleConfiguration ? SupabaseConfiguration.load() : nil)
@@ -208,13 +215,40 @@ final class LiveMetadataStore {
     }
 
     func details(for item: MediaItem) async -> MediaItem {
+        await enrichedFromAnimeDatabases(await serviceDetails(for: item))
+    }
+
+    /// Anime Enrichment: AniList, Kitsu and MyAnimeList fill what TMDB,
+    /// TVDB and the add-on left out of an anime title, as TMDB Enrichment
+    /// does for other titles. Only titles with an anime database ID ask.
+    private func enrichedFromAnimeDatabases(_ item: MediaItem) async -> MediaItem {
+        guard animeEnrichment.enabled else { return item }
+        var enriched = item
+        let sources = metadataRouting.anime.requestedProviders.filter(\.isAnimeDatabase)
+        for provider in sources {
+            guard !Task.isCancelled else { break }
+            let key = "\(provider.rawValue)|\(item.streamIdentifierCandidates.joined(separator: ","))"
+            let record: MediaItem?
+            if let cached = animeRecords[key] {
+                record = cached
+            } else {
+                record = await AnimeMetadataSource.record(for: enriched, from: provider)
+                if animeRecords.count > 300 { animeRecords.removeAll() }
+                animeRecords[key] = record
+            }
+            if let record { enriched = enriched.fillingGaps(from: record.restricted(to: animeEnrichment)) }
+        }
+        return enriched
+    }
+
+    private func serviceDetails(for item: MediaItem) async -> MediaItem {
         guard let client else { return item }
 
         var resolvedItem = item
         // The metadata service only answers detail requests for TMDB and
         // TVDB. AniList and add-on titles go straight to the TMDB match below.
         if let provider = item.metadataProvider,
-           provider != .anilist,
+           provider.isServedByMetadataService,
            let identifier = item.metadataProviderID,
            let response = await detailsWithRetry(client, provider: provider, id: identifier, type: item.metadataType) {
             let providerItem = Self.item(
@@ -515,6 +549,14 @@ final class LiveMetadataStore {
                 if let items = try? await aniListClient.searchAnime(query: query), !items.isEmpty {
                     return items
                 }
+            case .kitsu:
+                if let items = try? await kitsuClient.searchAnime(query: query), !items.isEmpty {
+                    return items
+                }
+            case .myanimelist:
+                if let items = try? await jikanClient.searchAnime(query: query), !items.isEmpty {
+                    return items
+                }
             case .tmdb, .tvdb:
                 guard let client else { continue }
                 let route = MetadataRoute(primary: provider, fallbackEnabled: false)
@@ -538,6 +580,14 @@ final class LiveMetadataStore {
             switch provider {
             case .anilist:
                 if let items = try? await aniListClient.catalogAnime(category: category, genre: genre, page: page), !items.isEmpty {
+                    return items
+                }
+            case .kitsu:
+                if let items = try? await kitsuClient.catalogAnime(category: category, genre: genre, page: page), !items.isEmpty {
+                    return items
+                }
+            case .myanimelist:
+                if let items = try? await jikanClient.catalogAnime(category: category, genre: genre, page: page), !items.isEmpty {
                     return items
                 }
             case .tmdb, .tvdb:

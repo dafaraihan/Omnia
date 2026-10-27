@@ -113,7 +113,7 @@ struct SettingsView: View {
         case .about:
             return "Resources, attributions, and licenses"
         case .streamSelection, .playbackResolver, .playbackDiagnostics, .metadataProvider, .aboutSection, .posterCards, .streams, .continueWatching, .detailPage,
-             .tmdbEnrichment, .metadataSources, .tracker, .streamSorting:
+             .tmdbEnrichment, .animeEnrichment, .metadataSources, .tracker, .streamSorting:
             return nil
         }
     }
@@ -147,6 +147,8 @@ struct SettingsDestinationView: View {
                 MetadataSettingsView()
             case .tmdbEnrichment:
                 TMDBEnrichmentSettingsView()
+            case .animeEnrichment:
+                AnimeEnrichmentSettingsView()
             case .metadataSources:
                 MetadataSourcesSettingsView()
             case .progress:

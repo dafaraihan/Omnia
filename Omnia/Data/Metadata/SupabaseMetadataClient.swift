@@ -279,7 +279,7 @@ actor SupabaseMetadataClient {
     private func providerIdentifiers(for routing: MetadataRoute?) -> [String]? {
         guard let routing else { return nil }
         let identifiers = routing.requestedProviders
-            .filter { $0 != .anilist }
+            .filter(\.isServedByMetadataService)
             .map(\.rawValue)
         return identifiers.isEmpty ? nil : identifiers
     }
