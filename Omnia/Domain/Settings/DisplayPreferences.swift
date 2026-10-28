@@ -1,4 +1,7 @@
 import SwiftUI
+#if os(iOS)
+import UIKit
+#endif
 
 /// Nuvio's accent palette. Blue keeps Omnia's original system tint.
 nonisolated enum AccentTheme: String, Codable, CaseIterable, Identifiable, Sendable {
@@ -140,12 +143,22 @@ nonisolated enum PosterWidthPreset: String, Codable, CaseIterable, Identifiable,
 
     var width: CGFloat {
         #if os(iOS)
+        // An iPhone fits about three posters across a row, as in Nuvio.
+        if Self.isPhone {
+            switch self {
+            case .compact: return 92
+            case .small: return 102
+            case .standard: return 112
+            case .large: return 124
+            case .extraLarge: return 136
+            }
+        }
         switch self {
-        case .compact: 104
-        case .small: 118
-        case .standard: 132
-        case .large: 146
-        case .extraLarge: 160
+        case .compact: return 104
+        case .small: return 118
+        case .standard: return 132
+        case .large: return 146
+        case .extraLarge: return 160
         }
         #else
         switch self {
@@ -157,6 +170,14 @@ nonisolated enum PosterWidthPreset: String, Codable, CaseIterable, Identifiable,
         }
         #endif
     }
+
+    #if os(iOS)
+    /// Read once, on the main thread where views first ask for a width.
+    private static let isPhone: Bool = {
+        guard Thread.isMainThread else { return false }
+        return MainActor.assumeIsolated { UIDevice.current.userInterfaceIdiom == .phone }
+    }()
+    #endif
 }
 
 nonisolated enum PosterCornerPreset: String, Codable, CaseIterable, Identifiable, Sendable {
