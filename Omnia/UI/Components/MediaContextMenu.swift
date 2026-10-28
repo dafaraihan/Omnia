@@ -113,17 +113,33 @@ enum MediaDetailWatchActionPresentation {
     }
 }
 
-#if os(macOS)
+/// Right-click on the Mac, touch and hold on iPhone and iPad.
 private struct MediaContextMenuModifier: ViewModifier {
     let item: MediaItem
     let placement: MediaContextPlacement
+    #if os(iOS)
+    @State private var opensDetail = false
+    #endif
 
     func body(content: Content) -> some View {
+        #if os(macOS)
         content
             .contentShape(Rectangle())
             .contextMenu {
                 MediaContextMenuItems(item: item, placement: placement)
             }
+        #else
+        // A link inside an iOS menu doesn't navigate, so Go to Movie / Show
+        // opens the page through this destination.
+        content
+            .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .contextMenu {
+                MediaContextMenuItems(item: item, placement: placement, openDetail: { opensDetail = true })
+            }
+            .navigationDestination(isPresented: $opensDetail) {
+                MediaDetailView(item: item)
+            }
+        #endif
     }
 }
 
@@ -134,6 +150,7 @@ private struct MediaContextMenuModifier: ViewModifier {
 private struct MediaContextMenuItems: View {
     let item: MediaItem
     let placement: MediaContextPlacement
+    var openDetail: (() -> Void)?
 
     @Environment(OmniaStore.self) private var store
     @Environment(LiveMetadataStore.self) private var metadata
@@ -155,13 +172,9 @@ private struct MediaContextMenuItems: View {
     private func menuItem(for command: MediaContextCommand) -> some View {
         switch command {
         case .goToMovie:
-            MediaDetailLink(item: item) {
-                menuLabel("Go to Movie", systemImage: "info.circle")
-            }
+            detailItem("Go to Movie")
         case .goToShow:
-            MediaDetailLink(item: item) {
-                menuLabel("Go to Show", systemImage: "info.circle")
-            }
+            detailItem("Go to Show")
         case .separator:
             Divider()
         case .markWatched:
@@ -195,6 +208,19 @@ private struct MediaContextMenuItems: View {
                 store.setSaved(item, isIncluded: false)
             } label: {
                 menuLabel("Remove from Watchlist", systemImage: "minus")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func detailItem(_ title: String) -> some View {
+        if let openDetail {
+            Button(action: openDetail) {
+                menuLabel(title, systemImage: "info.circle")
+            }
+        } else {
+            MediaDetailLink(item: item) {
+                menuLabel(title, systemImage: "info.circle")
             }
         }
     }
@@ -269,7 +295,6 @@ private struct MediaContextMenuItems: View {
         } ?? resumeEpisode
     }
 }
-#endif
 
 extension View {
     @ViewBuilder
@@ -277,10 +302,6 @@ extension View {
         for item: MediaItem,
         placement: MediaContextPlacement
     ) -> some View {
-        #if os(macOS)
         modifier(MediaContextMenuModifier(item: item, placement: placement))
-        #else
-        self
-        #endif
     }
 }
