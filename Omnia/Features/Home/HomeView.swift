@@ -1090,7 +1090,7 @@ struct HomeView: View {
             .id(featured.id)
             .transition(.heroIdentity)
             // Room for the page dots under the buttons.
-            .padding(.bottom, heroCandidates.count > 1 ? 52 : 28)
+            .padding(.bottom, heroCandidates.count > 1 ? 46 : 22)
         }
     }
 

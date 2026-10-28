@@ -94,13 +94,13 @@ struct PortraitHeroIdentity<Primary: View>: View {
     }
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 8) {
             Group {
                 if let logoURL = item.logoURL {
-                    TitleLogoView(url: logoURL, title: item.title, maximumWidth: 280, maximumHeight: 110, alignment: .center)
+                    TitleLogoView(url: logoURL, title: item.title, maximumWidth: 220, maximumHeight: 72, alignment: .center)
                 } else if showsTitleWithoutLogo {
                     Text(item.title)
-                        .font(.system(size: 36, weight: .bold))
+                        .font(.system(size: 28, weight: .bold))
                         .multilineTextAlignment(.center)
                         .lineLimit(2)
                         .minimumScaleFactor(0.6)
@@ -111,22 +111,24 @@ struct PortraitHeroIdentity<Primary: View>: View {
                     Color.clear.accessibilityHidden(true)
                 }
             }
-            .frame(maxWidth: 280, minHeight: 80, maxHeight: 110)
+            .frame(maxWidth: 220, minHeight: 56, maxHeight: 72)
 
             Text(metadata)
-                .font(.caption.weight(.medium))
+                .font(.caption2.weight(.medium))
                 .foregroundStyle(.white.opacity(0.82))
                 .lineLimit(1)
 
             if !item.overview.isEmpty {
                 Text(item.overview)
-                    .font(.footnote)
+                    .font(.caption)
                     .foregroundStyle(.white.opacity(0.78))
                     .multilineTextAlignment(.center)
-                    .lineLimit(3)
-                    .padding(.horizontal, 12)
+                    .lineLimit(2)
+                    .padding(.horizontal, 20)
             }
 
+            // The shared buttons at a smaller size, so the identity keeps to
+            // the lower part of the art.
             HeroActionRow(
                 width: 340,
                 isSaved: isSaved,
@@ -135,7 +137,9 @@ struct PortraitHeroIdentity<Primary: View>: View {
                 shuffleAction: shuffleAction,
                 primary: primary
             )
-            .padding(.top, 4)
+            .scaleEffect(0.85)
+            .frame(height: 46 * 0.85)
+            .padding(.top, 2)
         }
         .foregroundStyle(.white)
         .frame(maxWidth: .infinity)

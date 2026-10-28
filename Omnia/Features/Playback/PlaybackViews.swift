@@ -2373,9 +2373,35 @@ private struct PlaybackChrome: View {
         )
         #if os(macOS)
         .ignoresSafeArea()
+        #else
+        .modifier(PhoneChromeScale())
         #endif
     }
 }
+
+#if os(iOS)
+/// The Mac's controls at a phone's size: laid out on a larger canvas, then
+/// scaled down as one, so buttons, panels and type keep their proportions.
+/// Scaled views take touches where they're drawn. iPad keeps full size.
+private struct PhoneChromeScale: ViewModifier {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+    static let scale: CGFloat = 0.72
+
+    func body(content: Content) -> some View {
+        if horizontalSizeClass == .compact || verticalSizeClass == .compact {
+            GeometryReader { proxy in
+                content
+                    .frame(width: proxy.size.width / Self.scale, height: proxy.size.height / Self.scale)
+                    .scaleEffect(Self.scale)
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+            }
+        } else {
+            content
+        }
+    }
+}
+#endif
 
 /// The title's backdrop, logo and episode while a stream opens.
 private struct PlaybackLoadingOverlay: View {
@@ -2564,12 +2590,14 @@ private struct PlaybackPauseOverlay: View {
     var clearsControls = false
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     #endif
 
-    /// iPhone's controls stack in two rows, so they stand taller.
+    /// A phone, either way up: a short corner note instead of a block that
+    /// covers the picture.
     private var isCompact: Bool {
         #if os(iOS)
-        horizontalSizeClass == .compact
+        horizontalSizeClass == .compact || verticalSizeClass == .compact
         #else
         false
         #endif
@@ -2588,32 +2616,40 @@ private struct PlaybackPauseOverlay: View {
                 endPoint: .trailing
             )
             .ignoresSafeArea()
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: isCompact ? 5 : 10) {
                 Text("You're watching")
-                    .font(.subheadline.weight(.semibold))
+                    .font(isCompact ? .caption.weight(.semibold) : .subheadline.weight(.semibold))
                     .foregroundStyle(.white.opacity(0.7))
                 if let logo = item.logoURL {
-                    TitleLogoView(url: logo, title: item.title, maximumWidth: 320, maximumHeight: 110, alignment: .leading)
+                    TitleLogoView(
+                        url: logo,
+                        title: item.title,
+                        maximumWidth: isCompact ? 170 : 320,
+                        maximumHeight: isCompact ? 56 : 110,
+                        alignment: .leading
+                    )
                 } else {
                     Text(item.title)
-                        .font(.largeTitle.weight(.bold))
+                        .font(isCompact ? .title3.weight(.bold) : .largeTitle.weight(.bold))
+                        .lineLimit(2)
                 }
                 if let episode {
                     Text("S\(episode.seasonNumber) E\(episode.episodeNumber) · \(episode.title)")
-                        .font(.title3.weight(.semibold))
+                        .font(isCompact ? .footnote.weight(.semibold) : .title3.weight(.semibold))
+                        .lineLimit(1)
                 }
                 if !overview.isEmpty {
                     Text(overview)
-                        .font(.body)
+                        .font(isCompact ? .caption : .body)
                         .foregroundStyle(.white.opacity(0.8))
-                        .lineLimit(5)
-                        .frame(maxWidth: 520, alignment: .leading)
+                        .lineLimit(isCompact ? 2 : 5)
+                        .frame(maxWidth: isCompact ? 300 : 520, alignment: .leading)
                 }
             }
             .foregroundStyle(.white)
             .padding(.leading, isCompact ? 24 : 56)
             .padding(.trailing, isCompact ? 24 : 0)
-            .padding(.bottom, clearsControls ? (isCompact ? 230 : 170) : 120)
+            .padding(.bottom, clearsControls ? (isCompact ? 150 : 170) : (isCompact ? 40 : 120))
             .animation(.easeInOut(duration: 0.2), value: clearsControls)
         }
         // The text keeps clear of the notch and home indicator; only the

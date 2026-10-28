@@ -799,6 +799,7 @@ static void OMMpvRequestRedraw(void *context) {
 @property (nonatomic, readwrite, nullable) NSString *renderingFallbackReason;
 - (void)drainEvents;
 - (void)emitSnapshot;
+- (void)updateFillCrop;
 - (void)embedVideoViewInHost:(OMMpvPlatformView *)hostView;
 #if TARGET_OS_OSX
 - (NSPanel *)makePictureInPicturePanel;
@@ -929,7 +930,10 @@ static void OMMpvWakeup(void *context) {
     }
     OMMpvMetalLayer *layer = [_videoView useMetalLayer];
     __weak OMMpvPlayerController *weakSelf = self;
-    _videoView.drawableSizeDidChange = ^{ [weakSelf wakeMetalOutput]; };
+    _videoView.drawableSizeDidChange = ^{
+        [weakSelf updateFillCrop];
+        [weakSelf wakeMetalOutput];
+    };
     int64_t layerPointer = (int64_t)(intptr_t)(__bridge void *)layer;
     mpv_set_option(_mpv, "wid", MPV_FORMAT_INT64, &layerPointer);
     mpv_set_option_string(_mpv, "vo", "gpu-next");
@@ -1074,7 +1078,7 @@ static void OMMpvWakeup(void *context) {
     mpv_set_option_string(
         _mpv,
         "panscan",
-        _videoAspectMode == OMMpvVideoAspectModeFill ? "1" : "0"
+        "0"
     );
     if (_blurayDeviceURL) {
         // The Swift boundary accepts only a completed, cache-owned ISO or
@@ -1265,15 +1269,43 @@ static void OMMpvWakeup(void *context) {
             [self setDouble:0 forProperty:"panscan"];
             break;
         case OMMpvVideoAspectModeFill:
-            [self setFlag:YES forProperty:"keepaspect"];
-            [self setDouble:1 forProperty:"panscan"];
-            break;
         case OMMpvVideoAspectModeOriginal:
         default:
             [self setFlag:YES forProperty:"keepaspect"];
             [self setDouble:0 forProperty:"panscan"];
             break;
     }
+    [self updateFillCrop];
+}
+
+/// Fill crops the picture to the screen's shape rather than zooming it
+/// past the edges (panscan): mpv places subtitles on the video, so a
+/// zoomed picture carried them off screen. Cropped, the video is exactly
+/// the screen and subtitles sit where the position setting puts them.
+- (void)updateFillCrop {
+    if (!_mpv) return;
+    int64_t width = 0, height = 0;
+    double aspect = 0;
+    CGSize view = _videoView.bounds.size;
+    BOOL fills = _videoAspectMode == OMMpvVideoAspectModeFill
+        && mpv_get_property(_mpv, "video-params/w", MPV_FORMAT_INT64, &width) >= 0
+        && mpv_get_property(_mpv, "video-params/h", MPV_FORMAT_INT64, &height) >= 0
+        && mpv_get_property(_mpv, "video-params/aspect", MPV_FORMAT_DOUBLE, &aspect) >= 0
+        && width > 0 && height > 0 && aspect > 0 && view.width > 0 && view.height > 0;
+    if (!fills) {
+        mpv_set_property_string(_mpv, "video-crop", "");
+        return;
+    }
+    double screen = view.width / view.height;
+    int64_t cropWidth = width, cropHeight = height;
+    if (aspect > screen) {
+        cropWidth = MAX(2, (int64_t)llround(width * screen / aspect));
+    } else {
+        cropHeight = MAX(2, (int64_t)llround(height * aspect / screen));
+    }
+    NSString *crop = [NSString stringWithFormat:@"%lldx%lld+%lld+%lld",
+        cropWidth, cropHeight, (width - cropWidth) / 2, (height - cropHeight) / 2];
+    mpv_set_property_string(_mpv, "video-crop", crop.UTF8String);
 }
 
 - (void)setPreferredAudioLanguages:(NSArray<NSString *> *)languages {
@@ -1904,6 +1936,9 @@ static void OMMpvWakeup(void *context) {
         if (!event || event->event_id == MPV_EVENT_NONE) break;
 
         switch (event->event_id) {
+        case MPV_EVENT_VIDEO_RECONFIG:
+            [self updateFillCrop];
+            break;
         case MPV_EVENT_START_FILE:
             _fileLoaded = NO;
             _tracksLoading = YES;
@@ -1916,6 +1951,7 @@ static void OMMpvWakeup(void *context) {
             _tracksLoading = NO;
             self.errorMessage = nil;
             [self applyPendingSeekIfReady];
+            [self updateFillCrop];
             shouldEmitSnapshot = YES;
             break;
         case MPV_EVENT_PROPERTY_CHANGE:
