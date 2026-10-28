@@ -1,14 +1,33 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Settings › Integrations, laid out like Nuvio's: TMDB Enrichment and
-/// MDBList Ratings. Omnia's own metadata routing, which Nuvio doesn't have,
+/// Settings › Integrations, laid out like Nuvio's: the user's API keys,
+/// TMDB Enrichment and MDBList Ratings. Omnia's own metadata routing, which Nuvio doesn't have,
 /// sits below them under Metadata Sources.
 struct MetadataSettingsView: View {
     @Environment(SettingsPreferencesStore.self) private var settings
+    /// Bumped when a key is saved or removed, so Saved / Not set follows.
+    @State private var keyChanges = 0
 
     var body: some View {
         OmniaSettingsForm {
+            // Every user adds their own keys; nothing TMDB or TVDB is built
+            // in. These open the same pages as Metadata Sources › Providers.
+            Section {
+                ForEach(["tmdb", "tvdb", "fanart"], id: \.self) { id in
+                    IntegrationLinkRow(
+                        route: .metadataProvider(id),
+                        providerID: id,
+                        title: "\(MetadataProvider.supported.first { $0.id == id }?.name ?? id) API Key",
+                        detail: keyStatus(id)
+                    )
+                }
+            } header: {
+                Text("API Keys")
+            } footer: {
+                Text("Your own free TMDB and TVDB keys unlock artwork, logos, details and search beyond your add-ons; fanart.tv adds textless posters for the iPhone's hero. Keys stay in this device's Keychain.")
+            }
+
             Section {
                 IntegrationLinkRow(
                     route: .tmdbEnrichment,
@@ -46,6 +65,15 @@ struct MetadataSettingsView: View {
             }
         }
         .omniaNavigationTitle("Integrations")
+        .onReceive(NotificationCenter.default.publisher(for: .providerCredentialDidChange)) { _ in
+            keyChanges += 1
+        }
+    }
+
+    private func keyStatus(_ id: String) -> String {
+        _ = keyChanges
+        guard let credential = UserManagedProviderCredential(rawValue: id) else { return "" }
+        return ProviderCredentialStore.isConfigured(credential) ? "Saved" : "Not set"
     }
 
     private var tmdbSummary: String {

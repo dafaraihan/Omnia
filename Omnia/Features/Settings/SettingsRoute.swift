@@ -111,7 +111,8 @@ enum SettingsRoute: Hashable, Sendable {
         case .contentDiscovery: [.addons, .mediaServers, .liveTV, .plugins]
         case .videoPlayer: [.streamSelection, .subtitle, .playbackResolver, .playbackDiagnostics]
         case .account: [.tracking]
-        case .metadata: [.tmdbEnrichment, .animeEnrichment, .metadataProvider("mdblist"), .metadataSources]
+        case .metadata: [.metadataProvider("tmdb"), .metadataProvider("tvdb"), .metadataProvider("fanart"),
+                         .tmdbEnrichment, .animeEnrichment, .metadataProvider("mdblist"), .metadataSources]
         default: []
         }
     }
@@ -213,7 +214,7 @@ enum SettingsRoute: Hashable, Sendable {
         case .home: ["layout", "hero", "hero style", "card", "full-bleed", "dynamic background", "hero trailer", "trailer", "autoplay", "sound", "delay", "rows", "catalogs", "collections", "order", "rename", "unreleased", "catalog type", "upcoming", "discover", "TMDB", "TVDB"]
         case .catalogs: ["catalog", "discover", "TMDB", "TVDB"]
         case .collections: ["collections", "folders", "Nuvio", "Xperience", "import", "export", "pin"]
-        case .metadata: ["metadata", "TMDB", "TVDB", "MDBList", "AniList", "providers", "fallback", "ratings", "enrichment"]
+        case .metadata: ["metadata", "TMDB", "TVDB", "MDBList", "AniList", "providers", "fallback", "ratings", "enrichment", "API key", "API keys", "key", "fanart"]
         case .tmdbEnrichment: ["TMDB", "enrichment", "trailers", "artwork", "logo", "backdrop", "cast", "credits", "episodes", "more like this", "collections", "productions"]
         case .animeEnrichment: ["anime", "enrichment", "AniList", "Kitsu", "MyAnimeList", "MAL", "synopsis", "artwork", "genres"]
         case .metadataSources: ["metadata", "TMDB", "TVDB", "AniList", "Kitsu", "MyAnimeList", "MAL", "Jikan", "fallback", "anime", "primary source"]
@@ -230,7 +231,7 @@ enum SettingsRoute: Hashable, Sendable {
         case .continueWatching: ["continue watching", "resume", "style", "sort", "thumbnails", "finished"]
         case .detailPage: ["detail", "title page", "background", "episodes", "blur", "spoiler", "sections", "cast", "trailers"]
         case .about: ["resources", "TMDB", "TVDB", "libmpv", "Supabase", "licenses", "privacy"]
-        case .metadataProvider: ["metadata provider", title]
+        case .metadataProvider: ["metadata provider", title, "API key", "key", "credential", "token"]
         case .tracking: ["tracking", "tracker", "scrobble", "scrobbling", "history", "watched", "Trakt", "Simkl", "MDBList", "PublicMetaDB", "PMDB", "AniList", "library source", "watch progress", "continue watching", "more like this", "comments", "sign in"]
         case let .aboutSection(section): [section.title]
         }

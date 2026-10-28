@@ -99,7 +99,7 @@ struct SettingsView: View {
         case .collections:
             return "Folders of catalogs on Home"
         case .metadata:
-            return "TMDB enrichment, MDBList ratings and metadata sources"
+            return "API keys, TMDB enrichment, MDBList ratings and metadata sources"
         case .progress:
             return account.storageSummary
         case .upcoming:
