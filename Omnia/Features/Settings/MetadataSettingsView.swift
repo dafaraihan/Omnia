@@ -51,6 +51,8 @@ struct MetadataSettingsView: View {
     private var tmdbSummary: String {
         let tmdb = settings.preferences.integrations.tmdb
         guard tmdb.enabled else { return "Off: add-on data only" }
+        // Nothing TMDB is built in: it works only with the user's own key.
+        guard ProviderCredentialStore.isConfigured(.tmdb) else { return "Needs your TMDB API key" }
         return "\(tmdb.enabledModuleCount) of \(TMDBEnrichmentPreferences.moduleCount) modules on"
     }
 
@@ -348,10 +350,23 @@ private struct MetadataSourceRow: View {
     }
 
     private var roleText: String {
-        switch role {
+        let text = switch role {
         case .primary: "Asked first"
         case .fallback(let position): position == 1 ? "Fills in what's missing" : "Then fills in the rest"
         case .off: "Off"
+        }
+        // TMDB and TVDB answer only with the user's own key.
+        guard role != .off, let credential = keyCredential, !ProviderCredentialStore.isConfigured(credential) else {
+            return text
+        }
+        return "\(text) · needs your API key"
+    }
+
+    private var keyCredential: UserManagedProviderCredential? {
+        switch provider {
+        case .tmdb: .tmdb
+        case .tvdb: .tvdb
+        default: nil
         }
     }
 }
