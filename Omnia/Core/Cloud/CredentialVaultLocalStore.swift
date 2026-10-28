@@ -33,6 +33,11 @@ final class CredentialVaultLocalStore {
         if let value = try KeychainStore.value(account: PluginStore.tmdbKeyAccount) {
             entries["provider.plugin-tmdb"] = try encoder.encode(value)
         }
+        for kind in TrackerKind.allCases {
+            if let value = try TrackerAccountStore.shared.vaultValue(kind) {
+                entries["tracker.\(kind.rawValue)"] = try encoder.encode(value)
+            }
+        }
         for id in pinIDs {
             if let value = try profiles.vaultPIN(id) { entries["pin.\(id.uuidString)"] = try encoder.encode(value) }
         }
@@ -56,6 +61,7 @@ final class CredentialVaultLocalStore {
             case "provider.anilist": account = UserManagedProviderCredential.anilist.keychainAccount
             case "provider.tmdb": account = UserManagedProviderCredential.tmdb.keychainAccount
             case "provider.tvdb": account = UserManagedProviderCredential.tvdb.keychainAccount
+            case "provider.fanart": account = UserManagedProviderCredential.fanart.keychainAccount
             case "provider.plugin-tmdb": account = PluginStore.tmdbKeyAccount
             default: throw Failure.invalidEntry
             }
@@ -66,6 +72,13 @@ final class CredentialVaultLocalStore {
                 NotificationCenter.default.post(name: .providerCredentialDidChange, object: UserManagedProviderCredential.mdblist.rawValue)
             }
             if id == "provider.plugin-tmdb" { PluginStore.vaultCredentialChanged() }
+            if id.hasPrefix("provider.") {
+                NotificationCenter.default.post(name: .providerCredentialDidChange, object: String(id.dropFirst(9)))
+            }
+        } else if id.hasPrefix("tracker."), let kind = TrackerKind(rawValue: String(id.dropFirst(8))) {
+            let value = try payload.map { try decoder.decode(String.self, from: $0) }
+            if let value { guard !value.isEmpty, value.utf8.count <= 64 * 1_024 else { throw Failure.invalidEntry } }
+            do { try TrackerAccountStore.shared.applyVaultValue(value, for: kind) } catch { throw Failure.invalidEntry }
         } else if id.hasPrefix("pin."), let uuid = UUID(uuidString: String(id.dropFirst(4))) {
             let value = try payload.map { try decoder.decode(String.self, from: $0) }
             if let value {

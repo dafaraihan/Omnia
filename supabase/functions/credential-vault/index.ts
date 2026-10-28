@@ -19,7 +19,7 @@ function integer(value: unknown, max = Number.MAX_SAFE_INTEGER - 1): number {
   return value
 }
 function id(value: unknown): string {
-  if (typeof value !== "string" || !/^(provider\.(mdblist|anilist|plugin-tmdb)|pin\.[0-9a-fA-F-]{36}|server\.[A-Za-z0-9_-]{1,120}|livetv\.(configuration|secrets)|playlist\.[A-Za-z0-9_-]{1,120})$/.test(value)) throw new Failure(400)
+  if (typeof value !== "string" || !/^(provider\.(mdblist|anilist|plugin-tmdb|tmdb|tvdb|fanart)|tracker\.(trakt|simkl|mdblist|pmdb|anilist)|pin\.[0-9a-fA-F-]{36}|server\.[A-Za-z0-9_-]{1,120}|livetv\.(configuration|secrets)|playlist\.[A-Za-z0-9_-]{1,120})$/.test(value)) throw new Failure(400)
   return value
 }
 function uuid(value: unknown): string {
@@ -134,7 +134,7 @@ Deno.serve(async request => {
         const bytes = decode(input.payload, 262144)
         try {
           const value: unknown = JSON.parse(decoder.decode(bytes))
-          if (entryID.startsWith("provider.")) {
+          if (entryID.startsWith("provider.") || entryID.startsWith("tracker.")) {
             if (typeof value !== "string" || value.length === 0 || encoder.encode(value).length > 65536) throw new Failure(400)
           } else if (entryID.startsWith("pin.")) {
             if (typeof value !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[0-9a-f]{64}$/i.test(value)) throw new Failure(400)

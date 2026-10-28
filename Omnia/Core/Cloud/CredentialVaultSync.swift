@@ -386,6 +386,9 @@ final class CredentialVaultSync {
         case "provider.mdblist": return "MDBList API key"
         case "provider.anilist": return "AniList token"
         case "provider.plugin-tmdb": return "Plugin TMDB key"
+        case "provider.tmdb": return "TMDB API key"
+        case "provider.tvdb": return "TVDB API key"
+        case "provider.fanart": return "fanart.tv API key"
         case "livetv.configuration": return "Live TV sources and settings"
         case "livetv.secrets": return "Live TV credentials"
         default: break
@@ -404,6 +407,7 @@ final class CredentialVaultSync {
 
     static func category(_ id: String) -> String {
         if id.hasPrefix("provider.") { return "Provider keys" }
+        if id.hasPrefix("tracker.") { return "Tracker sign-ins" }
         if id.hasPrefix("pin.") { return "Profile PINs" }
         if id.hasPrefix("server.") { return "Media servers" }
         return "Live TV"

@@ -162,6 +162,7 @@ final class TrackerAccountStore {
         credentials[kind] = nil
         lastScrobbleError[kind] = nil
         TrackerLibraryStore.shared.forget(kind)
+        NotificationCenter.default.post(name: .credentialVaultDidChange, object: nil)
     }
 
     private func waitForApproval(_ kind: TrackerKind, code: TrackerDeviceCode, app: TrackerCredentials) async {
@@ -197,7 +198,36 @@ final class TrackerAccountStore {
         credentials[kind] = value
         guard let data = try? JSONEncoder.tracker.encode(value), let text = String(data: data, encoding: .utf8) else { return }
         try? KeychainStore.save(text, account: Self.keychainAccount(kind))
+        // The account's vault keeps sign-ins, so other devices connect too.
+        NotificationCenter.default.post(name: .credentialVaultDidChange, object: nil)
     }
+
+    // MARK: Account vault
+
+    /// The saved sign-in as the account vault stores it.
+    func vaultValue(_ kind: TrackerKind) throws -> String? {
+        try KeychainStore.value(account: Self.keychainAccount(kind))
+    }
+
+    /// A sign-in restored from the account vault, or removed there.
+    func applyVaultValue(_ text: String?, for kind: TrackerKind) throws {
+        guard let text else {
+            try? KeychainStore.delete(account: Self.keychainAccount(kind))
+            credentials[kind] = nil
+            lastScrobbleError[kind] = nil
+            TrackerLibraryStore.shared.forget(kind)
+            return
+        }
+        guard let data = text.data(using: .utf8),
+              let value = try? JSONDecoder.tracker.decode(TrackerCredentials.self, from: data)
+        else { throw TrackerVaultError.unreadable }
+        try KeychainStore.save(text, account: Self.keychainAccount(kind))
+        credentials[kind] = value
+        lastScrobbleError[kind] = nil
+        if value.username == nil { refreshUsername(kind) }
+    }
+
+    enum TrackerVaultError: Error { case unreadable }
 
     /// The tracker's credentials with an expiring token refreshed (and kept)
     /// first, for reading lists.
