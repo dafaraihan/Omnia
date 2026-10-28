@@ -66,6 +66,19 @@ extension View {
             self.navigationTitle(title)
                 .toolbarTitleDisplayMode(.inline)
                 .toolbar(.hidden, for: .navigationBar)
+        } else if screen == .mediaDetail {
+            // The artwork runs under a clear bar that keeps only the
+            // system Back button, so Back and the edge swipe both work. A
+            // hidden bar dropped both, and its area still took the taps
+            // meant for a Back button drawn there.
+            self.navigationTitle(title)
+                .toolbarTitleDisplayMode(.inline)
+                .toolbarBackground(.hidden, for: .navigationBar)
+                // Light status bar and Back over the dark artwork.
+                .toolbarColorScheme(.dark, for: .navigationBar)
+                .toolbar {
+                    ToolbarItem(placement: .principal) { Color.clear.frame(width: 1, height: 1) }
+                }
         } else {
             self.navigationTitle(title)
         }

@@ -1691,7 +1691,7 @@ struct PlaybackExperienceView: View {
                         .font(.body.weight(.bold))
                         .foregroundStyle(.white)
                         .frame(width: 34, height: 34)
-                        .glassEffect(.regular.interactive(), in: Circle())
+                        .glassEffect(.regular, in: Circle())
                 }
                 .buttonStyle(.plain)
                 .padding(18)
@@ -2399,7 +2399,7 @@ private struct PlaybackChrome: View {
                         .font(.body.weight(.bold))
                         .foregroundStyle(.white)
                         .frame(width: 34, height: 34)
-                        .glassEffect(.regular.interactive(), in: Circle())
+                        .glassEffect(.regular, in: Circle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Close player")

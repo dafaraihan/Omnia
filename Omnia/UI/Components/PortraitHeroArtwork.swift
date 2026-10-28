@@ -72,4 +72,99 @@ struct PortraitHeroArtwork: View {
         )
     }
 }
+
+/// The iPhone's portrait hero identity, centred under the art as in Nuvio:
+/// the logo (or the title), one metadata line, a short synopsis and the
+/// actions in one row.
+struct PortraitHeroIdentity<Primary: View>: View {
+    let item: MediaItem
+    /// Draw the title when the details have loaded without a logo.
+    let showsTitleWithoutLogo: Bool
+    let isSaved: Bool
+    let libraryAction: () -> Void
+    let watchAction: HeroWatchAction?
+    var shuffleAction: HeroWatchAction?
+    @ViewBuilder let primary: () -> Primary
+
+    private var metadata: String {
+        var values = [item.year, item.kind == .series ? "TV Show" : item.kind.rawValue]
+        if !item.genres.isEmpty { values.append(item.genres.prefix(2).joined(separator: ", ")) }
+        if let ageRating = item.details?.ageRating, !ageRating.isEmpty { values.append(ageRating) }
+        return values.filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Group {
+                if let logoURL = item.logoURL {
+                    TitleLogoView(url: logoURL, title: item.title, maximumWidth: 280, maximumHeight: 110, alignment: .center)
+                } else if showsTitleWithoutLogo {
+                    Text(item.title)
+                        .font(.system(size: 36, weight: .bold))
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.6)
+                        .shadow(color: .black.opacity(0.35), radius: 8, y: 3)
+                } else {
+                    // The logo is still on its way: keep its room so the
+                    // text below doesn't jump.
+                    Color.clear.accessibilityHidden(true)
+                }
+            }
+            .frame(maxWidth: 280, minHeight: 80, maxHeight: 110)
+
+            Text(metadata)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.white.opacity(0.82))
+                .lineLimit(1)
+
+            if !item.overview.isEmpty {
+                Text(item.overview)
+                    .font(.footnote)
+                    .foregroundStyle(.white.opacity(0.78))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(3)
+                    .padding(.horizontal, 12)
+            }
+
+            HeroActionRow(
+                width: 340,
+                isSaved: isSaved,
+                libraryAction: libraryAction,
+                watchAction: watchAction,
+                shuffleAction: shuffleAction,
+                primary: primary
+            )
+            .padding(.top, 4)
+        }
+        .foregroundStyle(.white)
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 24)
+    }
+}
+
+extension AnyTransition {
+    /// The outgoing title's text leaves at once and the next one fades in
+    /// after, so two titles' text never show on top of each other.
+    static var heroIdentity: AnyTransition {
+        .asymmetric(
+            insertion: .opacity.animation(.easeOut(duration: 0.25).delay(0.12)),
+            removal: .opacity.animation(.easeIn(duration: 0.08))
+        )
+    }
+}
 #endif
+
+/// A hero's height: fixed, or a poster's 2:3 shape on an upright iPhone.
+struct HeroFrame: ViewModifier {
+    let height: CGFloat
+    let followsPosterShape: Bool
+
+    func body(content: Content) -> some View {
+        if followsPosterShape {
+            content.aspectRatio(2.0 / 3.0, contentMode: .fit)
+        } else {
+            content.frame(height: height)
+        }
+    }
+}

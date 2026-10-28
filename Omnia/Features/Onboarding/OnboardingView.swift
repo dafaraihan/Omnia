@@ -10,6 +10,9 @@ struct OnboardingView: View {
     @Environment(LiveMetadataStore.self) private var metadata
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
     @State private var step: Step = .welcome
     @State private var name = ""
     @State private var avatarID: String? = AvatarCatalog.random().id
@@ -31,6 +34,15 @@ struct OnboardingView: View {
             .filter { $0.artworkURL != nil && seen.insert($0.id).inserted }
     }
 
+    /// An iPhone held upright: steps stack in one column.
+    private var isCompact: Bool {
+        #if os(iOS)
+        horizontalSizeClass == .compact
+        #else
+        false
+        #endif
+    }
+
     var body: some View {
         ZStack {
             OmniaBrandBackground()
@@ -43,10 +55,16 @@ struct OnboardingView: View {
                 case .welcome: welcome
                 case .features: ScrollView { features.padding(.vertical, 12) }
                 case .account: accountStep
-                case .profile: profileStep
+                case .profile:
+                    if isCompact {
+                        ScrollView { profileStep.padding(.bottom, 56) }
+                            .scrollIndicators(.never)
+                    } else {
+                        profileStep
+                    }
                 }
             }
-            .padding(32)
+            .padding(isCompact ? 20 : 32)
             .frame(maxWidth: step == .profile || step == .features ? 960 : 720)
             .transition(.asymmetric(
                 insertion: reduceMotion ? .opacity : .move(edge: .trailing).combined(with: .opacity),
@@ -162,7 +180,9 @@ struct OnboardingView: View {
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             }
-            HStack(alignment: .top, spacing: 36) {
+            // Side by side where there's room; the avatar grid goes under the
+            // name on an iPhone.
+            (isCompact ? AnyLayout(VStackLayout(spacing: 24)) : AnyLayout(HStackLayout(alignment: .top, spacing: 36))) {
                 VStack(spacing: 18) {
                     ZStack {
                         Circle()
@@ -208,11 +228,11 @@ struct OnboardingView: View {
                 }
                 .frame(width: 280)
                 ScrollView {
-                    AvatarPicker(selection: $avatarID, columns: 7, size: 54)
+                    AvatarPicker(selection: $avatarID, columns: isCompact ? 5 : 7, size: 54)
                         .padding(18)
                 }
                 .scrollIndicators(.never)
-                .frame(width: 7 * 54 + 6 * 12 + 36, height: 400)
+                .frame(width: isCompact ? 5 * 54 + 4 * 12 + 36 : 7 * 54 + 6 * 12 + 36, height: isCompact ? 320 : 400)
                 .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
                 .mask {
                     // Fades the grid out at the top and bottom edges.

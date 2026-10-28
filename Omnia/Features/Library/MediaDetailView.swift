@@ -89,31 +89,7 @@ struct MediaDetailView: View {
         // stable transparent toolbar (or iPad's tab bar) instead of leaving
         // a band above it.
         .ignoresSafeArea(edges: .top)
-        #if os(iOS)
-        // Outside the page's safe-area override, so it stays below the
-        // status and tab bars and in place while the page scrolls.
-        .overlay(alignment: .topLeading) {
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(.body.weight(.bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 42, height: 42)
-                    // Tinted glass stays visible over light artwork and over
-                    // the dark page once the hero scrolls away.
-                    .glassEffect(.regular.tint(.black.opacity(0.35)).interactive(), in: Circle())
-            }
-            .buttonStyle(.plain)
-            .padding(.leading, horizontalInset)
-            .padding(.top, 10)
-            .accessibilityLabel("Back")
-        }
-        #endif
         .omniaNavigationTitle(displayItem.title, screen: .mediaDetail)
-        #if os(iOS)
-        .toolbar(.hidden, for: .navigationBar)
-        #endif
         .task(id: item.id) {
             if isOnboardingPreview {
                 let resolved = await metadata.details(for: item)
@@ -225,7 +201,7 @@ struct MediaDetailView: View {
     private var detailHero: some View {
         ZStack(alignment: .bottomLeading) {
             #if os(iOS)
-            if horizontalSizeClass == .compact && verticalSizeClass == .regular {
+            if isPortraitPhone {
                 PortraitHeroArtwork(item: displayItem)
             } else {
                 HeroArtworkCanvas(item: displayItem, source: .detail, artworkAlignment: .topTrailing)
@@ -236,15 +212,29 @@ struct MediaDetailView: View {
 
             HomeHeroTrailerLayer(model: heroTrailer, isPlaying: heroTrailerIsPlaying)
 
-            VStack(alignment: .leading, spacing: 0) {
-                Spacer(minLength: 0)
-                CinematicHeroColumn {
-                    detailIdentity
-                    actions
+            #if os(iOS)
+            if isPortraitPhone {
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    PortraitHeroIdentity(
+                        item: displayItem,
+                        showsTitleWithoutLogo: resolvedItem != nil,
+                        isSaved: store.isSaved(displayItem),
+                        libraryAction: { store.toggleSaved(displayItem) },
+                        watchAction: heroWatchAction,
+                        shuffleAction: heroShuffleAction
+                    ) {
+                        playButton
+                    }
+                    .onTapGesture { showsSynopsis = true }
+                    .padding(.bottom, 28)
                 }
+            } else {
+                landscapeDetailIdentity
             }
-            .padding(.leading, CinematicHeroLayout.horizontalInset)
-            .padding(.bottom, 34)
+            #else
+            landscapeDetailIdentity
+            #endif
         }
         // In the hero's bottom-right corner, scrolling away with it
         // (Dafa, 2026-10-22).
@@ -254,7 +244,8 @@ struct MediaDetailView: View {
                 .padding(.bottom, 34)
                 .animation(.snappy(duration: 0.25), value: heroTrailer.isVisible)
         }
-        .frame(maxWidth: .infinity, minHeight: detailHeroHeight, maxHeight: detailHeroHeight)
+        .frame(maxWidth: .infinity)
+        .modifier(HeroFrame(height: detailHeroHeight, followsPosterShape: isPortraitPhone))
         // The hero owns the top safe area on every platform. On macOS the
         // compact system Back control floats above this artwork; it must not
         // create a separate black titlebar band.
@@ -531,6 +522,28 @@ struct MediaDetailView: View {
         return resolved
     }
 
+    private var landscapeDetailIdentity: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Spacer(minLength: 0)
+            CinematicHeroColumn {
+                detailIdentity
+                actions
+            }
+        }
+        .padding(.leading, CinematicHeroLayout.horizontalInset)
+        .padding(.bottom, 34)
+    }
+
+    /// An iPhone held upright: the hero takes portrait art and a centred
+    /// identity.
+    private var isPortraitPhone: Bool {
+        #if os(iOS)
+        horizontalSizeClass == .compact && verticalSizeClass == .regular
+        #else
+        false
+        #endif
+    }
+
     private var actions: some View {
         HeroActionRow(
             width: CinematicHeroLayout.logoWidth,
@@ -539,30 +552,34 @@ struct MediaDetailView: View {
             watchAction: heroWatchAction,
             shuffleAction: heroShuffleAction
         ) {
-            Button {
-                let intent = playbackIntent
-                // Shuffle (Nuvio): an episode in progress resumes; otherwise
-                // Play starts the random pick.
-                if intent.resumeAt == nil, let shuffled = shufflePrimary {
-                    selectedEpisode = shuffled
-                    sourceRequest = PlaybackRequest(item: intent.item, episode: shuffled, resumeAt: nil)
-                    shufflePrimary = pickShuffleEpisode(excluding: shuffled) ?? shuffled
-                    return
-                }
-                selectedEpisode = intent.episode
-                sourceRequest = PlaybackRequest(item: intent.item, episode: intent.episode, resumeAt: intent.resumeAt)
-            } label: {
-                HeroPrimaryActionLabel(
-                    title: shuffledPlayTitle ?? playbackActionTitle,
-                    resumeProgress: playbackActionTitle == "Resume" ? resumeProgressPresentation : nil
-                )
-            }
-            #if os(macOS)
-            .omniaCapsuleGlassButton()
-            #else
-            .buttonStyle(.plain)
-            #endif
+            playButton
         }
+    }
+
+    private var playButton: some View {
+        Button {
+            let intent = playbackIntent
+            // Shuffle (Nuvio): an episode in progress resumes; otherwise
+            // Play starts the random pick.
+            if intent.resumeAt == nil, let shuffled = shufflePrimary {
+                selectedEpisode = shuffled
+                sourceRequest = PlaybackRequest(item: intent.item, episode: shuffled, resumeAt: nil)
+                shufflePrimary = pickShuffleEpisode(excluding: shuffled) ?? shuffled
+                return
+            }
+            selectedEpisode = intent.episode
+            sourceRequest = PlaybackRequest(item: intent.item, episode: intent.episode, resumeAt: intent.resumeAt)
+        } label: {
+            HeroPrimaryActionLabel(
+                title: shuffledPlayTitle ?? playbackActionTitle,
+                resumeProgress: playbackActionTitle == "Resume" ? resumeProgressPresentation : nil
+            )
+        }
+        #if os(macOS)
+        .omniaCapsuleGlassButton()
+        #else
+        .buttonStyle(.plain)
+        #endif
     }
 
     /// Settings › Layout › Detail Page › Shuffle.

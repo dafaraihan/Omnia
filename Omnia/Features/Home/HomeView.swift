@@ -27,6 +27,9 @@ struct HomeView: View {
     @State private var upcomingResult: UpcomingResult?
     @State private var isLoadingUpcoming = false
     @State private var heroIndex = 0
+    /// A sideways swipe is under way, so lifting the finger mustn't open
+    /// the title.
+    @State private var isSwipingHero = false
     @State private var heroCandidates: [MediaItem] = []
     @State private var sourcePlaybackItem: MediaItem?
     @State private var resumePromptItem: MediaItem?
@@ -617,103 +620,22 @@ struct HomeView: View {
                 Color.clear.contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .disabled(isSwipingHero)
             .accessibilityLabel("View details for \(featured.title)")
 
-            VStack(alignment: .leading, spacing: 0) {
-                // Anchor identity in the lower third while letting the local
-                // hero artwork breathe above it.
-                Spacer(minLength: heroTopSpacing)
-
-                CinematicHeroColumn {
-                    if let logoURL = featured.logoURL {
-                        TitleLogoView(
-                            url: logoURL,
-                            title: featured.title,
-                            maximumWidth: CinematicHeroLayout.logoWidth,
-                            maximumHeight: CinematicHeroLayout.logoHeight,
-                            alignment: .center
-                        )
-                    } else if resolvedFeatured?.id == featured.id {
-                        // Details have loaded and there is no logo: show the
-                        // title, as Nuvio does, instead of an empty gap.
-                        Text(featured.title)
-                            .font(.system(size: 44, weight: .bold))
-                            .foregroundStyle(.white)
-                            .multilineTextAlignment(.center)
-                            .lineLimit(2)
-                            .minimumScaleFactor(0.6)
-                            .shadow(color: .black.opacity(0.35), radius: 8, y: 3)
-                            .frame(
-                                width: CinematicHeroLayout.logoWidth,
-                                height: CinematicHeroLayout.logoHeight,
-                                alignment: .center
-                            )
-                    } else {
-                        // A basic catalog item can arrive before the detail
-                        // request has supplied its transparent logo. Preserve
-                        // the logo canvas instead of flashing a duplicate
-                        // plain-text title for one render pass.
-                        Color.clear
-                            .frame(
-                                width: CinematicHeroLayout.logoWidth,
-                                height: CinematicHeroLayout.logoHeight,
-                                alignment: .center
-                            )
-                            .accessibilityHidden(true)
-                    }
-
-                    HeroMetadataLine(item: featured)
-
-                    if settings.preferences.integrations.mdblistEnabled {
-                        MDBListRatingsView(
-                            state: heroRatings.state(forItemID: featured.id).applying(settings.preferences.mdblistRatings),
-                            retry: { retryHeroRatings(for: featured) },
-                            openSettings: { showsMDBListSettings = true }
-                        )
-                        .frame(width: CinematicHeroLayout.logoWidth, alignment: .leading)
-                    }
-
-                    JustifiedSynopsisText(
-                        text: featured.overview,
-                        lineLimit: 3,
-                        fontSize: CinematicHeroLayout.synopsisFontSize
-                    )
-                        .frame(width: CinematicHeroLayout.synopsisWidth, alignment: .leading)
-
-                    HeroActionRow(
-                        width: CinematicHeroLayout.logoWidth,
-                        isSaved: store.isSaved(featured),
-                        libraryAction: { store.toggleSaved(featured) },
-                        watchAction: heroWatchAction(for: featured) ?? HeroWatchAction(
-                            systemImage: "eye",
-                            accessibilityLabel: resolvedFeatured?.id == featured.id
-                                ? "Episode information unavailable" : "Loading episode information",
-                            perform: {},
-                            isEnabled: false
-                        )
-                    ) {
-                        NavigationLink(value: featured) {
-                            HeroPrimaryActionLabel(title: "View Details")
-                        }
-                        #if os(macOS)
-                        .omniaCapsuleGlassButton()
-                        #else
-                        .buttonStyle(.plain)
-                        #endif
-                    }
-                }
-                // AsyncImage keeps state while SwiftUI reuses a view tree.
-                // A title-specific identity prevents a previous transparent
-                // logo from appearing over the next title's backdrop.
-                .id(featured.id)
-                .transition(.opacity)
+            #if os(iOS)
+            if isPortraitPhone {
+                portraitHeroIdentity(featured)
+            } else {
+                landscapeHeroIdentity(featured)
             }
-            .frame(maxHeight: .infinity, alignment: .leading)
-            .padding(.leading, CinematicHeroLayout.horizontalInset)
-                .padding(.bottom, 38)
+            #else
+            landscapeHeroIdentity(featured)
+            #endif
         }
         .overlay {
-            if heroCandidates.count > 1 {
+            // A swipe moves the hero on iPhone and iPad; the Mac has arrows.
+            if heroCandidates.count > 1, showsHeroArrows {
                 HStack {
                     heroNavigationButton(symbol: "chevron.left", label: "Previous feature") {
                         moveHero(by: -1)
@@ -748,8 +670,14 @@ struct HomeView: View {
                 .padding(.bottom, 22)
             }
         }
+        #if os(iOS)
+        .simultaneousGesture(heroSwipe)
+        #endif
         .frame(maxWidth: .infinity)
-        .frame(height: isCardHero ? heroHeight - heroCardTopInset : heroHeight)
+        .modifier(HeroFrame(
+            height: isCardHero ? heroHeight - heroCardTopInset : heroHeight,
+            followsPosterShape: isPortraitHeroFrame
+        ))
         .clipShape(.rect(cornerRadius: isCardHero ? Self.heroCardCornerRadius : 0, style: .continuous))
         .overlay {
             if isCardHero {
@@ -1018,6 +946,170 @@ struct HomeView: View {
     /// the hero draws portrait art.
     private var isPortraitPhone: Bool {
         horizontalSizeClass == .compact && verticalSizeClass == .regular
+    }
+    #endif
+
+    private var showsHeroArrows: Bool {
+        #if os(iOS)
+        false
+        #else
+        true
+        #endif
+    }
+
+    /// The portrait hero takes a poster's 2:3 shape, so a textless poster
+    /// fills it without cropping at any iPhone width.
+    private var isPortraitHeroFrame: Bool {
+        #if os(iOS)
+        isPortraitPhone && !isCardHero
+        #else
+        false
+        #endif
+    }
+
+    @ViewBuilder
+    private func landscapeHeroIdentity(_ featured: MediaItem) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Anchor identity in the lower third while letting the local
+            // hero artwork breathe above it.
+            Spacer(minLength: heroTopSpacing)
+
+            CinematicHeroColumn {
+                if let logoURL = featured.logoURL {
+                    TitleLogoView(
+                        url: logoURL,
+                        title: featured.title,
+                        maximumWidth: CinematicHeroLayout.logoWidth,
+                        maximumHeight: CinematicHeroLayout.logoHeight,
+                        alignment: .center
+                    )
+                } else if resolvedFeatured?.id == featured.id {
+                    // Details have loaded and there is no logo: show the
+                    // title, as Nuvio does, instead of an empty gap.
+                    Text(featured.title)
+                        .font(.system(size: 44, weight: .bold))
+                        .foregroundStyle(.white)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.6)
+                        .shadow(color: .black.opacity(0.35), radius: 8, y: 3)
+                        .frame(
+                            width: CinematicHeroLayout.logoWidth,
+                            height: CinematicHeroLayout.logoHeight,
+                            alignment: .center
+                        )
+                } else {
+                    // A basic catalog item can arrive before the detail
+                    // request has supplied its transparent logo. Preserve
+                    // the logo canvas instead of flashing a duplicate
+                    // plain-text title for one render pass.
+                    Color.clear
+                        .frame(
+                            width: CinematicHeroLayout.logoWidth,
+                            height: CinematicHeroLayout.logoHeight,
+                            alignment: .center
+                        )
+                        .accessibilityHidden(true)
+                }
+
+                HeroMetadataLine(item: featured)
+
+                if settings.preferences.integrations.mdblistEnabled {
+                    MDBListRatingsView(
+                        state: heroRatings.state(forItemID: featured.id).applying(settings.preferences.mdblistRatings),
+                        retry: { retryHeroRatings(for: featured) },
+                        openSettings: { showsMDBListSettings = true }
+                    )
+                    .frame(width: CinematicHeroLayout.logoWidth, alignment: .leading)
+                }
+
+                JustifiedSynopsisText(
+                    text: featured.overview,
+                    lineLimit: 3,
+                    fontSize: CinematicHeroLayout.synopsisFontSize
+                )
+                    .frame(width: CinematicHeroLayout.synopsisWidth, alignment: .leading)
+
+                HeroActionRow(
+                    width: CinematicHeroLayout.logoWidth,
+                    isSaved: store.isSaved(featured),
+                    libraryAction: { store.toggleSaved(featured) },
+                    watchAction: heroWatchAction(for: featured) ?? HeroWatchAction(
+                        systemImage: "eye",
+                        accessibilityLabel: resolvedFeatured?.id == featured.id
+                            ? "Episode information unavailable" : "Loading episode information",
+                        perform: {},
+                        isEnabled: false
+                    )
+                ) {
+                    NavigationLink(value: featured) {
+                        HeroPrimaryActionLabel(title: "View Details")
+                    }
+                    #if os(macOS)
+                    .omniaCapsuleGlassButton()
+                    #else
+                    .buttonStyle(.plain)
+                    #endif
+                }
+            }
+            // AsyncImage keeps state while SwiftUI reuses a view tree.
+            // A title-specific identity prevents a previous transparent
+            // logo from appearing over the next title's backdrop.
+            .id(featured.id)
+            .transition(.opacity)
+        }
+        .frame(maxHeight: .infinity, alignment: .leading)
+        .padding(.leading, CinematicHeroLayout.horizontalInset)
+            .padding(.bottom, 38)
+    }
+
+    #if os(iOS)
+    private func portraitHeroIdentity(_ featured: MediaItem) -> some View {
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            PortraitHeroIdentity(
+                item: featured,
+                showsTitleWithoutLogo: resolvedFeatured?.id == featured.id,
+                isSaved: store.isSaved(featured),
+                libraryAction: { store.toggleSaved(featured) },
+                watchAction: heroWatchAction(for: featured) ?? HeroWatchAction(
+                    systemImage: "eye",
+                    accessibilityLabel: resolvedFeatured?.id == featured.id
+                        ? "Episode information unavailable" : "Loading episode information",
+                    perform: {},
+                    isEnabled: false
+                )
+            ) {
+                NavigationLink(value: featured) {
+                    HeroPrimaryActionLabel(title: "View Details")
+                }
+                .buttonStyle(.plain)
+            }
+            .id(featured.id)
+            .transition(.heroIdentity)
+            // Room for the page dots under the buttons.
+            .padding(.bottom, heroCandidates.count > 1 ? 52 : 28)
+        }
+    }
+
+    /// Next or previous title by swiping the hero sideways, as in Nuvio.
+    private var heroSwipe: some Gesture {
+        DragGesture(minimumDistance: 24)
+            .onChanged { value in
+                if !isSwipingHero, abs(value.translation.width) > abs(value.translation.height) {
+                    isSwipingHero = true
+                }
+            }
+            .onEnded { value in
+                let dx = value.translation.width
+                if heroCandidates.count > 1, abs(dx) > 50, abs(dx) > abs(value.translation.height) {
+                    moveHero(by: dx < 0 ? 1 : -1)
+                }
+                Task {
+                    try? await Task.sleep(for: .milliseconds(150))
+                    isSwipingHero = false
+                }
+            }
     }
     #endif
 
