@@ -1,6 +1,5 @@
 import SwiftUI
 
-#if os(macOS)
 struct OmniaLiquidGlassHoverTransform: Equatable {
     let scale: CGFloat
     let verticalOffset: CGFloat
@@ -210,7 +209,6 @@ extension View {
             .clipShape(shape)
     }
 }
-#endif
 
 extension View {
     /// macOS sheets always contribute an opaque presentation surface. Keep

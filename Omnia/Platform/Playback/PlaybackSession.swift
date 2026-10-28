@@ -322,8 +322,10 @@ final class PlaybackSession {
     private(set) var isFullScreenActive = false
     private(set) var isPictureInPictureActive = false
     private(set) var isPictureInPictureAvailable = false
-    #if os(macOS)
+    #if OMNIA_MPV
     private(set) var subtitleSyncStatus: SubtitleSyncStatus = .idle
+    #endif
+    #if os(macOS)
     private(set) var timelinePreviewTimestamp: Double?
     private(set) var timelinePreviewImage: NSImage?
     #endif
@@ -373,11 +375,13 @@ final class PlaybackSession {
     @ObservationIgnored private var usesWholeScreen = false
     @ObservationIgnored private let wholeScreen = WholeScreenPresentation()
     @ObservationIgnored private let displaySleep = DisplaySleepAssertion()
+    @ObservationIgnored private let timelinePreviewScheduler = PlaybackTimelinePreviewRequestScheduler()
+    #endif
+    #if OMNIA_MPV
     @ObservationIgnored private var autoSyncsSubtitles = false
     @ObservationIgnored private var didAutoSyncAtStart = false
     @ObservationIgnored private var subtitleSyncTask: Task<Void, Never>?
     @ObservationIgnored private var subtitleCueCache: (url: URL, cues: [SubtitleCue])?
-    @ObservationIgnored private let timelinePreviewScheduler = PlaybackTimelinePreviewRequestScheduler()
     #endif
     @ObservationIgnored private var lastPersistedPosition: Double = 0
     @ObservationIgnored private var preloadedSources: (key: MediaPlaybackKey, resolution: PlaybackSourceResolution, loadedAt: Date)?
@@ -536,6 +540,7 @@ final class PlaybackSession {
         defaultSubtitleDelay = subtitleStyle.delaySeconds
         #if os(macOS)
         usesWholeScreen = preferences.playbackBehavior.usesWholeScreen
+        #endif
         if let key = subtitleDelayKey, let remembered = SubtitleDelayMemory.delay(for: key) {
             subtitleStyle.delaySeconds = remembered
         }
@@ -543,7 +548,6 @@ final class PlaybackSession {
         didAutoSyncAtStart = false
         subtitleSyncStatus = .idle
         subtitleCueCache = nil
-        #endif
         var mpvStyle = preferences.subtitleAppearance == .followSystem
             ? [String: Any]()
             : Self.mpvSubtitleStyle(for: preferences)
@@ -868,7 +872,7 @@ final class PlaybackSession {
         #endif
     }
 
-    #if os(macOS)
+    #if OMNIA_MPV
     /// mpv's sub-delay in tenths of a second; positive shows subtitles later.
     /// Kept for this title only.
     func setSubtitleDelay(_ seconds: Double) {
@@ -1084,12 +1088,12 @@ final class PlaybackSession {
         addonSubtitleTask = nil
         trackSelectionGate.reset()
         pendingSubtitlePreference = nil
-        #endif
-        #if os(macOS)
         subtitleSyncTask?.cancel()
         subtitleSyncTask = nil
         subtitleSyncStatus = .idle
         subtitleCueCache = nil
+        #endif
+        #if os(macOS)
         let cacheProtection = cacheProtection
         self.cacheProtection = nil
         if let cacheProtection {
@@ -1500,9 +1504,7 @@ final class PlaybackSession {
         let duration = player.duration
         if player.hasRenderedVideoFrame != hasRenderedVideoFrame {
             hasRenderedVideoFrame = player.hasRenderedVideoFrame
-            #if os(macOS)
             autoSyncSubtitlesIfNeeded()
-            #endif
         }
         #if os(macOS)
         let usesSystemVolume = synchronizeOutputVolume()
@@ -1587,7 +1589,6 @@ final class PlaybackSession {
         subtitleTracks = snapshot.subtitleTracks.map(PlaybackTrack.init)
         confirmPendingSubtitlePreference()
         areTracksLoading = snapshot.tracksLoading
-        #if os(macOS)
         // A sync measured against one subtitle file says nothing about
         // another.
         if subtitleTracks.first(where: \.isSelected)?.id != previousSubtitle,
@@ -1595,9 +1596,6 @@ final class PlaybackSession {
             cancelAutomaticSubtitleSync()
         }
         autoSyncSubtitlesIfNeeded()
-        #else
-        _ = previousSubtitle
-        #endif
     }
 
     private func confirmPendingSubtitlePreference() {

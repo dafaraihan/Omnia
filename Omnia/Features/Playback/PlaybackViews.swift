@@ -1652,6 +1652,19 @@ struct PlaybackExperienceView: View {
             .padding(.top, 72)
         }
         .contentShape(Rectangle())
+        #if os(iOS)
+        // Touch: double tap a side to skip 10 seconds, drag up or down on
+        // the left for brightness and on the right for volume, and drag
+        // sideways to seek, as in most phone players.
+        .overlay {
+            PlaybackTouchGestures(
+                isEnabled: !holdsChromeHidden,
+                toggleChrome: {
+                    if showsChrome { concealChrome() } else if !holdsChromeHidden { revealChrome() }
+                }
+            )
+        }
+        #else
         .onTapGesture {
             // One click shows the controls, the next hides them. While the
             // loading overlay or a Skip prompt is up a click leaves them
@@ -1662,6 +1675,7 @@ struct PlaybackExperienceView: View {
                 revealChrome()
             }
         }
+        #endif
         .overlay {
             if showsLoadingOverlay, let item = playback.mediaItem {
                 PlaybackLoadingOverlay(
@@ -1724,18 +1738,15 @@ struct PlaybackExperienceView: View {
                     playEpisode: presentEpisode,
                     showSources: presentSources
                 )
-                #if os(macOS)
                 .id(
                     MacPlaybackChromeCoordinateSpaceIdentity(
                         isExclusiveFullScreen: playback.isFullScreenActive
                     )
                 )
-                #endif
                 .transition(.opacity)
                 .zIndex(10)
             }
         }
-        #if os(macOS)
         // Skip and Up Next are their own overlay, apart from the player
         // controls, like the pause overlay. With the controls showing it
         // sits above them.
@@ -1760,7 +1771,6 @@ struct PlaybackExperienceView: View {
             }
         }
         .animation(.easeInOut(duration: 0.25), value: showsPromptOverlay)
-        #endif
         .overlay(alignment: .topTrailing) {
             if let skipNotice {
                 Label(skipNotice, systemImage: "forward.end.fill")
@@ -1776,34 +1786,6 @@ struct PlaybackExperienceView: View {
         }
         .animation(.easeInOut(duration: 0.2), value: showsChrome)
         .animation(.easeInOut(duration: 0.2), value: skipNotice)
-        #if !os(macOS)
-        .overlay(alignment: .bottomTrailing) {
-            VStack(alignment: .trailing, spacing: 10) {
-                if visibleSkipSegment != nil {
-                    Button(skipTitle, systemImage: "forward.end.fill") {
-                        skipIntro()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.return, modifiers: [])
-                    .accessibilityHint("Seeks past the detected segment")
-                }
-                if let upNextTitle {
-                    HStack(spacing: 8) {
-                        if let cancelUpNextAction {
-                            Button("Cancel", action: cancelUpNextAction)
-                                .buttonStyle(.bordered)
-                        }
-                        Button(upNextTitle, systemImage: "forward.fill") {
-                            showUpNext()
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .accessibilityHint("Plays the next episode")
-                    }
-                }
-            }
-            .padding(28)
-        }
-        #endif
         .onAppear { revealChrome() }
         .onDisappear {
             chromeHideTask?.cancel()
@@ -1984,7 +1966,6 @@ struct PlaybackExperienceView: View {
         visibleSkipSegment?.kind.skipTitle ?? "Skip Intro"
     }
 
-    #if os(macOS)
     /// The prompt overlay shows while a prompt is up, except while a player
     /// panel is open or the timeline is being dragged.
     private var showsPromptOverlay: Bool {
@@ -1992,7 +1973,6 @@ struct PlaybackExperienceView: View {
         let showsSkip = visibleSkipSegment != nil && (showsChrome || showsContextualSkip)
         return showsSkip || upNextPrompt != nil
     }
-    #endif
 
     private var upNextPrompt: PlaybackUpNextPrompt? {
         guard showsUpNext, let nextEpisode = playback.nextEpisode else { return nil }
@@ -2381,7 +2361,8 @@ private struct PlaybackChrome: View {
     let showSources: () -> Void
 
     var body: some View {
-        #if os(macOS)
+        // One set of controls on every platform: the Mac's, laid out for
+        // the screen it's on.
         MacPlaybackChrome(
             isInteracting: $isScrubbing,
             close: close,
@@ -2390,246 +2371,9 @@ private struct PlaybackChrome: View {
             playEpisode: playEpisode,
             showSources: showSources
         )
-            .ignoresSafeArea()
-        #else
-        VStack(spacing: 0) {
-            HStack {
-                Button(action: close) {
-                    Image(systemName: "xmark")
-                        .font(.body.weight(.bold))
-                        .foregroundStyle(.white)
-                        .frame(width: 34, height: 34)
-                        .glassEffect(.regular, in: Circle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Close player")
-                .accessibilityHint("Stops playback and returns to Omnia")
-                Spacer()
-            }
-            .padding(.top, 18)
-            .padding(.leading, 18)
-
-            Spacer()
-
-            PlaybackControlSurface(isScrubbing: $isScrubbing)
-                .padding(.bottom, 12)
-        }
-        // Inside the safe area, so Close stays clear of the status bar and
-        // the controls clear of the home indicator and the notch.
+        #if os(macOS)
+        .ignoresSafeArea()
         #endif
-    }
-}
-
-/// Omnia's compact transport surface uses SF Symbols, Slider, Menu, and a
-/// system material—Apple resources throughout—while matching the deliberate,
-/// low-profile player layout in the supplied reference.
-private struct PlaybackControlSurface: View {
-    @Environment(PlaybackSession.self) private var playback
-    @Environment(\.displayPreferences) private var display
-    #if os(iOS)
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    #endif
-    @Binding var isScrubbing: Bool
-
-    private var duration: Double { playback.durationSeconds ?? 0 }
-    private var position: Double { min(max(playback.positionSeconds, 0), duration) }
-
-    /// iPhone in portrait: one row doesn't fit, and the side buttons
-    /// already set the volume.
-    private var isCompact: Bool {
-        #if os(iOS)
-        horizontalSizeClass == .compact
-        #else
-        false
-        #endif
-    }
-
-    var body: some View {
-        VStack(spacing: 14) {
-            if isCompact {
-                HStack(spacing: 28) { transportButtons }
-                HStack(spacing: 20) { trackMenus }
-            } else {
-                HStack(spacing: 16) {
-                    volumeControl
-                    Spacer(minLength: 8)
-                    transportButtons
-                    Spacer(minLength: 8)
-                    trackMenus
-                    #if os(macOS)
-                    controlButton("rectangle.inset.filled", label: "Toggle full screen") {
-                        playback.toggleFullScreen()
-                    }
-                    #endif
-                }
-            }
-
-            Slider(
-                value: Binding(
-                    get: { duration > 0 ? position : 0 },
-                    set: { playback.seek(to: $0) }
-                ),
-                in: 0...max(duration, 0.001),
-                onEditingChanged: { isScrubbing = $0 }
-            )
-            .tint(display.accentColor)
-            .accessibilityLabel("Playback position")
-            .disabled(duration <= 0)
-
-            HStack {
-                Text(timeText(position))
-                Spacer()
-                Text(timeText(duration))
-            }
-            .font(.caption.monospacedDigit().weight(.semibold))
-            .foregroundStyle(.secondary)
-        }
-        .foregroundStyle(.white)
-        .padding(.horizontal, isCompact ? 18 : 22)
-        .padding(.vertical, 18)
-        .frame(maxWidth: 660)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .padding(.horizontal, isCompact ? 12 : 24)
-    }
-
-    private var volumeControl: some View {
-        HStack(spacing: 16) {
-            Image(systemName: playback.volume == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                .font(.body.weight(.semibold))
-                .frame(width: 20)
-                .accessibilityHidden(true)
-
-            Slider(
-                value: Binding(
-                    get: { playback.volume },
-                    set: { playback.setVolume($0) }
-                ),
-                in: 0...1
-            )
-            .frame(width: 128)
-            .accessibilityLabel("Volume")
-        }
-    }
-
-    @ViewBuilder
-    private var transportButtons: some View {
-        controlButton("gobackward.10", label: "Back 10 seconds") {
-            playback.seek(by: -10)
-        }
-
-        controlButton(playback.isPaused ? "play.fill" : "pause.fill", label: playback.isPaused ? "Play" : "Pause", prominent: true) {
-            playback.togglePause()
-        }
-
-        controlButton("goforward.10", label: "Forward 10 seconds") {
-            playback.seek(by: 10)
-        }
-    }
-
-    @ViewBuilder
-    private var trackMenus: some View {
-        Menu {
-            Button {
-                playback.selectSubtitleTrack(nil)
-            } label: {
-                Label("Off", systemImage: playback.subtitleTracks.contains(where: \.isSelected) ? "circle" : "checkmark")
-            }
-            switch PlaybackTrackAvailability(
-                isLoading: playback.areTracksLoading,
-                tracks: playback.subtitleTracks
-            ) {
-            case .loading:
-                ProgressView("Tracks still loading")
-            case .empty:
-                Text("No embedded subtitles")
-            case .available:
-                Divider()
-                ForEach(playback.subtitleTracks) { track in
-                    Button {
-                        playback.selectSubtitleTrack(track.id)
-                    } label: {
-                        Label(track.displayName, systemImage: track.isSelected ? "checkmark" : "circle")
-                    }
-                }
-            }
-        } label: {
-            Image(systemName: "captions.bubble")
-                .font(.body.weight(.semibold))
-                .frame(width: 32, height: 36)
-                .contentShape(.rect)
-        }
-        .menuStyle(.borderlessButton)
-        .accessibilityLabel("Subtitles")
-
-        Menu {
-            switch PlaybackTrackAvailability(
-                isLoading: playback.areTracksLoading,
-                tracks: playback.audioTracks
-            ) {
-            case .loading:
-                ProgressView("Tracks still loading")
-            case .empty:
-                Text("No audio tracks")
-            case .available:
-                ForEach(playback.audioTracks) { track in
-                    Button {
-                        playback.selectAudioTrack(track.id)
-                    } label: {
-                        Label(track.displayName, systemImage: track.isSelected ? "checkmark" : "circle")
-                    }
-                }
-            }
-        } label: {
-            Image(systemName: "waveform")
-                .font(.body.weight(.semibold))
-                .frame(width: 32, height: 36)
-                .contentShape(.rect)
-        }
-        .menuStyle(.borderlessButton)
-        .accessibilityLabel("Audio track")
-
-        Menu {
-            ForEach([0.5, 0.75, 1, 1.25, 1.5, 2], id: \.self) { rate in
-                Button(playbackRateTitle(rate)) { playback.setPlaybackRate(rate) }
-            }
-        } label: {
-            Text(playbackRateTitle(playback.playbackRate))
-                .font(.subheadline.weight(.semibold))
-                .frame(minWidth: 28, minHeight: 32)
-        }
-        .menuStyle(.borderlessButton)
-        .accessibilityLabel("Playback speed")
-    }
-
-    private func controlButton(
-        _ symbol: String,
-        label: String,
-        prominent: Bool = false,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(prominent ? .title3.weight(.semibold) : .body.weight(.semibold))
-                .frame(width: prominent ? 42 : 32, height: 36)
-                .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(label)
-    }
-
-    private func playbackRateTitle(_ value: Double) -> String {
-        value.rounded() == value ? "\(Int(value))x" : String(format: "%.2gx", value)
-    }
-
-    private func timeText(_ value: Double) -> String {
-        guard value.isFinite, value > 0 else { return "0:00" }
-        let total = Int(value.rounded(.down))
-        let hours = total / 3_600
-        let minutes = (total % 3_600) / 60
-        let seconds = total % 60
-        return hours > 0
-            ? String(format: "%d:%02d:%02d", hours, minutes, seconds)
-            : String(format: "%d:%02d", minutes, seconds)
     }
 }
 
@@ -2715,7 +2459,6 @@ struct PlaybackUpNextPrompt: Equatable {
     let isCountingDown: Bool
 }
 
-#if os(macOS)
 /// Skip Intro or Outro, and Up Next with its countdown, as an overlay of
 /// their own rather than buttons in the controls row.
 private struct PlaybackPromptOverlay: View {
@@ -2813,7 +2556,6 @@ private struct PlaybackPromptOverlay: View {
         .accessibilityLabel("Up Next")
     }
 }
-#endif
 
 private struct PlaybackPauseOverlay: View {
     let item: MediaItem
@@ -2845,6 +2587,7 @@ private struct PlaybackPauseOverlay: View {
                 startPoint: .leading,
                 endPoint: .trailing
             )
+            .ignoresSafeArea()
             VStack(alignment: .leading, spacing: 10) {
                 Text("You're watching")
                     .font(.subheadline.weight(.semibold))
@@ -2870,10 +2613,167 @@ private struct PlaybackPauseOverlay: View {
             .foregroundStyle(.white)
             .padding(.leading, isCompact ? 24 : 56)
             .padding(.trailing, isCompact ? 24 : 0)
-            .padding(.bottom, clearsControls ? (isCompact ? 280 : 170) : 120)
+            .padding(.bottom, clearsControls ? (isCompact ? 230 : 170) : 120)
             .animation(.easeInOut(duration: 0.2), value: clearsControls)
         }
+        // The text keeps clear of the notch and home indicator; only the
+        // shade runs to the edges.
+        #if os(macOS)
         .ignoresSafeArea()
+        #endif
         .accessibilityElement(children: .combine)
     }
 }
+
+#if os(iOS)
+/// The player's touch gestures on iPhone and iPad.
+private struct PlaybackTouchGestures: View {
+    let isEnabled: Bool
+    let toggleChrome: () -> Void
+
+    @Environment(PlaybackSession.self) private var playback
+    @State private var feedback: Feedback?
+    @State private var feedbackTask: Task<Void, Never>?
+    @State private var drag: DragMode?
+
+    private enum DragMode {
+        case brightness(start: Double)
+        case volume(start: Double)
+        case seek(start: Double)
+    }
+
+    private enum Feedback: Equatable {
+        case seek(Int)
+        case brightness(Double)
+        case volume(Double)
+        case scrub(target: Double, delta: Double)
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            Color.clear
+                .contentShape(Rectangle())
+                .gesture(
+                    SpatialTapGesture(count: 2)
+                        .onEnded { value in
+                            guard isEnabled else { return }
+                            skip(forward: value.location.x > geometry.size.width / 2)
+                        }
+                        .exclusively(before: TapGesture().onEnded { toggleChrome() })
+                )
+                .simultaneousGesture(dragGesture(in: geometry.size))
+                .overlay { feedbackView }
+        }
+    }
+
+    /// Repeated double taps add up, as in most players.
+    private func skip(forward: Bool) {
+        let step = forward ? 10 : -10
+        playback.seek(by: Double(step))
+        var total = step
+        if case let .seek(previous) = feedback, previous.signum() == step.signum() {
+            total += previous
+        }
+        show(.seek(total))
+    }
+
+    private func dragGesture(in size: CGSize) -> some Gesture {
+        DragGesture(minimumDistance: 16)
+            .onChanged { value in
+                guard isEnabled else { return }
+                if drag == nil {
+                    if abs(value.translation.width) > abs(value.translation.height) {
+                        guard playback.durationSeconds != nil else { return }
+                        drag = .seek(start: playback.positionSeconds)
+                    } else if value.startLocation.x < size.width / 2 {
+                        drag = .brightness(start: Double(UIScreen.main.brightness))
+                    } else {
+                        drag = .volume(start: playback.volume)
+                    }
+                }
+                let lift = -value.translation.height / (size.height * 0.8)
+                switch drag {
+                case let .brightness(start):
+                    let level = clamp(start + lift)
+                    UIScreen.main.brightness = CGFloat(level)
+                    show(.brightness(level), hides: false)
+                case let .volume(start):
+                    let level = clamp(start + lift)
+                    playback.setVolume(level)
+                    show(.volume(level), hides: false)
+                case let .seek(start):
+                    // A drag across the whole screen covers three minutes.
+                    let duration = playback.durationSeconds ?? 0
+                    let target = min(max(start + value.translation.width / size.width * 180, 0), duration)
+                    show(.scrub(target: target, delta: target - start), hides: false)
+                case nil:
+                    break
+                }
+            }
+            .onEnded { _ in
+                if case let .scrub(target, _) = feedback { playback.seek(to: target) }
+                drag = nil
+                show(feedback)
+            }
+    }
+
+    private func clamp(_ value: Double) -> Double { min(max(value, 0), 1) }
+
+    private func show(_ value: Feedback?, hides: Bool = true) {
+        feedbackTask?.cancel()
+        feedback = value
+        guard hides else { return }
+        feedbackTask = Task {
+            try? await Task.sleep(for: .milliseconds(700))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.2)) { feedback = nil }
+        }
+    }
+
+    @ViewBuilder
+    private var feedbackView: some View {
+        if let feedback {
+            Group {
+                switch feedback {
+                case let .seek(seconds):
+                    Label("\(seconds > 0 ? "+" : "−")\(abs(seconds)) s", systemImage: seconds > 0 ? "goforward" : "gobackward")
+                case let .brightness(level):
+                    meter(symbol: "sun.max.fill", value: level)
+                case let .volume(level):
+                    meter(symbol: level == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill", value: level)
+                case let .scrub(target, delta):
+                    Text("\(Self.time(target))  (\(delta >= 0 ? "+" : "−")\(Self.time(abs(delta))))")
+                        .monospacedDigit()
+                }
+            }
+            .font(.headline)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 12)
+            .glassEffect(.regular, in: Capsule())
+            .allowsHitTesting(false)
+            .transition(.opacity)
+            .accessibilityAddTraits(.updatesFrequently)
+        }
+    }
+
+    private func meter(symbol: String, value: Double) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: symbol)
+            ProgressView(value: value)
+                .frame(width: 110)
+                .tint(.white)
+        }
+    }
+
+    private static func time(_ seconds: Double) -> String {
+        let total = Int(seconds.rounded(.down))
+        let hours = total / 3_600
+        let minutes = (total % 3_600) / 60
+        let remainder = total % 60
+        return hours > 0
+            ? String(format: "%d:%02d:%02d", hours, minutes, remainder)
+            : String(format: "%d:%02d", minutes, remainder)
+    }
+}
+#endif

@@ -1,5 +1,6 @@
 #if os(macOS)
 import AppKit
+#endif
 import SwiftUI
 
 private enum MacPlaybackPanel: Hashable {
@@ -79,6 +80,7 @@ enum MacPlaybackKeyboardAction: Equatable {
     }
 }
 
+#if os(macOS)
 struct MacPlaybackKeyboardMonitor: NSViewRepresentable {
     let perform: (MacPlaybackKeyboardAction) -> Void
 
@@ -135,6 +137,7 @@ final class MacPlaybackKeyboardMonitorView: NSView {
         self.monitor = nil
     }
 }
+#endif
 
 struct MacSubtitleFontCatalog {
     static func displayNames(from availableFamilies: [String]) -> [String] {
@@ -147,7 +150,11 @@ struct MacSubtitleFontCatalog {
     }
 
     static var availableDisplayNames: [String] {
+        #if os(macOS)
         displayNames(from: NSFontManager.shared.availableFontFamilies)
+        #else
+        displayNames(from: UIFont.familyNames)
+        #endif
     }
 }
 
@@ -714,6 +721,8 @@ struct MacPlaybackChrome: View {
                         action: close
                     )
 
+                    // The phone and tablet player is always full screen.
+                    #if os(macOS)
                     HStack(spacing: 6) {
                         circleButton(
                             symbol: playback.isPictureInPictureActive ? "pip.exit" : "pip.enter",
@@ -738,6 +747,7 @@ struct MacPlaybackChrome: View {
                             playback.setFullScreen(!playback.isFullScreenActive)
                         }
                     }
+                    #endif
                 }
             }
 
@@ -2126,4 +2136,3 @@ private extension PlaybackSubtitleBackground {
         }
     }
 }
-#endif
