@@ -292,7 +292,9 @@ struct HomeView: View {
             }
         }
         .background {
-            screenBackground
+            // Under the home indicator too: on iPad the bottom safe area
+            // otherwise showed the window's light colour as a white bar.
+            screenBackground.ignoresSafeArea()
         }
         #if os(macOS)
         // Home's first section owns the area behind the stable transparent
@@ -1145,7 +1147,8 @@ struct HomeView: View {
 
     private var heroTopSpacing: CGFloat {
         #if os(iOS)
-        410
+        // iPad's larger logo and synopsis need more of the hero.
+        horizontalSizeClass == .regular ? 340 : 410
         #else
         470
         #endif

@@ -4,21 +4,30 @@
 //
 
 import SwiftUI
+#if os(iOS)
+import UIKit
+#endif
 
 /// A single coordinate system for the identity portion of every cinematic
 /// hero. Home and title detail intentionally share these measurements so the
 /// logo, synopsis, and action row never drift independently.
 enum CinematicHeroLayout {
     #if os(iOS)
-    static let horizontalInset: CGFloat = 20
-    static let contentWidth: CGFloat = 360
-    static let logoWidth: CGFloat = 236
-    static let logoHeight: CGFloat = 74
+    // iPad takes the Mac's column, which its screen has room for; the
+    // iPhone's was too narrow there for the logo, synopsis and buttons.
+    private static let isPad: Bool = {
+        guard Thread.isMainThread else { return false }
+        return MainActor.assumeIsolated { UIDevice.current.userInterfaceIdiom == .pad }
+    }()
+    static let horizontalInset: CGFloat = isPad ? 40 : 20
+    static let contentWidth: CGFloat = isPad ? 620 : 360
+    static let logoWidth: CGFloat = isPad ? 340 : 236
+    static let logoHeight: CGFloat = isPad ? 98 : 74
     // Identity text shares the logo's exact column, rather than extending
     // wider into the backdrop. This keeps the transparent mark, synopsis,
     // and action row on one clean visual axis.
     static let synopsisWidth: CGFloat = logoWidth
-    static let synopsisFontSize: CGFloat = 13
+    static let synopsisFontSize: CGFloat = isPad ? 14 : 13
     #else
     static let horizontalInset: CGFloat = 48
     static let contentWidth: CGFloat = 620
