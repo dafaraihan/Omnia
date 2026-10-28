@@ -10,6 +10,9 @@ struct AccountSettingsView: View {
     @Environment(ProfileDataSync.self) private var profileData
     @Environment(CredentialVaultSync.self) private var credentialVault
     @Environment(\.displayPreferences) private var display
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
     @State private var confirmation = SettingsConfirmation<DestructiveAction>()
     @State private var isSigningIn = false
     @State private var editingProfile: EditorTarget?
@@ -17,6 +20,15 @@ struct AccountSettingsView: View {
 
     private enum DestructiveAction: Equatable {
         case signOut
+    }
+
+    /// An iPhone: rows that sit side by side on wider screens stack.
+    private var isCompact: Bool {
+        #if os(iOS)
+        horizontalSizeClass == .compact
+        #else
+        false
+        #endif
     }
 
     var body: some View {
@@ -31,7 +43,7 @@ struct AccountSettingsView: View {
                 accountCard
             }
             .frame(maxWidth: 640)
-            .padding(.horizontal, 32)
+            .padding(.horizontal, isCompact ? 16 : 32)
             .padding(.vertical, 28)
             .frame(maxWidth: .infinity)
         }
@@ -70,8 +82,8 @@ struct AccountSettingsView: View {
             Button("Cancel", role: .cancel) { confirmation.cancel() }
         } message: {
             Text(credentialVault.hasPendingChanges
-                ? "This Mac will return to welcome with no active profiles, library, settings, credentials or Live TV sources. Your account data stays in the cloud. Recent profile changes must sync before sign-out can finish. Unsynced credentials stay encrypted for this account."
-                : "This Mac will return to welcome with no active profiles, library, settings, credentials or Live TV sources. Recent profile changes must sync before sign-out can finish. Sign in again to restore your account data.")
+                ? "This \(OmniaDevice.name) will return to welcome with no active profiles, library, settings, credentials or Live TV sources. Your account data stays in the cloud. Recent profile changes must sync before sign-out can finish. Unsynced credentials stay encrypted for this account."
+                : "This \(OmniaDevice.name) will return to welcome with no active profiles, library, settings, credentials or Live TV sources. Recent profile changes must sync before sign-out can finish. Sign in again to restore your account data.")
         }
     }
 
@@ -197,12 +209,15 @@ struct AccountSettingsView: View {
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(display.accentColor)
             Text(value)
-                .font(.system(size: 26, weight: .bold, design: .rounded).monospacedDigit())
+                .font(.system(size: isCompact ? 20 : 26, weight: .bold, design: .rounded).monospacedDigit())
                 .contentTransition(.numericText())
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
             Text(label)
-                .font(.caption)
+                .font(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .combine)
@@ -218,31 +233,24 @@ struct AccountSettingsView: View {
     /// button that opens Who's Watching.
     private var profilesCard: some View {
         card(title: "Profiles", detail: "\(profiles.profiles.count) of \(ViewerProfile.maximumCount)") {
-            HStack(spacing: 16) {
-                HStack(spacing: -12) {
-                    ForEach(Array(profiles.profiles.enumerated()), id: \.element.id) { index, profile in
-                        ProfileAvatarView(
-                            profile: profile,
-                            size: 44,
-                            isSelected: profile.id == profiles.activeProfile?.id
-                        )
-                        .background(Circle().fill(.background).padding(-2))
-                        .zIndex(Double(profiles.profiles.count - index))
-                        .help(profile.name)
+            (isCompact ? AnyLayout(VStackLayout(alignment: .leading, spacing: 14)) : AnyLayout(HStackLayout(spacing: 16))) {
+                HStack(spacing: 14) {
+                    profileAvatars
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(profiles.activeProfile.map { "Watching as \($0.name)" } ?? "No profile")
+                            .font(.callout.weight(.semibold))
+                        Text(profiles.canAddProfile ? "Add, edit or switch profiles." : "All five profiles are in use.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
+                    .fixedSize(horizontal: false, vertical: true)
                 }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(profiles.activeProfile.map { "Watching as \($0.name)" } ?? "No profile")
-                        .font(.callout.weight(.semibold))
-                    Text(profiles.canAddProfile ? "Add, edit or switch profiles." : "All five profiles are in use.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 12)
+                if !isCompact { Spacer(minLength: 12) }
                 Button {
                     ProfileSwitchCenter.shared.openPicker(using: profiles)
                 } label: {
                     Label("Switch Profile", systemImage: "person.2.circle")
+                        .frame(maxWidth: isCompact ? .infinity : nil)
                 }
                 .buttonStyle(.glassProminent)
                 .controlSize(.large)
@@ -266,6 +274,21 @@ struct AccountSettingsView: View {
                 Text(sharingSummary(active))
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var profileAvatars: some View {
+        HStack(spacing: isCompact ? -14 : -12) {
+            ForEach(Array(profiles.profiles.enumerated()), id: \.element.id) { index, profile in
+                ProfileAvatarView(
+                    profile: profile,
+                    size: isCompact ? 36 : 44,
+                    isSelected: profile.id == profiles.activeProfile?.id
+                )
+                .background(Circle().fill(.background).padding(-2))
+                .zIndex(Double(profiles.profiles.count - index))
+                .help(profile.name)
             }
         }
     }

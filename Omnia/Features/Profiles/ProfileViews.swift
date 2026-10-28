@@ -92,18 +92,32 @@ struct ProfilePickerView: View {
         onChosen(profile)
     }
 
-    /// Centred when every tile fits; scrolls only in a narrow window.
+    /// Centred when every tile fits. Where they don't (an iPhone), every
+    /// profile still shows at once, wrapped into rows of smaller tiles.
     private var profileRow: some View {
         ViewThatFits(in: .horizontal) {
             tiles
-            ScrollView(.horizontal) { tiles }
-                .scrollIndicators(.never)
+            LazyVGrid(
+                columns: Array(repeating: GridItem(.fixed(ProfileTile.compactWidth), spacing: 18), count: 3),
+                spacing: 22
+            ) {
+                tileContent(avatarSize: ProfileTile.compactAvatarSize)
+            }
+            .padding(.vertical, 12)
         }
         .fixedSize(horizontal: false, vertical: true)
     }
 
     private var tiles: some View {
             HStack(alignment: .top, spacing: 28) {
+                tileContent(avatarSize: ProfileTile.avatarSize)
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 12)
+    }
+
+    @ViewBuilder
+    private func tileContent(avatarSize: CGFloat) -> some View {
                 ForEach(Array(profiles.profiles.enumerated()), id: \.element.id) { index, profile in
                     Button {
                         if isManaging {
@@ -115,10 +129,10 @@ struct ProfilePickerView: View {
                             choose(profile)
                         }
                     } label: {
-                        ProfileTile(profile: profile, isManaging: isManaging)
+                        ProfileTile(profile: profile, isManaging: isManaging, avatarSize: avatarSize)
                             .onGeometryChange(for: CGPoint.self) { proxy in
                                 let frame = proxy.frame(in: .global)
-                                return CGPoint(x: frame.midX, y: frame.minY + ProfileTile.avatarSize / 2)
+                                return CGPoint(x: frame.midX, y: frame.minY + avatarSize / 2)
                             } action: { center in
                                 avatarCenters[profile.id] = center
                             }
@@ -136,23 +150,20 @@ struct ProfilePickerView: View {
                         VStack(spacing: 12) {
                             Circle()
                                 .strokeBorder(.secondary.opacity(0.5), style: StrokeStyle(lineWidth: 2, dash: [8, 6]))
-                                .frame(width: 120, height: 120)
+                                .frame(width: avatarSize, height: avatarSize)
                                 .overlay {
                                     Image(systemName: "plus")
-                                        .font(.system(size: 40, weight: .medium))
+                                        .font(.system(size: avatarSize / 3, weight: .medium))
                                         .foregroundStyle(.secondary)
                                 }
                             Text("Add Profile")
                                 .font(.headline)
                                 .foregroundStyle(.secondary)
                         }
-                        .frame(width: 132)
+                        .frame(width: avatarSize + 12)
                     }
                     .buttonStyle(ProfileTileButtonStyle())
                 }
-            }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 12)
     }
 }
 
@@ -170,18 +181,22 @@ enum EditorTarget: Identifiable, Hashable {
 
 private struct ProfileTile: View {
     static let avatarSize: CGFloat = 120
+    /// Three to a row on an iPhone.
+    static let compactAvatarSize: CGFloat = 88
+    static let compactWidth: CGFloat = compactAvatarSize + 12
     let profile: ViewerProfile
     let isManaging: Bool
+    var avatarSize: CGFloat = Self.avatarSize
 
     var body: some View {
         VStack(spacing: 12) {
-            ProfileAvatarView(profile: profile, size: Self.avatarSize)
+            ProfileAvatarView(profile: profile, size: avatarSize)
                 .overlay {
                     if isManaging {
                         Circle()
                             .fill(.black.opacity(0.45))
                         Image(systemName: "pencil")
-                            .font(.system(size: 34, weight: .semibold))
+                            .font(.system(size: avatarSize * 0.28, weight: .semibold))
                             .foregroundStyle(.white)
                     }
                 }
@@ -195,10 +210,10 @@ private struct ProfileTile: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .frame(maxWidth: 130)
+            .frame(maxWidth: avatarSize + 10)
         }
         // Every tile the same width, so the row's spacing is even.
-        .frame(width: 132)
+        .frame(width: avatarSize + 12)
     }
 }
 
@@ -279,24 +294,10 @@ struct ProfileEditorView: View {
                         sharingSection
                     }
                     pinSection
+                    deleteSection
                     avatarGrid
-                    if let existing, !isMain {
-                        Button("Delete Profile", role: .destructive) { confirmsDelete = true }
-                            .confirmationDialog(
-                                "Delete \(existing.name)?",
-                                isPresented: $confirmsDelete,
-                                titleVisibility: .visible
-                            ) {
-                                Button("Delete", role: .destructive) {
-                                    profiles.delete(existing.id)
-                                    dismiss()
-                                }
-                            } message: {
-                                Text("Their library, progress and settings are removed from this \(OmniaDevice.name) and your account.")
-                            }
-                    }
                 }
-                .padding(24)
+                .padding(isCompact ? 16 : 24)
             }
             .navigationTitle(existing == nil ? "New Profile" : "Edit Profile")
             .toolbar {
@@ -309,13 +310,57 @@ struct ProfileEditorView: View {
                 }
             }
         }
+        #if os(macOS)
         .frame(minWidth: 640, idealWidth: 700, minHeight: 640, idealHeight: 720)
+        #endif
+    }
+
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
+
+    private var isCompact: Bool {
+        #if os(iOS)
+        horizontalSizeClass == .compact
+        #else
+        false
+        #endif
+    }
+
+    /// Above the avatars, so it isn't missed at the end of a long page.
+    /// The main profile holds the account's data and stays.
+    @ViewBuilder
+    private var deleteSection: some View {
+        if let existing {
+            VStack(alignment: .leading, spacing: 8) {
+                Button("Delete Profile", systemImage: "trash", role: .destructive) { confirmsDelete = true }
+                    .disabled(isMain)
+                    .confirmationDialog(
+                        "Delete \(existing.name)?",
+                        isPresented: $confirmsDelete,
+                        titleVisibility: .visible
+                    ) {
+                        Button("Delete", role: .destructive) {
+                            profiles.delete(existing.id)
+                            dismiss()
+                        }
+                    } message: {
+                        Text("Their library, progress and settings are removed from this \(OmniaDevice.name) and your account.")
+                    }
+                if isMain {
+                    Text("The main profile can't be deleted. Delete the other profiles, or sign out to remove everything from this \(OmniaDevice.name).")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     private var header: some View {
-        HStack(spacing: 20) {
-            ProfileAvatarView(name: name.isEmpty ? "?" : name, avatarID: avatarID, colorHex: colorHex, size: 112)
-            VStack(alignment: .leading, spacing: 10) {
+        (isCompact ? AnyLayout(VStackLayout(spacing: 16)) : AnyLayout(HStackLayout(spacing: 20))) {
+            ProfileAvatarView(name: name.isEmpty ? "?" : name, avatarID: avatarID, colorHex: colorHex, size: isCompact ? 96 : 112)
+            VStack(alignment: isCompact ? .center : .leading, spacing: 10) {
                 TextField("Name", text: $name)
                     .textFieldStyle(.roundedBorder)
                     .font(.title3)
@@ -344,7 +389,8 @@ struct ProfileEditorView: View {
     private var colorRow: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Colour").font(.headline)
-            HStack(spacing: 8) {
+            // Wraps onto a second row on an iPhone.
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 30, maximum: 34), spacing: 8)], alignment: .leading, spacing: 10) {
                 ForEach(ViewerProfile.colors, id: \.self) { hex in
                     Button { colorHex = hex } label: {
                         Circle()
@@ -368,7 +414,7 @@ struct ProfileEditorView: View {
     private var avatarGrid: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Avatar").font(.title3.weight(.semibold))
-            AvatarPicker(selection: $avatarID)
+            AvatarPicker(selection: $avatarID, columns: isCompact ? 5 : 8, size: isCompact ? 56 : 60)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -438,9 +484,11 @@ struct ProfileEditorView: View {
                             let digits = String(value.filter { $0.isASCII && $0.isNumber }.prefix(4))
                             if digits != value { newPIN = digits }
                         }
-                    Text("Asked for when switching to this profile. It stays on this \(OmniaDevice.name).")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    if !isCompact {
+                        Text("Asked for when switching to this profile. It stays on this \(OmniaDevice.name).")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     Spacer()
                     Button("Cancel") {
                         pinMode = .unchanged
