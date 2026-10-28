@@ -32,6 +32,8 @@ final class ProfileStore {
         static let rememberLast = "remember-last-viewer-profile"
         static let deleted = "deleted-viewer-profiles"
         static let defaultLibraryOwner = "default-library-profile"
+        /// The account this device's profiles last synced with.
+        static let syncedUser = "viewer-profiles-synced-user"
     }
 
     var activeProfile: ViewerProfile? {
@@ -95,7 +97,7 @@ final class ProfileStore {
         needsSelection = false
         rememberLastProfile = true
         syncProblem = nil
-        for key in [Keys.active, Keys.deleted, Keys.defaultLibraryOwner] {
+        for key in [Keys.active, Keys.deleted, Keys.defaultLibraryOwner, Keys.syncedUser] {
             UserDefaults.standard.removeObject(forKey: key)
         }
     }
@@ -257,6 +259,20 @@ final class ProfileStore {
         do {
             let remote = try await account.fetchViewerProfiles()
             guard account.user?.id == userID, !Task.isCancelled else { return }
+            // Signing in after Continue Without an Account: an account that
+            // already has profiles brings its own, so the guest profiles
+            // made on this device go instead of joining them. An account
+            // with none keeps the guest's.
+            let defaults = UserDefaults.standard
+            // None of this device's profiles being in the account is what
+            // tells guest profiles apart from ones not pushed yet.
+            let accountIDs = Set(remote.filter { $0.deletedAt == nil }.map(\.id))
+            if defaults.string(forKey: Keys.syncedUser) != userID.uuidString,
+               !accountIDs.isEmpty,
+               accountIDs.isDisjoint(with: profiles.map(\.id)) {
+                dropGuestProfiles(keeping: accountIDs)
+            }
+            defaults.set(userID.uuidString, forKey: Keys.syncedUser)
             var merged = Dictionary(uniqueKeysWithValues: profiles.map { ($0.id, $0) })
             var positions = Dictionary(uniqueKeysWithValues: profiles.enumerated().map { ($1.id, $0) })
             for row in remote {
@@ -315,6 +331,31 @@ final class ProfileStore {
             guard account.user?.id == userID, !Task.isCancelled else { return }
             syncProblem = "Profiles are saved on this \(OmniaDevice.name) but couldn't sync with your account."
         }
+    }
+
+    /// Removes profiles the account doesn't have, with their library on
+    /// this device. Unlike `delete`, the account isn't told, since the
+    /// profiles were never in it.
+    private func dropGuestProfiles(keeping accountIDs: Set<UUID>) {
+        let guests = profiles.filter { !accountIDs.contains($0.id) }
+        guard !guests.isEmpty else { return }
+        for guest in guests {
+            try? KeychainStore.delete(account: Self.pinAccount(guest.id))
+            onDelete?(guest.id)
+            if defaultLibraryOwnerID == guest.id {
+                UserDefaults.standard.removeObject(forKey: Keys.defaultLibraryOwner)
+            } else if let url = LocalMediaStore.profileStoreURL(for: guest.id) {
+                for suffix in ["", "-shm", "-wal"] {
+                    try? FileManager.default.removeItem(at: URL(fileURLWithPath: url.path + suffix))
+                }
+            }
+        }
+        profiles.removeAll { !accountIDs.contains($0.id) }
+        if let activeProfileID, !accountIDs.contains(activeProfileID) {
+            self.activeProfileID = nil
+            needsSelection = true
+        }
+        NotificationCenter.default.post(name: .credentialVaultDidChange, object: nil)
     }
 
     // MARK: Saving
