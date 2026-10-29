@@ -660,7 +660,7 @@ struct HomeView: View {
                 .padding(.bottom, 18)
                 .animation(.snappy(duration: 0.25), value: heroTrailer.isVisible)
         }
-        .overlay(alignment: isPortraitPad ? .bottomLeading : .bottom) {
+        .overlay(alignment: .bottom) {
             if heroCandidates.count > 1 {
                 HeroPageControl(
                     count: heroCandidates.count,
@@ -672,8 +672,6 @@ struct HomeView: View {
                         }
                     }
                 )
-                .frame(width: isPortraitPad ? homeIdentityWidth : nil)
-                .padding(.leading, isPortraitPad ? CinematicHeroLayout.horizontalInset : 0)
                 .padding(.bottom, isPortraitPad ? 12 : 22)
             }
         }
