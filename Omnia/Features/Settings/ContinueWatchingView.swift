@@ -27,7 +27,7 @@ struct ContinueWatchingSettingsView: View {
                 ) { style in
                     ContinueWatchingStylePreview(style: style)
                 }
-                ContinueWatchingStylePreview(style: settings.preferences.display.continueWatchingStyle, isThumbnail: false)
+                ContinueWatchingLivePreview(style: settings.preferences.display.continueWatchingStyle)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
                 SettingsDropdown(
