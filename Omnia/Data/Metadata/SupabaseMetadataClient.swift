@@ -297,10 +297,25 @@ actor SupabaseMetadataClient {
         id: String,
         type: MediaType,
         accessToken: String? = nil,
-        language: String = "en-US"
+        language: String = "en-US",
+        modules: TMDBEnrichmentPreferences? = nil
     ) async throws -> MetadataDetailResponse {
+        if let modules {
+            let data = try await OnDeviceMetadataService.shared.detailResponse(provider: provider.rawValue, id: id, type: type.rawValue, language: language, modules: modules)
+            return try decoder.decode(MetadataDetailResponse.self, from: data)
+        }
         let request = MetadataRequest.details(provider: provider, id: id, type: type, language: language)
         return try await invoke(request, accessToken: accessToken)
+    }
+
+    func findTVDB(imdbID: String, type: MediaType) async throws -> MetadataSearchResponse {
+        let data = try await OnDeviceMetadataService.shared.findTVDB(imdbID: imdbID, type: type.rawValue)
+        return try decoder.decode(MetadataSearchResponse.self, from: data)
+    }
+
+    func findTMDB(externalID: String, source: String, type: MediaType, language: String = "en-US") async throws -> MetadataSearchResponse {
+        let data = try await OnDeviceMetadataService.shared.findTMDB(externalID: externalID, source: source, type: type.rawValue, language: language)
+        return try decoder.decode(MetadataSearchResponse.self, from: data)
     }
 
     func person(id: String, language: String = "en-US") async throws -> MetadataPersonResponse {

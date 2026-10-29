@@ -9,6 +9,7 @@ struct HomeView: View {
     @Environment(OmniaStore.self) private var store
     @Environment(LiveMetadataStore.self) private var metadata
     @Environment(SettingsPreferencesStore.self) private var settings
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.displayScale) private var displayScale
@@ -47,6 +48,7 @@ struct HomeView: View {
     /// line as on a title's page.
     @State private var heroRatings = MDBListRatingsLoader()
     @State private var ratingsCredentialEpoch = UUID()
+    @State private var enrichmentCredentialEpoch = UUID()
     @State private var showsMDBListSettings = false
     @State private var servers = MediaServerStore.shared
     @Environment(PlaybackSession.self) private var playback
@@ -350,27 +352,7 @@ struct HomeView: View {
             // configuration must not reuse the previous add-on's private fields.
             if resolvedHeroSource != heroSourceConfigurationKey { resolvedFeatured = nil }
             resolvedHeroSource = heroSourceConfigurationKey
-            let resolved: MediaItem
-            if isAddonMode {
-                let enrichment = settings.preferences.integrations.tmdb
-                async let provider = loadHeroEnrichment(for: featured, preferences: enrichment)
-                let fromAddon = await AddonMetadataResolver.resolve(featured, addons: store.installedAddons)
-                guard !Task.isCancelled else { return }
-                if let fromAddon {
-                    let available = resolvedFeatured?.id == featured.id ? resolvedFeatured : nil
-                    resolvedFeatured = fromAddon.fillingGaps(from: available ?? featured)
-                }
-                var enriched = await provider
-                if fromAddon == nil, !enrichment.enabled {
-                    enriched = await metadata.details(for: featured)
-                } else if enrichment.enabled, enriched.details == nil, let fromAddon,
-                          fromAddon.externalIDs != featured.externalIDs {
-                    enriched = await metadata.details(for: fromAddon)
-                }
-                resolved = fromAddon.map { $0.fillingGaps(from: enriched.restricted(to: enrichment)) } ?? enriched
-            } else {
-                resolved = await metadata.details(for: featured)
-            }
+            let resolved = await resolveHeroMetadata(featured, showsProgress: true)
             guard !Task.isCancelled else { return }
             resolvedFeatured = resolved
         }
@@ -389,9 +371,12 @@ struct HomeView: View {
             await prepareNextHero(nextHero)
         }
         .onReceive(NotificationCenter.default.publisher(for: .providerCredentialDidChange)) { change in
-            guard change.object as? String == UserManagedProviderCredential.mdblist.rawValue else { return }
-            heroRatings.reset()
-            ratingsCredentialEpoch = UUID()
+            if change.object as? String == UserManagedProviderCredential.mdblist.rawValue {
+                heroRatings.reset()
+                ratingsCredentialEpoch = UUID()
+            } else if ["tmdb", "tvdb"].contains(change.object as? String ?? "") {
+                enrichmentCredentialEpoch = UUID()
+            }
         }
         .onDisappear { heroRatings.cancel() }
         .sheet(isPresented: $showsMDBListSettings) {
@@ -417,12 +402,12 @@ struct HomeView: View {
                 autoplayAllowed: !reduceMotion
             )
         }
-        .task(id: "\(heroCandidateKey)-\(heroIndex)-\(isActiveDestination)-\(heroTrailer.holdsCarousel)-\(reduceMotion)-\(heroIsOnScreen)-\(windowIsVisible)-\(heroCarousel.autoAdvance)-\(heroCarousel.intervalSeconds)") {
+        .task(id: "\(heroCandidateKey)-\(heroIndex)-\(isActiveDestination)-\(heroTrailer.holdsCarousel)-\(reduceMotion)-\(heroIsOnScreen)-\(windowIsVisible)-\(heroCarousel.autoAdvance)-\(heroCarousel.intervalSeconds)-\(playback.isPresentingPlayer)-\(playback.hasPlayer)-\(scenePhase)") {
             // The carousel pauses while Home sits in a hidden tab, while a
             // hero trailer is waiting to start or playing, while nobody can
             // see the hero, and when Auto-Advance is off.
             guard !isOnboardingPreview, isActiveDestination, !reduceMotion, heroCandidates.count > 1, !heroTrailer.holdsCarousel,
-                  heroIsOnScreen, windowIsVisible, heroCarousel.autoAdvance
+                  heroIsOnScreen, windowIsVisible, heroCarousel.autoAdvance, !playback.isPresentingPlayer, !playback.hasPlayer, scenePhase == .active
             else { return }
 
             do {
@@ -472,10 +457,8 @@ struct HomeView: View {
     }
 
     private var heroMetadataRequestKey: String {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        let enrichment = (try? encoder.encode(settings.preferences.integrations.tmdb))?.base64EncodedString() ?? ""
-        return "\(featured?.id ?? "")|\(addonLoadKey)|\(heroSourceConfigurationKey)|\(enrichment)"
+        let enrichment = metadata.enrichmentRequestIdentity(integrations: settings.preferences.integrations)
+        return "\(featured?.id ?? "")|\(addonLoadKey)|\(heroSourceConfigurationKey)|\(enrichment)|\(enrichmentCredentialEpoch)"
     }
 
     private var heroRatingsRequestKey: String {
@@ -492,37 +475,22 @@ struct HomeView: View {
         "\(nextHero?.id ?? "")|\(heroMetadataRequestKey)|\(settings.preferences.integrations.mdblistEnabled)|\(isActiveDestination)|\(displayScale)|\(ratingsCredentialEpoch)"
     }
 
-    /// Fill gaps as soon as the provider answers, without replacing add-on fields.
-    private func loadHeroEnrichment(for item: MediaItem, preferences: TMDBEnrichmentPreferences) async -> MediaItem {
-        guard preferences.enabled else { return item }
-        let fetched = await metadata.details(for: item)
+    private func resolveHeroMetadata(_ item: MediaItem, showsProgress: Bool = false) async -> MediaItem {
+        guard isAddonMode else { return await metadata.details(for: item) }
+        let addon = await AddonMetadataResolver.resolve(item, addons: store.installedAddons)
         guard !Task.isCancelled else { return item }
-        let base = resolvedFeatured.flatMap { $0.id == item.id ? $0 : nil } ?? item
-        resolvedFeatured = base.fillingGaps(from: fetched.restricted(to: preferences))
-        return fetched
+        if showsProgress, let addon { resolvedFeatured = addon }
+        if let addon {
+            return await metadata.enrichedDetails(for: addon, integrations: settings.preferences.integrations)
+        }
+        return await metadata.details(for: item)
     }
 
     /// Prepare only the next candidate, using the existing request caches.
     private func prepareNextHero(_ item: MediaItem) async {
         async let initialRatings: Void = prepareRatings(for: item)
         async let initialLogo: Void = prepareLogo(item.logoURL)
-        let resolved: MediaItem
-        if isAddonMode {
-            let enrichment = settings.preferences.integrations.tmdb
-            async let provider = enrichment.enabled ? metadata.details(for: item) : item
-            let addon = await AddonMetadataResolver.resolve(item, addons: store.installedAddons)
-            var fetched = await provider
-            guard !Task.isCancelled else { return }
-            if addon == nil, !enrichment.enabled {
-                fetched = await metadata.details(for: item)
-            } else if enrichment.enabled, fetched.details == nil, let addon,
-                      addon.externalIDs != item.externalIDs {
-                fetched = await metadata.details(for: addon)
-            }
-            resolved = addon.map { $0.fillingGaps(from: fetched.restricted(to: enrichment)) } ?? fetched
-        } else {
-            resolved = await metadata.details(for: item)
-        }
+        let resolved = await resolveHeroMetadata(item)
         if !Task.isCancelled {
             async let logo: Void = prepareLogo(resolved.logoURL)
             if (try? MDBListMetadataClient.lookupRoute(for: resolved)) != (try? MDBListMetadataClient.lookupRoute(for: item)) {
@@ -620,22 +588,36 @@ struct HomeView: View {
             // reused behind detail content. Give Home a separate clear link
             // above the image instead; this makes the artwork tappable without
             // stealing taps from the action buttons and carousel controls.
-            NavigationLink(value: featured) {
-                Color.clear.contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(isSwipingHero)
-            .accessibilityLabel("View details for \(featured.title)")
-
-            #if os(iOS)
-            if isPortraitPhone {
-                portraitHeroIdentity(featured)
+            if showsPlayingHeroTrailer {
+                Button { openHeroTrailer(featured) } label: {
+                    Color.clear.contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(isSwipingHero)
+                .accessibilityLabel("Play trailer for \(featured.title) full screen")
             } else {
-                landscapeHeroIdentity(featured)
+                NavigationLink(value: featured) {
+                    Color.clear.contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(isSwipingHero)
+                .accessibilityLabel("View details for \(featured.title)")
             }
-            #else
-            landscapeHeroIdentity(featured)
-            #endif
+
+            Group {
+                #if os(iOS)
+                if isPortraitPhone {
+                    portraitHeroIdentity(featured)
+                } else {
+                    landscapeHeroIdentity(featured)
+                }
+                #else
+                landscapeHeroIdentity(featured)
+                #endif
+            }
+            .opacity(showsPlayingHeroTrailer ? 0 : 1)
+            .allowsHitTesting(!showsPlayingHeroTrailer)
+            .accessibilityHidden(showsPlayingHeroTrailer)
         }
         .overlay {
             // A swipe moves the hero on iPhone and iPad; the Mac has arrows.
@@ -661,7 +643,7 @@ struct HomeView: View {
                 .animation(.snappy(duration: 0.25), value: heroTrailer.isVisible)
         }
         .overlay(alignment: .bottom) {
-            if heroCandidates.count > 1 {
+            if heroCandidates.count > 1 && !showsPlayingHeroTrailer {
                 HeroPageControl(
                     count: heroCandidates.count,
                     isCompact: isPortraitPad,
@@ -703,6 +685,15 @@ struct HomeView: View {
     private var heroCarousel: HeroTrailerPreferences { settings.preferences.heroTrailer }
 
     /// Restarts the trailer for a new title or changed trailer settings.
+    private var showsPlayingHeroTrailer: Bool {
+        heroTrailer.isVisible && heroTrailerIsPlaying && scenePhase == .active
+    }
+
+    private func openHeroTrailer(_ featured: MediaItem) {
+        guard showsPlayingHeroTrailer, let source = heroTrailer.consumeForPlayback() else { return }
+        playback.startTrailer(item: featured, source: source, preferences: settings.preferences)
+    }
+
     private var heroTrailerKey: String {
         let preferences = settings.preferences.heroTrailer
         return "\(featured?.id ?? "")-\(preferences.autoplay)-\(preferences.startDelaySeconds)-\(preferences.startsWithSound)-\(reduceMotion)-\(heroTrailerReplay)"
@@ -711,7 +702,7 @@ struct HomeView: View {
     /// The trailer pauses in a hidden tab, while the streams page is open,
     /// while something else is playing, and while a title page is open.
     private var heroTrailerIsPlaying: Bool {
-        !isOnboardingPreview && isActiveDestination && sourcePlaybackItem == nil && playback.source == nil
+        !isOnboardingPreview && isActiveDestination && sourcePlaybackItem == nil && !playback.isPresentingPlayer && !playback.hasPlayer && !playback.isPictureInPictureActive && scenePhase == .active
             && HeroTrailerFocus.shared.homeMayPlay && heroIsOnScreen && windowIsVisible
     }
 
@@ -1109,7 +1100,8 @@ struct HomeView: View {
                         ? "Episode information unavailable" : "Loading episode information",
                     perform: {},
                     isEnabled: false
-                )
+                ),
+                ratings: { portraitHeroRatings(featured) }
             ) {
                 NavigationLink(value: featured) {
                     HeroPrimaryActionLabel(title: "View Details")
@@ -1120,6 +1112,17 @@ struct HomeView: View {
             .transition(.heroIdentity)
             // Room for the page dots under the buttons.
             .padding(.bottom, heroCandidates.count > 1 ? 46 : 22)
+        }
+    }
+
+    @ViewBuilder
+    private func portraitHeroRatings(_ featured: MediaItem) -> some View {
+        if settings.preferences.integrations.mdblistEnabled {
+            MDBListRatingsView(
+                state: heroRatings.state(forItemID: featured.id).applying(settings.preferences.mdblistRatings),
+                retry: { retryHeroRatings(for: featured) },
+                openSettings: { showsMDBListSettings = true }
+            )
         }
     }
 
@@ -1281,288 +1284,6 @@ private struct UpcomingEpisodeCard: View {
 /// A resume card deliberately uses backdrop/still artwork rather than a title
 /// logo. The card's bottom metadata remains readable over changing artwork,
 /// while title and release year live below it as in established TV clients.
-struct ContinueWatchingCard: View {
-    let item: MediaItem
-    let requestPlayback: () -> Void
-
-    @Environment(OmniaStore.self) private var store
-    @Environment(SettingsPreferencesStore.self) private var settings
-    @Environment(\.displayPreferences) private var display
-
-    /// Home and Library rows space Continue Watching by the card style
-    /// chosen in Settings › Home › Continue Watching.
-    static func itemSpan(for display: DisplayPreferences) -> CGFloat {
-        switch display.continueWatchingStyle {
-        case .card:
-            cardStyleWidth(for: display) + MediaBrowseMetrics.shelfSpacing
-        case .poster:
-            display.posterCardWidth + MediaBrowseMetrics.shelfSpacing
-        case .wide:
-            #if os(iOS)
-            264
-            #else
-            320
-            #endif
-        }
-    }
-
-    /// Nuvio's Card style: a landscape card 1.2 times its landscape poster,
-    /// so it follows Poster Card Style's width.
-    static func cardStyleWidth(for display: DisplayPreferences) -> CGFloat {
-        (display.posterCardWidth * 180 / 110 * 1.2).rounded()
-    }
-
-    private var style: ContinueWatchingStyle { display.continueWatchingStyle }
-    private var isPoster: Bool { style == .poster }
-
-    private var cornerRadius: CGFloat {
-        switch style {
-        case .poster: display.posterCornerRadius
-        case .card: max(display.posterCornerRadius, 10)
-        case .wide: 16
-        }
-    }
-
-    /// The next episode, offered after the previous one ended, before any
-    /// of it is watched.
-    private var isNextUp: Bool {
-        item.kind == .series && item.progress == 0 && item.resumeEpisodeNumber != nil
-    }
-
-    private var usesEpisodeStill: Bool {
-        !isPoster && item.kind == .series && display.continueWatchingEpisodeThumbnails
-    }
-
-    var body: some View {
-        Group {
-            if settings.preferences.directContinueWatchingPlayback {
-                Button {
-                    requestPlayback()
-                } label: {
-                    cardLabel
-                }
-            } else {
-                NavigationLink(value: item) {
-                    cardLabel
-                }
-            }
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Continue watching \(item.title)")
-        .accessibilityValue(isNextUp ? "Up next, \(cardPresentation.accessibilityValue)" : cardPresentation.accessibilityValue)
-        .accessibilityHint(
-            settings.preferences.directContinueWatchingPlayback
-                ? "Opens available sources and resumes playback in Omnia"
-                : "Opens title details"
-        )
-        #if os(macOS)
-        .accessibilityAction(named: "Remove Watch Progress") {
-            store.removeFromContinueWatching(item)
-        }
-        #endif
-    }
-
-    @ViewBuilder
-    private var cardLabel: some View {
-        if style == .card {
-            landscapeCard
-                .mediaContextMenu(for: item, placement: .continueWatching)
-        } else {
-            classicCard
-        }
-    }
-
-    private var classicCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ZStack(alignment: .bottom) {
-                resumeArtwork
-                LinearGradient(
-                    colors: [.clear, .black.opacity(0.62)],
-                    startPoint: .center,
-                    endPoint: .bottom
-                )
-
-                if let resumePresentation {
-                    VStack(spacing: 9) {
-                        Text(resumePresentation.continueWatchingMetadataText)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
-                            .frame(maxWidth: .infinity, alignment: .trailing)
-                        ResumeProgressBar(progress: resumePresentation.progress)
-                    }
-                    .font(isPoster ? .caption.weight(.semibold) : .subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, isPoster ? 10 : 14)
-                    .padding(.bottom, 10)
-                } else if isNextUp {
-                    Text(nextUpText)
-                        .font(isPoster ? .caption.weight(.semibold) : .subheadline.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                        .padding(.horizontal, isPoster ? 10 : 14)
-                        .padding(.bottom, 10)
-                }
-            }
-            .frame(width: cardWidth, height: cardHeight)
-            .clipShape(.rect(cornerRadius: cornerRadius, style: .continuous))
-            .cardDepth(.continueWatching, cornerRadius: cornerRadius, fallbackBorderOpacity: 0.24)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(cardPresentation.primaryText)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                Text(cardPresentation.secondaryText)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.secondary)
-            }
-            .frame(width: cardWidth, alignment: .leading)
-        }
-        .mediaContextMenu(for: item, placement: .continueWatching)
-    }
-
-    /// Nuvio's TV-style card: everything sits on the artwork, with the time
-    /// left or Up Next in a badge at the top.
-    private var landscapeCard: some View {
-        ZStack(alignment: .bottomLeading) {
-            resumeArtwork
-            LinearGradient(
-                stops: [
-                    .init(color: .clear, location: 0.4),
-                    .init(color: .black.opacity(0.55), location: 0.72),
-                    .init(color: .black.opacity(0.85), location: 1)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-
-            VStack(alignment: .leading, spacing: 3) {
-                if let code = episodeCode {
-                    Text(code)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.white.opacity(0.9))
-                }
-                Text(item.title)
-                    .font(.headline)
-                    .foregroundStyle(.white)
-                if let episodeTitle {
-                    Text(episodeTitle)
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.white.opacity(0.72))
-                }
-                if let resumePresentation {
-                    ResumeProgressBar(progress: resumePresentation.progress)
-                        .padding(.top, 5)
-                }
-            }
-            .lineLimit(1)
-            .padding(12)
-
-            Text(resumePresentation?.remainingText ?? nextUpText)
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.white)
-                .lineLimit(1)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(.black.opacity(0.62), in: Capsule())
-                .padding(8)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-        }
-        .frame(width: cardWidth, height: cardHeight)
-        .clipShape(.rect(cornerRadius: cornerRadius, style: .continuous))
-        .cardDepth(.continueWatching, cornerRadius: cornerRadius, fallbackBorderOpacity: 0.24)
-    }
-
-    private var episodeCode: String? {
-        guard item.kind == .series, let season = item.resumeSeasonNumber, let episode = item.resumeEpisodeNumber else {
-            return nil
-        }
-        return "S\(season) E\(episode)"
-    }
-
-    private var episodeTitle: String? {
-        let title = item.resumeEpisodeTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return title.isEmpty ? nil : title
-    }
-
-    private var nextUpText: String {
-        isNextUp ? "Up Next" : item.year
-    }
-
-    @ViewBuilder
-    private var resumeArtwork: some View {
-        // Settings › Continue Watching › Artwork › Paused Scene.
-        // Next Up is a new episode, so the scene from the last one doesn't fit.
-        let scene = display.continueWatchingArtwork == .pausedScene && !isNextUp
-            ? ContinueWatchingSceneStore.shared.sceneURL(for: item.id)
-            : nil
-        let url: URL? = if let scene {
-            scene
-        } else if isPoster {
-            item.artworkURL ?? item.backdropURL
-        } else if usesEpisodeStill {
-            item.resumeEpisodeStillURL ?? item.backdropURL ?? item.artworkURL
-        } else {
-            item.backdropURL ?? item.artworkURL
-        }
-        // Nuvio blurs only next-up episode stills, which can spoil the episode.
-        let blursArtwork = scene == nil && display.blursNextUp && isNextUp && usesEpisodeStill && item.resumeEpisodeStillURL != nil
-
-        ZStack {
-            LinearGradient(colors: item.artworkColors, startPoint: .topLeading, endPoint: .bottomTrailing)
-            Image(systemName: item.symbol)
-                .font(.system(size: 42, weight: .light))
-                .foregroundStyle(.white.opacity(0.7))
-            if let url {
-                RemoteArtworkImage(url: url)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .blur(radius: blursArtwork ? 18 : 0, opaque: true)
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .clipped()
-    }
-
-    private var resumePresentation: ResumeProgressPresentation? {
-        ResumeProgressPresentation(item: item)
-    }
-
-    private var cardPresentation: ContinueWatchingCardPresentation {
-        ContinueWatchingCardPresentation(item: item)
-    }
-
-    private var cardWidth: CGFloat {
-        switch style {
-        case .poster:
-            return display.posterCardWidth
-        case .card:
-            return Self.cardStyleWidth(for: display)
-        case .wide:
-            #if os(iOS)
-            return 248
-            #else
-            return 304
-            #endif
-        }
-    }
-
-    private var cardHeight: CGFloat {
-        switch style {
-        case .poster:
-            return display.posterCardHeight
-        case .card:
-            return (cardWidth / 1.77).rounded()
-        case .wide:
-            #if os(iOS)
-            return 140
-            #else
-            return 172
-            #endif
-        }
-    }
-}
-
 extension ContinueWatchingSort {
     /// Recently Watched keeps the stored order, newest first.
     func sorted(_ items: [MediaItem]) -> [MediaItem] {

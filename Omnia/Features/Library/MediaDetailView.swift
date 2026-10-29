@@ -10,6 +10,7 @@ struct MediaDetailView: View {
     @Environment(OmniaStore.self) private var store
     @Environment(LiveMetadataStore.self) private var metadata
     @Environment(SettingsPreferencesStore.self) private var settings
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
     #if os(iOS)
@@ -31,6 +32,7 @@ struct MediaDetailView: View {
     @State private var selectedEpisode: MediaEpisode?
     @State private var ratingsLoader = MDBListRatingsLoader()
     @State private var ratingsCredentialEpoch = UUID()
+    @State private var enrichmentCredentialEpoch = UUID()
     @State private var showsMDBListSettings = false
     @State private var showsShuffle = false
     /// The random episode the Play button starts while shuffle is on.
@@ -90,7 +92,7 @@ struct MediaDetailView: View {
         // a band above it.
         .ignoresSafeArea(edges: .top)
         .omniaNavigationTitle(displayItem.title, screen: .mediaDetail)
-        .task(id: item.id) {
+        .task(id: detailMetadataRequestKey) {
             if isOnboardingPreview {
                 let resolved = await metadata.details(for: item)
                 guard !Task.isCancelled else { return }
@@ -123,9 +125,12 @@ struct MediaDetailView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .providerCredentialDidChange)) { change in
-            guard change.object as? String == UserManagedProviderCredential.mdblist.rawValue else { return }
-            ratingsLoader.reset()
-            ratingsCredentialEpoch = UUID()
+            if change.object as? String == UserManagedProviderCredential.mdblist.rawValue {
+                ratingsLoader.reset()
+                ratingsCredentialEpoch = UUID()
+            } else if ["tmdb", "tvdb"].contains(change.object as? String ?? "") {
+                enrichmentCredentialEpoch = UUID()
+            }
         }
         .omniaStreamsPage(isPresented: showsSourceSelector) {
             if let request = sourceRequest {
@@ -193,9 +198,29 @@ struct MediaDetailView: View {
     /// Paused while the streams page is open, while something is playing,
     /// and while another title page is on top of this one.
     private var heroTrailerIsPlaying: Bool {
-        !isOnboardingPreview && isActiveDestination && sourceRequest == nil && playback.source == nil
+        !isOnboardingPreview && isActiveDestination && sourceRequest == nil && !playback.isPresentingPlayer && scenePhase == .active
             && HeroTrailerFocus.shared.titlePageMayPlay(trailerToken)
             && heroIsOnScreen && windowIsVisible
+    }
+
+    private var showsPlayingHeroTrailer: Bool {
+        heroTrailer.isVisible && heroTrailerIsPlaying && scenePhase == .active
+    }
+
+    private func openHeroTrailer() {
+        guard showsPlayingHeroTrailer, let source = heroTrailer.consumeForPlayback() else { return }
+        playback.startTrailer(item: displayItem, source: source, preferences: settings.preferences)
+    }
+
+    @ViewBuilder
+    private var portraitHeroRatings: some View {
+        if settings.preferences.integrations.mdblistEnabled {
+            MDBListRatingsView(
+                state: currentRatingsState,
+                retry: retryRatings,
+                openSettings: { showsMDBListSettings = true }
+            )
+        }
     }
 
     private var detailHero: some View {
@@ -212,6 +237,15 @@ struct MediaDetailView: View {
 
             HomeHeroTrailerLayer(model: heroTrailer, isPlaying: heroTrailerIsPlaying)
 
+            if showsPlayingHeroTrailer {
+                Button { openHeroTrailer() } label: {
+                    Color.clear.contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Play trailer for \(displayItem.title) full screen")
+            }
+
+            Group {
             #if os(iOS)
             if isPortraitPhone {
                 VStack(spacing: 0) {
@@ -222,7 +256,8 @@ struct MediaDetailView: View {
                         isSaved: store.isSaved(displayItem),
                         libraryAction: { store.toggleSaved(displayItem) },
                         watchAction: heroWatchAction,
-                        shuffleAction: heroShuffleAction
+                        shuffleAction: heroShuffleAction,
+                        ratings: { portraitHeroRatings }
                     ) {
                         playButton
                     }
@@ -235,6 +270,10 @@ struct MediaDetailView: View {
             #else
             landscapeDetailIdentity
             #endif
+            }
+            .opacity(showsPlayingHeroTrailer ? 0 : 1)
+            .allowsHitTesting(!showsPlayingHeroTrailer)
+            .accessibilityHidden(showsPlayingHeroTrailer)
         }
         // In the hero's bottom-right corner, scrolling away with it
         // (Dafa, 2026-10-22).
@@ -452,45 +491,33 @@ struct MediaDetailView: View {
     /// Add-on mode (Nuvio's model): the add-on that listed the title is the
     /// source of truth. TMDB/TVDB only fills what the add-on left empty, such
     /// as cast photos or recommendations, limited to the modules turned on in
-    /// Settings › Integrations › TMDB Enrichment. When no add-on answers,
-    /// TMDB supplies the whole page, as in Nuvio.
+    private var detailMetadataRequestKey: String {
+        let identity = metadata.enrichmentRequestIdentity(integrations: settings.preferences.integrations)
+        return "\(item.id)|\(identity)|\(enrichmentCredentialEpoch)"
+    }
+
     private func loadAddonFirstDetails() async -> MediaItem {
-        let enrichment = settings.preferences.integrations.tmdb
-        // Start the independent provider lookup while add-ons are answering.
-        async let providerMetadata = initialAddonEnrichment(enabled: enrichment.enabled)
+        async let preliminary = initialAddonEnrichment()
         let fromAddon = await AddonMetadataResolver.resolve(item, addons: store.installedAddons)
         guard !Task.isCancelled else { return fromAddon ?? item }
-        let addonFirst = fromAddon ?? item
-        if fromAddon != nil {
-            resolvedItem = addonFirst
-            selectedSeasonNumber = addonFirst.details?.seasons.first(where: { $0.seasonNumber > 0 })?.seasonNumber
-                ?? addonFirst.details?.seasons.first?.seasonNumber ?? 1
-            guard enrichment.enabled else { return addonFirst }
+        if let fromAddon { resolvedItem = fromAddon }
+        _ = await preliminary
+        let resolved: MediaItem
+        if let fromAddon {
+            resolved = await metadata.enrichedDetails(for: fromAddon, integrations: settings.preferences.integrations)
+        } else {
+            resolved = await metadata.details(for: item)
         }
-
-        var fetched = await providerMetadata
-        // An add-on may supply identifiers missing from the catalog item.
-        if !enrichment.enabled || (fetched.details == nil && addonFirst.externalIDs != item.externalIDs) {
-            fetched = await metadata.details(for: addonFirst)
-        }
-        guard !Task.isCancelled else { return addonFirst }
-        let provider = fromAddon == nil ? fetched : fetched.restricted(to: enrichment)
-        let resolved = addonFirst.fillingGaps(from: provider)
+        guard !Task.isCancelled else { return fromAddon ?? item }
         resolvedItem = resolved
-        if addonFirst.details?.seasons.isEmpty != false {
-            selectedSeasonNumber = resolved.details?.seasons.first?.seasonNumber ?? 1
-        }
+        selectedSeasonNumber = resolved.details?.seasons.first(where: { $0.seasonNumber > 0 })?.seasonNumber ?? 1
         return resolved
     }
 
-    private func initialAddonEnrichment(enabled: Bool) async -> MediaItem {
-        guard enabled else { return item }
-        let fetched = await metadata.details(for: item)
+    private func initialAddonEnrichment() async -> MediaItem {
+        let fetched = await metadata.enrichedDetails(for: item, integrations: settings.preferences.integrations)
         guard !Task.isCancelled else { return item }
-        // Keep the catalog's identity and fields while the owning add-on loads.
-        // Its eventual answer still takes precedence in loadAddonFirstDetails.
-        resolvedItem = item.fillingGaps(from: fetched.restricted(to: settings.preferences.integrations.tmdb))
-        selectedSeasonNumber = resolvedItem?.details?.seasons.first?.seasonNumber ?? 1
+        if resolvedItem == nil { resolvedItem = fetched }
         return fetched
     }
 

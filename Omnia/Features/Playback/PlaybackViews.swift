@@ -1593,6 +1593,14 @@ struct PlaybackExperienceView: View {
     /// The video: libmpv's surface, or AVPlayer's when iOS fell back to it.
     @ViewBuilder
     private var playerSurface: some View {
+        if let player = playback.trailerPlayer {
+            #if os(macOS)
+            TrailerPlaybackSurface(player: player, fillsFrame: playback.aspectRatioMode == .fill)
+            #else
+            Color.clear
+            #endif
+        } else {
+
         #if os(iOS) && !OMNIA_MPV
         // The AVKit layer below owns both inline rendering and PiP.
         if playback.player != nil { Color.clear }
@@ -1606,6 +1614,7 @@ struct PlaybackExperienceView: View {
             Color.clear
         }
         #endif
+        }
     }
 
     var body: some View {
@@ -1659,7 +1668,7 @@ struct PlaybackExperienceView: View {
                 item: playback.mediaItem,
                 playbackKey: "\(playback.mediaItem?.id ?? "")|\(playback.episode?.id ?? "")",
                 hasStarted: playback.hasRenderedVideoFrame,
-                isEnabled: settings.preferences.playbackBehavior.showContentWarnings
+                isEnabled: playback.purpose == .title && settings.preferences.playbackBehavior.showContentWarnings
             )
             .padding(.leading, 40)
             .padding(.top, 72)
@@ -1804,7 +1813,7 @@ struct PlaybackExperienceView: View {
             if error != nil, let key = playback.currentLinkKey {
                 StreamLinkCacheStore().remove(key)
             }
-            if let error {
+            if let error, playback.purpose == .title {
                 Task { await PlaybackRecovery.recover(from: error, playback: playback, store: store, settings: settings) }
             }
         }
@@ -1896,7 +1905,7 @@ struct PlaybackExperienceView: View {
         // entering/exiting a full-screen space, so macOS stops only through
         // Omnia's explicit Close control instead.
         .onDisappear {
-            playback.stop()
+            if !playback.isPictureInPictureActive { playback.stop() }
         }
         #endif
     }
@@ -1951,7 +1960,7 @@ struct PlaybackExperienceView: View {
     /// season list: from the add-on that lists it in add-on mode, else from
     /// the metadata service, as the title's page loads them.
     private func loadMissingEpisodes() async {
-        guard let item = playback.mediaItem, item.kind != .movie, item.details == nil else { return }
+        guard playback.purpose == .title, let item = playback.mediaItem, item.kind != .movie, item.details == nil else { return }
         var resolved: MediaItem?
         if AddonCatalogStore.isAddonMode(store) {
             let addons = store.installedAddons
@@ -2101,7 +2110,7 @@ struct PlaybackExperienceView: View {
     }
 
     private func loadSkipSegments() async {
-        guard settings.preferences.showSkipIntro,
+        guard playback.purpose == .title, settings.preferences.showSkipIntro,
               let item = playback.mediaItem,
               let imdbID = item.externalIDs["imdb"] ?? item.externalIDs["imdb_id"]
         else {
@@ -2127,6 +2136,7 @@ struct PlaybackExperienceView: View {
     }
 
     private func updateAutomation() {
+        guard playback.purpose == .title else { return }
         let hasNextEpisode = playback.nextEpisode != nil
         let effects = automation.update(
             position: playback.positionSeconds,

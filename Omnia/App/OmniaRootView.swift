@@ -87,8 +87,13 @@ struct OmniaRootView: View {
         }
         .preferredColorScheme(onboardingCompleted ? store.appearance.colorScheme : nil)
         #if os(iOS)
+        .background {
+            PhonePlaybackOrientationHost(isPresented: playback.isPresentingPlayer || playback.isPictureInPictureActive)
+                .frame(width: 0, height: 0)
+        }
         .fullScreenCover(isPresented: $playback.isPresentingPlayer) {
-            PlaybackExperienceView()
+            PhonePlaybackPresentation(content: AnyView(PlaybackExperienceView()))
+                .ignoresSafeArea()
         }
         #elseif os(macOS)
         // macOS does not provide SwiftUI's fullScreenCover. Rendering the

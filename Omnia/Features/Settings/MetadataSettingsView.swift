@@ -36,6 +36,12 @@ struct MetadataSettingsView: View {
                     detail: tmdbSummary
                 )
                 IntegrationLinkRow(
+                    route: .tvdbEnrichment,
+                    providerID: "tvdb",
+                    title: "TVDB Enrichment",
+                    detail: settings.preferences.integrations.tvdb.enabled ? "On" : "Off"
+                )
+                IntegrationLinkRow(
                     route: .animeEnrichment,
                     providerID: "anilist",
                     title: "Anime Enrichment",
@@ -155,8 +161,7 @@ struct MetadataSourcesSettingsView: View {
     }
 }
 
-/// Nuvio's TMDB Enrichment page. With an add-on's title open, TMDB fills only
-/// the parts the add-on left empty, and only for the modules turned on here.
+/// Nonempty TMDB data replaces the enabled parts of an add-on title.
 struct TMDBEnrichmentSettingsView: View {
     @Environment(SettingsPreferencesStore.self) private var settings
 
@@ -167,7 +172,7 @@ struct TMDBEnrichmentSettingsView: View {
             Section {
                 Toggle(isOn: settings.binding(\.integrations.tmdb.enabled)) {
                     Text("Enable TMDB Enrichment")
-                    Text("Use TMDB to fill in what your add-ons leave out.")
+                    Text("Replace enabled fields with available TMDB information.")
                 }
             } header: {
                 Text("TMDB Enrichment")
@@ -177,8 +182,8 @@ struct TMDBEnrichmentSettingsView: View {
 
             Section {
                 module("Trailers", "Trailers and extras for the detail page.", \.useTrailers)
-                module("Artwork", "Logo and backdrop images.", \.useArtwork)
-                module("Basic Info", "Description and genres.", \.useBasicInfo)
+                module("Artwork", "Poster, logo and backdrop images.", \.useArtwork)
+                module("Basic Info", "Title, year, description and genres.", \.useBasicInfo)
                 module("Details", "Runtime, status, age rating, budget and revenue.", \.useDetails)
                 module("Credits", "Cast with photos, directors and writers.", \.useCredits)
                 module("Productions", "Studios and networks, and more titles from them.", \.useProductions)
@@ -188,7 +193,7 @@ struct TMDBEnrichmentSettingsView: View {
             } header: {
                 Text("Modules")
             } footer: {
-                Text("A turned-off module leaves that part to your add-on. Language and a personal API key aren't offered because Omnia's TMDB data comes through its own server.")
+                Text("Enabled modules use nonempty TMDB data. Missing sections preserve your add-on information. Requests use your own API key on this device.")
             }
             .disabled(!enabled)
         }
@@ -204,6 +209,35 @@ struct TMDBEnrichmentSettingsView: View {
             Text(title)
             Text(detail)
         }
+    }
+}
+
+struct TVDBEnrichmentSettingsView: View {
+    @Environment(SettingsPreferencesStore.self) private var settings
+
+    var body: some View {
+        OmniaSettingsForm {
+            Section {
+                Toggle("Enable TVDB Enrichment", isOn: settings.binding(\.integrations.tvdb.enabled))
+            } footer: {
+                Text("Replace enabled fields with available TVDB information using your own API key. Missing sections preserve existing information. Metadata Sources determine provider priority.")
+            }
+            Section("Modules") {
+                module("Trailers", \.useTrailers)
+                module("Artwork", \.useArtwork)
+                module("Basic Info", \.useBasicInfo)
+                module("Details", \.useDetails)
+                module("Credits", \.useCredits)
+                module("Productions", \.useProductions)
+                module("Episodes", \.useEpisodes)
+            }
+            .disabled(!settings.preferences.integrations.tvdb.enabled)
+        }
+        .omniaNavigationTitle("TVDB Enrichment")
+    }
+
+    private func module(_ title: String, _ keyPath: WritableKeyPath<TMDBEnrichmentPreferences, Bool>) -> some View {
+        Toggle(title, isOn: settings.binding((\SettingsPreferences.integrations.tvdb.modules).appending(path: keyPath)))
     }
 }
 

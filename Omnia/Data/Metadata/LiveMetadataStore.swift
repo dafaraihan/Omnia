@@ -218,6 +218,59 @@ final class LiveMetadataStore {
         await enrichedFromAnimeDatabases(await serviceDetails(for: item))
     }
 
+    /// Includes module, routing, locale and credential revisions without exposing keys.
+    func enrichmentRequestIdentity(integrations: IntegrationPreferences, language: String = "en-US") -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        let encoded = (try? encoder.encode(integrations)) ?? Data()
+        let routing = (try? encoder.encode(metadataRouting)) ?? Data()
+        let identity = encoded + routing + Data((language + OnDeviceMetadataService.credentialIdentity("tmdb") + OnDeviceMetadataService.credentialIdentity("tvdb")).utf8)
+        return SHA256.hash(data: identity).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Add-on enrichment is deliberately separate from general metadata gap filling.
+    func enrichedDetails(for source: MediaItem, integrations: IntegrationPreferences, language: String = "en-US") async -> MediaItem {
+        guard let client else { return source }
+        let route = Self.isExplicitlyAnime(source) ? metadataRouting.anime : route(for: source.metadataType)
+        let providers = route.requestedProviders.filter(\.isServedByMetadataService)
+        var result = source
+        // Applying preferred last gives its nonempty enabled values precedence.
+        for provider in providers.reversed() {
+            guard !Task.isCancelled else { return source }
+            var modules = provider == .tmdb ? integrations.tmdb : integrations.tvdb.modules
+            modules.enabled = provider == .tmdb ? integrations.tmdb.enabled : integrations.tvdb.enabled
+            guard modules.enabled else { continue }
+            let record: MediaItem?
+            if provider == .tmdb {
+                record = await tmdbCounterpart(for: source, client: client, language: language, modules: modules)
+            } else {
+                record = await tvdbCounterpart(for: source, client: client, language: language, modules: modules)
+            }
+            if let record { result = result.mergingEnrichment(from: record, modules: modules) }
+        }
+        return await enrichedFromAnimeDatabases(result)
+    }
+
+    private func tvdbCounterpart(for item: MediaItem, client: SupabaseMetadataClient, language: String, modules: TMDBEnrichmentPreferences? = nil) async -> MediaItem? {
+        var identifier = item.externalIDs["tvdb"] ?? item.externalIDs["tvdb_id"]
+            ?? (item.metadataProvider == .tvdb ? item.metadataProviderID : nil)
+        let imdbID = item.externalIDs["imdb"] ?? item.externalIDs["imdb_id"] ?? (item.id.hasPrefix("tt") ? item.id : nil)
+        if identifier == nil, let imdbID, let found = try? await client.findTVDB(imdbID: imdbID, type: item.metadataType),
+           Set(found.results.map(\.providerID)).count == 1 {
+            identifier = found.results.first?.providerID
+        }
+        if let identifier, let response = await detailsWithRetry(client, provider: .tvdb, id: identifier, type: item.metadataType, language: language, modules: modules) {
+            return Self.item(from: response.item)
+        }
+        guard item.year.count == 4, Int(item.year) != nil,
+              let search = try? await client.search(query: item.title, type: item.metadataType,
+                routing: MetadataRoute(primary: .tvdb, fallbackEnabled: false), language: language) else { return nil }
+        let matches = search.results.filter { Self.normalizedTitle($0.title) == Self.normalizedTitle(item.title) && Self.releaseYear($0) == item.year }
+        guard Set(matches.map(\.providerID)).count == 1, let id = matches.first?.providerID,
+              let response = await detailsWithRetry(client, provider: .tvdb, id: id, type: item.metadataType, language: language, modules: modules) else { return nil }
+        return Self.item(from: response.item)
+    }
+
     /// Anime Enrichment: AniList, Kitsu and MyAnimeList fill what TMDB,
     /// TVDB and the add-on left out of an anime title, as TMDB Enrichment
     /// does for other titles. Only titles with an anime database ID ask.
@@ -268,7 +321,11 @@ final class LiveMetadataStore {
         guard let counterpart = await tmdbCounterpart(for: resolvedItem, client: client) else {
             return resolvedItem
         }
-        return resolvedItem.mergingTMDBCounterpart(counterpart)
+        let enriched = resolvedItem.mergingEnrichment(from: counterpart, modules: .init())
+        let selectedRoute = Self.isExplicitlyAnime(resolvedItem) ? metadataRouting.anime : route(for: resolvedItem.metadataType)
+        return selectedRoute.primary == .tmdb
+            ? enriched
+            : enriched.mergingEnrichment(from: resolvedItem, modules: .init())
     }
 
     /// Title details answered recently, so a title page, its hero trailer
@@ -281,14 +338,16 @@ final class LiveMetadataStore {
         _ client: SupabaseMetadataClient,
         provider: MetadataProviderIdentifier,
         id: String,
-        type: MediaType
+        type: MediaType,
+        language: String = "en-US",
+        modules: TMDBEnrichmentPreferences? = nil
     ) async -> MetadataDetailResponse? {
-        let key = MetadataDetailCache.key(provider: provider, id: id, type: type)
+        let key = MetadataDetailCache.key(provider: provider, id: id, type: type, language: language) + (modules?.requestIdentity ?? "full")
         if let cached = await MetadataDetailCache.response(for: key) { return cached }
         if let running = detailsInFlight[key] { return await running.value }
         let task = Task { [weak self] () -> MetadataDetailResponse? in
             guard let self else { return nil }
-            let response = await self.fetchDetailsWithRetry(client, provider: provider, id: id, type: type)
+            let response = await self.fetchDetailsWithRetry(client, provider: provider, id: id, type: type, language: language, modules: modules)
             if let response { await MetadataDetailCache.save(response, for: key) }
             return response
         }
@@ -304,28 +363,39 @@ final class LiveMetadataStore {
         _ client: SupabaseMetadataClient,
         provider: MetadataProviderIdentifier,
         id: String,
-        type: MediaType
+        type: MediaType,
+        language: String = "en-US",
+        modules: TMDBEnrichmentPreferences? = nil
     ) async -> MetadataDetailResponse? {
         for attempt in 0..<2 {
             if attempt > 0 {
                 try? await Task.sleep(for: .milliseconds(600))
             }
             guard !Task.isCancelled else { return nil }
-            if let response = try? await client.details(provider: provider, id: id, type: type) {
+            if let response = try? await client.details(provider: provider, id: id, type: type, language: language, modules: modules) {
                 return response
             }
         }
         return nil
     }
 
-    private func tmdbCounterpart(for item: MediaItem, client: SupabaseMetadataClient) async -> MediaItem? {
+    private func tmdbCounterpart(for item: MediaItem, client: SupabaseMetadataClient, language: String = "en-US", modules: TMDBEnrichmentPreferences? = nil) async -> MediaItem? {
         let tmdbID = (item.externalIDs["tmdb"] ?? item.externalIDs["tmdb_id"])?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if let tmdbID, !tmdbID.isEmpty,
-           let response = await detailsWithRetry(client, provider: .tmdb, id: tmdbID, type: item.metadataType) {
+           let response = await detailsWithRetry(client, provider: .tmdb, id: tmdbID, type: item.metadataType, language: language, modules: modules) {
             return Self.item(from: response.item)
         }
-        return try? await exactTMDBFallback(for: item, client: client)
+        let externalIDs = [(item.externalIDs["imdb"] ?? item.externalIDs["imdb_id"] ?? (item.id.hasPrefix("tt") ? item.id : nil), "imdb_id"),
+            (item.metadataType == .series ? item.externalIDs["tvdb"] ?? item.externalIDs["tvdb_id"] ?? (item.metadataProvider == .tvdb ? item.metadataProviderID : nil) : nil, "tvdb_id")]
+        for (externalID, source) in externalIDs {
+            guard let externalID,
+                  let found = try? await client.findTMDB(externalID: externalID, source: source, type: item.metadataType, language: language),
+                  Set(found.results.map(\.providerID)).count == 1, let identifier = found.results.first?.providerID,
+                  let response = await detailsWithRetry(client, provider: .tmdb, id: identifier, type: item.metadataType, language: language, modules: modules) else { continue }
+            return Self.item(from: response.item)
+        }
+        return try? await exactTMDBFallback(for: item, client: client, language: language, modules: modules)
     }
 
     /// Older hosted TVDB records may not contain remote IDs even though the
@@ -334,14 +404,17 @@ final class LiveMetadataStore {
     /// lookup never crosses from one production or remake to another.
     private func exactTMDBFallback(
         for item: MediaItem,
-        client: SupabaseMetadataClient
+        client: SupabaseMetadataClient,
+        language: String = "en-US",
+        modules: TMDBEnrichmentPreferences? = nil
     ) async throws -> MediaItem? {
         guard item.year.count == 4, Int(item.year) != nil else { return nil }
         let tmdbOnly = MetadataRoute(primary: .tmdb, fallbackEnabled: false)
         let search = try await client.search(
             query: item.title,
             type: item.metadataType,
-            routing: tmdbOnly
+            routing: tmdbOnly,
+            language: language
         )
         let matches = search.results.filter { record in
             guard record.provider == MetadataProviderIdentifier.tmdb.rawValue,
@@ -356,7 +429,9 @@ final class LiveMetadataStore {
         let response = try await client.details(
             provider: .tmdb,
             id: identifier,
-            type: item.metadataType
+            type: item.metadataType,
+            language: language,
+            modules: modules
         )
         let fallbackItem = Self.item(from: response.item)
         guard Self.normalizedTitle(fallbackItem.title) == Self.normalizedTitle(item.title),
@@ -1054,8 +1129,8 @@ private nonisolated enum MetadataDetailCache {
         return directory
     }()
 
-    static func key(provider: MetadataProviderIdentifier, id: String, type: MediaType) -> String {
-        let identity = [provider.rawValue, type.rawValue, id].joined(separator: "|")
+    static func key(provider: MetadataProviderIdentifier, id: String, type: MediaType, language: String) -> String {
+        let identity = ["v2", provider.rawValue, type.rawValue, id, language, OnDeviceMetadataService.credentialIdentity(provider.rawValue)].joined(separator: "|")
         return SHA256.hash(data: Data(identity.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 

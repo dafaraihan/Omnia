@@ -636,7 +636,9 @@ struct MacPlaybackChrome: View {
         )
     }
     private var playbackActions: [MacPlaybackAction] {
-        MacPlaybackActionPresentation.actions(
+        // AV trailer playback has no add-on source picker or mpv track/style controls.
+        if playback.purpose == .trailer { return [.speed] }
+        return MacPlaybackActionPresentation.actions(
             hasEpisodes: !episodeSeasons.isEmpty,
             hasNextEpisode: hasNextEpisode,
             isLive: isLive
@@ -713,6 +715,11 @@ struct MacPlaybackChrome: View {
             )
         }
         .foregroundStyle(.white)
+        .onChange(of: playback.purpose) { _, _ in
+            activePanel = nil
+            subtitlePage = .overview
+            isInteracting = false
+        }
         .onChange(of: activePanel) { _, panel in
             isInteracting = panel != nil
             if panel != .subtitles {

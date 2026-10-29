@@ -40,6 +40,7 @@ actor OnDeviceMetadataService {
     private let session: URLSession = {
         let configuration = URLSessionConfiguration.default
         configuration.timeoutIntervalForRequest = 20
+        configuration.timeoutIntervalForResource = 40
         configuration.httpCookieStorage = nil
         configuration.urlCredentialStorage = nil
         configuration.tlsMinimumSupportedProtocolVersion = .TLSv12
@@ -56,6 +57,38 @@ actor OnDeviceMetadataService {
             .trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty
         else { return nil }
         return value
+    }
+
+    /// Process-scoped opaque identity: credentials never enter disk cache keys or diagnostics.
+    nonisolated static func credentialIdentity(_ provider: String) -> String {
+        var identity = Hasher()
+        identity.combine(storedKey(provider))
+        return String(identity.finalize())
+    }
+
+    func findTMDB(externalID: String, source: String, type: String, language: String) async throws -> Data {
+        let validIMDb = source == "imdb_id" && externalID.range(of: #"^tt\d{1,12}$"#, options: .regularExpression) != nil
+        let validTVDB = source == "tvdb_id" && type == "series" && externalID.range(of: #"^\d{1,12}$"#, options: .regularExpression) != nil
+        guard validIMDb || validTVDB else { throw OnDeviceMetadataError.invalidRequest }
+        let result = try await tmdb("/find/\(externalID)", language: language, parameters: ["external_source": source])
+        let entries = Self.records(result[type == "movie" ? "movie_results" : "tv_results"])
+            .compactMap { Self.normalizeTMDB($0, type: type) }
+        return try JSONSerialization.data(withJSONObject: ["results": entries, "providers": ["tmdb"]])
+    }
+
+    func findTVDB(imdbID: String, type: String) async throws -> Data {
+        guard imdbID.range(of: #"^tt\d{1,12}$"#, options: .regularExpression) != nil else { throw OnDeviceMetadataError.invalidRequest }
+        let payload = try await tvdb("/search/remoteid/\(imdbID)")
+        let entries = Self.records(payload["data"]).compactMap { entry in
+            (entry[type == "movie" ? "movie" : "series"] as? JSON).flatMap { Self.normalizeTVDB($0, type: type) }
+        }
+        return try JSONSerialization.data(withJSONObject: ["results": entries, "providers": ["tvdb"]])
+    }
+
+    func detailResponse(provider: String, id: String, type: String, language: String, modules: TMDBEnrichmentPreferences) async throws -> Data {
+        guard provider == "tmdb" || provider == "tvdb" else { throw OnDeviceMetadataError.invalidRequest }
+        let payload = try await details(provider: provider, id: id, type: type, language: language, modules: modules)
+        return try JSONSerialization.data(withJSONObject: payload)
     }
 
     /// Settings' Test Connection: one small request with the stored key.
@@ -284,11 +317,11 @@ actor OnDeviceMetadataService {
         ]
     }
 
-    private func tmdbTitleDetails(_ value: JSON, type: String, language: String, providerID: String) async throws -> JSON {
+    private func tmdbTitleDetails(_ value: JSON, type: String, language: String, providerID: String, modules: TMDBEnrichmentPreferences) async throws -> JSON {
         let studios = Self.tmdbStudios(value)
-        async let studioTitles = tmdbStudioTitles(studios.first, type: type, language: language, excluding: providerID)
-        async let collection = type == "movie" ? tmdbCollection(value, language: language) : nil
-        async let seasons = type == "series" ? tmdbSeasons(value, language: language, seriesID: providerID) : []
+        async let studioTitles = try? tmdbStudioTitles(modules.useProductions ? studios.first : nil, type: type, language: language, excluding: providerID)
+        async let collection = try? optionalTMDBCollection(value, type: modules.useCollections ? type : "", language: language)
+        async let seasons = try? optionalTMDBSeasons(value, type: modules.useEpisodes ? type : "", language: language, providerID: providerID)
         let credits = Self.tmdbCredits(value, type: type)
         let episodeRuntime = (value["episode_run_time"] as? [Any])?.compactMap { Self.positiveInteger($0) }.first
         let videos = Self.tmdbVideos(value)
@@ -296,9 +329,9 @@ actor OnDeviceMetadataService {
             "studios": studios,
             "cast": credits.cast,
             "crew": credits.crew,
-            "studioTitles": try await studioTitles,
+            "studioTitles": await studioTitles ?? [],
             "recommendations": Array(Self.resultList(value["recommendations"], type: type).filter { $0["providerID"] as? String != providerID }.prefix(20)),
-            "seasons": try await seasons,
+            "seasons": await seasons ?? [],
             "trailers": videos.trailers,
             "bonusContent": videos.bonus,
             "productionCompanies": Array(Self.companies(Self.records(value["production_companies"])).prefix(8)),
@@ -314,7 +347,7 @@ actor OnDeviceMetadataService {
             "recommendationsHaveMore": Self.hasMore(value["recommendations"]),
             "similarHaveMore": Self.hasMore(value["similar"])
         ]
-        details["collection"] = try await collection
+        details["collection"] = await collection ?? nil
         details["ageRating"] = Self.ageRating(value, type: type)
         details["runtimeMinutes"] = type == "movie" ? Self.positiveInteger(value["runtime"]) : episodeRuntime
         details["status"] = Self.text(value["status"])
@@ -323,6 +356,16 @@ actor OnDeviceMetadataService {
         details["originalLanguage"] = Self.text(value["original_language"])
         details["releaseDate"] = Self.isoDate(type == "movie" ? value["release_date"] : value["first_air_date"])
         return details
+    }
+
+    private func optionalTMDBCollection(_ value: JSON, type: String, language: String) async throws -> JSON? {
+        guard type == "movie" else { return nil }
+        return try await tmdbCollection(value, language: language)
+    }
+
+    private func optionalTMDBSeasons(_ value: JSON, type: String, language: String, providerID: String) async throws -> [JSON] {
+        guard type == "series" else { return [] }
+        return try await tmdbSeasons(value, language: language, seriesID: providerID)
     }
 
     private func tmdbStudioTitles(_ studio: JSON?, type: String, language: String, excluding providerID: String) async throws -> [JSON] {
@@ -362,7 +405,7 @@ actor OnDeviceMetadataService {
                 let number = summary["seasonNumber"] as? Int ?? 1
                 nonisolated(unsafe) let summary = summary
                 group.addTask {
-                    let payload = try await self.tmdb("/tv/\(seriesID)/season/\(number)", language: language)
+                    let payload = (try? await self.tmdb("/tv/\(seriesID)/season/\(number)", language: language)) ?? [:]
                     var season = summary
                     season["episodes"] = Self.records(payload["episodes"]).compactMap { Self.tmdbEpisode($0, fallbackSeason: number) }
                     return (index, season)
@@ -370,7 +413,7 @@ actor OnDeviceMetadataService {
             }
             for try await season in group { resolved.append(season) }
         }
-        return resolved.sorted { $0.0 < $1.0 }.map(\.1).filter { ($0["episodes"] as? [JSON])?.isEmpty == false }
+        return resolved.sorted { $0.0 < $1.0 }.map(\.1)
     }
 
     // MARK: TVDB
@@ -415,10 +458,109 @@ actor OnDeviceMetadataService {
         return Array(Self.records(payload["data"]).compactMap { Self.normalizeTVDB($0, type: type) }.prefix(20))
     }
 
+    private static func tvdbLanguage(_ language: String) -> String {
+        // TVDB's translation records use ISO 639-2, unlike TMDB's locale tags.
+        let code = String(language.split(separator: "-").first ?? "en")
+        return Locale.Language(identifier: code).languageCode?.identifier(.alpha3) ?? "eng"
+    }
+
+    private static func applyTVDBArtwork(_ value: JSON, to item: inout JSON, types: [JSON]) {
+        let names = Dictionary(types.compactMap { type -> (String, String)? in
+            guard let id = idString(type["id"]), let name = text(type["name"]) else { return nil }
+            return (id, name.lowercased())
+        }, uniquingKeysWith: { first, _ in first })
+        for artwork in records(value["artworks"]).prefix(100) {
+            guard let id = idString(artwork["type"]), let name = names[id],
+                  let path = text(artwork["image"]), let url = URL(string: path), url.scheme == "https" else { continue }
+            if name.contains("background") || name.contains("fanart") {
+                if item["backdropPath"] == nil { item["backdropPath"] = path }
+            } else if name.contains("clearlogo") || name.contains("clear logo") {
+                if item["logoPath"] == nil { item["logoPath"] = path }
+            } else if name.contains("poster"), item["posterPath"] == nil {
+                item["posterPath"] = path
+            }
+        }
+    }
+
+    private func tvdbTitleDetails(_ value: JSON, type: String, language: String, modules: TMDBEnrichmentPreferences) async -> JSON {
+        func companies(_ entries: [JSON]) -> [JSON] {
+            Array(entries.prefix(20)).compactMap { entry in
+                guard let id = Self.idString(entry["id"]), let name = Self.text(entry["name"]) else { return nil }
+                return ["id": "tvdb:\(id)", "name": name]
+            }
+        }
+        let groupedCompanies = value["companies"] as? JSON ?? [:]
+        let production = companies(Self.records(value["companies"]) + Self.records(groupedCompanies["studio"]) + Self.records(groupedCompanies["production"]))
+        let networkRecords = Self.records(groupedCompanies["network"]) + [value["originalNetwork"], value["latestNetwork"]].compactMap { $0 as? JSON }
+        let credits: [(String, JSON)] = Self.records(value["characters"]).prefix(100).compactMap { character in
+            guard let id = Self.idString(character["peopleId"]), let name = Self.text(character["personName"]) else { return nil }
+            let role = Self.text(character["peopleType"]) ?? "Actor"
+            var credit: JSON = ["id": "tvdb:\(id)", "name": name, "role": role]
+            credit["character"] = Self.text(character["name"])
+            credit["profilePath"] = Self.text(character["personImgURL"])
+            return (role.lowercased(), credit)
+        }
+        let trailers: [JSON] = Self.records(value["trailers"]).prefix(20).compactMap { trailer in
+            guard let address = Self.text(trailer["url"]), let url = URLComponents(string: address),
+                  url.scheme == "https", let host = url.host?.lowercased() else { return nil }
+            let key: String?
+            if ["youtube.com", "www.youtube.com", "m.youtube.com"].contains(host) {
+                key = url.queryItems?.first(where: { $0.name == "v" })?.value
+            } else if host == "youtu.be" {
+                key = url.path.split(separator: "/").first.map(String.init)
+            } else { key = nil }
+            guard let key, key.range(of: #"^[A-Za-z0-9_-]{11}$"#, options: .regularExpression) != nil else { return nil }
+            return ["id": "tvdb:\(Self.idString(trailer["id"]) ?? key)", "title": Self.text(trailer["name"]) ?? "Trailer", "type": "Trailer", "site": "YouTube", "key": key, "official": false]
+        }
+        var seasons: [JSON] = []
+        if type == "series", modules.useEpisodes {
+            let seasonType = Self.idString(value["defaultSeasonType"])
+            let summaries = Self.records(value["seasons"]).filter { season in
+                guard let number = season["number"] as? Int, number >= 0 else { return false }
+                guard let seasonType else { return true }
+                return Self.idString((season["type"] as? JSON)?["id"]) == seasonType
+            }
+            for summary in summaries.prefix(30) {
+                guard !Task.isCancelled, let id = Self.idString(summary["id"]), let number = summary["number"] as? Int else { break }
+                let payload = try? await tvdb("/seasons/\(id)/extended")
+                let season = payload?["data"] as? JSON ?? summary
+                let episodes: [JSON] = Self.records(season["episodes"]).prefix(500).compactMap { episode in
+                    guard let id = Self.idString(episode["id"]), let episodeNumber = episode["number"] as? Int else { return nil }
+                    var result: JSON = ["id": "tvdb:\(id)", "seasonNumber": number, "episodeNumber": episodeNumber,
+                        "title": Self.text(episode["name"]) ?? "Episode \(episodeNumber)"]
+                    result["overview"] = Self.text(episode["overview"])
+                    result["runtimeMinutes"] = Self.positiveInteger(episode["runtime"])
+                    result["stillPath"] = Self.text(episode["image"])
+                    result["airDate"] = Self.isoDate(episode["aired"])
+                    return result
+                }
+                var result: JSON = ["id": "tvdb:\(id)", "seasonNumber": number, "title": Self.text(season["name"]) ?? "Season \(number)", "episodes": episodes]
+                result["posterPath"] = Self.text(season["image"])
+                seasons.append(result)
+            }
+        }
+        let ratings = Self.records(value["contentRatings"])
+        var result: JSON = ["studios": production, "productionCompanies": production, "networks": companies(networkRecords),
+            "cast": credits.filter { $0.0.contains("actor") || $0.0.contains("guest") }.map(\.1),
+            "crew": credits.filter { !$0.0.contains("actor") && !$0.0.contains("guest") }.map(\.1),
+            "studioTitles": [], "recommendations": [], "seasons": seasons, "trailers": trailers, "bonusContent": []]
+        result["ageRating"] = Self.text(ratings.first?["name"])
+        result["runtimeMinutes"] = Self.positiveInteger(value["runtime"] ?? value["averageRuntime"])
+        result["status"] = Self.text((value["status"] as? JSON)?["name"])
+        result["originalLanguage"] = Self.text(value["originalLanguage"])
+        result["originCountries"] = [Self.text(value["originalCountry"] ?? value["country"])].compactMap { $0 }
+        result["releaseDate"] = Self.isoDate(value["firstAired"] ?? (value["first_release"] as? JSON)?["date"])
+        result["budget"] = Self.text(value["budget"]).flatMap(Int.init).flatMap { $0 > 0 ? $0 : nil }
+        result["revenue"] = Self.text(value["boxOffice"]).flatMap(Int.init).flatMap { $0 > 0 ? $0 : nil }
+        return result
+    }
+
     // MARK: Details
 
-    private func details(provider: String, id: String, type: String, language: String) async throws -> JSON {
-        let key = "\(provider):\(type):\(id):\(language)"
+    private func details(provider: String, id: String, type: String, language: String, modules: TMDBEnrichmentPreferences = .init()) async throws -> JSON {
+        guard id.range(of: #"^\d{1,12}$"#, options: .regularExpression) != nil,
+              type == "movie" || type == "series" else { throw OnDeviceMetadataError.invalidRequest }
+        let key = "v2:\(provider):\(type):\(id):\(language):\(Self.credentialIdentity(provider)):\(modules.requestIdentity)"
         if let cached = detailCache[key], cached.expiresAt > .now { return ["item": cached.body, "cached": true] }
         let item: JSON
         if provider == "tmdb" {
@@ -429,23 +571,44 @@ actor OnDeviceMetadataService {
                 "include_image_language": "\(language.split(separator: "-").first ?? "en"),null"
             ])
             guard var normalized = Self.normalizeTMDB(raw, type: type) else { throw OnDeviceMetadataError.unusableResponse }
-            normalized["details"] = try await tmdbTitleDetails(raw, type: type, language: language, providerID: normalized["providerID"] as? String ?? id)
+            normalized["details"] = try await tmdbTitleDetails(raw, type: type, language: language, providerID: normalized["providerID"] as? String ?? id, modules: modules)
             item = normalized
         } else {
-            let raw = try await tvdb("/\(type == "movie" ? "movies" : "series")/\(id)/extended")
-            guard let data = raw["data"] as? JSON, let normalized = Self.normalizeTVDB(data, type: type) else {
+            let raw = try await tvdb("/\(type == "movie" ? "movies" : "series")/\(id)/extended", query: ["meta": "translations"])
+            guard let data = raw["data"] as? JSON, var normalized = Self.normalizeTVDB(data, type: type) else {
                 throw OnDeviceMetadataError.unusableResponse
+            }
+            normalized["details"] = await tvdbTitleDetails(data, type: type, language: language, modules: modules)
+            let artworkTypes = (try? await tvdb("/artwork/types")) ?? [:]
+            Self.applyTVDBArtwork(data, to: &normalized, types: Self.records(artworkTypes["data"]))
+            let translations = data["translations"] as? JSON ?? [:]
+            let languageCode = Self.tvdbLanguage(language)
+            if let title = Self.records(translations["nameTranslations"]).first(where: { $0["language"] as? String == languageCode }).flatMap({ Self.text($0["name"]) }) {
+                normalized["title"] = title
+            }
+            if let overview = Self.records(translations["overviewTranslations"]).first(where: { $0["language"] as? String == languageCode }).flatMap({ Self.text($0["overview"]) }) {
+                normalized["overview"] = overview
             }
             item = normalized
         }
+        if detailCache.count >= 120 { detailCache.removeAll() }
         detailCache[key] = (item, Date.now.addingTimeInterval(86_400))
         return ["item": item, "cached": false]
     }
 
     private func json(_ request: URLRequest) async throws -> JSON {
-        let (data, response) = try await session.data(for: request)
+        let (bytes, response) = try await session.bytes(for: request)
+        defer { bytes.task.cancel() }
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else { throw OnDeviceMetadataError.provider(status) }
+        let maximumBytes = 8 * 1_024 * 1_024
+        guard response.expectedContentLength <= maximumBytes else { throw OnDeviceMetadataError.unusableResponse }
+        var data = Data()
+        for try await byte in bytes {
+            if data.count.isMultiple(of: 4_096) { try Task.checkCancellation() }
+            guard data.count < maximumBytes else { throw OnDeviceMetadataError.unusableResponse }
+            data.append(byte)
+        }
         guard let object = try JSONSerialization.jsonObject(with: data) as? JSON else { throw OnDeviceMetadataError.unusableResponse }
         return object
     }
@@ -504,13 +667,17 @@ actor OnDeviceMetadataService {
             "type": type,
             "title": title,
             "genres": namedValues(value["genres"]),
-            "externalIDs": tvdbExternalIDs(providerID: providerID, remoteIDs: value["remoteIds"]),
+            "externalIDs": tvdbExternalIDs(providerID: providerID, remoteIDs: value["remoteIds"] ?? value["remote_ids"]),
             "sourceURL": "https://thetvdb.com/\(type == "movie" ? "movies" : "series")/\(providerID)"
         ]
         item["overview"] = text(value["overview"])
-        item["releaseDate"] = isoDate(value["firstAired"] ?? value["year"])
+        item["releaseDate"] = isoDate(value["firstAired"] ?? value["first_air_time"] ?? (value["first_release"] as? JSON)?["date"])
+        // Search may carry a year without a day; retain that precision for matching.
+        if item["releaseDate"] == nil, let year = text(value["year"]), year.range(of: #"^\d{4}$"#, options: .regularExpression) != nil {
+            item["releaseDate"] = year
+        }
         item["posterPath"] = text(value["image_url"] ?? value["image"])
-        item["backdropPath"] = text(value["thumbnail"])
+        // Search thumbnails are posters, never a substitute for landscape artwork.
         return item
     }
 

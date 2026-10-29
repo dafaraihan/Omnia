@@ -77,6 +77,7 @@ enum SettingsRoute: Hashable, Sendable {
     case collections
     case metadata
     case tmdbEnrichment
+    case tvdbEnrichment
     case animeEnrichment
     case metadataSources
     case progress
@@ -112,7 +113,7 @@ enum SettingsRoute: Hashable, Sendable {
         case .videoPlayer: [.streamSelection, .subtitle, .playbackResolver, .playbackDiagnostics]
         case .account: [.tracking]
         case .metadata: [.metadataProvider("tmdb"), .metadataProvider("tvdb"), .metadataProvider("fanart"),
-                         .tmdbEnrichment, .animeEnrichment, .metadataProvider("mdblist"), .metadataSources]
+                         .tmdbEnrichment, .tvdbEnrichment, .animeEnrichment, .metadataProvider("mdblist"), .metadataSources]
         default: []
         }
     }
@@ -146,6 +147,7 @@ enum SettingsRoute: Hashable, Sendable {
         case .collections: "Collections"
         case .metadata: "Integrations"
         case .tmdbEnrichment: "TMDB Enrichment"
+        case .tvdbEnrichment: "TVDB Enrichment"
         case .animeEnrichment: "Anime Enrichment"
         case .metadataSources: "Metadata Sources"
         case .progress: "Progress"
@@ -184,6 +186,7 @@ enum SettingsRoute: Hashable, Sendable {
         case .collections: "square.stack.3d.up"
         case .metadata, .metadataProvider, .metadataSources: "rectangle.3.group"
         case .tmdbEnrichment: "sparkles.rectangle.stack"
+        case .tvdbEnrichment: "sparkles.rectangle.stack"
         case .animeEnrichment: "sparkles.tv"
         case .tracking: "checkmark.circle"
         case .progress: "clock.arrow.circlepath"
@@ -215,6 +218,7 @@ enum SettingsRoute: Hashable, Sendable {
         case .catalogs: ["catalog", "discover", "TMDB", "TVDB"]
         case .collections: ["collections", "folders", "Nuvio", "Xperience", "import", "export", "pin"]
         case .metadata: ["metadata", "TMDB", "TVDB", "MDBList", "AniList", "providers", "fallback", "ratings", "enrichment", "API key", "API keys", "key", "fanart"]
+        case .tvdbEnrichment: ["TVDB", "enrichment", "artwork", "credits", "episodes"]
         case .tmdbEnrichment: ["TMDB", "enrichment", "trailers", "artwork", "logo", "backdrop", "cast", "credits", "episodes", "more like this", "collections", "productions"]
         case .animeEnrichment: ["anime", "enrichment", "AniList", "Kitsu", "MyAnimeList", "MAL", "synopsis", "artwork", "genres"]
         case .metadataSources: ["metadata", "TMDB", "TVDB", "AniList", "Kitsu", "MyAnimeList", "MAL", "Jikan", "fallback", "anime", "primary source"]

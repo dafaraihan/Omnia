@@ -4,11 +4,12 @@ import AVFoundation
 /// A decorative, cropped preview with no web content or playback controls.
 /// Each instance owns its player; it never changes the main playback session.
 struct NativeTrailerPlayer {
-    enum Event { case playing, ended, failed }
+    enum Event { case playing, paused, ended, failed }
 
     let source: HeroTrailerSource
     var isMuted: Bool
     var isPlaying: Bool
+    var registerPause: ((@escaping () -> Void) -> Void)? = nil
     let onEvent: (Event) -> Void
     @Environment(\.scenePhase) private var scenePhase
 
@@ -17,6 +18,7 @@ struct NativeTrailerPlayer {
     fileprivate func configure(_ view: TrailerVideoView, coordinator: Coordinator) {
         coordinator.onEvent = onEvent
         coordinator.start(source: source, layer: view.videoLayer, muted: isMuted)
+        registerPause? { [weak coordinator] in coordinator?.update(muted: true, playing: false) }
         coordinator.update(muted: isMuted, playing: isPlaying && scenePhase == .active)
     }
 
@@ -90,12 +92,14 @@ struct NativeTrailerPlayer {
         func update(muted: Bool, playing: Bool) {
             guard !finished else { return }
             player?.isMuted = muted
+            let wasPlaying = wantsPlayback
             wantsPlayback = playing
             if playing {
                 player?.play()
                 reportPlayback()
             } else {
                 player?.pause()
+                if wasPlaying { onEvent?(.paused) }
                 watchdog?.cancel()
                 watchdog = nil
             }
@@ -150,7 +154,7 @@ struct NativeTrailerPlayer {
 
 /// Serves only the generated master. Its child playlists remain validated
 /// absolute HTTPS URLs, loaded directly by AVFoundation as before.
-private nonisolated final class TrailerPlaylistLoader: NSObject, AVAssetResourceLoaderDelegate, Sendable {
+nonisolated final class TrailerPlaylistLoader: NSObject, AVAssetResourceLoaderDelegate, Sendable {
     let url = URL(string: "omnia-trailer://preview/\(UUID().uuidString)/master.m3u8")!
     let queue = DispatchQueue(label: "app.omnia.trailer-playlist")
     private let playlist: Data

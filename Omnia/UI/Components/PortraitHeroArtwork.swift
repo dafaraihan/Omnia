@@ -76,7 +76,7 @@ struct PortraitHeroArtwork: View {
 /// The iPhone's portrait hero identity, centred under the art as in Nuvio:
 /// the logo (or the title), one metadata line, a short synopsis and the
 /// actions in one row.
-struct PortraitHeroIdentity<Primary: View>: View {
+struct PortraitHeroIdentity<Primary: View, Ratings: View>: View {
     let item: MediaItem
     /// Draw the title when the details have loaded without a logo.
     let showsTitleWithoutLogo: Bool
@@ -84,6 +84,7 @@ struct PortraitHeroIdentity<Primary: View>: View {
     let libraryAction: () -> Void
     let watchAction: HeroWatchAction?
     var shuffleAction: HeroWatchAction?
+    @ViewBuilder let ratings: () -> Ratings
     @ViewBuilder let primary: () -> Primary
 
     private var metadata: String {
@@ -117,6 +118,8 @@ struct PortraitHeroIdentity<Primary: View>: View {
                 .font(.caption2.weight(.medium))
                 .foregroundStyle(.white.opacity(0.82))
                 .lineLimit(1)
+
+            ratings()
 
             if !item.overview.isEmpty {
                 Text(item.overview)

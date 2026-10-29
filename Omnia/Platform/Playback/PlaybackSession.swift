@@ -5,6 +5,7 @@
 
 import Foundation
 import Observation
+import AVFoundation
 
 #if os(macOS)
 import AppKit
@@ -274,6 +275,11 @@ enum SubtitleSyncStatus: Equatable, Sendable {
 @Observable
 @MainActor
 final class PlaybackSession {
+    enum Purpose: Equatable { case title, trailer }
+    private(set) var purpose: Purpose = .title
+    private(set) var trailerPlayer: AVPlayer?
+    @ObservationIgnored private var trailerPlaylistLoader: TrailerPlaylistLoader?
+
     #if OMNIA_MPV
     private(set) var player: OMMpvPlayerController?
     #else
@@ -293,6 +299,7 @@ final class PlaybackSession {
         if isPictureInPictureActive, pictureInPictureController.isHandoff {
             return pictureInPictureController.player
         }
+        if let trailerPlayer { return trailerPlayer }
         #if OMNIA_MPV
         return fallbackPlayer
         #else
@@ -303,10 +310,11 @@ final class PlaybackSession {
 
     /// Whether a player is open, whichever engine plays it.
     var hasPlayer: Bool {
+        if trailerPlayer != nil { return true }
         #if OMNIA_MPV && !os(macOS)
-        player != nil || fallbackPlayer != nil
+        return player != nil || fallbackPlayer != nil
         #else
-        player != nil
+        return player != nil
         #endif
     }
 
@@ -475,6 +483,41 @@ final class PlaybackSession {
     }
     #endif
 
+    /// Uses AVFoundation on every platform so the generated master retains its audio renditions.
+    func startTrailer(item: MediaItem, source: HeroTrailerSource, preferences: SettingsPreferences) {
+        stop(persisting: true)
+        purpose = .trailer
+        recoveryContext = nil
+        isRecoveringSource = false
+        recoveryNotice = nil
+        mediaItem = item
+        playbackError = nil
+        let asset: AVURLAsset
+        if let playlist = source.playlist {
+            let loader = TrailerPlaylistLoader(playlist: playlist)
+            trailerPlaylistLoader = loader
+            asset = AVURLAsset(url: loader.url)
+            asset.resourceLoader.setDelegate(loader, queue: loader.queue)
+        } else {
+            asset = AVURLAsset(url: source.url)
+        }
+        let player = AVPlayer(playerItem: AVPlayerItem(asset: asset))
+        player.allowsExternalPlayback = false
+        trailerPlayer = player
+        #if os(macOS)
+        usesWholeScreen = preferences.playbackBehavior.usesWholeScreen
+        let usesSystemVolume = synchronizeOutputVolume()
+        player.volume = usesSystemVolume ? 1 : Float(volume)
+        #endif
+        #if os(iOS)
+        pictureInPictureController.activateAudioSession()
+        pictureInPictureController.configure(player: player)
+        #endif
+        isPresentingPlayer = true
+        player.playImmediately(atRate: Float(playbackRate))
+        observePlaybackState()
+    }
+
     func start(
         item: MediaItem,
         episode: MediaEpisode? = nil,
@@ -503,6 +546,7 @@ final class PlaybackSession {
     ) {
         stop(persisting: true)
 
+        purpose = .title
         let source = input.source
         self.source = source
         #if os(iOS)
@@ -666,6 +710,11 @@ final class PlaybackSession {
     #endif
 
     func togglePause() {
+        if let trailerPlayer {
+            trailerPlayer.rate == 0 ? trailerPlayer.playImmediately(atRate: Float(playbackRate)) : trailerPlayer.pause()
+            refreshState()
+            return
+        }
         #if os(iOS)
         if isPictureInPictureActive, pictureInPictureController.isHandoff,
            let player = pictureInPictureController.player {
@@ -685,6 +734,7 @@ final class PlaybackSession {
     }
 
     func seek(by seconds: Double) {
+        if trailerPlayer != nil { seek(to: positionSeconds + seconds); return }
         #if os(iOS)
         if isPictureInPictureActive, pictureInPictureController.isHandoff {
             pictureInPictureController.player?.seek(to: CMTime(seconds: max(positionSeconds + seconds, 0), preferredTimescale: 600))
@@ -700,6 +750,7 @@ final class PlaybackSession {
     }
 
     func seek(to seconds: Double) {
+        if let trailerPlayer { trailerPlayer.seek(to: CMTime(seconds: max(seconds, 0), preferredTimescale: 600)); return }
         #if os(iOS)
         if isPictureInPictureActive, pictureInPictureController.isHandoff {
             pictureInPictureController.player?.seek(to: CMTime(seconds: max(seconds, 0), preferredTimescale: 600))
@@ -717,6 +768,7 @@ final class PlaybackSession {
     /// Follows a timeline drag with quick keyframe seeks; the exact seek
     /// comes when the drag ends.
     func previewSeek(to seconds: Double) {
+        if trailerPlayer != nil { seek(to: seconds); return }
         #if OMNIA_MPV
         player?.previewSeek(to: seconds)
         #endif
@@ -769,6 +821,7 @@ final class PlaybackSession {
         #if os(macOS)
         volume = min(max(value, 0), 1)
         let usesSystemVolume = outputVolumeController.setVolume(volume)
+        trailerPlayer?.volume = usesSystemVolume ? 1 : Float(volume)
         player?.setVolume(
             MacPlaybackVolumeRouting.playerVolumePercent(
                 requestedVolume: volume,
@@ -798,6 +851,11 @@ final class PlaybackSession {
     #endif
 
     func setPlaybackRate(_ value: Double) {
+        if let trailerPlayer {
+            playbackRate = min(max(value, 0.25), 3)
+            trailerPlayer.rate = isPaused ? 0 : Float(playbackRate)
+            return
+        }
         playbackRate = min(max(value, 0.25), 4)
         #if os(iOS)
         if isPictureInPictureActive, pictureInPictureController.isHandoff {
@@ -1134,6 +1192,10 @@ final class PlaybackSession {
     #endif
 
     func stop(persisting: Bool = true) {
+        trailerPlayer?.pause()
+        trailerPlayer?.replaceCurrentItem(with: nil)
+        trailerPlayer = nil
+        trailerPlaylistLoader = nil
         trackers.playbackStopped(trackerMedia, progress: trackerProgress, runtimeSeconds: durationSeconds)
         trackerMedia = nil
         sourceSelectionID = nil
@@ -1504,7 +1566,7 @@ final class PlaybackSession {
     /// The frame playback stopped on, for Continue Watching's Paused Scene
     /// artwork. Skipped near the start and once the title counts as finished.
     private func captureContinueWatchingScene() {
-        guard let mediaItem, positionSeconds > 10,
+        guard purpose == .title, let mediaItem, positionSeconds > 10,
               !mediaItem.id.hasPrefix(PlaybackSource.liveTVIDPrefix) else { return }
         if let durationSeconds, durationSeconds > 0, positionSeconds / durationSeconds >= 0.9 { return }
         let store = ContinueWatchingSceneStore.shared
@@ -1558,6 +1620,21 @@ final class PlaybackSession {
     }
 
     private func refreshState() {
+        if let trailerPlayer {
+            let position = trailerPlayer.currentTime().seconds
+            positionSeconds = position.isFinite ? max(position, 0) : 0
+            let duration = trailerPlayer.currentItem?.duration.seconds ?? 0
+            durationSeconds = duration.isFinite && duration > 0 ? duration : nil
+            isPaused = trailerPlayer.timeControlStatus != .playing
+            if positionSeconds > 0 { hasRenderedVideoFrame = true }
+            if trailerPlayer.currentItem?.status == .failed {
+                playbackError = "The trailer could not be played. Close the player and try again."
+            }
+            #if os(macOS)
+            displaySleep.update(isPlaying: !isPaused)
+            #endif
+            return
+        }
         #if OMNIA_MPV
         if let player {
             #if os(iOS)
@@ -1720,7 +1797,7 @@ final class PlaybackSession {
     #endif
 
     private func persistProgress(force: Bool) {
-        guard positionSeconds > 0 else { return }
+        guard purpose == .title, positionSeconds > 0 else { return }
         guard force || positionSeconds - lastPersistedPosition >= 10 else { return }
         lastPersistedPosition = positionSeconds
         progressHandler?(positionSeconds, durationSeconds)

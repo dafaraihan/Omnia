@@ -22,7 +22,24 @@ final class HomeHeroTrailerModel {
     @ObservationIgnored private var endedItemID: String?
     @ObservationIgnored private var currentItemID: String?
     @ObservationIgnored private var appliedStartsWithSound: Bool?
-    @ObservationIgnored private var generation = UUID()
+    private(set) var generation = UUID()
+
+    @ObservationIgnored private var pausePreview: (() -> Void)?
+
+    /// Pauses audio synchronously before handing the complete playlist to the player.
+    func consumeForPlayback() -> HeroTrailerSource? {
+        guard isVisible, let stream else { return nil }
+        pausePreview?()
+        pausePreview = nil
+        endedItemID = currentItemID
+        reset()
+        return stream
+    }
+
+    func registerPause(_ pause: @escaping () -> Void, for source: HeroTrailerSource) {
+        guard stream == source else { return }
+        pausePreview = pause
+    }
 
     var holdsCarousel: Bool { isPending || stream != nil }
 
@@ -65,11 +82,13 @@ final class HomeHeroTrailerModel {
         isPending = false
     }
 
-    func handle(_ event: NativeTrailerPlayer.Event, for source: HeroTrailerSource) {
-        guard stream == source else { return }
+    func handle(_ event: NativeTrailerPlayer.Event, for source: HeroTrailerSource, generation: UUID) {
+        guard self.generation == generation, stream == source else { return }
         switch event {
         case .playing:
             isVisible = true
+        case .paused:
+            isVisible = false
         case .ended:
             reset()
             endedItemID = currentItemID
@@ -80,6 +99,8 @@ final class HomeHeroTrailerModel {
     }
 
     private func reset() {
+        pausePreview?()
+        pausePreview = nil
         generation = UUID()
         stream = nil
         isVisible = false
@@ -122,14 +143,16 @@ struct HomeHeroTrailerLayer: View {
     var body: some View {
         ZStack {
             if let source = model.stream {
+                let generation = model.generation
                 NativeTrailerPlayer(
                     source: source,
                     isMuted: model.isMuted,
-                    isPlaying: isPlaying
+                    isPlaying: isPlaying,
+                    registerPause: { model.registerPause($0, for: source) }
                 ) { event in
-                    model.handle(event, for: source)
+                    model.handle(event, for: source, generation: generation)
                 }
-                .id(source)
+                .id(generation)
 
                 LinearGradient(
                     stops: [
