@@ -38,6 +38,21 @@
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Omnia connects to Jellyfin or Emby servers on your local network.</string>
+	<key>OmniaTrackerApps</key>
+	<dict>
+		<key>AniListClientID</key>
+		<string>$(OMNIA_ANILIST_CLIENT_ID)</string>
+		<key>MDBListClientID</key>
+		<string>$(OMNIA_MDBLIST_CLIENT_ID)</string>
+		<key>SimklClientID</key>
+		<string>$(OMNIA_SIMKL_CLIENT_ID)</string>
+		<key>TraktClientID</key>
+		<string>$(OMNIA_TRAKT_CLIENT_ID)</string>
+		<key>TraktClientSecret</key>
+		<string>$(OMNIA_TRAKT_CLIENT_SECRET)</string>
+		<key>TraktRedirectURI</key>
+		<string>$(OMNIA_TRAKT_REDIRECT_URI)</string>
+	</dict>
 	<key>SUPABASE_PUBLISHABLE_KEY</key>
 	<string>sb_publishable_QVP3koOZ2zSdS9EE4YsrWw_PhpRaeZV</string>
 	<key>SUPABASE_URL</key>
@@ -64,20 +79,5 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
-	<key>OmniaTrackerApps</key>
-	<dict>
-		<key>TraktClientID</key>
-		<string>$(OMNIA_TRAKT_CLIENT_ID)</string>
-		<key>TraktClientSecret</key>
-		<string>$(OMNIA_TRAKT_CLIENT_SECRET)</string>
-		<key>TraktRedirectURI</key>
-		<string>$(OMNIA_TRAKT_REDIRECT_URI)</string>
-		<key>SimklClientID</key>
-		<string>$(OMNIA_SIMKL_CLIENT_ID)</string>
-		<key>MDBListClientID</key>
-		<string>$(OMNIA_MDBLIST_CLIENT_ID)</string>
-		<key>AniListClientID</key>
-		<string>$(OMNIA_ANILIST_CLIENT_ID)</string>
-	</dict>
 </dict>
 </plist>

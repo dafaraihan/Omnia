@@ -1,4 +1,3 @@
-#if os(macOS)
 import SwiftUI
 
 /// What a page tells Nuvio's top bar: whether it has scrolled past
@@ -67,14 +66,25 @@ struct NuvioTopBar: View {
     @State private var dragIndex: Int?
     @State private var pointer: CGPoint?
     @State private var glowOpacity: Double = 0
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
 
+    #if os(macOS)
     /// The system tab bar's height and text size in the window toolbar.
     static let height: CGFloat = 36
-    private static let inset: CGFloat = 4
     private static let iconSize: CGFloat = 15
     /// The profile's avatar, larger than the symbols so the picture reads.
     private static let avatarSize: CGFloat = 26
     private static let compactItemWidth: CGFloat = 44
+    #else
+    /// Touch sizes: each tab keeps at least a 44 point target.
+    static let height: CGFloat = 52
+    private static let iconSize: CGFloat = 18
+    private static let avatarSize: CGFloat = 30
+    private static let compactItemWidth: CGFloat = 56
+    #endif
+    private static let inset: CGFloat = 4
     private static let labelWidth: CGFloat = 52
 
     /// Nuvio animates the bar with a 320 ms FastOutSlowIn curve.
@@ -117,7 +127,18 @@ struct NuvioTopBar: View {
     // MARK: State
 
     private func itemWidth(showsLabels: Bool) -> CGFloat {
-        Self.compactItemWidth + (showsLabels ? Self.labelWidth : 0)
+        if stacksLabels { return Self.compactItemWidth + (showsLabels ? 10 : 0) }
+        return Self.compactItemWidth + (showsLabels ? Self.labelWidth : 0)
+    }
+
+    /// iPhone has no room for labels beside the icons, so they sit under
+    /// them, as on Nuvio's phone bar.
+    private var stacksLabels: Bool {
+        #if os(iOS)
+        horizontalSizeClass == .compact
+        #else
+        false
+        #endif
     }
 
     private var showsLabels: Bool {
@@ -143,6 +164,11 @@ struct NuvioTopBar: View {
         itemWidth(showsLabels: true) * CGFloat(destinations.count) + Self.inset * 2 <= maximumWidth
     }
 
+    /// A smaller avatar leaves room for the label under it.
+    private var avatarSize: CGFloat {
+        stacksLabels && showsLabels ? 24 : Self.avatarSize
+    }
+
     private var selectedIndex: Int {
         destinations.firstIndex(of: selection) ?? 0
     }
@@ -163,12 +189,13 @@ struct NuvioTopBar: View {
     }
 
     private func tab(_ destination: AppDestination, isHighlighted: Bool) -> some View {
-        HStack(spacing: 6) {
+        let layout = stacksLabels ? AnyLayout(VStackLayout(spacing: 2)) : AnyLayout(HStackLayout(spacing: 6))
+        return layout {
             icon(destination, isHighlighted: isHighlighted)
-                .frame(width: destination == .settings && profiles.activeProfile != nil ? Self.avatarSize : Self.iconSize + 4)
+                .frame(width: destination == .settings && profiles.activeProfile != nil ? avatarSize : Self.iconSize + 4)
             if showsLabels {
                 Text(destination.title(for: profiles.activeProfile))
-                    .font(.system(size: 13, weight: isHighlighted ? .semibold : .regular))
+                    .font(.system(size: stacksLabels ? 10 : 13, weight: isHighlighted ? .semibold : .regular))
                     .lineLimit(1)
                     .foregroundStyle(isHighlighted ? .primary : .secondary)
                     .fixedSize()
@@ -190,7 +217,7 @@ struct NuvioTopBar: View {
     @ViewBuilder
     private func icon(_ destination: AppDestination, isHighlighted: Bool) -> some View {
         if destination == .settings, let profile = profiles.activeProfile {
-            ProfileAvatarView(profile: profile, size: Self.avatarSize, isSelected: isHighlighted)
+            ProfileAvatarView(profile: profile, size: avatarSize, isSelected: isHighlighted)
                 .modifier(ProfileAnchorReporting())
         } else {
             symbol(destination, isHighlighted: isHighlighted)
@@ -262,4 +289,3 @@ struct NuvioTopBar: View {
         return min(max(raw, 0), destinations.count - 1)
     }
 }
-#endif

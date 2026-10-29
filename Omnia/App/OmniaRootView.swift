@@ -26,6 +26,10 @@ struct OmniaRootView: View {
     @State private var windowWidth: CGFloat = 0
     #else
     @State private var selection: AppDestination = .home
+    /// Each tab's last scroll report for Nuvio's bar.
+    @State private var topBarScroll: [AppDestination: TopBarScrollReport] = [:]
+    @State private var windowWidth: CGFloat = 0
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     #endif
 
     var body: some View {
@@ -231,38 +235,119 @@ struct OmniaRootView: View {
             macTopBarNavigation
         }
         #else
+        styledTabs
+            .tint(accentColor)
+            .overlay(alignment: .top) {
+                if usesNuvioBar && !isCompactWidth {
+                    nuvioBar
+                        .padding(.top, 2)
+                }
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if usesNuvioBar && isCompactWidth {
+                    nuvioBar
+                        .padding(.bottom, 4)
+                }
+            }
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
+                windowWidth = width
+            }
+            .environment(\.reportTopBarScroll) { destination, report in
+                if topBarScroll[destination] != report {
+                    topBarScroll[destination] = report
+                }
+            }
+            .onChange(of: liveTV.showsInNavigation) { _, shows in
+                if !shows, selection == .liveTV { selection = .home }
+            }
+        #endif
+    }
+
+    #if os(iOS)
+    /// iPhone, and iPad in a narrow multitasking window.
+    private var isCompactWidth: Bool {
+        horizontalSizeClass == .compact
+    }
+
+    /// Settings › Layout. A narrow window always uses a tab bar, so the
+    /// Sidebar choice only applies to a regular-width iPad window.
+    private var usesSidebar: Bool {
+        !isCompactWidth && settings.preferences.navigationStyle == .sidebar
+    }
+
+    /// Nuvio's floating bar replaces the system tab bar: at the bottom on
+    /// iPhone, at the top on iPad.
+    private var usesNuvioBar: Bool {
+        !usesSidebar && settings.preferences.display.topBarStyle.isNuvio
+    }
+
+    @ViewBuilder
+    private var styledTabs: some View {
+        if usesSidebar {
+            tabs
+                .tabViewStyle(.sidebarAdaptable)
+                .defaultAdaptableTabBarPlacement(.sidebar)
+                .toolbarBackground(OmniaMaterial.tabBar, for: .tabBar)
+                .toolbarBackground(.visible, for: .tabBar)
+                .tabBarMinimizeBehavior(.onScrollDown)
+        } else {
+            tabs
+                .tabViewStyle(.tabBarOnly)
+                .toolbarBackground(OmniaMaterial.tabBar, for: .tabBar)
+                .toolbarBackground(.visible, for: .tabBar)
+                .tabBarMinimizeBehavior(usesNuvioBar ? .never : .onScrollDown)
+        }
+    }
+
+    private var tabs: some View {
         TabView(selection: $selection) {
             Tab("Home", systemImage: AppDestination.home.symbolName, value: .home) {
-                NavigationStack { HomeView().omniaPageDestinations() }
+                tabStack { HomeView() }
             }
             Tab("Library", systemImage: AppDestination.library.symbolName, value: .library) {
-                NavigationStack { LibraryView().omniaPageDestinations() }
+                tabStack { LibraryView() }
             }
 
             Tab("Discover", systemImage: AppDestination.discover.symbolName, value: .discover) {
-                NavigationStack { DiscoverView().omniaPageDestinations() }
+                tabStack { DiscoverView() }
             }
 
             if liveTV.showsInNavigation {
                 Tab("Live TV", systemImage: AppDestination.liveTV.symbolName, value: .liveTV) {
-                    NavigationStack { LiveTVView().omniaPageDestinations() }
+                    tabStack { LiveTVView() }
                 }
             }
 
             Tab("Settings", systemImage: AppDestination.settings.symbolName, value: .settings) {
-                NavigationStack { SettingsView().omniaPageDestinations() }
+                tabStack { SettingsView() }
             }
         }
-        .tabViewStyle(.sidebarAdaptable)
-        .tint(accentColor)
-        .toolbarBackground(OmniaMaterial.tabBar, for: .tabBar)
-        .toolbarBackground(.visible, for: .tabBar)
-        .tabBarMinimizeBehavior(.onScrollDown)
-        .onChange(of: liveTV.showsInNavigation) { _, shows in
-            if !shows, selection == .liveTV { selection = .home }
-        }
-        #endif
     }
+
+    /// A tab's stack. With Nuvio's bar the system tab bar is hidden on
+    /// every page, as the floating bar stays in place.
+    private func tabStack<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        NavigationStack {
+            content()
+                .omniaPageDestinations()
+                .toolbar(usesNuvioBar ? .hidden : .automatic, for: .tabBar)
+        }
+    }
+
+    private var nuvioBar: some View {
+        NuvioTopBar(
+            destinations: AppDestination.macTopBarDestinations(showsLiveTV: liveTV.showsInNavigation),
+            selection: selection,
+            style: settings.preferences.display.topBarStyle,
+            showsGlow: settings.preferences.display.topBarGlow,
+            scroll: topBarScroll[selection] ?? TopBarScrollReport(),
+            // On iPad it shares the navigation bar's row, so it leaves room
+            // for the Back button and the page's own buttons.
+            maximumWidth: max(windowWidth - (isCompactWidth ? 32 : 280), 0),
+            select: { selection = $0 }
+        )
+    }
+    #endif
 
     #if os(macOS)
     private var macSidebarNavigation: some View {

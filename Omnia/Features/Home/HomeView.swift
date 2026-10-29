@@ -300,11 +300,11 @@ struct HomeView: View {
         // Home's first section owns the area behind the stable transparent
         // toolbar; shelves below remain an opaque content surface.
         .ignoresSafeArea(edges: .top)
-        .modifier(TopBarScrollReporting(destination: .home, hasHero: displayFeatured != nil || showsHeroSlot))
         #endif
         #if os(iOS)
         .ignoresSafeArea(edges: .top)
         #endif
+        .modifier(TopBarScrollReporting(destination: .home, hasHero: displayFeatured != nil || showsHeroSlot))
         .omniaNavigationTitle("Home", screen: .home)
         .navigationDestination(for: MediaItem.self) { MediaDetailView(item: $0) }
         .navigationDestination(for: CollectionFolderRoute.self) { route in

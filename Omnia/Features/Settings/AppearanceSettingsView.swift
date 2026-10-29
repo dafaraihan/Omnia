@@ -5,6 +5,9 @@ struct AppearanceSettingsView: View {
     @Environment(SettingsPreferencesStore.self) private var settings
     @Environment(CollectionsStore.self) private var collections
     @AppStorage(HomeView.continueWatchingVisibilityKey) private var showsContinueWatching = true
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
 
     /// Settings › Layout, laid out like Nuvio's: Theme, Display, Home and
     /// Detail Page.
@@ -70,17 +73,18 @@ struct AppearanceSettingsView: View {
                     Text("AMOLED Black")
                     Text("Use true black behind pages in Dark appearance.")
                 }
-                #if os(macOS)
-                SettingsDropdown(
-                    "Navigation Style",
-                    selection: settings.binding(\.navigationStyle),
-                    options: MacNavigationStyle.allCases,
-                    systemImage: \.systemImage
-                ) { $0.title }
-
-                if settings.preferences.navigationStyle == .topBar {
+                if showsNavigationStyle {
                     SettingsDropdown(
-                        "Top Bar Style",
+                        "Navigation Style",
+                        selection: settings.binding(\.navigationStyle),
+                        options: MacNavigationStyle.allCases,
+                        systemImage: \.systemImage
+                    ) { $0.title }
+                }
+
+                if showsBarStyle {
+                    SettingsDropdown(
+                        barStyleTitle,
                         subtitle: settings.preferences.display.topBarStyle.detail,
                         selection: settings.binding(\.display.topBarStyle),
                         options: TopBarStyle.allCases
@@ -94,6 +98,7 @@ struct AppearanceSettingsView: View {
                     }
                 }
 
+                #if os(macOS)
                 Toggle("Hover Preview", isOn: settings.binding(\.display.hoverPreviewEnabled))
                 if settings.preferences.display.hoverPreviewEnabled {
                     SettingsDropdown(
@@ -109,7 +114,9 @@ struct AppearanceSettingsView: View {
                 #if os(macOS)
                 Text("Choose a sidebar or a top tab bar, whether Search opens as a page or floats over the current one, and whether resting the pointer on a poster previews it.")
                 #else
-                Text("AMOLED Black uses true black behind pages in Dark appearance.")
+                Text(horizontalSizeClass == .compact
+                    ? "Choose the system tab bar or Nuvio's floating bar."
+                    : "Choose a sidebar or a top tab bar, and the system tab bar or Nuvio's floating bar.")
                 #endif
             }
 
@@ -186,6 +193,27 @@ struct AppearanceSettingsView: View {
     }
 
     private static let gradientStopTitles = ["Start Color", "Middle Color", "End Color"]
+
+    // MARK: Navigation
+
+    /// A narrow iOS window always uses a tab bar, so only a regular-width
+    /// window offers Sidebar or Top Bar.
+    private var showsNavigationStyle: Bool {
+        #if os(macOS)
+        true
+        #else
+        horizontalSizeClass != .compact
+        #endif
+    }
+
+    private var showsBarStyle: Bool {
+        !showsNavigationStyle || settings.preferences.navigationStyle == .topBar
+    }
+
+    /// iPhone's bar sits at the bottom, so it is a tab bar there.
+    private var barStyleTitle: String {
+        showsNavigationStyle ? "Top Bar Style" : "Tab Bar Style"
+    }
 
     private var accentFooter: String {
         let display = settings.preferences.display
@@ -321,6 +349,7 @@ private extension MacSearchStyle {
         }
     }
 }
+#endif
 
 private extension MacNavigationStyle {
     var title: String {
@@ -337,4 +366,4 @@ private extension MacNavigationStyle {
         }
     }
 }
-#endif
+

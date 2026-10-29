@@ -112,7 +112,11 @@ nonisolated enum TopBarStyle: String, Codable, CaseIterable, Identifiable, Senda
 
     var detail: String {
         switch self {
+        #if os(macOS)
         case .native: "The system tab bar, as on iPad."
+        #else
+        case .native: "The system tab bar."
+        #endif
         case .adaptive: "Shows labels, and shrinks to icons over the Home hero or once you scroll."
         case .expanded: "Always shows icons and labels."
         case .compact: "Always shows icons only."
