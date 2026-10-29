@@ -350,7 +350,9 @@ struct OmniaRootView: View {
         func render() {
             let renderer = ImageRenderer(content: ProfileAvatarView(profile: profile, size: 26))
             renderer.scale = 3
-            profileTabImage = renderer.uiImage
+            // The native tab bar reads UIImage's rendering mode; the SwiftUI
+            // Image modifier alone leaves UIKit free to template the avatar.
+            profileTabImage = renderer.uiImage?.withRenderingMode(.alwaysOriginal)
         }
         render()
         if let avatar = profile.avatarID.flatMap(AvatarCatalog.avatar(id:)) {
