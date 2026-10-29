@@ -22,6 +22,7 @@ struct HomeView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     #endif
+    @State private var viewportSize: CGSize = .zero
     @State private var resolvedFeatured: MediaItem?
     @State private var resolvedHeroSource = ""
     @State private var upcomingResult: UpcomingResult?
@@ -305,6 +306,7 @@ struct HomeView: View {
         .ignoresSafeArea(edges: .top)
         #endif
         .modifier(TopBarScrollReporting(destination: .home, hasHero: displayFeatured != nil || showsHeroSlot))
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { viewportSize = $0 }
         .omniaNavigationTitle("Home", screen: .home)
         .navigationDestination(for: MediaItem.self) { MediaDetailView(item: $0) }
         .navigationDestination(for: CollectionFolderRoute.self) { route in
@@ -658,10 +660,11 @@ struct HomeView: View {
                 .padding(.bottom, 18)
                 .animation(.snappy(duration: 0.25), value: heroTrailer.isVisible)
         }
-        .overlay(alignment: .bottom) {
+        .overlay(alignment: isPortraitPad ? .bottomLeading : .bottom) {
             if heroCandidates.count > 1 {
                 HeroPageControl(
                     count: heroCandidates.count,
+                    isCompact: isPortraitPad,
                     selection: heroIndex % heroCandidates.count,
                     select: { index in
                         withAnimation(.easeInOut(duration: 0.45)) {
@@ -669,7 +672,9 @@ struct HomeView: View {
                         }
                     }
                 )
-                .padding(.bottom, 22)
+                .frame(width: isPortraitPad ? homeIdentityWidth : nil)
+                .padding(.leading, isPortraitPad ? CinematicHeroLayout.horizontalInset : 0)
+                .padding(.bottom, isPortraitPad ? 12 : 22)
             }
         }
         #if os(iOS)
@@ -969,6 +974,22 @@ struct HomeView: View {
         #endif
     }
 
+    private var isPortraitPad: Bool {
+        #if os(iOS)
+        horizontalSizeClass == .regular && viewportSize.height > viewportSize.width
+        #else
+        false
+        #endif
+    }
+
+    private var homeIdentityWidth: CGFloat {
+        isPortraitPad ? 280 : CinematicHeroLayout.logoWidth
+    }
+
+    private var homeLogoHeight: CGFloat {
+        isPortraitPad ? 78 : CinematicHeroLayout.logoHeight
+    }
+
     @ViewBuilder
     private func landscapeHeroIdentity(_ featured: MediaItem) -> some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -976,13 +997,13 @@ struct HomeView: View {
             // hero artwork breathe above it.
             Spacer(minLength: heroTopSpacing)
 
-            CinematicHeroColumn {
+            VStack(alignment: .leading, spacing: isPortraitPad ? 8 : 12) {
                 if let logoURL = featured.logoURL {
                     TitleLogoView(
                         url: logoURL,
                         title: featured.title,
-                        maximumWidth: CinematicHeroLayout.logoWidth,
-                        maximumHeight: CinematicHeroLayout.logoHeight,
+                        maximumWidth: homeIdentityWidth,
+                        maximumHeight: homeLogoHeight,
                         alignment: .center
                     )
                 } else if resolvedFeatured?.id == featured.id {
@@ -996,8 +1017,8 @@ struct HomeView: View {
                         .minimumScaleFactor(0.6)
                         .shadow(color: .black.opacity(0.35), radius: 8, y: 3)
                         .frame(
-                            width: CinematicHeroLayout.logoWidth,
-                            height: CinematicHeroLayout.logoHeight,
+                            width: homeIdentityWidth,
+                            height: homeLogoHeight,
                             alignment: .center
                         )
                 } else {
@@ -1007,14 +1028,14 @@ struct HomeView: View {
                     // plain-text title for one render pass.
                     Color.clear
                         .frame(
-                            width: CinematicHeroLayout.logoWidth,
-                            height: CinematicHeroLayout.logoHeight,
+                            width: homeIdentityWidth,
+                            height: homeLogoHeight,
                             alignment: .center
                         )
                         .accessibilityHidden(true)
                 }
 
-                HeroMetadataLine(item: featured)
+                HeroMetadataLine(item: featured, width: homeIdentityWidth)
 
                 if settings.preferences.integrations.mdblistEnabled {
                     MDBListRatingsView(
@@ -1022,7 +1043,7 @@ struct HomeView: View {
                         retry: { retryHeroRatings(for: featured) },
                         openSettings: { showsMDBListSettings = true }
                     )
-                    .frame(width: CinematicHeroLayout.logoWidth, alignment: .leading)
+                    .frame(width: homeIdentityWidth, alignment: .leading)
                 }
 
                 JustifiedSynopsisText(
@@ -1030,10 +1051,10 @@ struct HomeView: View {
                     lineLimit: 3,
                     fontSize: CinematicHeroLayout.synopsisFontSize
                 )
-                    .frame(width: CinematicHeroLayout.synopsisWidth, alignment: .leading)
+                    .frame(width: homeIdentityWidth, alignment: .leading)
 
                 HeroActionRow(
-                    width: CinematicHeroLayout.logoWidth,
+                    width: homeIdentityWidth,
                     isSaved: store.isSaved(featured),
                     libraryAction: { store.toggleSaved(featured) },
                     watchAction: heroWatchAction(for: featured) ?? HeroWatchAction(
@@ -1057,12 +1078,14 @@ struct HomeView: View {
             // AsyncImage keeps state while SwiftUI reuses a view tree.
             // A title-specific identity prevents a previous transparent
             // logo from appearing over the next title's backdrop.
+            .frame(width: homeIdentityWidth, alignment: .leading)
+            .controlSize(isPortraitPad ? .small : .regular)
             .id(featured.id)
             .transition(.opacity)
         }
         .frame(maxHeight: .infinity, alignment: .leading)
         .padding(.leading, CinematicHeroLayout.horizontalInset)
-            .padding(.bottom, 38)
+            .padding(.bottom, isPortraitPad ? 56 : 38)
     }
 
     #if os(iOS)
@@ -1595,18 +1618,20 @@ private struct HeroNavigationButtonStyle: ButtonStyle {
 
 private struct HeroPageControl: View {
     let count: Int
+    var isCompact = false
     let selection: Int
     let select: (Int) -> Void
 
     var body: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: isCompact ? 5 : 7) {
             ForEach(0..<count, id: \.self) { index in
                 Button {
                     select(index)
                 } label: {
                     Circle()
                         .fill(.white.opacity(index == selection ? 1 : 0.42))
-                        .frame(width: index == selection ? 8 : 6, height: index == selection ? 8 : 6)
+                        .frame(width: index == selection ? (isCompact ? 6 : 8) : (isCompact ? 4 : 6),
+                               height: index == selection ? (isCompact ? 6 : 8) : (isCompact ? 4 : 6))
                         .frame(width: 20, height: 20)
                         .contentShape(Circle())
                 }

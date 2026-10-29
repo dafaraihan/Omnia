@@ -366,4 +366,3 @@ private extension MacNavigationStyle {
         }
     }
 }
-

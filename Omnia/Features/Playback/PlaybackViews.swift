@@ -4,6 +4,9 @@
 //
 
 import SwiftUI
+#if os(iOS)
+import UIKit
+#endif
 
 struct PlaybackSourceHandoff {
     static func preparedItem(original: MediaItem, enriched: MediaItem) -> MediaItem {
@@ -2411,6 +2414,14 @@ private struct PlaybackLoadingOverlay: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var breathes = false
 
+    private var isPhone: Bool {
+        #if os(iOS)
+        UIDevice.current.userInterfaceIdiom == .phone
+        #else
+        false
+        #endif
+    }
+
     var body: some View {
         ZStack {
             Color.black
@@ -2429,13 +2440,13 @@ private struct PlaybackLoadingOverlay: View {
                     .blur(radius: 6)
             }
             LinearGradient(colors: [.black.opacity(0.2), .black.opacity(0.85)], startPoint: .top, endPoint: .bottom)
-            VStack(spacing: 18) {
+            VStack(spacing: isPhone ? 10 : 18) {
                 Group {
                     if let logo = item.logoURL {
-                        TitleLogoView(url: logo, title: item.title, maximumWidth: 420, maximumHeight: 140, alignment: .center)
+                        TitleLogoView(url: logo, title: item.title, maximumWidth: isPhone ? 240 : 420, maximumHeight: isPhone ? 80 : 140, alignment: .center)
                     } else {
                         Text(item.title)
-                            .font(.largeTitle.weight(.bold))
+                            .font(isPhone ? .title2.weight(.bold) : .largeTitle.weight(.bold))
                             .multilineTextAlignment(.center)
                     }
                 }
@@ -2445,7 +2456,7 @@ private struct PlaybackLoadingOverlay: View {
                 .opacity(breathes ? 1 : 0.8)
                 if let episode {
                     Text("S\(episode.seasonNumber) E\(episode.episodeNumber) · \(episode.title)")
-                        .font(.headline)
+                        .font(isPhone ? .subheadline : .headline)
                         .foregroundStyle(.white.opacity(0.8))
                         .multilineTextAlignment(.center)
                 }
@@ -2455,14 +2466,14 @@ private struct PlaybackLoadingOverlay: View {
                         .tint(.white)
                     if let status {
                         Text(status)
-                            .font(.callout)
+                            .font(isPhone ? .caption : .callout)
                             .foregroundStyle(.white.opacity(0.75))
                     }
                 }
             }
             .foregroundStyle(.white)
-            .frame(maxWidth: 560)
-            .padding(40)
+            .frame(maxWidth: isPhone ? 320 : 560)
+            .padding(isPhone ? 24 : 40)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

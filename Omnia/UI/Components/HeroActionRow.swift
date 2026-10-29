@@ -25,6 +25,7 @@ struct HeroWatchAction {
 /// Keeping this component shared prevents Home and title detail from drifting
 /// into subtly different button sizes or spacing.
 struct HeroActionRow<Primary: View>: View {
+    @Environment(\.controlSize) private var controlSize
     let width: CGFloat
     let isSaved: Bool
     let libraryAction: () -> Void
@@ -89,7 +90,7 @@ struct HeroActionRow<Primary: View>: View {
                 #else
                 .foregroundStyle(actionForeground)
                 #endif
-                .frame(width: 46, height: 46)
+                .frame(width: controlSize == .small ? 44 : 46, height: controlSize == .small ? 44 : 46)
                 .contentShape(Circle())
                 #if !os(macOS)
                 .background(actionBackground, in: Circle())
@@ -113,7 +114,7 @@ struct HeroActionRow<Primary: View>: View {
                 #else
                 .foregroundStyle(actionForeground)
                 #endif
-                .frame(width: 46, height: 46)
+                .frame(width: controlSize == .small ? 44 : 46, height: controlSize == .small ? 44 : 46)
                 .contentShape(Circle())
                 #if !os(macOS)
                 .background(actionBackground, in: Circle())
@@ -136,6 +137,7 @@ struct HeroActionRow<Primary: View>: View {
 
 /// The identically styled primary pill used in every cinematic hero.
 struct HeroPrimaryActionLabel: View {
+    @Environment(\.controlSize) private var controlSize
     let title: String
     var resumeProgress: ResumeProgressPresentation?
 
@@ -163,7 +165,7 @@ struct HeroPrimaryActionLabel: View {
             .padding(.horizontal, 14)
             // A stable, longer primary hit target makes Play, Resume, and
             // Rewatch feel like the same deliberate playback action.
-            .frame(width: 176, height: 46)
+            .frame(width: controlSize == .small ? 160 : 176, height: controlSize == .small ? 44 : 46)
             .contentShape(Capsule())
             #if !os(macOS)
             .background(.white, in: Capsule())

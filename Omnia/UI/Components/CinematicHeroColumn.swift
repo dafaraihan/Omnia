@@ -60,6 +60,7 @@ struct CinematicHeroColumn<Content: View>: View {
 /// metadata, synopsis, and actions form one visual axis.
 struct HeroMetadataLine: View {
     let item: MediaItem
+    var width: CGFloat = CinematicHeroLayout.logoWidth
 
     private var values: [String] {
         var values = [item.year, item.kind == .series ? "TV Show" : item.kind.rawValue]
@@ -78,7 +79,7 @@ struct HeroMetadataLine: View {
             .foregroundStyle(.white.opacity(0.82))
             .lineLimit(1)
             .truncationMode(.tail)
-            .frame(width: CinematicHeroLayout.logoWidth, alignment: .leading)
+            .frame(width: width, alignment: .leading)
             .accessibilityLabel(values.joined(separator: ", "))
     }
 }

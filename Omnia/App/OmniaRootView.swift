@@ -6,6 +6,9 @@
 //
 
 import SwiftUI
+#if os(iOS)
+import UIKit
+#endif
 
 struct OmniaRootView: View {
     @Environment(OmniaStore.self) private var store
@@ -26,6 +29,7 @@ struct OmniaRootView: View {
     @State private var windowWidth: CGFloat = 0
     #else
     @State private var selection: AppDestination = .home
+    @State private var profileTabImage: UIImage?
     /// Each tab's last scroll report for Nuvio's bar.
     @State private var topBarScroll: [AppDestination: TopBarScrollReport] = [:]
     @State private var windowWidth: CGFloat = 0
@@ -318,9 +322,44 @@ struct OmniaRootView: View {
                 }
             }
 
-            Tab("Settings", systemImage: AppDestination.settings.symbolName, value: .settings) {
+            Tab(value: AppDestination.settings) {
                 tabStack { SettingsView() }
+            } label: {
+                Label {
+                    Text(AppDestination.settings.title(for: profiles.activeProfile))
+                } icon: {
+                    if let profileTabImage {
+                        Image(uiImage: profileTabImage).renderingMode(.original)
+                    } else {
+                        Image(systemName: AppDestination.settings.symbolName)
+                    }
+                }
             }
+        }
+        .task(id: profiles.activeProfile) { await updateProfileTabImage() }
+    }
+
+    /// Native tabs extract an Image from their label, so rasterize the same
+    /// avatar used by the custom bar after its cached artwork is available.
+    @MainActor
+    private func updateProfileTabImage() async {
+        guard let profile = profiles.activeProfile else {
+            profileTabImage = nil
+            return
+        }
+        func render() {
+            let renderer = ImageRenderer(content: ProfileAvatarView(profile: profile, size: 26))
+            renderer.scale = 3
+            profileTabImage = renderer.uiImage
+        }
+        render()
+        if let avatar = profile.avatarID.flatMap(AvatarCatalog.avatar(id:)) {
+            _ = await RemoteArtworkCache.shared.image(
+                for: avatar.url,
+                target: RemoteArtworkTarget(width: 96, height: 96, fills: true)
+            )
+            guard !Task.isCancelled, profiles.activeProfile == profile else { return }
+            render()
         }
     }
 

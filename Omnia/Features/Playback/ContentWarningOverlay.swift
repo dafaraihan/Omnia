@@ -4,6 +4,9 @@
 //
 
 import SwiftUI
+#if os(iOS)
+import UIKit
+#endif
 
 /// Nuvio's Parental Guide overlay: once the first frame is on screen, the
 /// title's content warnings appear beside an accent line for a few
@@ -19,6 +22,14 @@ struct ContentWarningOverlay: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var warnings: [ContentWarning] = []
     @State private var isVisible = false
+
+    private var warningFont: Font {
+        #if os(iOS)
+        UIDevice.current.userInterfaceIdiom == .phone ? .caption : .callout
+        #else
+        .callout
+        #endif
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -38,7 +49,7 @@ struct ContentWarningOverlay: View {
                     }
                 }
             }
-            .font(.callout)
+            .font(warningFont)
         }
         .fixedSize()
         .shadow(color: .black.opacity(0.6), radius: 6)
