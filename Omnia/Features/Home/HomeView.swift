@@ -615,9 +615,6 @@ struct HomeView: View {
                 landscapeHeroIdentity(featured)
                 #endif
             }
-            .opacity(showsPlayingHeroTrailer ? 0 : 1)
-            .allowsHitTesting(!showsPlayingHeroTrailer)
-            .accessibilityHidden(showsPlayingHeroTrailer)
         }
         .overlay {
             // A swipe moves the hero on iPhone and iPad; the Mac has arrows.
@@ -643,7 +640,7 @@ struct HomeView: View {
                 .animation(.snappy(duration: 0.25), value: heroTrailer.isVisible)
         }
         .overlay(alignment: .bottom) {
-            if heroCandidates.count > 1 && !showsPlayingHeroTrailer {
+            if heroCandidates.count > 1 {
                 HeroPageControl(
                     count: heroCandidates.count,
                     isCompact: isPortraitPad,
@@ -1121,7 +1118,8 @@ struct HomeView: View {
             MDBListRatingsView(
                 state: heroRatings.state(forItemID: featured.id).applying(settings.preferences.mdblistRatings),
                 retry: { retryHeroRatings(for: featured) },
-                openSettings: { showsMDBListSettings = true }
+                openSettings: { showsMDBListSettings = true },
+                alignment: .center
             )
         }
     }

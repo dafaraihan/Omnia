@@ -150,11 +150,12 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
     }
 
     private func attach(_ player: AVPlayer, handoff: Bool) {
-        guard AVPictureInPictureController.isPictureInPictureSupported() else { return }
         self.player = player
         isHandoff = handoff
         layer.player = player
         layer.videoGravity = .resizeAspect
+        // Inline video must render even when this device cannot offer PiP.
+        guard AVPictureInPictureController.isPictureInPictureSupported() else { return }
         controller = AVPictureInPictureController(playerLayer: layer)
         controller?.delegate = self
         controller?.canStartPictureInPictureAutomaticallyFromInline = !handoff

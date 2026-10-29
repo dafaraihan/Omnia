@@ -218,7 +218,8 @@ struct MediaDetailView: View {
             MDBListRatingsView(
                 state: currentRatingsState,
                 retry: retryRatings,
-                openSettings: { showsMDBListSettings = true }
+                openSettings: { showsMDBListSettings = true },
+                alignment: .center
             )
         }
     }
@@ -271,9 +272,6 @@ struct MediaDetailView: View {
             landscapeDetailIdentity
             #endif
             }
-            .opacity(showsPlayingHeroTrailer ? 0 : 1)
-            .allowsHitTesting(!showsPlayingHeroTrailer)
-            .accessibilityHidden(showsPlayingHeroTrailer)
         }
         // In the hero's bottom-right corner, scrolling away with it
         // (Dafa, 2026-10-22).
@@ -938,6 +936,7 @@ struct MDBListRatingsView: View {
     let state: MDBListRatingsLoadState
     let retry: () -> Void
     let openSettings: () -> Void
+    var alignment: HorizontalAlignment = .leading
 
     @ViewBuilder
     var body: some View {
@@ -956,7 +955,7 @@ struct MDBListRatingsView: View {
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Loading ratings")
         case let .loaded(presentation):
-            FlowLayout(spacing: 8) {
+            FlowLayout(spacing: 8, alignment: alignment) {
                 ForEach(presentation.items) { item in
                     MDBListRatingValueView(item: item)
                 }

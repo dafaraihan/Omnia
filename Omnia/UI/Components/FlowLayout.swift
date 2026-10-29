@@ -4,6 +4,7 @@ import SwiftUI
 /// label intact while avoiding a horizontal scroller on narrow layouts.
 struct FlowLayout: Layout {
     var spacing: CGFloat
+    var alignment: HorizontalAlignment = .leading
 
     func sizeThatFits(
         proposal: ProposedViewSize,
@@ -37,22 +38,31 @@ struct FlowLayout: Layout {
         subviews: Subviews,
         cache: inout ()
     ) {
-        var x = bounds.minX
+        var row: [(LayoutSubview, CGSize)] = []
+        var rowWidth: CGFloat = 0
         var y = bounds.minY
-        var rowHeight: CGFloat = 0
+
+        func placeRow() {
+            let offset = alignment == .center ? max(0, (bounds.width - rowWidth) / 2) : 0
+            var x = bounds.minX + offset
+            for (subview, size) in row {
+                subview.place(at: .init(x: x, y: y), proposal: .unspecified)
+                x += size.width + spacing
+            }
+        }
 
         for subview in subviews {
             let size = subview.sizeThatFits(.unspecified)
-            let proposedX = x == bounds.minX ? x + size.width : x + spacing + size.width
-            if x > bounds.minX, proposedX > bounds.maxX {
-                x = bounds.minX
-                y += rowHeight + spacing
-                rowHeight = 0
+            let nextWidth = row.isEmpty ? size.width : rowWidth + spacing + size.width
+            if !row.isEmpty, nextWidth > bounds.width {
+                placeRow()
+                y += (row.map { $0.1.height }.max() ?? 0) + spacing
+                row.removeAll(keepingCapacity: true)
+                rowWidth = 0
             }
-            if x > bounds.minX { x += spacing }
-            subview.place(at: .init(x: x, y: y), proposal: .unspecified)
-            x += size.width
-            rowHeight = max(rowHeight, size.height)
+            rowWidth += (row.isEmpty ? 0 : spacing) + size.width
+            row.append((subview, size))
         }
+        placeRow()
     }
 }
