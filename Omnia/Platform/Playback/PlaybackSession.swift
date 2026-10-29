@@ -1140,7 +1140,13 @@ final class PlaybackSession {
         ResumePromptMarker.clear()
         shuffledNextEpisode = nil
         endTimelinePreview()
+        // Opening streams have no new progress to save. Refreshing native
+        // properties here can wait behind the demuxer while the user closes.
+        #if os(iOS)
+        if persisting && hasRenderedVideoFrame { flushProgress() }
+        #else
         if persisting { flushProgress() }
+        #endif
         #if os(macOS)
         pictureInPictureAfterFullScreen = false
         if isFullScreenActive {
@@ -1584,6 +1590,11 @@ final class PlaybackSession {
 
     #if OMNIA_MPV
     private func refreshState(from player: OMMpvPlayerController) {
+        #if os(iOS)
+        // FILE_LOADED arrives through the native snapshot callback. Until
+        // then, keep opening-stream queries off the main-thread poller.
+        if areTracksLoading && !hasRenderedVideoFrame { return }
+        #endif
         let duration = player.duration
         if player.hasRenderedVideoFrame != hasRenderedVideoFrame {
             hasRenderedVideoFrame = player.hasRenderedVideoFrame

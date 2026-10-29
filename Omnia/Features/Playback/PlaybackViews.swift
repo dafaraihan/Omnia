@@ -1713,28 +1713,6 @@ struct PlaybackExperienceView: View {
         }
         .animation(.easeInOut(duration: 0.35), value: showsLoadingOverlay)
         .animation(.easeInOut(duration: 0.35), value: showsPauseOverlay)
-        #if os(iOS)
-        // The controls stay hidden while loading, and an iPhone or iPad has
-        // no Escape key: a source that never loads must still be closable.
-        .overlay(alignment: .topLeading) {
-            if showsLoadingOverlay {
-                Button {
-                    playback.stop()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.body.weight(.bold))
-                        .foregroundStyle(.white)
-                        .frame(width: 34, height: 34)
-                        .glassEffect(.regular, in: Circle())
-                }
-                .buttonStyle(.plain)
-                .padding(18)
-                .accessibilityLabel("Close player")
-                .accessibilityHint("Stops loading and returns to Omnia")
-                .transition(.opacity)
-            }
-        }
-        #endif
         .overlay {
             if playback.isPictureInPictureActive {
                 VStack(spacing: 12) {
@@ -1886,6 +1864,29 @@ struct PlaybackExperienceView: View {
                 hideChrome(after: 2.2)
             } else if !holdsChromeHidden {
                 revealChrome()
+            }
+        }
+        #endif
+        #if os(iOS)
+        // The controls stay hidden while loading, and an iPhone or iPad has
+        // no Escape key: a source that never loads must still be closable.
+        .overlay(alignment: .topLeading) {
+            if showsLoadingOverlay {
+                Button {
+                    playback.stop()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.body.weight(.bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Circle())
+                        .glassEffect(.regular, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .padding(18)
+                .accessibilityLabel("Close player")
+                .accessibilityHint("Stops loading and returns to Omnia")
+                .transition(.opacity)
             }
         }
         #endif

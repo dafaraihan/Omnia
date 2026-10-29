@@ -4,75 +4,17 @@ struct SubtitleAppearanceSettingsView: View {
     @Environment(SettingsPreferencesStore.self) private var settings
     @State private var showsResetConfirmation = false
 
-    private var resolvedAppearance: SubtitleAppearance {
-        SubtitleAppearanceSettingsModel(
-            mode: settings.preferences.subtitleAppearance,
-            custom: settings.preferences.customSubtitleAppearance
-        ).resolvedAppearance
-    }
-
     var body: some View {
-        #if os(macOS)
-        macSettings
-        #else
-        OmniaSettingsForm {
-            Section("Preview") {
-                ZStack {
-                    LinearGradient(colors: [.blue.opacity(0.7), .black], startPoint: .topLeading, endPoint: .bottomTrailing)
-                    SubtitleOverlayView(
-                        cues: [SubtitleCue(startSeconds: 0, endSeconds: 10, text: "The quick brown fox jumps over the lazy dog")],
-                        appearance: resolvedAppearance
-                    )
-                }
-                .frame(minHeight: 180)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Subtitle appearance preview")
-                .accessibilityValue("The quick brown fox jumps over the lazy dog")
-            }
-
-            Section {
-                SettingsDropdown(
-                    "Appearance",
-                    selection: settings.binding(\.subtitleAppearance),
-                    options: Array(SubtitleAppearanceMode.allCases)
-                ) { mode in mode.title }
-            } header: {
-                Text("Style")
-            } footer: {
-                Text(settings.preferences.subtitleAppearance == .followSystem
-                     ? "Uses the platform caption style when the playback engine supports it."
-                     : "Preset and custom styles use semantic colors and scale with the viewing surface.")
-            }
-
-            if settings.preferences.subtitleAppearance == .custom {
-                customControls
-            }
-
-            Section {
-                Button("Reset to Defaults", role: .destructive) { showsResetConfirmation = true }
-            }
-        }
-        .omniaNavigationTitle("Subtitle")
-        .confirmationDialog("Reset subtitle appearance?", isPresented: $showsResetConfirmation, titleVisibility: .visible) {
-            Button("Reset", role: .destructive) {
-                settings.update {
-                    $0.subtitleAppearance = .followSystem
-                    $0.customSubtitleAppearance = .default
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This restores Follow System and resets all custom values.")
-        }
-        #endif
+        subtitleSettings
     }
 
-    #if os(macOS)
-    private var macSettings: some View {
+    private var subtitleSettings: some View {
         OmniaSettingsForm {
             Section("Live Preview") {
-                MacSubtitlePlaybackPreview(style: settings.preferences.playbackSubtitleStyle)
+                MacSubtitlePlaybackPreview(
+                    style: settings.preferences.playbackSubtitleStyle,
+                    height: previewHeight
+                )
             }
 
             Section("Language") {
@@ -231,97 +173,15 @@ struct SubtitleAppearanceSettingsView: View {
             }
         )
     }
-    #endif
-
-    @ViewBuilder
-    private var customControls: some View {
-        Section("Text") {
-            SettingsIntSlider(
-                title: "Text scale",
-                value: customBinding(\.textScalePercent),
-                range: 75 ... 200,
-                step: 5,
-                valueLabel: { "\($0)%" }
-            )
-            Toggle("Bold", isOn: customBinding(\.isBold))
-            Toggle("Italic", isOn: customBinding(\.isItalic))
-            SettingsDropdown(
-                "Text color",
-                selection: customBinding(\.textColor),
-                options: Array(SubtitleAppearance.SemanticColor.allCases)
-            ) { color in color.title }
-        }
-
-        Section("Background & Edge") {
-            SettingsIntSlider(
-                title: "Background opacity",
-                value: customBinding(\.backgroundOpacityPercent),
-                range: 0 ... 100,
-                step: 5,
-                valueLabel: { "\($0)%" }
-            )
-            SettingsDropdown(
-                "Edge style",
-                selection: customBinding(\.edgeStyle),
-                options: Array(SubtitleAppearance.EdgeStyle.allCases)
-            ) { style in style.title }
-        }
-
-        Section("Position") {
-            SettingsDropdown(
-                "Vertical position",
-                selection: customBinding(\.position),
-                options: Array(SubtitleAppearance.Position.allCases)
-            ) { position in position.title }
-            SettingsDropdown(
-                "Alignment",
-                selection: customBinding(\.alignment),
-                options: Array(SubtitleAppearance.Alignment.allCases)
-            ) { alignment in alignment.title }
-            SettingsIntSlider(
-                title: "Horizontal margin",
-                value: customBinding(\.horizontalMarginPercent),
-                range: 0 ... 15,
-                step: 1,
-                valueLabel: { "\($0)%" }
-            )
-        }
-    }
-
-    private func customBinding<Value>(_ keyPath: WritableKeyPath<SubtitleAppearance, Value>) -> Binding<Value> {
-        Binding(
-            get: { settings.preferences.customSubtitleAppearance[keyPath: keyPath] },
-            set: { value in
-                settings.update {
-                    $0.subtitleAppearance = .custom
-                    $0.customSubtitleAppearance[keyPath: keyPath] = value
-                }
-            }
-        )
+    private var previewHeight: CGFloat {
+        #if os(iOS)
+        UIDevice.current.userInterfaceIdiom == .phone ? 220 : 380
+        #else
+        380
+        #endif
     }
 }
 
-private struct SettingsIntSlider: View {
-    let title: String
-    @Binding var value: Int
-    let range: ClosedRange<Int>
-    let step: Int
-    let valueLabel: (Int) -> String
-
-    var body: some View {
-        VStack(alignment: .leading) {
-            LabeledContent(title, value: valueLabel(value))
-            Slider(
-                value: Binding(get: { Double(value) }, set: { value = Int($0.rounded()) }),
-                in: Double(range.lowerBound) ... Double(range.upperBound),
-                step: Double(step)
-            )
-            .accessibilityValue(valueLabel(value))
-        }
-    }
-}
-
-#if os(macOS)
 struct SubtitleDoubleSlider: View {
     let title: String
     @Binding var value: Double
@@ -374,42 +234,4 @@ private extension PlaybackSubtitleBackground {
         case .solid: "Solid"
         }
     }
-}
-#endif
-
-private extension SubtitleAppearanceMode {
-    var title: String {
-        switch self {
-        case .followSystem: "Follow System"
-        case .standard: "Standard"
-        case .boxed: "Boxed"
-        case .classic: "Classic"
-        case .minimal: "Minimal"
-        case .bold: "Bold"
-        case .custom: "Custom"
-        }
-    }
-}
-
-private extension SubtitleAppearance.SemanticColor {
-    var title: String { rawValue.capitalized }
-}
-
-private extension SubtitleAppearance.EdgeStyle {
-    var title: String {
-        switch self {
-        case .none: "None"
-        case .outline: "Outline"
-        case .shadow: "Shadow"
-        case .outlineAndShadow: "Outline & Shadow"
-        }
-    }
-}
-
-private extension SubtitleAppearance.Position {
-    var title: String { rawValue.capitalized }
-}
-
-private extension SubtitleAppearance.Alignment {
-    var title: String { rawValue.capitalized }
 }

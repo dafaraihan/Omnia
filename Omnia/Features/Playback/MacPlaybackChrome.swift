@@ -340,6 +340,7 @@ struct MacSubtitlePreviewPresentation {
 /// Settings so subtitle changes can be judged in their real viewing context.
 struct MacSubtitlePlaybackPreview: View {
     let style: PlaybackSubtitleStyle
+    var height: CGFloat = 380
 
     private let sampleSubtitle = "The quick brown fox jumps over the lazy dog"
 
@@ -402,7 +403,7 @@ struct MacSubtitlePlaybackPreview: View {
             }
             .foregroundStyle(.white)
         }
-        .frame(height: 380)
+        .frame(height: height)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Subtitle appearance preview")

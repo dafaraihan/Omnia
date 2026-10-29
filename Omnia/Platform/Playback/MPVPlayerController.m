@@ -951,6 +951,9 @@ static void OMMpvWakeup(void *context) {
 /// option so it wakes, resizes and redraws now (entering full screen while
 /// paused).
 - (void)wakeMetalOutput {
+    #if !TARGET_OS_OSX
+    if (!_fileLoaded) return;
+    #endif
     if (!_usingMetalRendering || !_mpv || !self.isPaused) return;
     double zoom = [self doubleForProperty:"video-zoom"];
     [self setDouble:zoom + 1e-6 forProperty:"video-zoom"];
@@ -1166,12 +1169,22 @@ static void OMMpvWakeup(void *context) {
     [self setDouble:_volume forProperty:"volume"];
     [self setDouble:_playbackRate forProperty:"speed"];
     const char *loadCommand[] = { "loadfile", _URL.absoluteString.UTF8String, "replace", NULL };
-    if (mpv_command(_mpv, loadCommand) < 0) {
+    #if TARGET_OS_OSX
+    int loadResult = mpv_command(_mpv, loadCommand);
+    #else
+    // Keep opening a slow network source out of the UIKit event loop.
+    // Request 1 is reserved for loading; track requests start above 100.
+    [self play];
+    int loadResult = mpv_command_async(_mpv, 1, loadCommand);
+    #endif
+    if (loadResult < 0) {
         [self failWithMessage:@"libmpv could not open the selected stream."];
         return;
     }
     [self emitSnapshot];
+    #if TARGET_OS_OSX
     [self play];
+    #endif
 }
 
 - (BOOL)isPaused { return _mpv ? [self flagForProperty:"pause"] : _paused; }
@@ -1284,6 +1297,9 @@ static void OMMpvWakeup(void *context) {
 /// the screen and subtitles sit where the position setting puts them.
 - (void)updateFillCrop {
     if (!_mpv) return;
+    #if !TARGET_OS_OSX
+    if (!_fileLoaded) return;
+    #endif
     int64_t width = 0, height = 0;
     double aspect = 0;
     CGSize view = _videoView.bounds.size;
@@ -1957,6 +1973,14 @@ static void OMMpvWakeup(void *context) {
         case MPV_EVENT_PROPERTY_CHANGE:
             shouldEmitSnapshot = YES;
             break;
+        case MPV_EVENT_COMMAND_REPLY:
+            #if !TARGET_OS_OSX
+            if (event->reply_userdata == 1 && event->error < 0) {
+                [self failWithMessage:@"libmpv could not open the selected stream."];
+                return;
+            }
+            #endif
+            break;
         case MPV_EVENT_SET_PROPERTY_REPLY:
             [self finishTrackSelectionForEvent:event];
             shouldEmitSnapshot = YES;
@@ -2064,6 +2088,9 @@ static void OMMpvWakeup(void *context) {
 
 - (NSArray<OMMpvTrack *> *)tracksOfType:(NSString *)requestedType {
     if (!_mpv) return @[];
+    #if !TARGET_OS_OSX
+    if (!_fileLoaded) return @[];
+    #endif
 
     int64_t count = 0;
     if (mpv_get_property(_mpv, "track-list/count", MPV_FORMAT_INT64, &count) < 0 || count <= 0) {
