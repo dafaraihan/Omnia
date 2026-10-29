@@ -3,6 +3,8 @@ import SwiftUI
 struct ContinueWatchingCard: View {
     let item: MediaItem
     let requestPlayback: () -> Void
+    var isPreview = false
+    var maximumWidth: CGFloat? = nil
 
     @Environment(OmniaStore.self) private var store
     @Environment(SettingsPreferencesStore.self) private var settings
@@ -13,35 +15,36 @@ struct ContinueWatchingCard: View {
     /// Home and Library rows space Continue Watching by the card style
     /// chosen in Settings › Home › Continue Watching.
     static func itemSpan(for display: DisplayPreferences) -> CGFloat {
+        width(for: display) + MediaBrowseMetrics.shelfSpacing
+    }
+
+    static func width(for display: DisplayPreferences) -> CGFloat {
+        let posterWidth = display.continueWatchingCard.size.posterWidth(for: display)
         switch display.continueWatchingStyle {
-        case .card:
-            cardStyleWidth(for: display) + MediaBrowseMetrics.shelfSpacing
-        case .poster:
-            display.posterCardWidth + MediaBrowseMetrics.shelfSpacing
+        case .card: return (posterWidth * 180 / 110 * 1.2).rounded()
+        case .poster: return posterWidth
         case .wide:
             #if os(iOS)
-            264
+            let originalWidth: CGFloat = 248
             #else
-            320
+            let originalWidth: CGFloat = 304
             #endif
+            if display.continueWatchingCard.size == .styleDefault { return originalWidth }
+            return (originalWidth * posterWidth / PosterWidthPreset.standard.width).rounded()
         }
     }
 
     /// Nuvio's Card style: a landscape card 1.2 times its landscape poster,
     /// so it follows Poster Card Style's width.
     static func cardStyleWidth(for display: DisplayPreferences) -> CGFloat {
-        (display.posterCardWidth * 180 / 110 * 1.2).rounded()
+        (display.continueWatchingCard.size.posterWidth(for: display) * 180 / 110 * 1.2).rounded()
     }
 
     private var style: ContinueWatchingStyle { display.continueWatchingStyle }
     private var isPoster: Bool { style == .poster }
 
     private var cornerRadius: CGFloat {
-        switch style {
-        case .poster: display.posterCornerRadius
-        case .card: display.posterCornerRadius
-        case .wide: 16
-        }
+        display.continueWatchingCard.corners.radius(for: display)
     }
 
     /// The next episode, offered after the previous one ended, before any
@@ -56,7 +59,9 @@ struct ContinueWatchingCard: View {
 
     var body: some View {
         Group {
-            if settings.preferences.directContinueWatchingPlayback {
+            if isPreview {
+                previewContent
+            } else if settings.preferences.directContinueWatchingPlayback {
                 Button {
                     requestPlayback()
                 } label: {
@@ -83,11 +88,15 @@ struct ContinueWatchingCard: View {
         #endif
     }
 
-    @ViewBuilder
     private var cardLabel: some View {
+        previewContent
+            .mediaContextMenu(for: item, placement: .continueWatching)
+    }
+
+    @ViewBuilder
+    private var previewContent: some View {
         if style == .card {
             landscapeCard
-                .mediaContextMenu(for: item, placement: .continueWatching)
         } else {
             classicCard
         }
@@ -140,7 +149,6 @@ struct ContinueWatchingCard: View {
             }
             .frame(width: cardWidth, alignment: .leading)
         }
-        .mediaContextMenu(for: item, placement: .continueWatching)
     }
 
     /// Landscape presentation follows the poster-size setting; typography uses
@@ -174,7 +182,6 @@ struct ContinueWatchingCard: View {
             .foregroundStyle(.primary)
             .lineLimit(1)
             .padding(cardMetrics.contentPadding)
-            .padding(.bottom, cardProgress > 0 ? 3 : 0)
 
             Text(badgeText)
                 .font(cardMetrics.badgeFont.weight(.semibold))
@@ -188,10 +195,10 @@ struct ContinueWatchingCard: View {
 
             if cardProgress > 0 {
                 GeometryReader { geometry in
-                    Rectangle()
+                    Capsule()
                         .fill(.black.opacity(0.30))
                         .overlay(alignment: .leading) {
-                            Rectangle()
+                            Capsule()
                                 .fill(display.accentStyle)
                                 .frame(width: geometry.size.width * cardProgress)
                         }
@@ -249,8 +256,8 @@ struct ContinueWatchingCard: View {
     }
 
     private var cardMetrics: CardMetrics {
-        if display.posterCardWidth <= 108 { return .small }
-        if display.posterCardWidth <= 120 { return .medium }
+        if display.continueWatchingCard.size.posterWidth(for: display) <= 108 { return .small }
+        if display.continueWatchingCard.size.posterWidth(for: display) <= 120 { return .medium }
         return .large
     }
 
@@ -349,31 +356,18 @@ struct ContinueWatchingCard: View {
     }
 
     private var cardWidth: CGFloat {
-        switch style {
-        case .poster:
-            return display.posterCardWidth
-        case .card:
-            return Self.cardStyleWidth(for: display)
-        case .wide:
-            #if os(iOS)
-            return 248
-            #else
-            return 304
-            #endif
-        }
+        min(Self.width(for: display), maximumWidth ?? .greatestFiniteMagnitude)
     }
 
     private var cardHeight: CGFloat {
         switch style {
-        case .poster:
-            return display.posterCardHeight
-        case .card:
-            return (cardWidth / 1.77).rounded()
+        case .poster: return cardWidth * 1.5
+        case .card: return (cardWidth / 1.77).rounded()
         case .wide:
             #if os(iOS)
-            return 140
+            return (cardWidth * 140 / 248).rounded()
             #else
-            return 172
+            return (cardWidth * 172 / 304).rounded()
             #endif
         }
     }

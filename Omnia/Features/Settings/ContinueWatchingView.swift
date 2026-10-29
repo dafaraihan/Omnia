@@ -27,6 +27,19 @@ struct ContinueWatchingSettingsView: View {
                 ) { style in
                     ContinueWatchingStylePreview(style: style)
                 }
+                ContinueWatchingStylePreview(style: settings.preferences.display.continueWatchingStyle, isThumbnail: false)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                SettingsDropdown(
+                    "Size",
+                    selection: settings.binding(\.display.continueWatchingCard.size),
+                    options: Array(ContinueWatchingCardPreferences.Size.allCases)
+                ) { $0.title }
+                SettingsDropdown(
+                    "Corners",
+                    selection: settings.binding(\.display.continueWatchingCard.corners),
+                    options: Array(ContinueWatchingCardPreferences.Corners.allCases)
+                ) { $0.title }
             } header: {
                 Text("Card Style")
             }
@@ -51,7 +64,7 @@ struct ContinueWatchingSettingsView: View {
             } header: {
                 Text("Row")
             } footer: {
-                Text("Paused Scene shows the frame where you stopped, saved when you close the player; titles you haven't played since use their artwork. Poster cards use the size and corners from Layout › Poster Card Style.")
+                Text("Paused Scene shows the frame where you stopped, saved when you close the player; titles you haven't played since use their artwork. Style Default keeps each layout’s original size and corners. Match Poster Card Style follows changes in Layout › Poster Card Style.")
             }
 
             Section {

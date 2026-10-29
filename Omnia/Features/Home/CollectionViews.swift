@@ -57,7 +57,7 @@ struct CollectionFolderTile: View {
     /// Card Style.
     static func width(for folderShape: HomeCollectionFolder.TileShape, display: DisplayPreferences) -> CGFloat {
         let card = display.collectionCard
-        let shape = card.shape.resolved(folderShape)
+        let shape = card.shape.resolved(folderShape, landscapePosters: display.landscapePosters)
         let portrait = card.size == .matchPosters ? display.posterCardWidth : PosterWidthPreset.standard.width
         let base: CGFloat = switch shape {
         case .poster: portrait
@@ -68,11 +68,11 @@ struct CollectionFolderTile: View {
     }
 
     static func height(for folderShape: HomeCollectionFolder.TileShape, display: DisplayPreferences) -> CGFloat {
-        let shape = display.collectionCard.shape.resolved(folderShape)
+        let shape = display.collectionCard.shape.resolved(folderShape, landscapePosters: display.landscapePosters)
         return width(for: folderShape, display: display) / CGFloat(shape.aspectRatio)
     }
 
-    private var cornerRadius: CGFloat { display.collectionCard.corners.radius }
+    private var cornerRadius: CGFloat { display.collectionCard.corners.radius(for: display) }
 
     private var showsTitle: Bool {
         switch display.collectionCard.titles {
@@ -204,7 +204,7 @@ struct CollectionFolderView: View {
     /// as Nuvio does; other folders keep the poster style.
     private var cardDisplay: DisplayPreferences {
         var cardDisplay = display
-        switch display.collectionCard.shape.resolved(folder.tileShape) {
+        switch display.collectionCard.shape.resolved(folder.tileShape, landscapePosters: display.landscapePosters) {
         case .landscape, .wide: cardDisplay.landscapePosters = true
         case .poster, .square: break
         }

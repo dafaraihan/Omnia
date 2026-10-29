@@ -381,6 +381,72 @@ nonisolated enum ContinueWatchingStyle: String, Codable, CaseIterable, Identifia
     var isLandscape: Bool { self != .poster }
 }
 
+/// Independent Continue Watching geometry. Style Default preserves saved layouts.
+nonisolated struct ContinueWatchingCardPreferences: Codable, Equatable, Sendable {
+    var size: Size = .styleDefault
+    var corners: Corners = .styleDefault
+
+    static let `default` = Self()
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        size = (try? c.decodeIfPresent(Size.self, forKey: .size)) ?? .styleDefault
+        corners = (try? c.decodeIfPresent(Corners.self, forKey: .corners)) ?? .styleDefault
+    }
+
+    enum Size: String, Codable, CaseIterable, Identifiable, Sendable {
+        case styleDefault, matchPosters, compact, small, standard, large, extraLarge
+        var id: Self { self }
+        var title: String {
+            switch self {
+            case .styleDefault: "Style Default"
+            case .matchPosters: "Match Poster Card Style"
+            case .compact: "Compact"
+            case .small: "Small"
+            case .standard: "Standard"
+            case .large: "Large"
+            case .extraLarge: "Extra Large"
+            }
+        }
+        func posterWidth(for display: DisplayPreferences) -> CGFloat {
+            switch self {
+            case .styleDefault, .matchPosters: display.posterCardWidth
+            case .compact: PosterWidthPreset.compact.width
+            case .small: PosterWidthPreset.small.width
+            case .standard: PosterWidthPreset.standard.width
+            case .large: PosterWidthPreset.large.width
+            case .extraLarge: PosterWidthPreset.extraLarge.width
+            }
+        }
+    }
+
+    enum Corners: String, Codable, CaseIterable, Identifiable, Sendable {
+        case styleDefault, matchPosters, square, subtle, rounded, round
+        var id: Self { self }
+        var title: String {
+            switch self {
+            case .styleDefault: "Style Default"
+            case .matchPosters: "Match Poster Card Style"
+            case .square: "Square"
+            case .subtle: "Subtle"
+            case .rounded: "Rounded"
+            case .round: "Round"
+            }
+        }
+        func radius(for display: DisplayPreferences) -> CGFloat {
+            switch self {
+            case .styleDefault: display.continueWatchingStyle == .wide ? 16 : display.posterCornerRadius
+            case .matchPosters: display.posterCornerRadius
+            case .square: PosterCornerPreset.square.radius
+            case .subtle: PosterCornerPreset.subtle.radius
+            case .rounded: PosterCornerPreset.rounded.radius
+            case .round: PosterCornerPreset.round.radius
+            }
+        }
+    }
+}
+
 /// Settings › Layout › Collections › Card Style: the folder tiles in every
 /// collection row, like Poster Card Style is for posters. The defaults draw
 /// tiles as they looked before the option existed.
@@ -406,6 +472,7 @@ nonisolated struct CollectionCardPreferences: Codable, Equatable, Sendable {
     enum Shape: String, Codable, CaseIterable, Identifiable, Sendable {
         /// Each collection's own tile shape, from its editor or import.
         case asImported
+        case matchPosters
         case poster
         case square
         case landscape
@@ -415,6 +482,7 @@ nonisolated struct CollectionCardPreferences: Codable, Equatable, Sendable {
 
         var title: String {
             switch self {
+            case .matchPosters: "Match Poster Card Style"
             case .asImported: "As Imported"
             case .poster: "Poster"
             case .square: "Square"
@@ -423,8 +491,9 @@ nonisolated struct CollectionCardPreferences: Codable, Equatable, Sendable {
             }
         }
 
-        func resolved(_ folderShape: HomeCollectionFolder.TileShape) -> HomeCollectionFolder.TileShape {
+        func resolved(_ folderShape: HomeCollectionFolder.TileShape, landscapePosters: Bool) -> HomeCollectionFolder.TileShape {
             switch self {
+            case .matchPosters: landscapePosters ? .landscape : .poster
             case .asImported: folderShape
             case .poster: .poster
             case .square: .square
@@ -446,7 +515,7 @@ nonisolated struct CollectionCardPreferences: Codable, Equatable, Sendable {
 
         var title: String {
             switch self {
-            case .matchPosters: "Same as Posters"
+            case .matchPosters: "Match Poster Card Style"
             case .small: "Small"
             case .standard: "Standard"
             case .large: "Large"
@@ -465,6 +534,7 @@ nonisolated struct CollectionCardPreferences: Codable, Equatable, Sendable {
     }
 
     enum Corners: String, Codable, CaseIterable, Identifiable, Sendable {
+        case matchPosters
         case square
         case subtle
         case rounded
@@ -474,6 +544,7 @@ nonisolated struct CollectionCardPreferences: Codable, Equatable, Sendable {
 
         var title: String {
             switch self {
+            case .matchPosters: "Match Poster Card Style"
             case .square: "Square"
             case .subtle: "Subtle"
             case .rounded: "Rounded"
@@ -481,8 +552,9 @@ nonisolated struct CollectionCardPreferences: Codable, Equatable, Sendable {
             }
         }
 
-        var radius: CGFloat {
+        func radius(for display: DisplayPreferences) -> CGFloat {
             switch self {
+            case .matchPosters: display.posterCornerRadius
             case .square: 0
             case .subtle: 8
             case .rounded: 16
@@ -641,6 +713,7 @@ nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
     var hoverPreviewEnabled = false
     var hoverPreviewDelay: HoverPreviewDelay = .two
 
+    var continueWatchingCard: ContinueWatchingCardPreferences = .default
     var continueWatchingStyle: ContinueWatchingStyle = .wide
     var continueWatchingSort: ContinueWatchingSort = .recent
     var continueWatchingEpisodeThumbnails = true
@@ -694,6 +767,7 @@ nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
         cardHover = (try? c.decodeIfPresent(CardHoverPreferences.self, forKey: .cardHover)) ?? d.cardHover
         hoverPreviewEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .hoverPreviewEnabled)) ?? d.hoverPreviewEnabled
         hoverPreviewDelay = (try? c.decodeIfPresent(HoverPreviewDelay.self, forKey: .hoverPreviewDelay)) ?? d.hoverPreviewDelay
+        continueWatchingCard = (try? c.decodeIfPresent(ContinueWatchingCardPreferences.self, forKey: .continueWatchingCard)) ?? d.continueWatchingCard
         continueWatchingStyle = (try? c.decodeIfPresent(ContinueWatchingStyle.self, forKey: .continueWatchingStyle)) ?? d.continueWatchingStyle
         continueWatchingSort = (try? c.decodeIfPresent(ContinueWatchingSort.self, forKey: .continueWatchingSort)) ?? d.continueWatchingSort
         continueWatchingEpisodeThumbnails = (try? c.decodeIfPresent(Bool.self, forKey: .continueWatchingEpisodeThumbnails)) ?? d.continueWatchingEpisodeThumbnails

@@ -333,11 +333,16 @@ final class IOSPictureInPictureHostView: UIView {
 
 struct IOSPictureInPictureHost: UIViewRepresentable {
     let controller: IOSPictureInPictureController
+    let fillsFrame: Bool
+
     func makeUIView(context: Context) -> IOSPictureInPictureHostView {
         let view = IOSPictureInPictureHostView()
         view.videoLayer = controller.layer
+        controller.layer.videoGravity = fillsFrame ? .resizeAspectFill : .resizeAspect
         return view
     }
-    func updateUIView(_ view: IOSPictureInPictureHostView, context: Context) {}
+    func updateUIView(_ view: IOSPictureInPictureHostView, context: Context) {
+        controller.layer.videoGravity = fillsFrame ? .resizeAspectFill : .resizeAspect
+    }
 }
 #endif

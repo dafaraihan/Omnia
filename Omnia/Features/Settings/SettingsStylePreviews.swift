@@ -60,87 +60,54 @@ struct SettingsStyleTilePicker<Option: Hashable & Identifiable, Preview: View>: 
     }
 }
 
-/// Small drawings of Continue Watching cards, after Nuvio's
-/// ContinueWatchingStylePreview.
+/// Uses the same presentation as Home; no separate schematic can drift from it.
 struct ContinueWatchingStylePreview: View {
     let style: ContinueWatchingStyle
+    var isThumbnail = true
     @Environment(\.displayPreferences) private var display
 
+    private var previewDisplay: DisplayPreferences {
+        var value = display
+        value.continueWatchingStyle = style
+        // Preview data has no captured scene or remote artwork.
+        value.continueWatchingArtwork = .artwork
+        return value
+    }
+
+    private var item: MediaItem {
+        MediaItem(
+            id: "settings-continue-watching-preview", title: "Continue Watching Preview",
+            year: "2026", kind: .series, overview: "", genres: [], symbol: "tv",
+            artworkColors: MediaItem.placeholderArtworkColors,
+            progress: 0.6, positionSeconds: 1620, durationSeconds: 2700,
+            resumeSeasonNumber: 1, resumeEpisodeNumber: 3, resumeEpisodeTitle: "Episode Preview"
+        )
+    }
+
     var body: some View {
-        switch style {
-        case .card:
-            ZStack(alignment: .bottomLeading) {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(.primary.opacity(0.22))
-                VStack(alignment: .leading, spacing: 4) {
-                    bar(width: 0.35, height: 5, opacity: 0.30)
-                    bar(width: 0.6, height: 7, opacity: 0.38)
-                    progress(0.6, height: 3)
+        Group {
+            if isThumbnail {
+                let width = ContinueWatchingCard.width(for: previewDisplay)
+                let height = style == .poster ? width * 1.5 + 56 : width / 1.77 + (style == .wide ? 56 : 0)
+                let scale = min(104 / width, 90 / height)
+                ContinueWatchingCard(item: item, requestPlayback: {}, isPreview: true)
+                    .scaleEffect(scale, anchor: .topLeading)
+                    .frame(width: width * scale, height: height * scale, alignment: .topLeading)
+            } else {
+                ScrollView(.horizontal) {
+                    ContinueWatchingCard(item: item, requestPlayback: {}, isPreview: true)
+                        .padding(12)
                 }
-                .padding(6)
-                Capsule()
-                    .fill(.primary.opacity(0.30))
-                    .frame(width: 24, height: 8)
-                    .padding(5)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-            }
-            .frame(width: 104, height: 60)
-        case .wide:
-            HStack(spacing: 0) {
-                Rectangle()
-                    .fill(.primary.opacity(0.22))
-                    .frame(width: 40)
-                VStack(alignment: .leading, spacing: 0) {
-                    bar(width: 0.7, height: 8, opacity: 0.20)
-                    Spacer(minLength: 4)
-                    bar(width: 0.5, height: 6, opacity: 0.14)
-                    Spacer(minLength: 4)
-                    progress(0.6, height: 4)
-                }
-                .padding(5)
-            }
-            .frame(width: 104, height: 60)
-            .background(.primary.opacity(0.10))
-            .clipShape(.rect(cornerRadius: 6, style: .continuous))
-        case .poster:
-            VStack(alignment: .leading, spacing: 6) {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(.primary.opacity(0.22))
-                    .frame(width: 56, height: 72)
-                    .overlay(alignment: .bottom) {
-                        progress(0.45, height: 4)
-                            .frame(width: 36)
-                            .padding(4)
-                            .background(.background, in: Capsule())
-                            .padding(5)
-                    }
-                bar(width: 0.85, height: 6, opacity: 0.18)
-                    .frame(width: 56)
+                .scrollIndicators(.hidden)
+                .fixedSize(horizontal: false, vertical: true)
             }
         }
+        .environment(\.displayPreferences, previewDisplay)
+        .allowsHitTesting(!isThumbnail)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(style.title) preview")
     }
 
-    private func bar(width: CGFloat, height: CGFloat, opacity: Double) -> some View {
-        GeometryReader { geometry in
-            RoundedRectangle(cornerRadius: 2)
-                .fill(.primary.opacity(opacity))
-                .frame(width: geometry.size.width * width, height: height)
-        }
-        .frame(height: height)
-    }
-
-    private func progress(_ value: Double, height: CGFloat) -> some View {
-        GeometryReader { geometry in
-            Capsule()
-                .fill(.primary.opacity(0.16))
-                .overlay(alignment: .leading) {
-                    Capsule()
-                        .fill(display.accentStyle)
-                        .frame(width: geometry.size.width * value)
-                }
-        }
-        .frame(height: height)
-    }
 }
 
 /// Small drawings of the title page's episode cards, after Nuvio's

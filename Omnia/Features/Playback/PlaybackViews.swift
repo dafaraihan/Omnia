@@ -1621,7 +1621,11 @@ struct PlaybackExperienceView: View {
         ZStack {
             Color.black.ignoresSafeArea()
             #if os(iOS)
-            IOSPictureInPictureHost(controller: playback.pictureInPictureController)
+            IOSPictureInPictureHost(
+                controller: playback.pictureInPictureController,
+                fillsFrame: playback.aspectRatioMode == .fill
+            )
+                .ignoresSafeArea()
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
             #endif

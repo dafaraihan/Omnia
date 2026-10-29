@@ -77,7 +77,7 @@ struct CollectionsSettingsView: View {
             } header: {
                 Text("Card Style")
             } footer: {
-                Text("Applies to every collection row on Home. As Imported keeps each collection's own tile shape, and Automatic shows a folder's name only when the folder asks for it or has no cover. Depth and hover glow follow Poster Card Style.")
+                Text("Applies to every collection row on Home. As Imported keeps each collection's own tile shape, and Automatic shows a folder's name only when the folder asks for it or has no cover. Match Poster Card Style follows the poster layout, size, or corner setting. Folder Names is independent because posters have no matching name setting. Depth and hover glow follow Poster Card Style.")
             }
 
             if collections.collections.isEmpty {
@@ -310,26 +310,30 @@ struct CollectionsSettingsView: View {
 private struct CollectionCardPreview: View {
     let folders: [HomeCollectionFolder]
     @Environment(\.displayPreferences) private var display
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(alignment: .top, spacing: 14) {
-            if folders.isEmpty {
-                sampleTile
-            } else {
-                ForEach(folders) { folder in
-                    CollectionFolderTile(folder: folder)
-                        .allowsHitTesting(false)
+        ScrollView(.horizontal) {
+            HStack(alignment: .top, spacing: 14) {
+                if folders.isEmpty {
+                    sampleTile
+                } else {
+                    ForEach(folders) { folder in
+                        CollectionFolderTile(folder: folder)
+                            .allowsHitTesting(false)
+                    }
                 }
             }
+            .padding(12)
         }
-        .padding(12)
-        .animation(.easeInOut(duration: 0.2), value: display.collectionCard)
+        .scrollIndicators(.hidden)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: display.collectionCard)
         .accessibilityHidden(true)
     }
 
     private var sampleTile: some View {
-        let shape = display.collectionCard.shape.resolved(.poster)
-        let radius = display.collectionCard.corners.radius
+        let shape = display.collectionCard.shape.resolved(.poster, landscapePosters: display.landscapePosters)
+        let radius = display.collectionCard.corners.radius(for: display)
         return ZStack(alignment: .bottomLeading) {
             LinearGradient(
                 colors: [display.accentColor.opacity(0.85), .black],

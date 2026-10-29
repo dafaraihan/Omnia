@@ -204,16 +204,25 @@ private struct LibrarySectionGridView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let layout = kind == .continueWatching && display.continueWatchingStyle.isLandscape
-                ? MediaBrowseMetrics.landscapeGridLayout(containerWidth: proxy.size.width)
+            let cardWidth = ContinueWatchingCard.width(for: display)
+            let layout = kind == .continueWatching
+                ? MediaGridLayout.fitting(
+                    containerWidth: proxy.size.width,
+                    horizontalInset: MediaBrowseMetrics.pageInset,
+                    minimumItemWidth: cardWidth,
+                    maximumItemWidth: cardWidth,
+                    spacing: MediaBrowseMetrics.gridSpacing
+                )
                 : MediaBrowseMetrics.posterGridLayout(containerWidth: proxy.size.width, display: display)
             ScrollView {
                 LazyVGrid(columns: layout.columns, alignment: .leading, spacing: 18) {
                     ForEach(items) { item in
                         if kind == .continueWatching {
-                            ContinueWatchingCard(item: item) {
-                                sourcePlaybackItem = item
-                            }
+                            ContinueWatchingCard(
+                                item: item,
+                                requestPlayback: { sourcePlaybackItem = item },
+                                maximumWidth: layout.itemWidth
+                            )
                         } else {
                             MediaPoster(item: item, fillsAvailableWidth: true)
                         }
