@@ -270,7 +270,7 @@ struct OmniaRootView: View {
     #if os(iOS)
     /// iPhone, and iPad in a narrow multitasking window.
     private var isCompactWidth: Bool {
-        horizontalSizeClass == .compact
+        UIDevice.current.userInterfaceIdiom == .phone || horizontalSizeClass == .compact
     }
 
     /// Settings › Layout. A narrow window always uses a tab bar, so the

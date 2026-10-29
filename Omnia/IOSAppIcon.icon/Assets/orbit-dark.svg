@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="back" x1="650" y1="180" x2="210" y2="770" gradientUnits="userSpaceOnUse"><stop stop-color="#eef3f8"/><stop offset="1" stop-color="#a6b3c3"/></linearGradient>
+    <linearGradient id="front" x1="760" y1="240" x2="290" y2="820" gradientUnits="userSpaceOnUse"><stop stop-color="#8b80ff"/><stop offset=".57" stop-color="#56d9dd"/><stop offset="1" stop-color="#c7f5ef"/></linearGradient>
+  </defs>
+  <path fill="url(#back)" d="M235 779C152 726 150 568 195 455C266 278 426 170 565 170C656 170 745 196 784 246L691 351C651 319 602 322 565 328C476 328 398 377 354 463C320 532 322 620 360 683Z"/>
+  <path fill="url(#front)" d="M669 351C643 305 663 259 708 242C748 227 784 244 804 281C900 460 858 653 711 780C593 881 414 887 282 818C234 794 216 750 239 707C260 667 305 652 348 676C448 733 557 698 632 609C708 521 718 437 669 351Z"/>
+  <path d="M317 683C267 561 311 421 425 342C510 283 606 278 691 319" fill="none" stroke="#ffffff" stroke-opacity=".24" stroke-width="9" stroke-linecap="round"/>
+</svg>

@@ -980,6 +980,14 @@ struct HomeView: View {
         #endif
     }
 
+    private var isLandscapePhone: Bool {
+        #if os(iOS)
+        UIDevice.current.userInterfaceIdiom == .phone && verticalSizeClass == .compact
+        #else
+        false
+        #endif
+    }
+
     private var homeIdentityWidth: CGFloat {
         isPortraitPad ? 280 : CinematicHeroLayout.logoWidth
     }
@@ -995,7 +1003,7 @@ struct HomeView: View {
             // hero artwork breathe above it.
             Spacer(minLength: heroTopSpacing)
 
-            VStack(alignment: .leading, spacing: isPortraitPad ? 8 : 12) {
+            VStack(alignment: .leading, spacing: isLandscapePhone ? 6 : (isPortraitPad ? 8 : 12)) {
                 if let logoURL = featured.logoURL {
                     TitleLogoView(
                         url: logoURL,
@@ -1152,7 +1160,7 @@ struct HomeView: View {
     private static let heroCardCornerRadius: CGFloat = 28
     private var heroHeight: CGFloat {
         #if os(iOS)
-        700
+        isLandscapePhone ? max(360, viewportSize.height) : 700
         #else
         820
         #endif
@@ -1169,7 +1177,7 @@ struct HomeView: View {
     private var heroTopSpacing: CGFloat {
         #if os(iOS)
         // iPad's larger logo and synopsis need more of the hero.
-        horizontalSizeClass == .regular ? 340 : 410
+        isLandscapePhone ? 64 : (horizontalSizeClass == .regular ? 340 : 410)
         #else
         470
         #endif

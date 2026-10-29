@@ -1593,12 +1593,17 @@ struct PlaybackExperienceView: View {
     /// The video: libmpv's surface, or AVPlayer's when iOS fell back to it.
     @ViewBuilder
     private var playerSurface: some View {
+        #if os(iOS) && !OMNIA_MPV
+        // The AVKit layer below owns both inline rendering and PiP.
+        if playback.player != nil { Color.clear }
+        #else
         if let player = playback.player {
             NativePlayerView(player: player)
         }
+        #endif
         #if OMNIA_MPV && !os(macOS)
-        if playback.player == nil, let fallbackPlayer = playback.fallbackPlayer {
-            AVPlaybackView(player: fallbackPlayer)
+        if playback.player == nil, playback.fallbackPlayer != nil {
+            Color.clear
         }
         #endif
     }
@@ -1606,6 +1611,11 @@ struct PlaybackExperienceView: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
+            #if os(iOS)
+            IOSPictureInPictureHost(controller: playback.pictureInPictureController)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            #endif
             if playback.isRecoveringSource {
                 // A failed source is being fetched again or replaced; the
                 // error shows only if that doesn't work.
@@ -1656,6 +1666,13 @@ struct PlaybackExperienceView: View {
         }
         .contentShape(Rectangle())
         #if os(iOS)
+        .background {
+            IOSSystemVolumeHost(controller: playback.outputVolumeController)
+                .frame(width: 160, height: 44)
+                .opacity(0.01)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
         // Touch: double tap a side to skip 10 seconds, drag up or down on
         // the left for brightness and on the right for volume, and drag
         // sideways to seek, as in most phone players.
@@ -2376,35 +2393,9 @@ private struct PlaybackChrome: View {
         )
         #if os(macOS)
         .ignoresSafeArea()
-        #else
-        .modifier(PhoneChromeScale())
         #endif
     }
 }
-
-#if os(iOS)
-/// The Mac's controls at a phone's size: laid out on a larger canvas, then
-/// scaled down as one, so buttons, panels and type keep their proportions.
-/// Scaled views take touches where they're drawn. iPad keeps full size.
-private struct PhoneChromeScale: ViewModifier {
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @Environment(\.verticalSizeClass) private var verticalSizeClass
-    static let scale: CGFloat = 0.72
-
-    func body(content: Content) -> some View {
-        if horizontalSizeClass == .compact || verticalSizeClass == .compact {
-            GeometryReader { proxy in
-                content
-                    .frame(width: proxy.size.width / Self.scale, height: proxy.size.height / Self.scale)
-                    .scaleEffect(Self.scale)
-                    .frame(width: proxy.size.width, height: proxy.size.height)
-            }
-        } else {
-            content
-        }
-    }
-}
-#endif
 
 /// The title's backdrop, logo and episode while a stream opens.
 private struct PlaybackLoadingOverlay: View {
@@ -2682,6 +2673,7 @@ private struct PlaybackTouchGestures: View {
     @State private var feedback: Feedback?
     @State private var feedbackTask: Task<Void, Never>?
     @State private var drag: DragMode?
+    @State private var screen: UIScreen?
 
     private enum DragMode {
         case brightness(start: Double)
@@ -2709,7 +2701,15 @@ private struct PlaybackTouchGestures: View {
                         .exclusively(before: TapGesture().onEnded { toggleChrome() })
                 )
                 .simultaneousGesture(dragGesture(in: geometry.size))
-                .overlay { feedbackView }
+                .overlay(alignment: .top) {
+                    feedbackView.padding(.top, 64)
+                }
+                .background {
+                    IOSPlayerScreenReader { screen = $0 }
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+                .onDisappear { feedbackTask?.cancel() }
         }
     }
 
@@ -2733,7 +2733,8 @@ private struct PlaybackTouchGestures: View {
                         guard playback.durationSeconds != nil else { return }
                         drag = .seek(start: playback.positionSeconds)
                     } else if value.startLocation.x < size.width / 2 {
-                        drag = .brightness(start: Double(UIScreen.main.brightness))
+                        guard let screen else { return }
+                        drag = .brightness(start: Double(screen.brightness))
                     } else {
                         drag = .volume(start: playback.volume)
                     }
@@ -2742,12 +2743,12 @@ private struct PlaybackTouchGestures: View {
                 switch drag {
                 case let .brightness(start):
                     let level = clamp(start + lift)
-                    UIScreen.main.brightness = CGFloat(level)
+                    screen?.brightness = CGFloat(level)
                     show(.brightness(level), hides: false)
                 case let .volume(start):
                     let level = clamp(start + lift)
                     playback.setVolume(level)
-                    show(.volume(level), hides: false)
+                    show(.volume(playback.volume), hides: false)
                 case let .seek(start):
                     // A drag across the whole screen covers three minutes.
                     let duration = playback.durationSeconds ?? 0
@@ -2808,8 +2809,11 @@ private struct PlaybackTouchGestures: View {
         HStack(spacing: 10) {
             Image(systemName: symbol)
             ProgressView(value: value)
-                .frame(width: 110)
+                .frame(width: 90)
                 .tint(.white)
+            Text(value, format: .percent.precision(.fractionLength(0)))
+                .monospacedDigit()
+                .frame(minWidth: 42, alignment: .trailing)
         }
     }
 

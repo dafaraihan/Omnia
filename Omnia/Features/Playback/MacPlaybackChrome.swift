@@ -581,6 +581,26 @@ struct MacPlaybackChrome: View {
     /// Opens this title's sources, to switch to another one.
     var showSources: () -> Void = {}
 
+    #if os(iOS)
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+    #endif
+
+    private var isPhone: Bool {
+        #if os(iOS)
+        UIDevice.current.userInterfaceIdiom == .phone
+        #else
+        false
+        #endif
+    }
+
+    private var isShort: Bool {
+        #if os(iOS)
+        verticalSizeClass == .compact
+        #else
+        false
+        #endif
+    }
+
     @State private var activePanel: MacPlaybackPanel?
     @State private var episodeSeasonNumber: Int?
     @State private var subtitlePage: MacSubtitlePanelPage = .overview
@@ -639,7 +659,7 @@ struct MacPlaybackChrome: View {
 
                 // Hidden after a failure, so they don't sit on the message.
                 if playback.playbackError == nil {
-                    transportControls
+                    if !isPhone || activePanel == nil { transportControls }
                 }
 
                 if let activePanel {
@@ -654,17 +674,17 @@ struct MacPlaybackChrome: View {
                     .equatable()
                         .frame(
                             width: activePanel == .episodes || activePanel == .channels
-                                ? min(480, max(340, geometry.size.width - 48))
-                                : min(390, max(320, geometry.size.width - 48))
+                                ? min(480, max(0, geometry.size.width - 48))
+                                : min(390, max(0, geometry.size.width - 48))
                         )
                         .frame(
                             height: panelHeight(
                                 activePanel,
-                                maximumHeight: min(520, max(180, geometry.size.height - 190))
+                                maximumHeight: min(520, max(100, geometry.size.height - (isShort ? 90 : 190)))
                             )
                         )
-                        .padding(.trailing, 30)
-                        .padding(.bottom, 142)
+                        .padding(.trailing, isPhone ? 0 : 30)
+                        .padding(.bottom, isShort ? 50 : 142)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                         .transition(.scale(scale: 0.96, anchor: .bottomTrailing).combined(with: .opacity))
                 }
@@ -682,7 +702,7 @@ struct MacPlaybackChrome: View {
             }
             .animation(.easeInOut(duration: 0.2), value: channelNotice)
             .padding(.horizontal, geometry.size.width < 860 ? 20 : 30)
-            .padding(.bottom, geometry.size.width < 860 ? 20 : 30)
+            .padding(.bottom, isShort ? 4 : (geometry.size.width < 860 ? 20 : 30))
             .padding(
                 .top,
                 MacPlaybackChromeInsets.top(
@@ -730,7 +750,7 @@ struct MacPlaybackChrome: View {
                                 ? "Exit Picture in Picture"
                                 : "Enter Picture in Picture",
                             hint: "Moves playback between Omnia and its floating player",
-                            isEnabled: playback.isPictureInPictureAvailable
+                            isEnabled: playback.isPictureInPictureActive || playback.isPictureInPictureAvailable
                         ) {
                             playback.togglePictureInPicture()
                         }
@@ -747,6 +767,13 @@ struct MacPlaybackChrome: View {
                             playback.setFullScreen(!playback.isFullScreenActive)
                         }
                     }
+                    #else
+                    circleButton(
+                        symbol: playback.isPictureInPictureActive ? "pip.exit" : "pip.enter",
+                        label: playback.isPictureInPictureActive ? "Exit Picture in Picture" : "Enter Picture in Picture",
+                        hint: "Requires a source supported by Picture in Picture",
+                        isEnabled: playback.isPictureInPictureActive || playback.isPictureInPictureAvailable
+                    ) { playback.togglePictureInPicture() }
                     #endif
                 }
             }
@@ -759,7 +786,7 @@ struct MacPlaybackChrome: View {
                         playback.cycleAspectRatio()
                     } label: {
                         AspectRatioSymbol(mode: playback.aspectRatioMode)
-                            .frame(width: 42, height: 42)
+                            .frame(width: isPhone ? 44 : 42, height: isPhone ? 44 : 42)
                             .contentShape(Circle())
                     }
                     .playbackCircleGlassButton()
@@ -785,7 +812,7 @@ struct MacPlaybackChrome: View {
                                 set: { queueVolumeUpdate($0) }
                             ),
                             range: 0 ... 1,
-                            width: compact ? 118 : 188,
+                            width: isPhone ? 80 : (compact ? 118 : 188),
                             onEditingChanged: { isEditing in
                                 if isEditing {
                                     volumeDragValue = playback.volume
@@ -811,7 +838,7 @@ struct MacPlaybackChrome: View {
 
     private var transportControls: some View {
         GlassEffectContainer(spacing: 28) {
-            HStack(spacing: 28) {
+            HStack(spacing: isPhone ? 20 : 28) {
                 if isLive {
                     transportButton(symbol: "backward.end.fill", label: "Previous channel") {
                         stepChannel(by: -1)
@@ -828,7 +855,7 @@ struct MacPlaybackChrome: View {
                 } label: {
                     Image(systemName: playback.isPaused ? "play.fill" : "pause.fill")
                         .font(.system(size: 38, weight: .semibold))
-                        .frame(width: 86, height: 86)
+                        .frame(width: isPhone ? 60 : 86, height: isPhone ? 60 : 86)
                         .contentShape(Circle())
                 }
                 .playbackCircleGlassButton()
@@ -848,7 +875,12 @@ struct MacPlaybackChrome: View {
         }
     }
 
+    @ViewBuilder
     private var bottomControls: some View {
+        if isPhone { phoneBottomControls } else { regularBottomControls }
+    }
+
+    private var regularBottomControls: some View {
         VStack(spacing: 12) {
             HStack(alignment: .bottom, spacing: 24) {
                 playbackMetadata
@@ -869,6 +901,33 @@ struct MacPlaybackChrome: View {
                 liveBar
             } else {
                 timelineBar
+            }
+        }
+    }
+
+    private var phoneBottomControls: some View {
+        VStack(spacing: 12) {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .bottom, spacing: 16) {
+                    if !isShort { playbackMetadata }
+                    Spacer(minLength: 8)
+                    actionButtons
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    if !isShort { playbackMetadata }
+                    ScrollView(.horizontal) { actionButtons }
+                        .scrollIndicators(.hidden)
+                }
+            }
+
+            if isLive { liveBar } else { timelineBar }
+        }
+    }
+
+    private var actionButtons: some View {
+        GlassEffectContainer(spacing: 10) {
+            HStack(spacing: isPhone ? 6 : 10) {
+                ForEach(playbackActions, id: \.self) { action in playbackAction(action) }
             }
         }
     }
@@ -989,7 +1048,7 @@ struct MacPlaybackChrome: View {
                     .foregroundStyle(.white.opacity(0.78))
                     .lineLimit(1)
                 Text(playback.mediaItem?.title ?? "Live TV")
-                    .font(.title.weight(.semibold))
+                    .font(isPhone ? .headline : .title.weight(.semibold))
                     .lineLimit(1)
                 if let now = guide.now {
                     Text(now.title)
@@ -1010,7 +1069,7 @@ struct MacPlaybackChrome: View {
         VStack(alignment: .leading, spacing: 3) {
             if playback.episode != nil {
                 Text(metadata.title)
-                    .font(.title.weight(.semibold))
+                    .font(isPhone ? .headline : .title.weight(.semibold))
                     .lineLimit(1)
                 if !metadata.context.isEmpty {
                     Text(metadata.context)
@@ -1026,7 +1085,7 @@ struct MacPlaybackChrome: View {
                         .lineLimit(1)
                 }
                 Text(metadata.title)
-                    .font(.title.weight(.semibold))
+                    .font(isPhone ? .headline : .title.weight(.semibold))
                     .lineLimit(1)
             }
         }
@@ -1551,7 +1610,7 @@ struct MacPlaybackChrome: View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.title3.weight(.semibold))
-                .frame(width: 42, height: 42)
+                .frame(width: isPhone ? 44 : 42, height: isPhone ? 44 : 42)
                 .contentShape(Circle())
         }
         .playbackCircleGlassButton()
@@ -1589,11 +1648,12 @@ struct MacPlaybackChrome: View {
         } label: {
             Image(systemName: symbol)
                 .font(.title3.weight(.semibold))
-                .frame(width: 42, height: 42)
+                .frame(width: isPhone ? 44 : 42, height: isPhone ? 44 : 42)
                 .contentShape(Circle())
         }
         .playbackCircleGlassButton()
         .accessibilityLabel(label)
+        .disabled(playback.isPictureInPictureActive)
         .accessibilityValue(activePanel == panel ? "Expanded" : "Collapsed")
         .help(label)
     }
@@ -1772,7 +1832,9 @@ struct MacPlaybackChrome: View {
 
     /// Nuvio Enhanced's subtitle sync tools: a delay slider, automatic sync,
     /// Sync by Ear and picking the line just heard.
+    @ViewBuilder
     private var subtitleSyncPage: some View {
+        #if OMNIA_MPV
         LazyVStack(alignment: .leading, spacing: 14) {
             panelTitle("Sync", detail: subtitleDelayTitle, backTo: .overview)
             panelDivider
@@ -1787,6 +1849,11 @@ struct MacPlaybackChrome: View {
             )
             MacSubtitleSyncTools(playback: playback, accentColor: display.accentColor)
         }
+        #else
+        Text("Subtitle synchronization requires native playback.")
+            .font(.callout)
+            .padding()
+        #endif
     }
 
     private var selectedFontTitle: String {
@@ -1902,6 +1969,7 @@ struct MacPlaybackChrome: View {
 
 /// The sync controls below the delay slider. Their own view, so what they
 /// remember between presses (Heard, Saw, the captured moment) redraws them.
+#if OMNIA_MPV
 private struct MacSubtitleSyncTools: View {
     let playback: PlaybackSession
     let accentColor: Color
@@ -2116,6 +2184,8 @@ private struct MacSubtitleSyncTools: View {
         .buttonStyle(.plain)
     }
 }
+
+#endif
 
 private struct AspectRatioSymbol: View {
     let mode: PlaybackAspectRatioMode

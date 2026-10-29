@@ -57,6 +57,10 @@
 	<string>sb_publishable_QVP3koOZ2zSdS9EE4YsrWw_PhpRaeZV</string>
 	<key>SUPABASE_URL</key>
 	<string>https://mjblatbeddetccidpogv.supabase.co</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

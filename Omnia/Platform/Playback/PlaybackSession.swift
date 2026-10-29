@@ -12,6 +12,7 @@ import AudioToolbox
 import CoreAudio
 #else
 import AVFoundation
+import AVKit
 #endif
 
 #if os(macOS)
@@ -285,11 +286,17 @@ final class PlaybackSession {
     @ObservationIgnored private var fallbackContext: (preferences: SettingsPreferences, position: Double?)?
     #endif
     #if !os(macOS)
+    let outputVolumeController = IOSOutputVolumeController()
+    let pictureInPictureController = IOSPictureInPictureController()
+
     private var avPlayer: AVPlayer? {
+        if isPictureInPictureActive, pictureInPictureController.isHandoff {
+            return pictureInPictureController.player
+        }
         #if OMNIA_MPV
-        fallbackPlayer
+        return fallbackPlayer
         #else
-        player
+        return player
         #endif
     }
     #endif
@@ -440,7 +447,32 @@ final class PlaybackSession {
         }
     }
     #else
-    init() {}
+    init() {
+        volume = Double(AVAudioSession.sharedInstance().outputVolume)
+        outputVolumeController.changed = { [weak self] value in self?.volume = value }
+        pictureInPictureController.stateChanged = { [weak self] active, available in
+            self?.isPictureInPictureActive = active
+            self?.isPictureInPictureAvailable = available
+            if active { self?.recoveryNotice = nil }
+        }
+        pictureInPictureController.position = { [weak self] in self?.positionSeconds ?? 0 }
+        pictureInPictureController.isPlaying = { [weak self] in self?.isPaused == false }
+        pictureInPictureController.rate = { [weak self] in self?.playbackRate ?? 1 }
+        pictureInPictureController.audioTrack = { [weak self] in self?.audioTracks.first(where: \.isSelected) }
+        pictureInPictureController.subtitleTrack = { [weak self] in self?.subtitleTracks.first(where: \.isSelected) }
+        pictureInPictureController.handoffFailed = { [weak self] in
+            self?.recoveryNotice = "Picture in Picture is unavailable for this source or track selection. Playback continues in Omnia."
+        }
+        #if OMNIA_MPV
+        pictureInPictureController.beginHandoff = { [weak self] in self?.player?.pause() }
+        pictureInPictureController.endHandoff = { [weak self] position, playing in
+            guard let self else { return }
+            self.player?.seek(to: position)
+            self.player?.setPlaybackRate(self.playbackRate)
+            if playing { self.player?.play() } else { self.player?.pause() }
+        }
+        #endif
+    }
     #endif
 
     func start(
@@ -473,6 +505,9 @@ final class PlaybackSession {
 
         let source = input.source
         self.source = source
+        #if os(iOS)
+        pictureInPictureController.activateAudioSession()
+        #endif
         // A title switched without closing the player still stops the last
         // one on the trackers.
         trackers.playbackStopped(trackerMedia, progress: trackerProgress, runtimeSeconds: durationSeconds)
@@ -562,7 +597,8 @@ final class PlaybackSession {
             )
         )
         #else
-        mpv.setVolume(volume * 100)
+        mpv.setVolume(100)
+        pictureInPictureController.prepare(source: source)
         #endif
         mpv.setPlaybackRate(playbackRate)
         mpv.setVideoAspectMode(.original)
@@ -594,7 +630,8 @@ final class PlaybackSession {
             to: player,
             item: playerItem
         )
-        player.volume = Float(volume)
+        player.volume = 1
+        pictureInPictureController.configure(player: player)
         #if OMNIA_MPV
         fallbackPlayer = player
         #else
@@ -629,6 +666,13 @@ final class PlaybackSession {
     #endif
 
     func togglePause() {
+        #if os(iOS)
+        if isPictureInPictureActive, pictureInPictureController.isHandoff,
+           let player = pictureInPictureController.player {
+            player.rate == 0 ? player.playImmediately(atRate: Float(playbackRate)) : player.pause()
+            return
+        }
+        #endif
         #if OMNIA_MPV
         player?.togglePause()
         #endif
@@ -641,6 +685,12 @@ final class PlaybackSession {
     }
 
     func seek(by seconds: Double) {
+        #if os(iOS)
+        if isPictureInPictureActive, pictureInPictureController.isHandoff {
+            pictureInPictureController.player?.seek(to: CMTime(seconds: max(positionSeconds + seconds, 0), preferredTimescale: 600))
+            return
+        }
+        #endif
         #if OMNIA_MPV
         player?.seek(by: seconds)
         #endif
@@ -650,6 +700,12 @@ final class PlaybackSession {
     }
 
     func seek(to seconds: Double) {
+        #if os(iOS)
+        if isPictureInPictureActive, pictureInPictureController.isHandoff {
+            pictureInPictureController.player?.seek(to: CMTime(seconds: max(seconds, 0), preferredTimescale: 600))
+            return
+        }
+        #endif
         #if OMNIA_MPV
         player?.seek(to: seconds)
         #endif
@@ -710,8 +766,8 @@ final class PlaybackSession {
     }
 
     func setVolume(_ value: Double) {
-        volume = min(max(value, 0), 1)
         #if os(macOS)
+        volume = min(max(value, 0), 1)
         let usesSystemVolume = outputVolumeController.setVolume(volume)
         player?.setVolume(
             MacPlaybackVolumeRouting.playerVolumePercent(
@@ -721,9 +777,11 @@ final class PlaybackSession {
         )
         #else
         #if OMNIA_MPV
-        player?.setVolume(volume * 100)
+        player?.setVolume(100)
         #endif
-        avPlayer?.volume = Float(volume)
+        avPlayer?.volume = 1
+        outputVolumeController.setVolume(min(max(value, 0), 1))
+        volume = Double(AVAudioSession.sharedInstance().outputVolume)
         #endif
     }
 
@@ -741,6 +799,12 @@ final class PlaybackSession {
 
     func setPlaybackRate(_ value: Double) {
         playbackRate = min(max(value, 0.25), 4)
+        #if os(iOS)
+        if isPictureInPictureActive, pictureInPictureController.isHandoff {
+            pictureInPictureController.player?.rate = isPaused ? 0 : Float(playbackRate)
+            return
+        }
+        #endif
         #if OMNIA_MPV
         player?.setPlaybackRate(playbackRate)
         #endif
@@ -1063,6 +1127,12 @@ final class PlaybackSession {
     }
     #endif
 
+    #if os(iOS)
+    func togglePictureInPicture() {
+        pictureInPictureController.toggle()
+    }
+    #endif
+
     func stop(persisting: Bool = true) {
         trackers.playbackStopped(trackerMedia, progress: trackerProgress, runtimeSeconds: durationSeconds)
         trackerMedia = nil
@@ -1113,6 +1183,8 @@ final class PlaybackSession {
         displaySleep.release()
         #else
         avPlayer?.pause()
+        pictureInPictureController.reset()
+        pictureInPictureController.deactivateAudioSession()
         #endif
         #if OMNIA_MPV && !os(macOS)
         fallbackPlayer = nil
@@ -1482,6 +1554,17 @@ final class PlaybackSession {
     private func refreshState() {
         #if OMNIA_MPV
         if let player {
+            #if os(iOS)
+            if isPictureInPictureActive, pictureInPictureController.isHandoff,
+               let pipPlayer = pictureInPictureController.player {
+                let position = pipPlayer.currentTime().seconds
+                if position.isFinite { positionSeconds = max(position, 0) }
+                isPaused = pipPlayer.rate == 0
+                trackers.playbackChanged(trackerMedia, progress: trackerProgress, runtimeSeconds: durationSeconds, isPlaying: !isPaused && hasRenderedVideoFrame)
+                persistProgress(force: false)
+                return
+            }
+            #endif
             refreshState(from: player)
             persistProgress(force: false)
             return
@@ -1509,7 +1592,7 @@ final class PlaybackSession {
         #if os(macOS)
         let usesSystemVolume = synchronizeOutputVolume()
         #else
-        let usesSystemVolume = false
+        let usesSystemVolume = true
         #endif
         if !usesSystemVolume {
             let nextVolume = min(max(player.volume / 100, 0), 1)
@@ -1517,6 +1600,13 @@ final class PlaybackSession {
                 volume = nextVolume
             }
         }
+        #if os(macOS)
+        let pipActive = player.pictureInPictureActive
+        let pipAvailable = player.pictureInPicturePossible
+        #else
+        let pipActive = isPictureInPictureActive
+        let pipAvailable = isPictureInPictureAvailable
+        #endif
         applyPeriodicState(
             PlaybackPeriodicState(
                 errorMessage: player.errorMessage,
@@ -1526,8 +1616,8 @@ final class PlaybackSession {
                 playbackRate: player.playbackRate.isFinite && player.playbackRate > 0
                     ? player.playbackRate
                     : 1,
-                isPictureInPictureActive: player.pictureInPictureActive,
-                isPictureInPictureAvailable: player.pictureInPicturePossible
+                isPictureInPictureActive: pipActive,
+                isPictureInPictureAvailable: pipAvailable
             )
         )
     }

@@ -873,9 +873,17 @@ struct MediaDetailView: View {
         #endif
     }
 
+    private var isLandscapePhone: Bool {
+        #if os(iOS)
+        UIDevice.current.userInterfaceIdiom == .phone && verticalSizeClass == .compact
+        #else
+        false
+        #endif
+    }
+
     private var detailHeroHeight: CGFloat {
         #if os(iOS)
-        700
+        isLandscapePhone ? 380 : 700
         #else
         820
         #endif
