@@ -132,7 +132,7 @@ struct NuvioTopBar: View {
 
     private var barHeight: CGFloat {
         #if os(iOS)
-        stacksLabels ? (showsLabels ? 64 : 48) : (showsLabels ? 52 : 48)
+        stacksLabels ? (showsLabels ? 64 : 52) : (showsLabels ? 52 : 48)
         #else
         Self.height
         #endif
@@ -150,7 +150,7 @@ struct NuvioTopBar: View {
 
     private func itemWidth(showsLabels: Bool) -> CGFloat {
         if stacksLabels {
-            let desired = min(maximumWidth - (showsLabels ? 56 : 116), 400)
+            let desired = min(maximumWidth - 32, 480)
             let minimum = CGFloat(destinations.count) * 44 + Self.inset * 2
             let width = min(max(desired, minimum), max(maximumWidth - 16, minimum))
             return (width - Self.inset * 2) / CGFloat(max(destinations.count, 1))
@@ -176,7 +176,7 @@ struct NuvioTopBar: View {
     /// labels on pointer platforms; large accessibility text falls back to icons.
     private var prefersLabels: Bool {
         switch style {
-        case .expanded: true
+        case .native, .expanded: true
         case .compact: false
         case .adaptive:
             if isHovered { true }

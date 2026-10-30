@@ -244,20 +244,25 @@ struct OmniaRootView: View {
             macTopBarNavigation
         }
         #else
-        styledTabs
-            .tint(accentColor)
-            .overlay(alignment: .top) {
-                if usesNuvioBar && !isCompactWidth {
-                    nuvioBar
-                        .padding(.top, 2)
+        // Allocate a real layout region outside TabView. UIKit-backed tab
+        // content can consume an outer safe-area inset without moving its
+        // scroll content, which left bottom rows behind the custom bar.
+        VStack(spacing: 0) {
+            styledTabs
+                .tint(accentColor)
+                .overlay(alignment: .top) {
+                    if usesNuvioBar && !isCompactWidth {
+                        nuvioBar.padding(.top, 2)
+                    }
                 }
+            if usesNuvioBar && isCompactWidth {
+                nuvioBar
+                    .padding(.top, 8)
+                    .padding(.bottom, 8)
+                    .frame(maxWidth: .infinity)
+                    .background { OmniaPageBackground() }
             }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                if usesNuvioBar && isCompactWidth {
-                    nuvioBar
-                        .padding(.bottom, 8)
-                }
-            }
+        }
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
                 windowWidth = width
             }
@@ -302,7 +307,7 @@ struct OmniaRootView: View {
         } else {
             tabs
                 .tabViewStyle(.tabBarOnly)
-                .toolbar(.hidden, for: .tabBar)
+                .toolbar(usesNuvioBar ? .hidden : .visible, for: .tabBar)
                 .toolbarBackground(OmniaMaterial.tabBar, for: .tabBar)
                 .toolbarBackground(.visible, for: .tabBar)
                 .tabBarMinimizeBehavior(usesNuvioBar ? .never : .onScrollDown)

@@ -91,12 +91,13 @@ nonisolated enum CustomAccentMode: String, Codable, CaseIterable, Identifiable, 
     }
 }
 
-/// Custom navigation styles. Legacy system-tab preferences migrate to Adaptive.
+/// Native tabs or custom navigation with adaptive label visibility.
 nonisolated enum TopBarStyle: String, Codable, CaseIterable, Identifiable, Sendable {
-    case adaptive, expanded, compact
+    case native, adaptive, expanded, compact
     var id: Self { self }
     var title: String {
         switch self {
+        case .native: "Standard"
         case .adaptive: "Adaptive"
         case .expanded: "Always Expanded"
         case .compact: "Always Compact"
@@ -104,12 +105,20 @@ nonisolated enum TopBarStyle: String, Codable, CaseIterable, Identifiable, Senda
     }
     var detail: String {
         switch self {
+        case .native: "Uses the system tab bar."
         case .adaptive: "Shrinks as you scroll down and expands as you scroll up."
         case .expanded: "Always shows icons and labels."
         case .compact: "Always shows icons only."
         }
     }
-    var isNuvio: Bool { true }
+    var isNuvio: Bool { self != .native }
+    static var availableStyles: [Self] {
+        #if os(iOS)
+        allCases
+        #else
+        [.adaptive, .expanded, .compact]
+        #endif
+    }
     init(from decoder: Decoder) throws {
         let value = try decoder.singleValueContainer().decode(String.self)
         self = Self(rawValue: value) ?? .adaptive
