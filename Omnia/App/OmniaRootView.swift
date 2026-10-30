@@ -289,10 +289,11 @@ struct OmniaRootView: View {
         !isCompactWidth && settings.preferences.navigationStyle == .sidebar
     }
 
-    /// Nuvio's floating bar replaces the system tab bar: at the bottom on
-    /// iPhone, at the top on iPad.
+    /// iPhone always uses system tabs, regardless of a saved/shared custom
+    /// style. iPad retains its navigation choices, including compact windows.
     private var usesNuvioBar: Bool {
-        !usesSidebar && settings.preferences.display.topBarStyle.isNuvio
+        UIDevice.current.userInterfaceIdiom != .phone
+            && !usesSidebar && settings.preferences.display.topBarStyle.isNuvio
     }
 
     @ViewBuilder

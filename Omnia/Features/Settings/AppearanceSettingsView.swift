@@ -122,9 +122,11 @@ struct AppearanceSettingsView: View {
                 #if os(macOS)
                 Text("Choose a sidebar or a top tab bar, whether Search opens as a page or floats over the current one, and whether resting the pointer on a poster previews it.")
                 #else
-                Text(horizontalSizeClass == .compact
-                    ? "Choose how the floating navigation bar shows labels."
-                    : "Choose a sidebar or floating navigation bar.")
+                if UIDevice.current.userInterfaceIdiom != .phone {
+                    Text(horizontalSizeClass == .compact
+                        ? "Choose how the floating navigation bar shows labels."
+                        : "Choose a sidebar or floating navigation bar.")
+                }
                 #endif
             }
 
@@ -210,12 +212,15 @@ struct AppearanceSettingsView: View {
         #if os(macOS)
         true
         #else
-        horizontalSizeClass != .compact
+        UIDevice.current.userInterfaceIdiom != .phone && horizontalSizeClass != .compact
         #endif
     }
 
     private var showsBarStyle: Bool {
-        !showsNavigationStyle || settings.preferences.navigationStyle == .topBar
+        #if os(iOS)
+        guard UIDevice.current.userInterfaceIdiom != .phone else { return false }
+        #endif
+        return !showsNavigationStyle || settings.preferences.navigationStyle == .topBar
     }
 
     /// iPhone's bar sits at the bottom, so it is a tab bar there.
