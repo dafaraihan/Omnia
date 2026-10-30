@@ -100,6 +100,7 @@ struct LibraryView: View {
                 .padding(.vertical, 24)
             }
         }
+        .modifier(TopBarScrollReporting(destination: .library))
         .omniaNavigationTitle("Library", screen: .library)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {

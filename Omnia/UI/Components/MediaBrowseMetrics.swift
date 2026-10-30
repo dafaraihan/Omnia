@@ -37,12 +37,12 @@ enum MediaBrowseMetrics {
     /// Poster cards follow Settings › Appearance › Poster Cards. Landscape
     /// posters swap every poster row and grid to backdrop cards.
     static func posterItemSpan(_ display: DisplayPreferences) -> CGFloat {
-        (display.landscapePosters ? landscapeCardWidth : display.posterCardWidth) + shelfSpacing
+        (display.landscapePosters ? display.landscapePosterCardWidth : display.posterCardWidth) + shelfSpacing
     }
 
     static func posterGridLayout(containerWidth: CGFloat, display: DisplayPreferences) -> MediaGridLayout {
         if display.landscapePosters {
-            return landscapeGridLayout(containerWidth: containerWidth)
+            return landscapeGridLayout(containerWidth: containerWidth, display: display)
         }
         return MediaGridLayout.fitting(
             containerWidth: containerWidth,
@@ -58,7 +58,7 @@ enum MediaBrowseMetrics {
     static func posterGridColumns(_ display: DisplayPreferences) -> [GridItem] {
         [GridItem(
             .adaptive(
-                minimum: display.landscapePosters ? landscapeCardWidth : display.posterCardWidth,
+                minimum: display.landscapePosters ? display.landscapePosterCardWidth : display.posterCardWidth,
                 maximum: .infinity
             ),
             spacing: gridSpacing,
@@ -76,12 +76,12 @@ enum MediaBrowseMetrics {
         )
     }
 
-    static func landscapeGridLayout(containerWidth: CGFloat) -> MediaGridLayout {
+    static func landscapeGridLayout(containerWidth: CGFloat, display: DisplayPreferences = .default) -> MediaGridLayout {
         MediaGridLayout.fitting(
             containerWidth: containerWidth,
             horizontalInset: pageInset,
-            minimumItemWidth: landscapeCardWidth,
-            maximumItemWidth: landscapeCardMaximumGridWidth,
+            minimumItemWidth: display.landscapePosterCardWidth,
+            maximumItemWidth: display.landscapePosterCardWidth * landscapeCardMaximumGridWidth / landscapeCardWidth,
             spacing: gridSpacing
         )
     }

@@ -90,6 +90,7 @@ struct DiscoverView: View {
                 browseContent
             }
         }
+        .modifier(TopBarScrollReporting(destination: .discover))
         .omniaNavigationTitle("Discover", screen: .discover)
         #if os(macOS)
         // The Filter button just before the search field, each its own
@@ -105,7 +106,7 @@ struct DiscoverView: View {
             }
         }
         #else
-        .searchable(text: $query, prompt: "Titles, people, or genres")
+        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Titles, people, or genres")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 filterMenu
@@ -346,8 +347,16 @@ struct AddonCatalogShelf: View {
 
     @State private var items: [MediaItem] = []
     @State private var didFinishLoading = false
+    @State private var isLoading = false
+    @State private var loadedRequest: RequestIdentity?
     @State private var errorMessage: String?
 
+    private struct RequestIdentity: Hashable {
+        let addon: InstalledAddon
+        let catalog: AddonCatalog
+    }
+
+    private var requestIdentity: RequestIdentity { RequestIdentity(addon: addon, catalog: catalog) }
     private var title: String { catalog.name?.trimmedNonEmpty ?? catalog.id }
     private var visibleItems: [MediaItem] {
         guard let filters else { return items }
@@ -361,6 +370,12 @@ struct AddonCatalogShelf: View {
                     SectionHeaderLink(title: title) {
                         AddonCatalogBrowseView(addon: addon, catalog: catalog)
                     }
+                    if let errorMessage {
+                        Text(errorMessage).foregroundStyle(.secondary)
+                        retryButton
+                    } else if isLoading {
+                        ProgressView("Refreshing catalog…").controlSize(.small)
+                    }
                     ShelfScrollView(items: visibleItems, itemSpan: MediaBrowseMetrics.posterItemSpan(display), accessibilityLabel: title) { item in
                         MediaPoster(item: item)
                     }
@@ -368,21 +383,33 @@ struct AddonCatalogShelf: View {
             } else if !didFinishLoading {
                 VStack(alignment: .leading, spacing: 10) {
                     SectionHeader(title: title)
-                    ProgressView().controlSize(.small)
+                    ProgressView("Loading catalog…").controlSize(.small)
                 }
             } else if let errorMessage {
                 VStack(alignment: .leading, spacing: 8) {
                     SectionHeader(title: title)
                     Text(errorMessage).foregroundStyle(.secondary)
-                    Button("Retry", systemImage: "arrow.clockwise") {
-                        Task { await load() }
-                    }
+                    retryButton
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    SectionHeader(title: title)
+                    Text(items.isEmpty ? "This catalog has no titles." : "No titles match these filters.")
+                        .foregroundStyle(.secondary)
+                    retryButton
                 }
             }
         }
-        .task(id: "\(addon.id):\(catalog.id):\(addon.manifestURL.absoluteString)") {
+        .task(id: requestIdentity) {
             await load()
         }
+    }
+
+    private var retryButton: some View {
+        Button("Retry", systemImage: "arrow.clockwise") {
+            Task { await load(forceRefresh: true) }
+        }
+        .disabled(isLoading)
     }
 
     /// The same saved copy Home and collection folders use.
@@ -390,10 +417,21 @@ struct AddonCatalogShelf: View {
         AddonCatalogCache.key(addon: addon, catalog: catalog, extra: catalog.resolvingExtras([:]) ?? [:])
     }
 
-    private func load() async {
+    private func load(forceRefresh: Bool = false) async {
+        let request = requestIdentity
+        let key = cacheKey
+        if loadedRequest != request {
+            items = []
+            didFinishLoading = false
+            loadedRequest = request
+        } else if isLoading {
+            return
+        }
+        isLoading = true
+        defer { if request == requestIdentity { isLoading = false } }
         // Shelves are rebuilt each time Discover opens and each time one
         // scrolls back into view; reuse what was fetched this session.
-        if let fresh = AddonCatalogShelfCache.items(for: cacheKey) {
+        if !forceRefresh, let fresh = AddonCatalogShelfCache.items(for: key) {
             items = fresh
             errorMessage = nil
             didFinishLoading = true
@@ -401,23 +439,24 @@ struct AddonCatalogShelf: View {
         }
         errorMessage = nil
         // Draw the copy saved last time at once, then refresh it.
-        if items.isEmpty, let saved = await AddonCatalogCache.previews(for: [cacheKey])[cacheKey] {
-            guard !Task.isCancelled else { return }
+        if items.isEmpty, let saved = await AddonCatalogCache.previews(for: [key])[key] {
+            guard !Task.isCancelled, request == requestIdentity else { return }
             items = saved.compactMap { $0.mediaItem(addon: addon) }
         }
         didFinishLoading = !items.isEmpty
         do {
             let metas = try await StremioAddonClient.fetchCatalog(from: addon, catalog: catalog)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, request == requestIdentity else { return }
             items = metas.compactMap { $0.mediaItem(addon: addon) }
-            AddonCatalogShelfCache.store(items, for: cacheKey)
-            let key = cacheKey
+            AddonCatalogShelfCache.store(items, for: key)
             Task { await AddonCatalogCache.save(metas, for: key) }
         } catch is CancellationError {
             return
         } catch {
-            // Offline or a broken add-on: a saved copy beats an error.
-            if items.isEmpty { errorMessage = "This add-on catalog is unavailable." }
+            guard !Task.isCancelled, request == requestIdentity else { return }
+            errorMessage = items.isEmpty
+                ? "This add-on catalog is unavailable."
+                : "Couldn’t refresh this catalog. Showing saved titles."
         }
         didFinishLoading = true
     }

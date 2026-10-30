@@ -80,7 +80,7 @@ struct MediaPoster: View {
     }
 
     private var cardWidth: CGFloat {
-        isLandscape ? MediaBrowseMetrics.landscapeCardWidth : display.posterCardWidth
+        isLandscape ? display.landscapePosterCardWidth : display.posterCardWidth
     }
 }
 
@@ -120,11 +120,11 @@ struct RankedMediaPoster: View {
     }
 
     private var cardWidth: CGFloat {
-        display.landscapePosters ? MediaBrowseMetrics.landscapeCardWidth : display.posterCardWidth
+        display.landscapePosters ? display.landscapePosterCardWidth : display.posterCardWidth
     }
 
     private var cardHeight: CGFloat {
-        display.landscapePosters ? MediaBrowseMetrics.landscapeCardWidth / 1.72 : display.posterCardHeight
+        display.landscapePosters ? display.landscapePosterCardWidth / 1.72 : display.posterCardHeight
     }
 }
 

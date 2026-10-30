@@ -1,7 +1,6 @@
 import SwiftUI
 
-/// What a page tells Nuvio's top bar: whether it has scrolled past
-/// Nuvio's threshold, and whether a hero sits at its top.
+/// Whether a page's accumulated scroll direction requests compact navigation.
 struct TopBarScrollReport: Equatable {
     var isScrolled = false
     var hasHero = false
@@ -18,26 +17,28 @@ extension EnvironmentValues {
     }
 }
 
-/// Reports a page's scroll position to the top bar. Only Home and Settings
-/// do this, as in Nuvio, and only when the position crosses the threshold.
+/// Accumulates scroll in one direction; a reversal starts a fresh threshold.
 struct TopBarScrollReporting: ViewModifier {
     let destination: AppDestination
     var hasHero = false
     @Environment(\.reportTopBarScroll) private var report
     @State private var isScrolled = false
-
-    /// Nuvio's thresholds: 35 points on Home and 70 on Settings.
-    private var threshold: CGFloat { destination == .settings ? 70 : 35 }
+    @State private var accumulated: CGFloat = 0
 
     func body(content: Content) -> some View {
-        // A local, so the scroll closure doesn't reach into the main actor.
-        let threshold = threshold
-        return content
-            .onScrollGeometryChange(for: Bool.self) { geometry in
-                geometry.contentOffset.y + geometry.contentInsets.top > threshold
-            } action: { _, scrolled in
-                isScrolled = scrolled
-                report(destination, TopBarScrollReport(isScrolled: scrolled, hasHero: hasHero))
+        content
+            .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                max(0, geometry.contentOffset.y + geometry.contentInsets.top)
+            } action: { previous, current in
+                let delta = current - previous
+                guard delta != 0 else { return }
+                if (delta > 0) != (accumulated > 0) { accumulated = 0 }
+                accumulated += delta
+                if abs(accumulated) > 60 || current == 0 {
+                    isScrolled = current > 0 && delta > 0
+                    accumulated = 0
+                    report(destination, TopBarScrollReport(isScrolled: isScrolled, hasHero: hasHero))
+                }
             }
             .onChange(of: hasHero, initial: true) { _, hero in
                 report(destination, TopBarScrollReport(isScrolled: isScrolled, hasHero: hero))
@@ -60,6 +61,9 @@ struct NuvioTopBar: View {
     let select: (AppDestination) -> Void
 
     @Environment(\.displayPreferences) private var display
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(ProfileStore.self) private var profiles
     @State private var isHovered = false
     @State private var isPressing = false
@@ -99,35 +103,58 @@ struct NuvioTopBar: View {
             HStack(spacing: 0) {
                 ForEach(Array(destinations.enumerated()), id: \.element) { index, destination in
                     tab(destination, isHighlighted: index == highlightedIndex)
-                        .frame(width: tabWidth, height: Self.height - Self.inset * 2)
+                        .frame(width: tabWidth, height: barHeight - verticalInset * 2)
                 }
             }
-            .padding(Self.inset)
+            .padding(.horizontal, Self.inset)
+            .padding(.vertical, verticalInset)
             if showsGlow {
                 glow(width: width)
                     .allowsHitTesting(false)
             }
         }
-        .frame(width: width, height: Self.height)
+        .frame(width: width, height: barHeight)
         .clipShape(Capsule())
+        .background { if reduceTransparency { OmniaPageBackground().clipShape(Capsule()) } }
         .glassEffect(.regular, in: Capsule())
         .contentShape(Capsule())
-        .scaleEffect(dragIndex == nil ? 1 : 1.025)
-        .gesture(pressGesture(tabWidth: tabWidth))
+        .scaleEffect(reduceMotion || dragIndex == nil ? 1 : 1.025)
+        .simultaneousGesture(pressGesture(tabWidth: tabWidth))
         .onHover { hovering in
-            withAnimation(Self.chromeAnimation) { isHovered = hovering }
+            withAnimation(reduceMotion ? nil : Self.chromeAnimation) { isHovered = hovering }
         }
-        .animation(Self.chromeAnimation, value: showsLabels)
-        .animation(.spring(response: 0.22, dampingFraction: 1), value: highlightedIndex)
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: dragIndex == nil)
+        .animation(reduceMotion ? nil : Self.chromeAnimation, value: showsLabels)
+        .animation(reduceMotion ? nil : .spring(response: 0.22, dampingFraction: 1), value: highlightedIndex)
+        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.7), value: dragIndex == nil)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Tabs")
+    }
+
+    private var barHeight: CGFloat {
+        #if os(iOS)
+        stacksLabels ? (showsLabels ? 64 : 48) : (showsLabels ? 52 : 48)
+        #else
+        Self.height
+        #endif
+    }
+
+    private var verticalInset: CGFloat {
+        #if os(iOS)
+        min(Self.inset, (barHeight - 44) / 2)
+        #else
+        Self.inset
+        #endif
     }
 
     // MARK: State
 
     private func itemWidth(showsLabels: Bool) -> CGFloat {
-        if stacksLabels { return Self.compactItemWidth + (showsLabels ? 10 : 0) }
+        if stacksLabels {
+            let desired = min(maximumWidth - (showsLabels ? 56 : 116), 400)
+            let minimum = CGFloat(destinations.count) * 44 + Self.inset * 2
+            let width = min(max(desired, minimum), max(maximumWidth - 16, minimum))
+            return (width - Self.inset * 2) / CGFloat(max(destinations.count, 1))
+        }
         return Self.compactItemWidth + (showsLabels ? Self.labelWidth : 0)
     }
 
@@ -142,26 +169,25 @@ struct NuvioTopBar: View {
     }
 
     private var showsLabels: Bool {
-        prefersLabels && labelsFit
+        prefersLabels && labelsFit && !dynamicTypeSize.isAccessibilitySize
     }
 
-    /// Nuvio's label rules: Expanded always shows labels, Compact never does,
-    /// and Adaptive hides them over the Home hero or once Home has scrolled,
-    /// unless the pointer is over the bar.
+    /// Adaptive follows the page's directional scroll report. Hover exposes
+    /// labels on pointer platforms; large accessibility text falls back to icons.
     private var prefersLabels: Bool {
         switch style {
-        case .native, .expanded: true
+        case .expanded: true
         case .compact: false
         case .adaptive:
             if isHovered { true }
-            else if selection == .home && (scroll.hasHero || scroll.isScrolled) { false }
+            else if scroll.isScrolled { false }
             else { true }
         }
     }
 
     /// A window too narrow for labelled tabs shows icons only.
     private var labelsFit: Bool {
-        itemWidth(showsLabels: true) * CGFloat(destinations.count) + Self.inset * 2 <= maximumWidth
+        stacksLabels || itemWidth(showsLabels: true) * CGFloat(destinations.count) + Self.inset * 2 <= maximumWidth
     }
 
     /// A smaller avatar leaves room for the label under it.
@@ -183,26 +209,29 @@ struct NuvioTopBar: View {
     private func pill(tabWidth: CGFloat) -> some View {
         Capsule()
             .fill(display.accentColor.opacity(0.15))
-            .frame(width: tabWidth, height: Self.height - Self.inset * 2)
-            .scaleEffect(x: dragIndex == nil ? 1 : 1.06, y: dragIndex == nil ? 1 : 0.94)
+            .frame(width: tabWidth, height: barHeight - verticalInset * 2)
+            .scaleEffect(x: reduceMotion || dragIndex == nil ? 1 : 1.06, y: reduceMotion || dragIndex == nil ? 1 : 0.94)
             .offset(x: Self.inset + CGFloat(highlightedIndex) * tabWidth)
     }
 
     private func tab(_ destination: AppDestination, isHighlighted: Bool) -> some View {
         let layout = stacksLabels ? AnyLayout(VStackLayout(spacing: 2)) : AnyLayout(HStackLayout(spacing: 6))
-        return layout {
-            icon(destination, isHighlighted: isHighlighted)
-                .frame(width: destination == .settings && profiles.activeProfile != nil ? avatarSize : Self.iconSize + 4)
-            if showsLabels {
-                Text(destination.title(for: profiles.activeProfile))
-                    .font(.system(size: stacksLabels ? 10 : 13, weight: isHighlighted ? .semibold : .regular))
-                    .lineLimit(1)
-                    .foregroundStyle(isHighlighted ? .primary : .secondary)
-                    .fixedSize()
-                    .transition(.opacity)
+        return Button { select(destination) } label: {
+            layout {
+                icon(destination, isHighlighted: isHighlighted)
+                    .frame(width: destination == .settings && profiles.activeProfile != nil ? avatarSize : Self.iconSize + 4)
+                if showsLabels {
+                    Text(destination.title(for: profiles.activeProfile))
+                        .font(.system(stacksLabels ? .caption2 : .subheadline, weight: isHighlighted ? .semibold : .regular))
+                        .lineLimit(1)
+                        .foregroundStyle(isHighlighted ? .primary : .secondary)
+                        .minimumScaleFactor(0.8)
+                        .transition(.opacity)
+                }
             }
         }
-        .scaleEffect(isHighlighted && isPressing ? 1.06 : 1)
+        .buttonStyle(.plain)
+        .scaleEffect(!reduceMotion && isHighlighted && isPressing ? 1.06 : 1)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
         .help(destination.title(for: profiles.activeProfile))
@@ -239,14 +268,14 @@ struct NuvioTopBar: View {
     /// of the accent at its centre, 43% of that at the 45% stop, then clear.
     private func glow(width: CGFloat) -> some View {
         let alpha = 0.15 * glowOpacity
-        let point = pointer ?? CGPoint(x: width / 2, y: Self.height / 2)
+        let point = pointer ?? CGPoint(x: width / 2, y: barHeight / 2)
         return RadialGradient(
             stops: [
                 .init(color: display.accentColor.opacity(alpha), location: 0),
                 .init(color: display.accentColor.opacity(alpha * 0.43), location: 0.45),
                 .init(color: display.accentColor.opacity(0), location: 1),
             ],
-            center: UnitPoint(x: point.x / max(width, 1), y: point.y / Self.height),
+            center: UnitPoint(x: point.x / max(width, 1), y: point.y / barHeight),
             startRadius: 0,
             endRadius: 300
         )
@@ -260,7 +289,7 @@ struct NuvioTopBar: View {
                 pointer = value.location
                 if !isPressing {
                     isPressing = true
-                    withAnimation(.spring(response: 0.42, dampingFraction: 0.9)) { glowOpacity = 1 }
+                    withAnimation(reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.9)) { glowOpacity = 1 }
                 }
                 // A press stays on its tab until the pointer actually moves.
                 let moved = hypot(value.translation.width, value.translation.height) > 4
@@ -270,14 +299,14 @@ struct NuvioTopBar: View {
             }
             .onEnded { value in
                 let target = index(at: value.location.x, tabWidth: tabWidth)
-                let isInside = value.location.y >= -12 && value.location.y <= Self.height + 12
+                let isInside = value.location.y >= -12 && value.location.y <= barHeight + 12
                 isPressing = false
                 dragIndex = nil
-                withAnimation(.spring(response: 0.42, dampingFraction: 0.9)) {
+                withAnimation(reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.9)) {
                     glowOpacity = 0
                     pointer = nil
                 }
-                if isInside, destinations.indices.contains(target) {
+                if isInside, hypot(value.translation.width, value.translation.height) > 4, destinations.indices.contains(target) {
                     select(destinations[target])
                 }
             }

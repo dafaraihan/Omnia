@@ -66,6 +66,16 @@ struct AddonCatalogBrowseView: View {
                             .padding(.vertical, 20)
                     }
                 }
+                if let errorMessage {
+                    if !items.isEmpty {
+                        Text(errorMessage).foregroundStyle(.secondary)
+                    }
+                    Button("Retry", systemImage: "arrow.clockwise") {
+                        hasReachedEnd = false
+                        Task { await loadNextPage() }
+                    }
+                    .disabled(isLoading)
+                }
             }
             .padding(.horizontal, MediaBrowseMetrics.pageInset)
             .padding(.vertical, 24)
@@ -147,14 +157,22 @@ struct AddonCatalogBrowseView: View {
         )
     }
 
-    private var requestKey: String {
-        "\(addon.manifestURL.absoluteString)|\(catalog.id)|\(supportsSearch ? search : "")|\(selectedExtras.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: "&"))"
+    private struct RequestIdentity: Hashable {
+        let addon: InstalledAddon
+        let catalog: AddonCatalog
+        let search: String
+        let extras: [String: String]
+    }
+
+    private var requestKey: RequestIdentity {
+        RequestIdentity(addon: addon, catalog: catalog, search: supportsSearch ? search : "", extras: selectedExtras)
     }
 
     private func loadNextPage() async {
         guard !isLoading, !hasReachedEnd else { return }
         let key = requestKey
         isLoading = true
+        errorMessage = nil
         defer { if key == requestKey { isLoading = false } }
         var extras = selectedExtras
         if supportsSearch, let value = search.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty {
@@ -179,7 +197,9 @@ struct AddonCatalogBrowseView: View {
             return
         } catch {
             guard key == requestKey else { return }
-            if items.isEmpty { errorMessage = "This add-on did not return a usable catalog response." }
+            errorMessage = items.isEmpty
+                ? "This add-on did not return a usable catalog response."
+                : "Couldn’t load more titles. The titles already loaded are still available."
             hasReachedEnd = true
         }
     }
@@ -195,7 +215,11 @@ private struct CatalogSearchModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         if isEnabled {
+            #if os(macOS)
             content.searchable(text: $text, prompt: prompt)
+            #else
+            content.searchable(text: $text, placement: .navigationBarDrawer(displayMode: .always), prompt: prompt)
+            #endif
         } else {
             content
         }

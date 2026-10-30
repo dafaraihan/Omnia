@@ -197,27 +197,31 @@ enum StremioAddonClient {
                 .map { (addon, $0) } : []
         }
 
-        return await withTaskGroup(of: [AddonCatalogItem].self, returning: [AddonCatalogItem].self) { group in
-            for (addon, catalog) in enabledCatalogs {
+        return await withTaskGroup(of: (Int, [AddonCatalogItem]).self, returning: [AddonCatalogItem].self) { group in
+            for (index, source) in enabledCatalogs.enumerated() {
+                let (addon, catalog) = source
                 group.addTask {
-                    guard let metas = try? await fetchCatalog(from: addon, catalog: catalog, extra: ["search": query]) else { return [] }
+                    guard let metas = try? await fetchCatalog(from: addon, catalog: catalog, extra: ["search": query]) else { return (index, []) }
                     // Building titles is nonisolated, so it stays off the main actor.
-                    return metas.compactMap { preview in
-                        preview.mediaItem(addon: addon).map { .init(item: $0, addon: addon, catalog: catalog) }
-                    }
+                    return (index, metas.compactMap { preview in
+                        preview.mediaItem(addon: addon).map { AddonCatalogItem(item: $0, addon: addon, catalog: catalog) }
+                    })
                 }
             }
 
-            var values: [AddonCatalogItem] = []
-            for await result in group {
-                guard !result.isEmpty else { continue }
-                values.append(contentsOf: result)
+            var completed: [Int: [AddonCatalogItem]] = [:]
+            for await (index, result) in group {
+                guard !Task.isCancelled else { return [] }
+                completed[index] = result
+                // Network timing must not choose which add-on supplies a
+                // duplicate title’s artwork. Keep installed/catalog order.
+                let values = enabledCatalogs.indices.flatMap { completed[$0] ?? [] }
                 if let onUpdate {
                     let snapshot = values
                     await onUpdate(snapshot)
                 }
             }
-            return values
+            return enabledCatalogs.indices.flatMap { completed[$0] ?? [] }
         }
     }
 

@@ -91,39 +91,29 @@ nonisolated enum CustomAccentMode: String, Codable, CaseIterable, Identifiable, 
     }
 }
 
-/// The top bar used when Navigation Style is Top Bar. Standard is
-/// Omnia's system tab bar; the others are Nuvio's floating bar.
+/// Custom navigation styles. Legacy system-tab preferences migrate to Adaptive.
 nonisolated enum TopBarStyle: String, Codable, CaseIterable, Identifiable, Sendable {
-    case native
-    case adaptive
-    case expanded
-    case compact
-
+    case adaptive, expanded, compact
     var id: Self { self }
-
     var title: String {
         switch self {
-        case .native: "Standard"
         case .adaptive: "Adaptive"
         case .expanded: "Always Expanded"
         case .compact: "Always Compact"
         }
     }
-
     var detail: String {
         switch self {
-        #if os(macOS)
-        case .native: "The system tab bar, as on iPad."
-        #else
-        case .native: "The system tab bar."
-        #endif
-        case .adaptive: "Shows labels, and shrinks to icons over the Home hero or once you scroll."
+        case .adaptive: "Shrinks as you scroll down and expands as you scroll up."
         case .expanded: "Always shows icons and labels."
         case .compact: "Always shows icons only."
         }
     }
-
-    var isNuvio: Bool { self != .native }
+    var isNuvio: Bool { true }
+    init(from decoder: Decoder) throws {
+        let value = try decoder.singleValueContainer().decode(String.self)
+        self = Self(rawValue: value) ?? .adaptive
+    }
 }
 
 nonisolated enum PosterWidthPreset: String, Codable, CaseIterable, Identifiable, Sendable {
@@ -707,7 +697,7 @@ nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
     var cardDepth: CardDepthPreferences = .default
     var cardHover: CardHoverPreferences = .default
 
-    var topBarStyle: TopBarStyle = .native
+    var topBarStyle: TopBarStyle = .adaptive
     var topBarGlow = true
 
     var hoverPreviewEnabled = false
@@ -856,6 +846,15 @@ nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
     }
 
     var posterCardWidth: CGFloat { posterWidth.width }
+
+    var landscapePosterCardWidth: CGFloat {
+        #if os(iOS)
+        let baseline: CGFloat = 248
+        #else
+        let baseline: CGFloat = 304
+        #endif
+        return baseline * posterCardWidth / PosterWidthPreset.standard.width
+    }
     var posterCardHeight: CGFloat { posterWidth.width * 1.5 }
     var posterCornerRadius: CGFloat { posterCorner.radius }
     /// Landscape cards keep a slightly larger radius than posters, as before.

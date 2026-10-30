@@ -62,9 +62,6 @@ struct HomeSettingsView: View {
                         options: HomeLayoutPreferences.HeroStyle.allCases
                     ) { $0.title }
                     .disabled(!homeLayout.preferences.showsHero)
-                    Toggle(isOn: preferenceBinding(\.dynamicBackground)) {
-                        settingLabel("Dynamic Background Color", detail: "Tint Home below the hero with colours from the featured artwork.")
-                    }
                     Toggle(isOn: preferenceBinding(\.showsCatalogType)) {
                         settingLabel("Show Catalog Type", detail: "Add the type after each catalog name, as in “Popular - Movies”.")
                     }

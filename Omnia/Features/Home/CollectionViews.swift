@@ -62,7 +62,8 @@ struct CollectionFolderTile: View {
         let base: CGFloat = switch shape {
         case .poster: portrait
         case .square: portrait * 1.25
-        case .landscape, .wide: MediaBrowseMetrics.landscapeCardWidth
+        case .landscape, .wide:
+            card.size == .matchPosters ? display.landscapePosterCardWidth : MediaBrowseMetrics.landscapeCardWidth
         }
         return (base * card.size.scale).rounded()
     }

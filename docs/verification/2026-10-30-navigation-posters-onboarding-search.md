@@ -1,0 +1,23 @@
+# Navigation, posters, onboarding and search — 2026-10-30
+
+## Scope and source evidence
+
+User supplied physical iPhone screenshots showing search posters behind floating search chrome, a large trailing search-grid gap, and onboarding Preview Unavailable. They requested Enhanced custom navigation (Adaptive/Expanded/Compact), Standard removal, responsive landscape poster sizes, Enhanced dynamic Home color and Xperience search/catalog artwork behavior.
+
+Reference: pinned Enhanced commit and independent Swift implementation rationale are in ../research/2026-10-30-enhanced-navigation-background.md. No source/assets/dependencies from that repository were copied or installed.
+
+- Landscape posters used fixed platform widths instead of selected poster size in standard/ranked cards, shelves, grids and previews. Resolved landscape width now scales the platform baseline by the selected/standard poster ratio, retaining 1.72 aspect. Collection matching also uses this width.
+- Custom navigation exposes only three styles; legacy native values safely decode Adaptive. iPhone bar uses expanded64/compact48 heights, nominal28/58 side margins,400 width cap and44 minimum targets. Adaptive accumulates60 points of scroll direction; Home, Discover, Library and Settings report changes. Platform sidebars remain available; system tab chrome is suppressed when custom navigation is active. iPad/Mac retain suitable platform placement.
+- Home background now uses a bounded96x96 artwork color sample,256-entry tint cache,42% artwork/58% base mix and600ms transitions. New profiles default off; saved values and old decoded behavior persist. Reduce Motion, Reduce Transparency and Increase Contrast have fallback behavior. Detail/stream background treatment is preserved.
+- Onboarding previously selected only built-in movie/series metadata and inherited real metadata into an empty preview store. It now uses genuine available addon/anime/catalog items, with bounded3-catalog/24-item loading and existing public default Cinemeta fallback when no configured loadable catalog exists. Preview metadata is isolated and seeded into actual Home/detail screens; independent loading/retry remains honest when all sources fail. No production library or addon configuration is mutated.
+- Search fixed columns were capped, leaving trailing unused space. Search now uses uncapped fitting widths, including a single column clamped to narrow available width. iOS search placement is explicit. Addon search results now follow installed source/catalog order rather than task completion order, preserving deterministic first-source artwork. Source IDs include full relevant configuration so reconfiguration reloads. Catalogs retain empty state and expose saved-copy refresh failures and retry, including pagination recovery.
+
+No actual Xperience service failure was established. No Xperience source is hardcoded. All Sources can include metadata-only results; an explicitly configured custom poster pattern still overrides provider posters. Validate the configured Xperience endpoint and source selection at runtime before claiming every expected catalog/artwork result is fixed.
+
+## Validation
+
+Canonical Debug builds for generic iOS Simulator and macOS returned BUILD SUCCEEDED. git diff --check passed. Independent complete-diff review found no confirmed actionable defects; narrow grid fit remained a runtime concern, and root retained fitting-layout clamping while removing its maximum width cap. No tests, fixtures or test scripts were created/run, per repository policy.
+
+Latest build installed/launched on iPhone17ProMax Simulator. Device Hub screenshot visibly showed the custom bottom pill, Home content and tinted background; navigation to Discover returned a Browse/shelf accessibility tree. A subsequent screenshot capture timed out/reset and reconnected to Home, so search result and onboarding interaction acceptance is not claimed. No physical-device verification, full accessibility matrix or performance claim.
+
+Remaining manual acceptance: custom bar tap/drag/keyboard/focus, Adaptive scrolling in each tab and pushed pages, playback hiding/safe areas; every landscape size on iPhone/iPad/Mac/narrow windows; cold onboarding without personal metadata credentials, offline retry and both preview screens; dynamic Home theme/AMOLED/color extraction transitions; installed Xperience response/error/empty states and source posters; search under keyboard, Dynamic Type, VoiceOver, iPad multitasking, pointer/keyboard, contrast/transparency/motion and light/dark. No backend deploy or new release publication is included.

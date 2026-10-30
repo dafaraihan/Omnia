@@ -1,4 +1,5 @@
 import SwiftUI
+import Observation
 
 /// Nuvio's first launch in Omnia's look: a welcome with the wordmark over
 /// a moving wall of posters, a preview of Omnia and what it does, sign in
@@ -8,6 +9,8 @@ struct OnboardingView: View {
     @Environment(ProfileStore.self) private var profiles
     @Environment(OmniaAccount.self) private var account
     @Environment(LiveMetadataStore.self) private var metadata
+    @Environment(OmniaStore.self) private var store
+    @Environment(AddonCatalogStore.self) private var addonCatalogs
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     #if os(iOS)
@@ -18,6 +21,8 @@ struct OnboardingView: View {
     @State private var avatarID: String? = AvatarCatalog.random().id
     @State private var colorHex = ViewerProfile.colors.randomElement() ?? "705CFF"
     @State private var appeared = false
+    @State private var previewSource = OnboardingPreviewSource()
+    @State private var previewRetry = 0
     var onFinished: () -> Void
 
     static let completedKey = "onboarding-completed"
@@ -26,12 +31,22 @@ struct OnboardingView: View {
         case welcome, features, account, profile
     }
 
-    /// Posters for the wall and the preview, from the catalogs Omnia
-    /// loads at launch; placeholders until they arrive.
+    private var availableShowcase: [MediaItem] {
+        let catalogs = AddonCatalogStore.catalogs(in: store).filter {
+            store.isCatalogEnabled(for: $0.addon, catalog: $0.catalog)
+        }
+        return catalogs.flatMap { addonCatalogs.rows[$0.key]?.items ?? [] }
+            + metadata.topMovies + metadata.topSeries + metadata.movieCatalog + metadata.seriesCatalog
+            + metadata.animeCatalogs.flatMap(\.items)
+    }
+
     private var showcase: [MediaItem] {
-        var seen = Set<String>()
-        return (metadata.topMovies + metadata.topSeries + metadata.movieCatalog + metadata.seriesCatalog)
-            .filter { $0.artworkURL != nil && seen.insert($0.id).inserted }
+        OnboardingPreviewSource.uniqueItems(availableShowcase + previewSource.items)
+    }
+
+    private var previewLoadKey: String {
+        store.installedAddons.map { "\($0.id):\($0.isEnabled):\($0.manifestURL.absoluteString)" }.joined(separator: "|")
+            + ":\(previewRetry)"
     }
 
     /// An iPhone held upright: steps stack in one column.
@@ -74,6 +89,9 @@ struct OnboardingView: View {
         }
         .overlay(alignment: .bottom) { pageDots.padding(.bottom, 28) }
         .animation(reduceMotion ? nil : .smooth(duration: 0.5), value: step)
+        .task(id: previewLoadKey) {
+            await previewSource.load(store: store, existing: availableShowcase)
+        }
         .onAppear {
             withAnimation(reduceMotion ? nil : .spring(response: 1.1, dampingFraction: 0.8).delay(0.15)) { appeared = true }
         }
@@ -124,11 +142,11 @@ struct OnboardingView: View {
                 .font(.system(size: 32, weight: .bold, design: .rounded))
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .center, spacing: 32) {
-                    AppPreview(items: showcase).frame(width: 480)
+                    AppPreview(items: showcase, isLoading: previewSource.isLoading, retry: { previewRetry += 1 }).frame(width: 480)
                     featureList.frame(width: 300)
                 }
                 VStack(spacing: 24) {
-                    AppPreview(items: showcase).frame(maxWidth: 600)
+                    AppPreview(items: showcase, isLoading: previewSource.isLoading, retry: { previewRetry += 1 }).frame(maxWidth: 600)
                     featureList.frame(maxWidth: 600, alignment: .leading)
                 }
             }
@@ -379,7 +397,9 @@ private struct PosterWall: View {
 /// Uses the shipping screens, with side effects suppressed by preview mode.
 private struct AppPreview: View {
     let items: [MediaItem]
-    @Environment(LiveMetadataStore.self) private var metadata
+    let isLoading: Bool
+    let retry: () -> Void
+    @State private var previewMetadata = LiveMetadataStore(loadsBundleConfiguration: false)
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @State private var page: Page = .home
     @State private var previewStore = OmniaStore(
@@ -414,6 +434,7 @@ private struct AppPreview: View {
                                 }
                             }
                             .environment(previewStore)
+                            .environment(previewMetadata)
                             .environment(\.isOnboardingPreview, true)
                             .environment(\.isActiveDestination, false)
                             .environment(\.displayPreferences, DisplayPreferences())
@@ -425,7 +446,7 @@ private struct AppPreview: View {
                         .accessibilityHidden(true)
                         .scaleEffect(geometry.size.width / 1100, anchor: .topLeading)
                         .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
-                    } else if metadata.isLoadingCatalogs {
+                    } else if isLoading {
                         ProgressView("Loading Omnia preview…")
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
@@ -434,7 +455,7 @@ private struct AppPreview: View {
                         } description: {
                             Text("You can continue setup and browse when discovery is available.")
                         } actions: {
-                            Button("Retry") { Task { await metadata.loadDefaultCatalogs() } }
+                            Button("Retry", action: retry)
                         }
                     }
                 }
@@ -449,6 +470,18 @@ private struct AppPreview: View {
             Text("Live preview · \(page.rawValue) · Read-only")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+        }
+        .task(id: items.map(\.id)) {
+            let movies = items.filter { $0.kind == .movie }
+            let series = items.filter { $0.kind != .movie }
+            previewMetadata.topMovies = movies
+            previewMetadata.topSeries = series
+            previewMetadata.movieCatalog = movies
+            previewMetadata.seriesCatalog = series
+            previewMetadata.homeCatalogs = [
+                BuiltInHomeCatalog(shelf: .popularMovies, items: movies),
+                BuiltInHomeCatalog(shelf: .popularSeries, items: series),
+            ].filter { !$0.items.isEmpty }
         }
     }
 }
@@ -490,5 +523,69 @@ private struct StaggeredFeature: View {
 private extension Array {
     subscript(safe index: Int) -> Element? {
         indices.contains(index) ? self[index] : nil
+    }
+}
+
+// MARK: - Read-only onboarding catalog source
+
+/// Reads public catalog metadata without installing sources or touching the library.
+@MainActor
+@Observable
+private final class OnboardingPreviewSource {
+    var items: [MediaItem] = []
+    var isLoading = true
+
+    static func uniqueItems(_ candidates: [MediaItem]) -> [MediaItem] {
+        var seen = Set<String>()
+        return Array(candidates.filter { $0.artworkURL != nil && seen.insert($0.id).inserted }.prefix(24))
+    }
+
+    func load(store: OmniaStore, existing: [MediaItem]) async {
+        isLoading = true
+        defer { isLoading = false }
+        let loaded = Self.uniqueItems(existing)
+        if !loaded.isEmpty {
+            items = loaded
+            return
+        }
+        var catalogs = AddonCatalogStore.catalogs(in: store).filter {
+            store.isCatalogEnabled(for: $0.addon, catalog: $0.catalog)
+        }
+        do {
+            try Task.checkCancellation()
+            // The app already uses Cinemeta as its default public catalog.
+            // This local value is never installed or persisted.
+            if catalogs.isEmpty, let address = OmniaStore.defaultAddonManifestURLs.first,
+               let url = URL(string: address) {
+                let manifest = try await StremioAddonClient.fetchManifest(from: url)
+                try Task.checkCancellation()
+                let addon = InstalledAddon(manifest: manifest, manifestURL: url, isEnabled: true, addedAt: .now)
+                catalogs = manifest.catalogs.filter {
+                    $0.canLoadWithoutExtra && $0.showInHome != false && AddonHomeCatalog.isSupportedType($0.type)
+                }.map { AddonHomeCatalog(key: $0.id, addon: addon, catalog: $0) }
+            }
+            for catalog in catalogs.prefix(3) {
+                try Task.checkCancellation()
+                do {
+                    let previews = try await StremioAddonClient.fetchCatalog(from: catalog.addon, catalog: catalog.catalog)
+                    try Task.checkCancellation()
+                    items = Self.uniqueItems(items + previews.prefix(24).compactMap { $0.mediaItem(addon: catalog.addon) })
+                    if items.count >= 24 { break }
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch HTTPTransportError.cancelled {
+                    throw CancellationError()
+                } catch {
+                    try Task.checkCancellation()
+                    // Preserve successful rows if a later source is unavailable.
+                }
+            }
+        } catch is CancellationError {
+            return
+        } catch HTTPTransportError.cancelled {
+            return
+        } catch {
+            // Empty content keeps the accessible retry and setup actions available.
+        }
     }
 }

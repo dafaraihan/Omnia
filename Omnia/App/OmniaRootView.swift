@@ -255,7 +255,7 @@ struct OmniaRootView: View {
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if usesNuvioBar && isCompactWidth {
                     nuvioBar
-                        .padding(.bottom, 4)
+                        .padding(.bottom, 8)
                 }
             }
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
@@ -302,6 +302,7 @@ struct OmniaRootView: View {
         } else {
             tabs
                 .tabViewStyle(.tabBarOnly)
+                .toolbar(.hidden, for: .tabBar)
                 .toolbarBackground(OmniaMaterial.tabBar, for: .tabBar)
                 .toolbarBackground(.visible, for: .tabBar)
                 .tabBarMinimizeBehavior(usesNuvioBar ? .never : .onScrollDown)
@@ -389,7 +390,7 @@ struct OmniaRootView: View {
             scroll: topBarScroll[selection] ?? TopBarScrollReport(),
             // On iPad it shares the navigation bar's row, so it leaves room
             // for the Back button and the page's own buttons.
-            maximumWidth: max(windowWidth - (isCompactWidth ? 32 : 280), 0),
+            maximumWidth: max(windowWidth - (isCompactWidth ? 0 : 280), 0),
             select: { selection = $0 }
         )
     }
@@ -430,15 +431,8 @@ struct OmniaRootView: View {
         )
     }
 
-    /// Settings › Layout › Top Bar Style. Standard is the system
-    /// tab bar; the other styles are Nuvio's floating bar.
-    @ViewBuilder
     private var macTopBarNavigation: some View {
-        if settings.preferences.display.topBarStyle.isNuvio {
-            nuvioTopBarNavigation
-        } else {
-            nativeTopBarNavigation
-        }
+        nuvioTopBarNavigation
     }
 
     /// Nuvio's bar sits where the system tab bar does, in the centre of the
@@ -475,44 +469,6 @@ struct OmniaRootView: View {
             navigation.resetPath(for: previous)
             topBarScroll[previous] = nil
         }
-        .tint(accentColor)
-        .modifier(floatingSearchPanel)
-    }
-
-    private var nativeTopBarNavigation: some View {
-        TabView(selection: macTopBarSelection) {
-            ForEach(AppDestination.macTopBarDestinations(showsLiveTV: liveTV.showsInNavigation), id: \.self) { destination in
-                if destination == .search && usesFloatingSearch {
-                    Tab(
-                        destination.title,
-                        systemImage: destination.symbolName,
-                        value: destination
-                    ) {
-                        Color.clear
-                    }
-                } else if destination == .settings, let profile = profiles.activeProfile {
-                    Tab(value: destination) {
-                        macNavigationStack(for: destination)
-                    } label: {
-                        Label {
-                            Text(profile.name)
-                        } icon: {
-                            ProfileAvatarView(profile: profile, size: 26)
-                                .modifier(ProfileAnchorReporting())
-                        }
-                    }
-                } else {
-                    Tab(
-                        destination.title,
-                        systemImage: destination.symbolName,
-                        value: destination
-                    ) {
-                        macNavigationStack(for: destination)
-                    }
-                }
-            }
-        }
-        .tabViewStyle(.tabBarOnly)
         .tint(accentColor)
         .modifier(floatingSearchPanel)
     }
@@ -618,13 +574,6 @@ struct OmniaRootView: View {
     }
 
     private var macSelection: Binding<AppDestination> {
-        Binding(
-            get: { navigation.selection },
-            set: { navigation.select($0, floatingSearch: usesFloatingSearch) }
-        )
-    }
-
-    private var macTopBarSelection: Binding<AppDestination> {
         Binding(
             get: { navigation.selection },
             set: { navigation.select($0, floatingSearch: usesFloatingSearch) }

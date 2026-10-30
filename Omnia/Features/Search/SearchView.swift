@@ -86,13 +86,20 @@ struct SearchView: View {
         unfilteredResults.filter(filters.keeps)
     }
 
-    private var searchKey: String {
-        "\(source):\(query)"
+    private struct SearchRequest: Hashable {
+        let source: SearchFilterPreferences.Source
+        let query: String
+        let addons: [InstalledAddon]
+    }
+
+    private var searchKey: SearchRequest {
+        SearchRequest(source: source, query: query, addons: store.installedAddons)
     }
 
     var body: some View {
         presentedContent
         .task(id: searchKey) {
+            let request = searchKey
             let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
             relatedResults = []
             guard text.count >= 2 else {
@@ -133,15 +140,14 @@ struct SearchView: View {
                 query: text
             ) { found in
                 guard !Task.isCancelled,
-                      text == query.trimmingCharacters(in: .whitespacesAndNewlines)
+                      request == searchKey
                 else { return }
                 addonResults = SearchResultRanking.unique(found.map(\.item))
-                isSearchingAddons = false
             }
             await metadataSearch.value
             let serverItems = await serverMatches.value
             guard !Task.isCancelled,
-                  text == query.trimmingCharacters(in: .whitespacesAndNewlines)
+                  request == searchKey
             else { return }
             addonResults = SearchResultRanking.unique(addonMatches.map(\.item) + serverItems)
             isSearchingAddons = false
@@ -175,7 +181,7 @@ struct SearchView: View {
             #else
             searchContent
                 .omniaNavigationTitle("Search", screen: .search)
-                .searchable(text: queryBinding, prompt: "Titles, people, or genres")
+                .searchable(text: queryBinding, placement: .navigationBarDrawer(displayMode: .always), prompt: "Titles, people, or genres")
                 .searchSuggestions {
                     ForEach(store.library.prefix(3)) { item in
                         Text(item.title).searchCompletion(item.title)
@@ -258,12 +264,17 @@ struct SearchView: View {
                 ContentUnavailableView.search(text: query)
             } else {
                 GeometryReader { proxy in
-                    let layout = MediaBrowseMetrics.posterGridLayout(containerWidth: proxy.size.width, display: display)
-
+                    let layout = MediaGridLayout.fitting(
+                        containerWidth: proxy.size.width,
+                        horizontalInset: MediaBrowseMetrics.pageInset,
+                        minimumItemWidth: display.landscapePosters ? display.landscapePosterCardWidth : display.posterCardWidth,
+                        maximumItemWidth: .greatestFiniteMagnitude,
+                        spacing: MediaBrowseMetrics.gridSpacing
+                    )
                     ScrollView(.vertical, showsIndicators: false) {
                         LazyVGrid(
                             columns: layout.columns,
-                            alignment: .leading,
+                            alignment: .center,
                             spacing: 18
                         ) {
                             ForEach(results) { item in

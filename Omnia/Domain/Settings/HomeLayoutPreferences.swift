@@ -35,10 +35,9 @@ nonisolated struct HomeLayoutPreferences: Codable, Equatable, Sendable {
 
     var showsHero = true
     var heroStyle: HeroStyle = .fullBleed
-    /// Nuvio Enhanced's Dynamic Background Color: Home below the hero is
-    /// tinted with the featured artwork's colours. Omnia always did this,
-    /// so it stays on unless turned off.
-    var dynamicBackground = true
+    /// Artwork-derived Home tint. New profiles opt in; decoded legacy layouts
+    /// retain their previous default when the key predates this preference.
+    var dynamicBackground = false
     var showsCatalogType = true
     var hidesUnreleasedContent = false
     /// Catalog keys in display order. Keys of add-ons that are temporarily

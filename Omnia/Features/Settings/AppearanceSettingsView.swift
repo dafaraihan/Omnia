@@ -4,6 +4,7 @@ struct AppearanceSettingsView: View {
     @Environment(OmniaStore.self) private var store
     @Environment(SettingsPreferencesStore.self) private var settings
     @Environment(CollectionsStore.self) private var collections
+    @Environment(HomeLayoutStore.self) private var homeLayout
     @AppStorage(HomeView.continueWatchingVisibilityKey) private var showsContinueWatching = true
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -73,6 +74,13 @@ struct AppearanceSettingsView: View {
                     Text("AMOLED Black")
                     Text("Use true black behind pages in Dark appearance.")
                 }
+                Toggle(isOn: Binding(
+                    get: { homeLayout.preferences.dynamicBackground },
+                    set: { enabled in homeLayout.update { $0.dynamicBackground = enabled } }
+                )) {
+                    Text("Dynamic Background Color")
+                    Text("Blend the featured artwork color into Home’s background.")
+                }
                 if showsNavigationStyle {
                     SettingsDropdown(
                         "Navigation Style",
@@ -115,8 +123,8 @@ struct AppearanceSettingsView: View {
                 Text("Choose a sidebar or a top tab bar, whether Search opens as a page or floats over the current one, and whether resting the pointer on a poster previews it.")
                 #else
                 Text(horizontalSizeClass == .compact
-                    ? "Choose the system tab bar or Nuvio's floating bar."
-                    : "Choose a sidebar or a top tab bar, and the system tab bar or Nuvio's floating bar.")
+                    ? "Choose how the floating navigation bar shows labels."
+                    : "Choose a sidebar or floating navigation bar.")
                 #endif
             }
 

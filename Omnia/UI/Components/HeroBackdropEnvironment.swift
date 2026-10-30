@@ -166,6 +166,118 @@ extension EnvironmentValues {
     }
 }
 
+/// Home alone uses a solid artwork wash; detail and stream surfaces keep
+/// their existing cinematic gradients.
+struct HomeArtworkBackground: View {
+    let item: MediaItem?
+    var isEnabled = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
+    @State private var tint: ArtworkTint?
+
+    private var artworkURL: URL? {
+        guard isEnabled, !reduceTransparency, contrast != .increased else { return nil }
+        return item?.backdropURL ?? item?.artworkURL
+    }
+
+    var body: some View {
+        OmniaPageBackground()
+            .overlay {
+                if artworkURL != nil, let tint {
+                    Color(red: tint.red, green: tint.green, blue: tint.blue).opacity(0.42)
+                }
+            }
+            .animation(reduceMotion ? nil : .timingCurve(0, 0, 0.2, 1, duration: 0.6), value: tint)
+            .task(id: artworkURL) {
+                guard let url = artworkURL else { tint = nil; return }
+                // Keep the preceding tint while the next artwork is loading.
+                let next = await ArtworkTintCache.shared.tint(for: url)
+                guard !Task.isCancelled else { return }
+                tint = next
+            }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+}
+
+private nonisolated struct ArtworkTint: Equatable, Sendable {
+    let red: Double
+    let green: Double
+    let blue: Double
+}
+
+/// Shares the existing bounded HTTPS artwork loader, then samples at most
+/// 96 × 96 pixels. The small color cache has no image or credential payloads.
+private actor ArtworkTintCache {
+    static let shared = ArtworkTintCache()
+    private var colors: [URL: ArtworkTint] = [:]
+    private var order: [URL] = []
+
+    func tint(for url: URL) async -> ArtworkTint? {
+        if let color = colors[url] {
+            order.removeAll { $0 == url }
+            order.append(url)
+            return color
+        }
+        guard !Task.isCancelled,
+              let image = await RemoteArtworkCache.shared.image(
+                for: url, target: RemoteArtworkTarget(width: 96, height: 96, fills: false)
+              ), !Task.isCancelled else { return nil }
+        guard let color = Self.extract(image), !Task.isCancelled else { return nil }
+        colors[url] = color
+        order.removeAll { $0 == url }
+        order.append(url)
+        while order.count > 256 { colors.removeValue(forKey: order.removeFirst()) }
+        return color
+    }
+
+    private nonisolated static func extract(_ image: CGImage) -> ArtworkTint? {
+        let side = 96
+        var pixels = [UInt8](repeating: 0, count: side * side * 4)
+        let drawn = pixels.withUnsafeMutableBytes { bytes -> Bool in
+            guard let context = CGContext(
+                data: bytes.baseAddress, width: side, height: side,
+                bitsPerComponent: 8, bytesPerRow: side * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return false }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: side, height: side))
+            return true
+        }
+        guard drawn else { return nil }
+        var swatches: [Int: (count: Int, red: Double, green: Double, blue: Double)] = [:]
+        for index in stride(from: 0, to: pixels.count, by: 4) {
+            guard pixels[index + 3] >= 240 else { continue }
+            let r = Double(pixels[index]) / 255
+            let g = Double(pixels[index + 1]) / 255
+            let b = Double(pixels[index + 2]) / 255
+            let high = max(r, g, b), low = min(r, g, b)
+            let lightness = (high + low) / 2
+            let saturation = high == low ? 0 : (high - low) / (1 - abs(2 * lightness - 1))
+            guard (0.22...0.92).contains(lightness), saturation >= 0.08 else { continue }
+            let key = (Int(pixels[index]) >> 4) << 8 | (Int(pixels[index + 1]) >> 4) << 4 | Int(pixels[index + 2]) >> 4
+            var swatch = swatches[key] ?? (0, 0, 0, 0)
+            swatch.count += 1
+            swatch.red += r; swatch.green += g; swatch.blue += b
+            swatches[key] = swatch
+        }
+        guard let swatch = swatches.values.max(by: { $0.count < $1.count }) else { return nil }
+        let count = Double(swatch.count)
+        let r = swatch.red / count, g = swatch.green / count, b = swatch.blue / count
+        let high = max(r, g, b), low = min(r, g, b)
+        let lightness = (high + low) / 2
+        let desired = min(0.8, max(0.45, lightness))
+        // Preserve hue and saturation while lifting the selected HSL swatch.
+        let factor = (1 - abs(2 * desired - 1)) / max(0.001, 1 - abs(2 * lightness - 1))
+        return ArtworkTint(
+            red: min(1, max(0, desired + (r - lightness) * factor)),
+            green: min(1, max(0, desired + (g - lightness) * factor)),
+            blue: min(1, max(0, desired + (b - lightness) * factor))
+        )
+    }
+}
+
 struct HeroAccentBackground: View {
     let item: MediaItem
 
@@ -334,8 +446,13 @@ struct WindowHeroBackdrop: View {
                 OmniaPageBackground()
 
                 if let accentItem {
-                    HeroAccentBackground(item: accentItem)
-                        .equatable()
+                    Group {
+                        if state.presentation?.source == .home {
+                            HomeArtworkBackground(item: accentItem)
+                        } else {
+                            HeroAccentBackground(item: accentItem).equatable()
+                        }
+                    }
                         .frame(width: proxy.size.width, height: proxy.size.height)
                         .opacity(accentVisible ? 1 : 0)
                 }

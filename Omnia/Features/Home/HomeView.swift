@@ -276,22 +276,8 @@ struct HomeView: View {
                 .padding(.top, 22)
                 .padding(.bottom, 56)
                 .background {
-                    if let featured = displayFeatured, usesDynamicBackground {
-                        #if os(macOS)
-                        // The window backdrop already draws the accent behind
-                        // the shelves. Drawing it here too blurred a layer as
-                        // tall as every row on Home.
-                        Color.clear
-                        #else
-                        HeroAccentBackground(item: featured)
-                        #endif
-                    } else {
-                        pageBackground
-                    }
+                    HomeArtworkBackground(item: displayFeatured, isEnabled: usesDynamicBackground)
                 }
-                // Shelves sit on the dark artwork accent, so their primary
-                // text must stay light even in Light appearance.
-                .environment(\.colorScheme, displayFeatured == nil || !usesDynamicBackground ? colorScheme : .dark)
             }
         }
         .background {
@@ -910,13 +896,10 @@ struct HomeView: View {
     @ViewBuilder
     private var screenBackground: some View {
         #if os(macOS)
+        // The shared window layer owns full-bleed hero artwork on Mac.
         Color.clear
         #else
-        if let featured = displayFeatured, usesDynamicBackground {
-            HeroAccentBackground(item: featured)
-        } else {
-            pageBackground
-        }
+        HomeArtworkBackground(item: displayFeatured, isEnabled: usesDynamicBackground)
         #endif
     }
 
