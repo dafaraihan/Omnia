@@ -244,8 +244,8 @@ struct MediaDetailView: View {
 
             // Same as Home: the hero melts into the page's artwork colour, and
             // on iPad and Mac a playing trailer stays uncovered.
-            if settings.preferences.display.heroBlend.isEnabled, OmniaDevice.isPhone || !heroTrailer.isVisible {
-                HeroBottomBlend(item: displayItem, usesWash: usesArtworkBackground)
+            if settings.preferences.display.heroBlend.isEnabled, usesArtworkBackground, OmniaDevice.isPhone || !heroTrailer.isVisible {
+                HeroBottomBlend(item: displayItem)
                     .transition(.opacity)
             }
             if heroTrailer.isVisible {

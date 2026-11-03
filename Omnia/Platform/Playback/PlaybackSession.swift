@@ -482,6 +482,15 @@ final class PlaybackSession {
             self?.recoveryNotice = "Picture in Picture is unavailable for this source or track selection. Playback continues in Omnia."
         }
         #if OMNIA_MPV
+        pictureInPictureController.duration = { [weak self] in self?.player?.duration ?? 0 }
+        pictureInPictureController.setPlaying = { [weak self] playing in
+            if playing { self?.player?.play() } else { self?.player?.pause() }
+        }
+        pictureInPictureController.seekBy = { [weak self] seconds in self?.player?.seek(by: seconds) }
+        pictureInPictureController.beginFrames = { [weak self] handler in
+            self?.player?.beginSampleBufferOutput { frame in handler(frame) } ?? false
+        }
+        pictureInPictureController.endFrames = { [weak self] in self?.player?.endSampleBufferOutput() }
         pictureInPictureController.beginHandoff = { [weak self] in self?.player?.pause() }
         pictureInPictureController.endHandoff = { [weak self] position, playing in
             guard let self else { return }
@@ -1703,9 +1712,8 @@ final class PlaybackSession {
             hasRenderedVideoFrame = player.hasRenderedVideoFrame
             autoSyncSubtitlesIfNeeded()
             #if os(iOS)
-            // Probing opens a second connection to the source, so it waits until
-            // the video is playing rather than competing with the start.
-            if hasRenderedVideoFrame, let source { pictureInPictureController.prepare(source: source) }
+            // iOS needs a frame on screen before it will float a video.
+            if hasRenderedVideoFrame { pictureInPictureController.attachSampleBuffers() }
             #endif
         }
         #if os(macOS)

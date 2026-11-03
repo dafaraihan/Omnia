@@ -88,6 +88,11 @@ struct OmniaRootView: View {
         .preferredColorScheme(onboardingCompleted ? store.appearance.colorScheme : nil)
         #if os(iOS)
         .background {
+            IOSSampleBufferLayerHost(controller: playback.pictureInPictureController)
+                .ignoresSafeArea()
+                .accessibilityHidden(true)
+        }
+        .background {
             PhonePlaybackOrientationHost(isPresented: playback.isPresentingPlayer && !playback.isPictureInPictureActive)
                 .frame(width: 0, height: 0)
         }

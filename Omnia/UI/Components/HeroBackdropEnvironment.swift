@@ -201,25 +201,19 @@ struct HomeArtworkBackground: View {
     }
 }
 
-/// Melts a hero's lower part into what sits under it: the artwork wash with
-/// Dynamic Background Color, otherwise the page. Set in Settings › Layout ›
-/// Home Layout › Hero.
+/// Melts a hero's lower part into the artwork wash under it, so the hero and
+/// the rows below read as one surface. Set in Settings › Layout › Home Layout
+/// › Hero.
 struct HeroBottomBlend: View {
     @Environment(\.displayPreferences) private var display
 
     let item: MediaItem
-    var usesWash: Bool
 
     var body: some View {
         let blend = display.heroBlend
         let top = 1 - blend.height
-        Group {
-            if usesWash {
-                HomeArtworkBackground(item: item).environment(\.colorScheme, .dark)
-            } else {
-                OmniaPageBackground()
-            }
-        }
+        HomeArtworkBackground(item: item)
+            .environment(\.colorScheme, .dark)
         .mask {
             LinearGradient(
                 stops: [

@@ -588,8 +588,8 @@ struct HomeView: View {
             // Dynamic Background Color: the hero melts into the artwork's
             // colour, the same one the rows below sit on, so there is no edge.
             // On iPad and Mac a playing trailer stays uncovered.
-            if settings.preferences.display.heroBlend.isEnabled, !isCardHero, OmniaDevice.isPhone || !heroTrailer.isVisible {
-                HeroBottomBlend(item: featured, usesWash: usesDynamicBackground)
+            if settings.preferences.display.heroBlend.isEnabled, usesDynamicBackground, !isCardHero, OmniaDevice.isPhone || !heroTrailer.isVisible {
+                HeroBottomBlend(item: featured)
                     .transition(.opacity)
             }
             if heroTrailer.isVisible, !isCardHero {

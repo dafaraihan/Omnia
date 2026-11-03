@@ -71,8 +71,14 @@ enum OmniaPreviewAudio {
 /// AVKit owns the floating window and its system controls. A native mpv
 /// source may hand off to an AVPlayer only when AVFoundation can open it.
 @MainActor
-final class IOSPictureInPictureController: NSObject, AVPictureInPictureControllerDelegate {
+final class IOSPictureInPictureController: NSObject, AVPictureInPictureControllerDelegate, AVPictureInPictureSampleBufferPlaybackDelegate {
     let layer = AVPlayerLayer()
+    /// Holds mpv's frames while a video floats. iOS needs it on screen, and
+    /// showing a frame, before it will offer Picture in Picture.
+    let sampleLayer = AVSampleBufferDisplayLayer()
+    private var usesSampleBuffers = false
+    private var sampleTimebase: CMTimebase?
+    private var sampleClock: Task<Void, Never>?
     private(set) var player: AVPlayer?
     private(set) var isHandoff = false
     private var controller: AVPictureInPictureController?
@@ -102,6 +108,12 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
     var beginHandoff: (() -> Void)?
     var endHandoff: ((Double, Bool) -> Void)?
     var unavailable: ((String?) -> Void)?
+    var duration: (() -> Double)?
+    var setPlaying: ((Bool) -> Void)?
+    var seekBy: ((Double) -> Void)?
+    /// Starts and stops mpv drawing for the floating window.
+    var beginFrames: ((@escaping (CVPixelBuffer) -> Void) -> Bool)?
+    var endFrames: (() -> Void)?
     /// The floating window's Back to app button, before it closes.
     var willRestore: (() -> Void)?
     /// The floating window's close button.
@@ -163,6 +175,128 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
         attach(player, handoff: false)
     }
 
+    /// mpv's sources: iOS floats the frames mpv hands over.
+    func attachSampleBuffers() {
+        guard !usesSampleBuffers else { return }
+        reset()
+        guard AVPictureInPictureController.isPictureInPictureSupported() else { return }
+        usesSampleBuffers = true
+        sampleLayer.videoGravity = .resizeAspect
+        var timebase: CMTimebase?
+        CMTimebaseCreateWithSourceClock(allocator: kCFAllocatorDefault, sourceClock: CMClockGetHostTimeClock(), timebaseOut: &timebase)
+        sampleTimebase = timebase
+        sampleLayer.controlTimebase = timebase
+        syncSampleClock()
+        Self.enqueueBlackFrame(on: sampleLayer)
+        controller = AVPictureInPictureController(
+            contentSource: .init(sampleBufferDisplayLayer: sampleLayer, playbackDelegate: self)
+        )
+        controller?.delegate = self
+        controller?.canStartPictureInPictureAutomaticallyFromInline = true
+        possibility = controller?.observe(\.isPictureInPicturePossible, options: [.initial, .new]) { [weak self] _, _ in
+            Task { @MainActor [weak self] in self?.publish() }
+        }
+    }
+
+    private func syncSampleClock() {
+        guard let sampleTimebase else { return }
+        let seconds = position?() ?? 0
+        CMTimebaseSetTime(sampleTimebase, time: CMTime(seconds: seconds.isFinite ? seconds : 0, preferredTimescale: 600))
+        CMTimebaseSetRate(sampleTimebase, rate: isPlaying?() == true ? 1 : 0)
+    }
+
+    /// Tells the buttons in the floating window where playback is.
+    func samplePlaybackChanged() {
+        guard usesSampleBuffers else { return }
+        syncSampleClock()
+        controller?.invalidatePlaybackState()
+    }
+
+    private nonisolated static func enqueue(_ frame: CVPixelBuffer, on layer: AVSampleBufferDisplayLayer) {
+        var format: CMVideoFormatDescription?
+        CMVideoFormatDescriptionCreateForImageBuffer(allocator: kCFAllocatorDefault, imageBuffer: frame, formatDescriptionOut: &format)
+        guard let format else { return }
+        // Stamped with the layer's own clock, so it never counts as late or early.
+        let now = layer.controlTimebase.map { CMTimebaseGetTime($0) } ?? CMClockGetTime(CMClockGetHostTimeClock())
+        var timing = CMSampleTimingInfo(duration: .invalid, presentationTimeStamp: now, decodeTimeStamp: .invalid)
+        var sample: CMSampleBuffer?
+        CMSampleBufferCreateReadyWithImageBuffer(
+            allocator: kCFAllocatorDefault, imageBuffer: frame, formatDescription: format,
+            sampleTiming: &timing, sampleBufferOut: &sample
+        )
+        guard let sample else { return }
+        if let attachments = CMSampleBufferGetSampleAttachmentsArray(sample, createIfNecessary: true),
+           CFArrayGetCount(attachments) > 0 {
+            let dictionary = unsafeBitCast(CFArrayGetValueAtIndex(attachments, 0), to: CFMutableDictionary.self)
+            CFDictionarySetValue(
+                dictionary,
+                Unmanaged.passUnretained(kCMSampleAttachmentKey_DisplayImmediately).toOpaque(),
+                Unmanaged.passUnretained(kCFBooleanTrue).toOpaque()
+            )
+        }
+        let renderer = layer.sampleBufferRenderer
+        if renderer.status == .failed { renderer.flush() }
+        renderer.enqueue(sample)
+    }
+
+    private static func enqueueBlackFrame(on layer: AVSampleBufferDisplayLayer) {
+        var frame: CVPixelBuffer?
+        let attributes = [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary
+        CVPixelBufferCreate(kCFAllocatorDefault, 16, 9, kCVPixelFormatType_32BGRA, attributes, &frame)
+        guard let frame else { return }
+        CVPixelBufferLockBaseAddress(frame, [])
+        if let base = CVPixelBufferGetBaseAddress(frame) {
+            memset(base, 0, CVPixelBufferGetDataSize(frame))
+        }
+        CVPixelBufferUnlockBaseAddress(frame, [])
+        enqueue(frame, on: layer)
+    }
+
+    // MARK: AVPictureInPictureSampleBufferPlaybackDelegate
+
+    func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, setPlaying playing: Bool) {
+        setPlaying?(playing)
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(150))
+            self?.samplePlaybackChanged()
+        }
+    }
+
+    func pictureInPictureControllerTimeRangeForPlayback(_ pictureInPictureController: AVPictureInPictureController) -> CMTimeRange {
+        let seconds = duration?() ?? 0
+        guard seconds.isFinite, seconds > 0 else {
+            // A live stream: no end, so the window shows no timeline.
+            return CMTimeRange(start: .negativeInfinity, duration: .positiveInfinity)
+        }
+        return CMTimeRange(start: .zero, duration: CMTime(seconds: seconds, preferredTimescale: 600))
+    }
+
+    func pictureInPictureControllerIsPlaybackPaused(_ pictureInPictureController: AVPictureInPictureController) -> Bool {
+        isPlaying?() != true
+    }
+
+    func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, didTransitionToRenderSize newRenderSize: CMVideoDimensions) {}
+
+    func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, skipByInterval skipInterval: CMTime, completion completionHandler: @escaping () -> Void) {
+        seekBy?(skipInterval.seconds)
+        syncSampleClock()
+        completionHandler()
+    }
+
+    func pictureInPictureControllerWillStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        guard usesSampleBuffers else { return }
+        let layer = sampleLayer
+        let started = beginFrames? { frame in Self.enqueue(frame, on: layer) } ?? false
+        if !started { unavailable?(nil) }
+        sampleClock?.cancel()
+        sampleClock = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                self?.samplePlaybackChanged()
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
+    }
+
     private static let unplayableExtensions: Set<String> = ["mkv", "avi", "webm", "flv", "wmv", "vob", "iso", "m2ts"]
 
     func prepare(source: PlaybackSource) {
@@ -213,7 +347,8 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
 
     private func publish() {
         stateChanged?(controller?.isPictureInPictureActive == true,
-                      controller?.isPictureInPicturePossible == true && player?.currentItem?.status == .readyToPlay)
+                      controller?.isPictureInPicturePossible == true
+                        && (usesSampleBuffers || player?.currentItem?.status == .readyToPlay))
     }
 
     func toggle() {
@@ -225,6 +360,11 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
     }
 
     private func start() {
+        if usesSampleBuffers {
+            guard let controller, controller.isPictureInPicturePossible else { unavailable?(nil); return }
+            controller.startPictureInPicture()
+            return
+        }
         guard let controller, controller.isPictureInPicturePossible,
               !controller.isPictureInPictureActive, startTask == nil,
               let player, player.currentItem?.status == .readyToPlay else {
@@ -330,6 +470,15 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
         startTask = nil
         possibility = nil
         readiness = nil
+        sampleClock?.cancel()
+        sampleClock = nil
+        if usesSampleBuffers {
+            endFrames?()
+            sampleLayer.sampleBufferRenderer.flush()
+            sampleLayer.controlTimebase = nil
+            sampleTimebase = nil
+            usesSampleBuffers = false
+        }
         controller?.delegate = nil
         controller?.stopPictureInPicture()
         controller = nil
@@ -354,11 +503,20 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
         let wasClosed = !isRestoring
         isRestoring = false
         startedInBackground = false
+        sampleClock?.cancel()
+        sampleClock = nil
+        if usesSampleBuffers {
+            endFrames?()
+            // Keeps the layer showing something, so it can float again.
+            Self.enqueueBlackFrame(on: sampleLayer)
+        }
         restore(completed: true)
         publish()
         if wasClosed { closedFromWindow?() }
     }
     func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, failedToStartPictureInPictureWithError error: Error) {
+        sampleClock?.cancel()
+        if usesSampleBuffers { endFrames?() }
         restore()
         handoffFailed?()
         unavailable?(error.localizedDescription)
@@ -387,6 +545,31 @@ final class IOSPictureInPictureHostView: UIView {
         super.layoutSubviews()
         videoLayer?.frame = bounds
     }
+}
+
+/// Keeps mpv's frame layer in the window behind the app. It has to stay there
+/// while a video floats, and the player closes behind the floating window.
+struct IOSSampleBufferLayerHost: UIViewRepresentable {
+    let controller: IOSPictureInPictureController
+
+    final class HostView: UIView {
+        var sampleLayer: AVSampleBufferDisplayLayer? {
+            didSet { if let sampleLayer { layer.addSublayer(sampleLayer) } }
+        }
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            sampleLayer?.frame = bounds
+        }
+    }
+
+    func makeUIView(context: Context) -> HostView {
+        let view = HostView()
+        view.isUserInteractionEnabled = false
+        view.sampleLayer = controller.sampleLayer
+        return view
+    }
+
+    func updateUIView(_ view: HostView, context: Context) {}
 }
 
 struct IOSPictureInPictureHost: UIViewRepresentable {

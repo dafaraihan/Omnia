@@ -12,6 +12,7 @@
 typedef NSView OMMpvPlatformView;
 #else
 #import <UIKit/UIKit.h>
+#import <CoreVideo/CoreVideo.h>
 typedef UIView OMMpvPlatformView;
 #endif
 
@@ -145,6 +146,13 @@ typedef void (^OMMpvTrackSelectionCompletion)(
 - (void)enterPictureInPicture;
 - (void)exitPictureInPicture;
 - (void)togglePictureInPicture;
+#if !TARGET_OS_OSX
+/// iOS doesn't allow GPU work in the background, so while a video floats mpv
+/// draws on the CPU and hands each frame to `frameHandler`, on a background
+/// queue. Returns NO if it can't. The end call goes back to the Metal output.
+- (BOOL)beginSampleBufferOutput:(void (^)(CVPixelBufferRef frame))frameHandler;
+- (void)endSampleBufferOutput;
+#endif
 /// Saves the frame on screen, without subtitles, as an image at `URL` (the
 /// extension picks the format). Blocks until the file is written.
 - (BOOL)writeCurrentSceneToURL:(NSURL *)URL NS_SWIFT_NAME(writeCurrentScene(to:));

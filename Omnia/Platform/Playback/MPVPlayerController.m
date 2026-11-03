@@ -793,11 +793,30 @@ static void OMMpvRequestRedraw(void *context) {
     NSString *_lastLoadProblem;
     BOOL _prefersMetalRendering;
     BOOL _usingMetalRendering;
+    #if !TARGET_OS_OSX
+    mpv_render_context *_softwareContext;
+    dispatch_queue_t _softwareQueue;
+    OMMpvCallbackBox *_softwareBox;
+    void (^_softwareFrameHandler)(CVPixelBufferRef);
+    CVPixelBufferPoolRef _softwarePool;
+    atomic_int _softwareWidth;
+    atomic_int _softwareHeight;
+    int _softwarePoolWidth;
+    int _softwarePoolHeight;
+    atomic_bool _softwareRenderPending;
+    BOOL _softwareOutputActive;
+    NSString *_savedHwdec;
+    #endif
 }
 @property (nonatomic, readwrite) OMMpvVideoView *videoView;
 @property (nonatomic, readwrite, nullable) NSString *errorMessage;
 @property (nonatomic, readwrite, nullable) NSString *renderingFallbackReason;
 - (void)drainEvents;
+#if !TARGET_OS_OSX
+- (void)scheduleSoftwareRender;
+- (void)freeSoftwareContext;
+- (void)updateSoftwareSize;
+#endif
 - (void)emitSnapshot;
 - (void)updateFillCrop;
 - (void)embedVideoViewInHost:(OMMpvPlatformView *)hostView;
@@ -1590,11 +1609,144 @@ static void OMMpvWakeup(void *context) {
 }
 
 #if !TARGET_OS_OSX
-// Picture in Picture on iOS needs an AVPictureInPictureController source;
-// mpv's Metal output doesn't offer one yet.
+// Picture in Picture on iOS lives in IOSPictureInPictureController, which
+// floats the frames from the sample buffer output below.
 - (void)enterPictureInPicture {}
 - (void)exitPictureInPicture {}
 - (void)togglePictureInPicture {}
+
+/// The floating window is small, so frames stop at this width.
+static const int OMMpvSoftwareMaxWidth = 1280;
+
+static void OMMpvSoftwareUpdate(void *context) {
+    OMMpvPlayerController *controller = (__bridge OMMpvPlayerController *)context;
+    [controller scheduleSoftwareRender];
+}
+
+- (void)updateSoftwareSize {
+    int64_t width = 0, height = 0;
+    mpv_get_property(_mpv, "video-params/dw", MPV_FORMAT_INT64, &width);
+    mpv_get_property(_mpv, "video-params/dh", MPV_FORMAT_INT64, &height);
+    if (width <= 0 || height <= 0) { width = 16; height = 9; }
+    double scale = MIN(1.0, (double)OMMpvSoftwareMaxWidth / (double)width);
+    atomic_store(&_softwareWidth, ((int)(width * scale)) & ~1);
+    atomic_store(&_softwareHeight, ((int)(height * scale)) & ~1);
+}
+
+- (BOOL)beginSampleBufferOutput:(void (^)(CVPixelBufferRef))frameHandler {
+    if (!_mpv || _stopped || _softwareContext) return NO;
+    mpv_render_param parameters[] = {
+        { MPV_RENDER_PARAM_API_TYPE, (void *)MPV_RENDER_API_TYPE_SW },
+        { MPV_RENDER_PARAM_INVALID, NULL },
+    };
+    _softwareOutputActive = YES;
+    if (mpv_render_context_create(&_softwareContext, _mpv, parameters) < 0) {
+        _softwareContext = NULL;
+        _softwareOutputActive = NO;
+        return NO;
+    }
+    if (!_softwareQueue) {
+        _softwareQueue = dispatch_queue_create("omnia.mpv.software-frames", DISPATCH_QUEUE_SERIAL);
+    }
+    _softwareFrameHandler = [frameHandler copy];
+    [self updateSoftwareSize];
+
+    char *hwdec = mpv_get_property_string(_mpv, "hwdec");
+    _savedHwdec = hwdec ? @(hwdec) : @"auto-safe";
+    if (hwdec) mpv_free(hwdec);
+    // The CPU can't read frames left on the video decoder.
+    mpv_set_property_string(_mpv, "hwdec", "videotoolbox-copy");
+    mpv_render_context_set_update_callback(_softwareContext, OMMpvSoftwareUpdate, (__bridge void *)self);
+    mpv_set_property_string(_mpv, "vo", "libmpv");
+    return YES;
+}
+
+- (void)scheduleSoftwareRender {
+    if (atomic_exchange(&_softwareRenderPending, true)) return;
+    dispatch_async(_softwareQueue, ^{
+        atomic_store(&self->_softwareRenderPending, false);
+        [self renderSoftwareFrame];
+    });
+}
+
+/// On the software queue, the only place that renders.
+- (void)renderSoftwareFrame {
+    mpv_render_context *context = _softwareContext;
+    void (^handler)(CVPixelBufferRef) = _softwareFrameHandler;
+    if (!context || !handler) return;
+    if (!(mpv_render_context_update(context) & MPV_RENDER_UPDATE_FRAME)) return;
+
+    int width = atomic_load(&_softwareWidth);
+    int height = atomic_load(&_softwareHeight);
+    if (width <= 0 || height <= 0) return;
+    if (!_softwarePool || _softwarePoolWidth != width || _softwarePoolHeight != height) {
+        if (_softwarePool) CVPixelBufferPoolRelease(_softwarePool);
+        _softwarePool = NULL;
+        NSDictionary *attributes = @{
+            (id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA),
+            (id)kCVPixelBufferWidthKey: @(width),
+            (id)kCVPixelBufferHeightKey: @(height),
+            (id)kCVPixelBufferIOSurfacePropertiesKey: @{},
+        };
+        CVPixelBufferPoolCreate(kCFAllocatorDefault, NULL, (__bridge CFDictionaryRef)attributes, &_softwarePool);
+        _softwarePoolWidth = width;
+        _softwarePoolHeight = height;
+    }
+    CVPixelBufferRef buffer = NULL;
+    if (!_softwarePool || CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, _softwarePool, &buffer) != kCVReturnSuccess) return;
+
+    CVPixelBufferLockBaseAddress(buffer, 0);
+    int size[2] = { width, height };
+    size_t stride = CVPixelBufferGetBytesPerRow(buffer);
+    uint8_t *pixels = CVPixelBufferGetBaseAddress(buffer);
+    mpv_render_param parameters[] = {
+        { MPV_RENDER_PARAM_SW_SIZE, size },
+        { MPV_RENDER_PARAM_SW_FORMAT, (void *)"bgr0" },
+        { MPV_RENDER_PARAM_SW_STRIDE, &stride },
+        { MPV_RENDER_PARAM_SW_POINTER, pixels },
+        { MPV_RENDER_PARAM_INVALID, NULL },
+    };
+    int status = mpv_render_context_render(context, parameters);
+    if (status >= 0) {
+        // bgr0 leaves the alpha byte unset.
+        for (int y = 0; y < height; y++) {
+            uint8_t *row = pixels + (size_t)y * stride;
+            for (int x = 0; x < width; x++) row[x * 4 + 3] = 255;
+        }
+    }
+    CVPixelBufferUnlockBaseAddress(buffer, 0);
+    if (status >= 0) handler(buffer);
+    CVPixelBufferRelease(buffer);
+}
+
+/// Safe to call when the output is off. Waits for any frame being drawn.
+- (void)freeSoftwareContext {
+    if (!_softwareContext) return;
+    mpv_render_context_set_update_callback(_softwareContext, NULL, NULL);
+    mpv_render_context *context = _softwareContext;
+    dispatch_sync(_softwareQueue, ^{
+        self->_softwareContext = NULL;
+        self->_softwareFrameHandler = nil;
+    });
+    mpv_render_context_free(context);
+    if (_softwarePool) CVPixelBufferPoolRelease(_softwarePool);
+    _softwarePool = NULL;
+}
+
+- (void)endSampleBufferOutput {
+    if (!_softwareContext) return;
+    // Stops the render callback first; the context goes once mpv has moved on.
+    if (_mpv && !_stopped) {
+        mpv_set_property_string(_mpv, "vo", "gpu-next");
+        mpv_set_property_string(_mpv, "hwdec", _savedHwdec.UTF8String ?: "auto-safe");
+    }
+    [self freeSoftwareContext];
+    if (_mpv && !_stopped) {
+        // A video output that closes leaves no video track selected.
+        mpv_set_property_string(_mpv, "vid", "auto");
+    }
+    _softwareOutputActive = NO;
+}
 #else
 - (void)enterPictureInPicture {
     if (!self.pictureInPicturePossible || _pictureInPictureActive) return;
@@ -1953,6 +2105,9 @@ static void OMMpvWakeup(void *context) {
 
         switch (event->event_id) {
         case MPV_EVENT_VIDEO_RECONFIG:
+            #if !TARGET_OS_OSX
+            if (_softwareContext) [self updateSoftwareSize];
+            #endif
             [self updateFillCrop];
             break;
         case MPV_EVENT_START_FILE:
@@ -2016,7 +2171,11 @@ static void OMMpvWakeup(void *context) {
             mpv_event_log_message *message = event->data;
             // libplacebo built without LittleCMS reports that once even when
             // no ICC profile is in use; it doesn't stop the Metal output.
-            if (_usingMetalRendering && message && message->prefix && message->text
+            if (_usingMetalRendering
+                #if !TARGET_OS_OSX
+                && !_softwareOutputActive
+                #endif
+                && message && message->prefix && message->text
                 && message->log_level <= MPV_LOG_LEVEL_ERROR
                 && strncmp(message->prefix, "vo", 2) == 0
                 && !strstr(message->text, "without LittleCMS")) {
@@ -2056,6 +2215,9 @@ static void OMMpvWakeup(void *context) {
 }
 
 - (void)destroyPlayer {
+    #if !TARGET_OS_OSX
+    [self freeSoftwareContext];
+    #endif
     #if TARGET_OS_OSX
     if (_renderContext) {
         mpv_render_context_set_update_callback(_renderContext, NULL, NULL);

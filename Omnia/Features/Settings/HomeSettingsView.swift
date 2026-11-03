@@ -106,7 +106,7 @@ struct HomeSettingsView: View {
             Toggle(isOn: settings.binding(\.display.heroBlend.isEnabled)) {
                 settingLabel(
                     "Gradient Overlay",
-                    detail: "Fade the hero's artwork into the page below it. Off while a trailer plays on iPad and Mac."
+                    detail: "With Dynamic Background Color, fades the hero's artwork into the colour below it. Off while a trailer plays on iPad and Mac."
                 )
             }
             if settings.preferences.display.heroBlend.isEnabled {
