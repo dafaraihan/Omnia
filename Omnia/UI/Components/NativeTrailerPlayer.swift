@@ -9,7 +9,7 @@ struct NativeTrailerPlayer {
     let source: HeroTrailerSource
     var isMuted: Bool
     var isPlaying: Bool
-    var registerPause: ((@escaping () -> Void) -> Void)? = nil
+    var registerPause: ((@escaping () -> Double) -> Void)? = nil
     let onEvent: (Event) -> Void
     @Environment(\.scenePhase) private var scenePhase
 
@@ -18,7 +18,12 @@ struct NativeTrailerPlayer {
     fileprivate func configure(_ view: TrailerVideoView, coordinator: Coordinator) {
         coordinator.onEvent = onEvent
         coordinator.start(source: source, layer: view.videoLayer, muted: isMuted)
-        registerPause? { [weak coordinator] in coordinator?.update(muted: true, playing: false) }
+        // Pauses the preview and says where it stopped, for the full player.
+        registerPause? { [weak coordinator] in
+            coordinator?.update(muted: true, playing: false)
+            let position = coordinator?.position ?? 0
+            return position.isFinite ? position : 0
+        }
         coordinator.update(muted: isMuted, playing: isPlaying && scenePhase == .active)
     }
 
@@ -88,6 +93,8 @@ struct NativeTrailerPlayer {
                 })
             }
         }
+
+        var position: Double { player?.currentTime().seconds ?? 0 }
 
         func update(muted: Bool, playing: Bool) {
             guard !finished else { return }

@@ -647,11 +647,13 @@ struct HomeView: View {
             }
         }
         // The trailer's speaker button belongs to the hero, so it scrolls
-        // away with it, in the hero's bottom-right corner (Dafa, 2026-10-22).
-        .overlay(alignment: .bottomTrailing) {
+        // away with it: bottom-right, or top-right on iPhone, where the
+        // bottom of the hero holds the title and its buttons.
+        .overlay(alignment: OmniaDevice.isPhone ? .topTrailing : .bottomTrailing) {
             HomeHeroTrailerMuteButton(model: heroTrailer)
-                .padding(.trailing, 28)
-                .padding(.bottom, 18)
+                .padding(.trailing, OmniaDevice.isPhone ? 16 : 28)
+                .padding(.top, OmniaDevice.isPhone ? 62 : 0)
+                .padding(.bottom, OmniaDevice.isPhone ? 0 : 18)
                 .animation(.snappy(duration: 0.25), value: heroTrailer.isVisible)
         }
         .overlay(alignment: .bottom) {
@@ -705,8 +707,8 @@ struct HomeView: View {
     }
 
     private func openHeroTrailer(_ featured: MediaItem) {
-        guard showsPlayingHeroTrailer, let source = heroTrailer.consumeForPlayback() else { return }
-        playback.startTrailer(item: featured, source: source, preferences: settings.preferences)
+        guard showsPlayingHeroTrailer, let handoff = heroTrailer.consumeForPlayback() else { return }
+        playback.startTrailer(item: featured, source: handoff.source, startAt: handoff.position, preferences: settings.preferences)
     }
 
     private var heroTrailerKey: String {
@@ -1383,7 +1385,8 @@ private struct HeroPageControl: View {
             }
         }
         .padding(.horizontal, 8)
-        .glassEffect(.regular, in: Capsule())
+        // No backing shape, so a soft shadow keeps the dots clear of bright art.
+        .shadow(color: .black.opacity(0.45), radius: 3, y: 1)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Featured titles")
     }

@@ -87,7 +87,7 @@ enum AppDestination: Hashable {
         switch self {
         case .home: "house"
         case .library: "rectangle.stack"
-        case .discover: "bag"
+        case .discover: "magnifyingglass"
         case .liveTV: "play.tv"
         case .search: "magnifyingglass"
         case .settings: "gearshape"

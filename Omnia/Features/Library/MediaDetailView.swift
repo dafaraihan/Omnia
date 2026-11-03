@@ -208,8 +208,8 @@ struct MediaDetailView: View {
     }
 
     private func openHeroTrailer() {
-        guard showsPlayingHeroTrailer, let source = heroTrailer.consumeForPlayback() else { return }
-        playback.startTrailer(item: displayItem, source: source, preferences: settings.preferences)
+        guard showsPlayingHeroTrailer, let handoff = heroTrailer.consumeForPlayback() else { return }
+        playback.startTrailer(item: displayItem, source: handoff.source, startAt: handoff.position, preferences: settings.preferences)
     }
 
     @ViewBuilder

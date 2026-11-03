@@ -70,6 +70,11 @@ final class OmniaAccount {
 
     var isConfigured: Bool { client != nil }
 
+    /// A saved session lives in the Keychain, which outlasts the app's own data.
+    /// When a store install starts with fresh data, it still means this device
+    /// has been set up, so there's no need to walk through onboarding again.
+    var hasSavedSession: Bool { client?.auth.currentSession != nil && !localResetPending }
+
     init(configuration: SupabaseConfiguration? = .load()) {
         guard let configuration else {
             client = nil

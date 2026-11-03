@@ -68,7 +68,10 @@ struct OnboardingView: View {
             Group {
                 switch step {
                 case .welcome: welcome
-                case .features: ScrollView { features.padding(.vertical, 12) }
+                case .features:
+                    // The page dots sit over the bottom, so the last row scrolls clear.
+                    ScrollView { features.padding(.top, 12).padding(.bottom, 56) }
+                        .scrollIndicators(.never)
                 case .account: accountStep
                 case .profile:
                     if isCompact {
@@ -408,6 +411,12 @@ private struct AppPreview: View {
     )
     @State private var previewDefaults = UserDefaults(suiteName: "Omnia.OnboardingPreview")!
 
+    /// The real pages lay out at the size they have on this device, then the
+    /// whole thing scales down to fit.
+    private static var canvas: CGSize {
+        OmniaDevice.isPhone ? CGSize(width: 402, height: 620) : CGSize(width: 1100, height: 720)
+    }
+
     private enum Page: String, CaseIterable, Identifiable {
         case home = "Home"
         case details = "Title Details"
@@ -440,11 +449,11 @@ private struct AppPreview: View {
                             .environment(\.displayPreferences, DisplayPreferences())
                             .defaultAppStorage(previewDefaults)
                         }
-                        .frame(width: 1100, height: 720)
+                        .frame(width: Self.canvas.width, height: Self.canvas.height)
                         .disabled(true)
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
-                        .scaleEffect(geometry.size.width / 1100, anchor: .topLeading)
+                        .scaleEffect(geometry.size.width / Self.canvas.width, anchor: .topLeading)
                         .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
                     } else if isLoading {
                         OmniaLoadingRow("Loading Omnia preview…")
@@ -460,7 +469,9 @@ private struct AppPreview: View {
                     }
                 }
             }
-            .aspectRatio(1100.0 / 720.0, contentMode: .fit)
+            .aspectRatio(Self.canvas.width / Self.canvas.height, contentMode: .fit)
+            // On iPhone it's a miniature of the screen, not a wide window.
+            .frame(maxWidth: OmniaDevice.isPhone ? 270 : nil)
             .background(reduceTransparency ? AnyShapeStyle(.background) : AnyShapeStyle(.regularMaterial))
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay {

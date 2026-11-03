@@ -48,6 +48,9 @@ struct OmniaApp: App {
             store: store, settings: settings, homeLayout: homeLayout, collections: collections,
             plugins: plugins, profiles: profiles, account: account
         )
+        if account.hasSavedSession {
+            UserDefaults.standard.set(true, forKey: OnboardingView.completedKey)
+        }
         account.willChangeIdentity = { [weak credentialVault, weak profileData] next in
             profileData?.invalidateSession()
             try credentialVault?.prepareIdentityChange(to: next)

@@ -121,7 +121,7 @@ The macOS build copies libmpv and its Homebrew dependencies into the app automat
 xcodebuild -project Omnia.xcodeproj -scheme Omnia -destination 'generic/platform=iOS Simulator' build
 ```
 
-iPhone and iPad play with AVPlayer until libmpv is built for iOS. Build it once (about 35 minutes); the script also writes the git-ignored `Config/NativePlayback.xcconfig` that points Xcode at it, and iOS then plays with mpv:
+iPhone and iPad play with libmpv, like the Mac. A source build needs it built for iOS first, or the app falls back to AVPlayer. Build it once (about 35 minutes); the script also writes the git-ignored `Config/NativePlayback.xcconfig` that points Xcode at it, and iOS then plays with mpv:
 
 ```sh
 OMNIA_NATIVE_PLATFORM=ios Scripts/build-playback-dependencies.sh NativeDependencies/playback-dependencies.json ~/Library/Caches/Omnia/native-ios

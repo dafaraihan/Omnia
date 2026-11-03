@@ -24,19 +24,20 @@ final class HomeHeroTrailerModel {
     @ObservationIgnored private var appliedStartsWithSound: Bool?
     private(set) var generation = UUID()
 
-    @ObservationIgnored private var pausePreview: (() -> Void)?
+    @ObservationIgnored private var pausePreview: (() -> Double)?
 
-    /// Pauses audio synchronously before handing the complete playlist to the player.
-    func consumeForPlayback() -> HeroTrailerSource? {
+    /// Pauses audio synchronously before handing the complete playlist, and the
+    /// place it had reached, to the player.
+    func consumeForPlayback() -> (source: HeroTrailerSource, position: Double)? {
         guard isVisible, let stream else { return nil }
-        pausePreview?()
+        let position = pausePreview?() ?? 0
         pausePreview = nil
         endedItemID = currentItemID
         reset()
-        return stream
+        return (stream, position)
     }
 
-    func registerPause(_ pause: @escaping () -> Void, for source: HeroTrailerSource) {
+    func registerPause(_ pause: @escaping () -> Double, for source: HeroTrailerSource) {
         guard stream == source else { return }
         pausePreview = pause
     }
@@ -99,7 +100,7 @@ final class HomeHeroTrailerModel {
     }
 
     private func reset() {
-        pausePreview?()
+        _ = pausePreview?()
         pausePreview = nil
         generation = UUID()
         stream = nil

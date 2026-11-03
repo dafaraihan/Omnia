@@ -484,7 +484,7 @@ final class PlaybackSession {
     #endif
 
     /// Uses AVFoundation on every platform so the generated master retains its audio renditions.
-    func startTrailer(item: MediaItem, source: HeroTrailerSource, preferences: SettingsPreferences) {
+    func startTrailer(item: MediaItem, source: HeroTrailerSource, startAt position: Double = 0, preferences: SettingsPreferences) {
         stop(persisting: true)
         purpose = .trailer
         recoveryContext = nil
@@ -514,6 +514,10 @@ final class PlaybackSession {
         pictureInPictureController.configure(player: player)
         #endif
         isPresentingPlayer = true
+        // Carries on from where the hero preview was.
+        if position > 0 {
+            player.seek(to: CMTime(seconds: position, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        }
         player.playImmediately(atRate: Float(playbackRate))
         observePlaybackState()
     }
