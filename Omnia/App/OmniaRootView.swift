@@ -301,7 +301,9 @@ struct OmniaRootView: View {
         if usesSidebar {
             tabs
                 .tabViewStyle(.sidebarAdaptable)
-                .defaultAdaptableTabBarPlacement(.sidebar)
+                // Upright, the sidebar would open over the hero's buttons, so
+                // it starts closed there; its button still opens it.
+                .defaultAdaptableTabBarPlacement(opensWithSidebar ? .sidebar : .tabBar)
                 .toolbarBackground(OmniaMaterial.tabBar, for: .tabBar)
                 .toolbarBackground(.visible, for: .tabBar)
                 .tabBarMinimizeBehavior(.onScrollDown)
@@ -313,6 +315,12 @@ struct OmniaRootView: View {
                 .toolbarBackground(.visible, for: .tabBar)
                 .tabBarMinimizeBehavior(usesNuvioBar ? .never : .onScrollDown)
         }
+    }
+
+    /// Wide enough for the sidebar to sit beside the page: an iPad on its side.
+    private var opensWithSidebar: Bool {
+        let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        return (scene?.effectiveGeometry.coordinateSpace.bounds.width ?? 0) > 1100
     }
 
     private var tabs: some View {

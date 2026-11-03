@@ -29,6 +29,8 @@ struct HomeView: View {
     @State private var upcomingResult: UpcomingResult?
     @State private var isLoadingUpcoming = false
     @State private var heroIndex = 0
+    /// How much of the page's leading edge the iPad sidebar covers.
+    @State private var sidebarInset: CGFloat = 0
     /// A sideways swipe is under way, so lifting the finger mustn't open
     /// the title.
     @State private var isSwipingHero = false
@@ -273,6 +275,7 @@ struct HomeView: View {
                     }
                 }
                 .padding(.horizontal, horizontalInset)
+                .padding(.leading, sidebarInset)
                 .padding(.top, 22)
                 .padding(.bottom, 56)
                 .background {
@@ -291,7 +294,12 @@ struct HomeView: View {
         .ignoresSafeArea(edges: .top)
         #endif
         #if os(iOS)
-        .ignoresSafeArea(edges: .top)
+        // iPad: the page runs behind the floating sidebar, as the sidebar's
+        // glass expects. Text and buttons keep clear using sidebarInset.
+        .ignoresSafeArea(edges: UIDevice.current.userInterfaceIdiom == .pad ? [.top, .leading] : .top)
+        .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.leading } action: { leading in
+            sidebarInset = UIDevice.current.userInterfaceIdiom == .pad ? leading : 0
+        }
         #endif
         .modifier(TopBarScrollReporting(destination: .home, hasHero: displayFeatured != nil || showsHeroSlot))
         .onGeometryChange(for: CGSize.self) { $0.size } action: { viewportSize = $0 }
@@ -638,6 +646,8 @@ struct HomeView: View {
                     }
                 )
                 .padding(.bottom, isPortraitPad ? 12 : 22)
+                // Centred in the part of the hero the sidebar leaves visible.
+                .padding(.leading, sidebarInset)
             }
         }
         #if os(iOS)
@@ -657,6 +667,7 @@ struct HomeView: View {
         }
         .shadow(color: .black.opacity(isCardHero ? 0.35 : 0), radius: 24, y: 12)
         .padding(.horizontal, isCardHero ? horizontalInset : 0)
+        .padding(.leading, isCardHero ? sidebarInset : 0)
         .padding(.top, isCardHero ? heroCardTopInset : 0)
         .animation(.easeInOut(duration: 0.45), value: featured.id)
         // `.contain` keeps the hero's Play, info and paging buttons reachable
@@ -1061,7 +1072,7 @@ struct HomeView: View {
             .transition(.opacity)
         }
         .frame(maxHeight: .infinity, alignment: .leading)
-        .padding(.leading, CinematicHeroLayout.horizontalInset)
+        .padding(.leading, CinematicHeroLayout.horizontalInset + sidebarInset)
             .padding(.bottom, isPortraitPad ? 56 : 38)
     }
 

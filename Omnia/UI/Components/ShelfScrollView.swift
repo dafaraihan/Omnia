@@ -52,6 +52,10 @@ struct ShelfScrollView<Item: Identifiable, Content: View>: View {
                 // the row title. Without it the scroll view clipped the
                 // first card's left edge and the top and bottom of every card.
                 .contentMargins(.horizontal, Self.hoverRoom, for: .scrollContent)
+                #if os(iOS)
+                // Rows run on past the page margin, and behind the iPad sidebar.
+                .scrollClipDisabled()
+                #endif
                 .padding(.horizontal, -Self.hoverRoom)
                 .padding(.vertical, 2 - Self.hoverRoom)
                 .scrollPosition(id: $leadingItemID, anchor: .leading)
