@@ -480,3 +480,43 @@ struct MacSettingsContentContainer<Content: View>: View {
     }
 }
 #endif
+
+/// Writes to Settings when the drag ends: saving on every step redraws the
+/// whole app and made sliders lag. `onDraft` carries the value for a preview.
+struct SettingsDeferredSlider: View {
+    let title: String
+    var minimumLabel: String?
+    var maximumLabel: String?
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    var onDraft: (Double?) -> Void = { _ in }
+
+    @State private var draft: Double?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+            Slider(
+                value: Binding(
+                    get: { draft ?? value },
+                    set: { newValue in
+                        draft = newValue
+                        onDraft(newValue)
+                    }
+                ),
+                in: range
+            ) {
+                Text(title)
+            } minimumValueLabel: {
+                if let minimumLabel { Text(minimumLabel).font(.caption) }
+            } maximumValueLabel: {
+                if let maximumLabel { Text(maximumLabel).font(.caption) }
+            } onEditingChanged: { isEditing in
+                guard !isEditing, let draft else { return }
+                value = draft
+                self.draft = nil
+                onDraft(nil)
+            }
+        }
+    }
+}

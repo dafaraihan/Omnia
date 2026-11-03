@@ -342,6 +342,8 @@ struct MacSubtitlePlaybackPreview: View {
     let style: PlaybackSubtitleStyle
     var height: CGFloat = 380
 
+    @Environment(\.displayPreferences) private var display
+    var showsMenu = false
     private let sampleSubtitle = "The quick brown fox jumps over the lazy dog"
 
     private var outlineColor: Color {
@@ -364,13 +366,21 @@ struct MacSubtitlePlaybackPreview: View {
                 Color.black
 
                 VStack(spacing: 0) {
-                    previewTopControls(scale: previewScale)
+                    previewTopControls(scale: previewScale * playerSize.controls)
                     Spacer()
-                    previewTransportControls(scale: previewScale)
+                    previewTransportControls(scale: previewScale * playerSize.controls)
                     Spacer()
-                    previewBottomControls(scale: previewScale)
+                    previewBottomControls(scale: previewScale * playerSize.controls)
+                        .frame(width: max(geometry.size.width - 48 * previewScale, 0) * playerSize.timelineLength)
                 }
                 .padding(24 * previewScale)
+
+                if showsMenu {
+                    previewMenu(scale: previewScale)
+                        .padding(.trailing, 24 * previewScale)
+                        .padding(.bottom, 110 * previewScale)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                }
 
                 Text(sampleSubtitle)
                     .font(.custom(previewFontName(presentation.fontName), size: presentation.fontSize))
@@ -408,6 +418,27 @@ struct MacSubtitlePlaybackPreview: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Subtitle appearance preview")
         .accessibilityValue(sampleSubtitle)
+    }
+
+    private var playerSize: PlayerSizePreferences { display.playerSize }
+
+    private func previewMenu(scale: CGFloat) -> some View {
+        let baseWidth: CGFloat = OmniaDevice.isPhone ? 280 : 390
+        let baseHeight: CGFloat = OmniaDevice.isPhone ? 260 : 300
+        return VStack(alignment: .leading, spacing: 14 * scale) {
+            Text("Subtitles").font(.system(size: 26 * scale, weight: .semibold))
+            Text("On").font(.system(size: 22 * scale))
+            Text("Off").font(.system(size: 22 * scale))
+            Text("Language").font(.system(size: 22 * scale))
+        }
+        .padding(24 * scale)
+        .frame(
+            width: baseWidth * scale * playerSize.menuWidth,
+            height: baseHeight * scale * playerSize.menuHeight,
+            alignment: .topLeading
+        )
+        .omniaGlass(.playerControls, base: .clear, in: RoundedRectangle(cornerRadius: 30 * scale, style: .continuous))
+        .scaleEffect(playerSize.menuSize, anchor: .bottomTrailing)
     }
 
     private func previewTopControls(scale: CGFloat) -> some View {
@@ -654,12 +685,22 @@ struct MacPlaybackChrome: View {
                 VStack(spacing: 0) {
                     topControls(compact: geometry.size.width < 860)
                     Spacer()
-                    bottomControls
+                    // An overlay, so a size other than the designed one
+                    // doesn't push the rest of the controls around.
+                    Color.clear
+                        .frame(height: 0)
+                        .overlay(alignment: .bottom) {
+                            bottomControls
+                                .frame(width: bottomControlsWidth(in: geometry.size.width))
+                                .scaleEffect(display.playerSize.controls, anchor: .bottom)
+                        }
                 }
 
                 // Hidden after a failure, so they don't sit on the message.
                 if playback.playbackError == nil {
-                    if !isPhone || activePanel == nil { transportControls }
+                    if !isPhone || activePanel == nil {
+                        transportControls.scaleEffect(display.playerSize.controls)
+                    }
                 }
 
                 if let activePanel {
@@ -673,11 +714,12 @@ struct MacPlaybackChrome: View {
                     }
                     .equatable()
                         .frame(
-                            width: isPhone
-                                ? min(activePanel == .episodes || activePanel == .channels ? 340 : 280, geometry.size.width - 48)
-                                : activePanel == .episodes || activePanel == .channels
-                                    ? min(480, max(0, geometry.size.width - 48))
-                                    : min(390, max(0, geometry.size.width - 48))
+                            width: min(
+                                (isPhone
+                                    ? (activePanel == .episodes || activePanel == .channels ? 340 : 280)
+                                    : (activePanel == .episodes || activePanel == .channels ? 480 : 390)) * display.playerSize.menuWidth,
+                                max(0, geometry.size.width - 48)
+                            )
                         )
                         .frame(
                             height: panelHeight(
@@ -685,8 +727,9 @@ struct MacPlaybackChrome: View {
                                 maximumHeight: isPhone
                                     ? min(260, max(100, geometry.size.height - 90))
                                     : min(520, max(100, geometry.size.height - (isShort ? 90 : 190)))
-                            )
+                            ) * display.playerSize.menuHeight
                         )
+                        .scaleEffect(display.playerSize.menuSize, anchor: .bottomTrailing)
                         .padding(.trailing, isPhone ? 0 : 30)
                         .padding(.bottom, isShort ? 50 : 142)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
@@ -699,7 +742,7 @@ struct MacPlaybackChrome: View {
                         .font(.callout.weight(.semibold))
                         .padding(.horizontal, 14)
                         .padding(.vertical, 8)
-                        .omniaGlass(.playerControls, in: Capsule())
+                        .omniaGlass(.playerControls, base: .clear, in: Capsule())
                         .padding(.top, 70)
                         .transition(.opacity)
                 }
@@ -749,6 +792,11 @@ struct MacPlaybackChrome: View {
             isInteracting = false
             channelNoticeTask?.cancel()
         }
+    }
+
+    private func bottomControlsWidth(in windowWidth: CGFloat) -> CGFloat {
+        let available = max(windowWidth - (windowWidth < 860 ? 40 : 60), 0)
+        return available * display.playerSize.timelineLength / display.playerSize.controls
     }
 
     private func topControls(compact: Bool) -> some View {
@@ -805,6 +853,7 @@ struct MacPlaybackChrome: View {
                     #endif
                 }
             }
+            .scaleEffect(display.playerSize.controls, anchor: .topLeading)
 
             Spacer(minLength: 20)
 
@@ -840,7 +889,7 @@ struct MacPlaybackChrome: View {
                                 set: { queueVolumeUpdate($0) }
                             ),
                             range: 0 ... 1,
-                            width: isPhone ? 80 : (compact ? 118 : 188),
+                            width: isPhone ? 150 : (compact ? 118 : 188),
                             onEditingChanged: { isEditing in
                                 if isEditing {
                                     volumeDragValue = playback.volume
@@ -861,6 +910,7 @@ struct MacPlaybackChrome: View {
                     .omniaInteractiveLiquidGlass(in: Capsule())
                 }
             }
+            .scaleEffect(display.playerSize.controls, anchor: .topTrailing)
         }
     }
 
@@ -1144,7 +1194,7 @@ struct MacPlaybackChrome: View {
             for: .scrollIndicators
         )
         .contentMargins(.trailing, 6, for: .scrollIndicators)
-        .omniaGlass(.playerControls, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
+        .omniaGlass(.playerControls, base: .clear, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
         .accessibilityElement(children: .contain)
     }
 

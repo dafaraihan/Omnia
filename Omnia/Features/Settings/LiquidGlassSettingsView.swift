@@ -4,12 +4,22 @@ import SwiftUI
 struct LiquidGlassSettingsView: View {
     @Environment(SettingsPreferencesStore.self) private var settings
 
+    @State private var draftIntensity: Double?
+
     private var glass: LiquidGlassPreferences { settings.preferences.display.liquidGlass }
+
+    /// The preview follows the slider while the drag is still going.
+    private var previewDisplay: DisplayPreferences {
+        var display = settings.preferences.display
+        if let draftIntensity { display.liquidGlass.intensity = draftIntensity }
+        return display
+    }
 
     var body: some View {
         OmniaSettingsForm {
             Section {
                 LiquidGlassPreview()
+                    .environment(\.displayPreferences, previewDisplay)
                     .listRowInsets(EdgeInsets())
             } header: {
                 Text("Preview")
@@ -24,16 +34,14 @@ struct LiquidGlassSettingsView: View {
                         selection: settings.binding(\.display.liquidGlass.style),
                         options: LiquidGlassStyle.allCases
                     ) { $0.title }
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Intensity")
-                        Slider(value: settings.binding(\.display.liquidGlass.intensity), in: 0...1) {
-                            Text("Intensity")
-                        } minimumValueLabel: {
-                            Text("Clear").font(.caption)
-                        } maximumValueLabel: {
-                            Text("Frosted").font(.caption)
-                        }
-                    }
+                    SettingsDeferredSlider(
+                        title: "Intensity",
+                        minimumLabel: "Clear",
+                        maximumLabel: "Frosted",
+                        value: settings.binding(\.display.liquidGlass.intensity),
+                        range: 0 ... 1,
+                        onDraft: { draftIntensity = $0 }
+                    )
                 }
             } header: {
                 Text("Glass")
@@ -57,11 +65,11 @@ struct LiquidGlassSettingsView: View {
                         Text("Menus and Panels")
                         Text("Stream picker, sheets, shelf arrows, and account and profile buttons.")
                     }
-                    if !OmniaDevice.isPhone {
-                        Toggle(isOn: settings.binding(\.display.liquidGlass.navigationBar)) {
-                            Text("Floating Navigation Bar")
-                            Text("The bar at the top of the window.")
-                        }
+                    Toggle(isOn: settings.binding(\.display.liquidGlass.navigationBar)) {
+                        Text("Floating Navigation Bar")
+                        Text(OmniaDevice.isPhone
+                            ? "The bar at the bottom of the screen. Off, Omnia draws it with a solid fill."
+                            : "The bar at the top of the window.")
                     }
                 } header: {
                     Text("Use Glass On")
@@ -83,7 +91,7 @@ struct LiquidGlassSettingsView: View {
 
     private var systemBarsFooter: String {
         OmniaDevice.isPhone
-            ? "The tab bar and system menus are drawn by iOS and always use its glass."
+            ? "With its glass on, iOS draws the bar, so the slider doesn't reach it. System menus always use iOS's glass."
             : "The sidebar, toolbars and system menus are drawn by the system and always use its glass."
     }
 }
@@ -106,13 +114,11 @@ private struct LiquidGlassPreview: View {
             .scaleEffect(1.6)
 
             VStack(spacing: 14) {
-                if !OmniaDevice.isPhone {
-                    Text("Home    Library    Discover")
-                        .font(.subheadline.weight(.medium))
-                        .padding(.horizontal, 18)
-                        .frame(height: 38)
-                        .omniaGlass(.navigationBar, in: Capsule())
-                }
+                Text("Home    Library    Discover")
+                    .font(.subheadline.weight(.medium))
+                    .padding(.horizontal, 18)
+                    .frame(height: 38)
+                    .omniaGlass(.navigationBar, base: .clear, in: Capsule())
 
                 HStack(spacing: 8) {
                     Button {} label: {

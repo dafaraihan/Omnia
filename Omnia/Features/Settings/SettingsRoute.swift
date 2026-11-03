@@ -155,7 +155,7 @@ enum SettingsRoute: Hashable, Sendable {
         case .upcoming: "Upcoming"
         case .videoPlayer: "Playback"
         case .streamSelection: "Stream Selection"
-        case .subtitle: "Subtitle"
+        case .subtitle: "Player Appearance"
         case .playbackResolver: "Playback Resolver"
         case .playbackDiagnostics: "Playback Diagnostics"
         case .appearance: "Layout"
@@ -229,7 +229,7 @@ enum SettingsRoute: Hashable, Sendable {
         case .upcoming: ["episodes", "look ahead", "Home"]
         case .videoPlayer: ["video player", "player", "skip intro", "auto skip", "recap", "credits", "up next", "next episode", "threshold", "decoder", "hardware", "Metal", "rendering", "gpu-next", "OpenGL", "overlay", "audio", "subtitles", "SDH", "forced", "source selection", "auto play"]
         case .streamSelection: ["auto play", "autoplay", "first source", "regex", "reuse last link", "binge group", "timeout", "allowed add-ons", "plugins", "sort", "sorting", "ranking", "quality", "resolution", "4K", "HDR", "Dolby Vision", "codec", "HEVC", "size", "debrid", "cached", "filters"]
-        case .subtitle: ["subtitles", "captions", "SDH", "appearance"]
+        case .subtitle: ["player appearance", "controls", "menu size", "subtitles", "captions", "SDH", "appearance"]
         case .playbackResolver: ["endpoint", "bearer token", "approved add-ons", "approved HTTPS hosts"]
         case .playbackDiagnostics: ["diagnostics", "log", "errors", "failures", "could not play", "libmpv", "copy"]
         case .appearance: ["appearance", "theme", "system", "light", "dark", "accent", "color", "AMOLED", "black", "hover preview", "poster", "glow", "gradient", "top bar style", "glass glow", "adaptive", "compact", "expanded", "iPadOS", "standard"]

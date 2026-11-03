@@ -172,49 +172,7 @@ struct VideoPlayerSettingsView: View {
             }
 
             Section {
-                Toggle(isOn: settings.binding(\.playbackBehavior.stripSDHSubtitles)) {
-                    Text("Strip SDH Text")
-                    Text("Removes sound descriptions and speaker names, like [door creaks].")
-                }
-                Toggle(isOn: settings.binding(\.playbackBehavior.useForcedSubtitles)) {
-                    Text("Use Forced Subtitles")
-                    Text("When the audio is in your subtitle language, shows only forced subtitles, such as signs and foreign dialogue.")
-                }
-                Toggle(isOn: settings.binding(\.playbackBehavior.showOnlyPreferredSubtitleLanguages)) {
-                    Text("Only Preferred Languages")
-                    Text("Add-on subtitles in other languages aren't added to the player.")
-                }
-                #if OMNIA_MPV
-                Toggle(isOn: settings.binding(\.playbackBehavior.autoSyncsSubtitles)) {
-                    Text("Auto Sync Subtitles")
-                    Text("When an add-on subtitle starts, Omnia listens to the speech for up to three minutes and lines the subtitle up with it. Subtitles inside the video are left as they are.")
-                }
-                SubtitleDoubleSlider(
-                    title: "Subtitle Delay",
-                    value: Binding(
-                        get: { settings.preferences.playbackSubtitleStyle.delaySeconds },
-                        // Tenth-of-a-second steps, like the player's own control.
-                        set: { value in
-                            settings.update { $0.playbackSubtitleStyle.delaySeconds = (value * 10).rounded() / 10 }
-                        }
-                    ),
-                    range: -10 ... 10,
-                    valueLabel: { String(format: "%+.1f s", $0) }
-                )
-                Button("Reset Delay") {
-                    settings.update { $0.playbackSubtitleStyle.delaySeconds = 0 }
-                }
-                .disabled(settings.preferences.playbackSubtitleStyle.delaySeconds == 0)
-                #endif
-                // Languages and SDH live with the subtitle style, in one place.
-                NavigationLink("Subtitle Languages and Style") {
-                    SettingsDestinationView(route: .subtitle)
-                }
-                .settingsLinkRow()
-            } header: {
-                Text("Subtitles")
-            } footer: {
-                Text("Subtitles from add-ons such as OpenSubtitles are added to the player's list as they arrive. The delay applies to every video; a delay set in the player's Sync panel is kept for that title only, and a positive delay shows subtitles later.")
+                SettingsRouteLink(route: .subtitle, summary: "Controls, menus and subtitles")
             }
         }
         .omniaNavigationTitle("Playback")

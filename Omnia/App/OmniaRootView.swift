@@ -18,6 +18,7 @@ struct OmniaRootView: View {
     @Environment(CredentialVaultSync.self) private var credentialVault
     @Environment(OmniaAccount.self) private var account
     @AppStorage(OnboardingView.completedKey) private var onboardingCompleted = false
+    @Environment(\.displayPreferences) private var effectiveDisplay
     @State private var liveTV = LiveTVStore.shared
     @State private var switchCenter = ProfileSwitchCenter.shared
     #if os(macOS)
@@ -302,9 +303,13 @@ struct OmniaRootView: View {
 
     /// iPhone always uses system tabs, regardless of a saved/shared custom
     /// style. iPad retains its navigation choices, including compact windows.
+    /// iOS draws its own tab bar in its own glass, so turning the bar's glass
+    /// off on iPhone swaps in Omnia's, which can have a solid fill.
     private var usesNuvioBar: Bool {
-        UIDevice.current.userInterfaceIdiom != .phone
-            && !usesSidebar && settings.preferences.display.topBarStyle.isNuvio
+        if UIDevice.current.userInterfaceIdiom == .phone {
+            return !effectiveDisplay.liquidGlass.applies(to: .navigationBar)
+        }
+        return !usesSidebar && settings.preferences.display.topBarStyle.isNuvio
     }
 
     @ViewBuilder

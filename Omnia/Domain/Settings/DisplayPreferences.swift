@@ -736,6 +736,53 @@ nonisolated struct CardAppearance: Codable, Equatable, Sendable {
 
 /// How Omnia looks: accent, cards, Continue Watching and the title page.
 /// Every value here is read by the views that draw it.
+/// Multipliers on the floating top bar's designed size.
+struct TopBarSizePreferences: Codable, Equatable, Sendable {
+    static let range = 0.7 ... 1.3
+
+    var size = 1.0
+    var height = 1.0
+    var width = 1.0
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        func value(_ key: CodingKeys) -> Double {
+            min(max((try? c.decodeIfPresent(Double.self, forKey: key)) ?? 1, Self.range.lowerBound), Self.range.upperBound)
+        }
+        size = value(.size)
+        height = value(.height)
+        width = value(.width)
+    }
+}
+
+/// Multipliers on the player's designed control and menu sizes.
+struct PlayerSizePreferences: Codable, Equatable, Sendable {
+    static let range = 0.6 ... 1.4
+
+    var controls = 1.0
+    /// How much of the window's width the timeline row takes, at most all of it.
+    var timelineLength = 1.0
+    var menuSize = 1.0
+    var menuWidth = 1.0
+    var menuHeight = 1.0
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        func value(_ key: CodingKeys) -> Double {
+            min(max((try? c.decodeIfPresent(Double.self, forKey: key)) ?? 1, Self.range.lowerBound), Self.range.upperBound)
+        }
+        controls = value(.controls)
+        timelineLength = min(value(.timelineLength), 1)
+        menuSize = value(.menuSize)
+        menuWidth = value(.menuWidth)
+        menuHeight = value(.menuHeight)
+    }
+}
+
 enum LowPowerMode: String, Codable, CaseIterable, Identifiable, Sendable {
     /// Follows the system's Low Power Mode.
     case automatic
@@ -861,6 +908,10 @@ nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
     var lowPowerMode = LowPowerMode.automatic
     /// Settings › Layout › Upcoming › New Episode Reminders.
     var episodeNotifications = false
+    /// Settings › Layout › Top Bar Size, on iPad and Mac.
+    var topBarSize = TopBarSizePreferences()
+    /// Settings › Playback › Player Appearance.
+    var playerSize = PlayerSizePreferences()
     /// Settings › Layout › Home Layout › Hero.
     var heroBlend = HeroBlendPreferences()
     /// The title and details under Wide and Poster cards.
@@ -925,6 +976,8 @@ nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
         continueWatchingStyle = (try? c.decodeIfPresent(ContinueWatchingStyle.self, forKey: .continueWatchingStyle)) ?? d.continueWatchingStyle
         lowPowerMode = (try? c.decodeIfPresent(LowPowerMode.self, forKey: .lowPowerMode)) ?? d.lowPowerMode
         episodeNotifications = (try? c.decodeIfPresent(Bool.self, forKey: .episodeNotifications)) ?? d.episodeNotifications
+        topBarSize = (try? c.decodeIfPresent(TopBarSizePreferences.self, forKey: .topBarSize)) ?? d.topBarSize
+        playerSize = (try? c.decodeIfPresent(PlayerSizePreferences.self, forKey: .playerSize)) ?? d.playerSize
         heroBlend = (try? c.decodeIfPresent(HeroBlendPreferences.self, forKey: .heroBlend)) ?? d.heroBlend
         liquidGlass = (try? c.decodeIfPresent(LiquidGlassPreferences.self, forKey: .liquidGlass)) ?? d.liquidGlass
         continueWatchingShowsLabels = (try? c.decodeIfPresent(Bool.self, forKey: .continueWatchingShowsLabels)) ?? d.continueWatchingShowsLabels

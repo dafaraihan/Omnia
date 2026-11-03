@@ -110,18 +110,8 @@ struct HomeSettingsView: View {
                 )
             }
             if settings.preferences.display.heroBlend.isEnabled {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Overlay Strength")
-                    Slider(value: settings.binding(\.display.heroBlend.strength), in: 0.2...1) {
-                        Text("Overlay Strength")
-                    }
-                }
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Overlay Height")
-                    Slider(value: settings.binding(\.display.heroBlend.height), in: 0.2...1) {
-                        Text("Overlay Height")
-                    }
-                }
+                SettingsDeferredSlider(title: "Overlay Strength", value: settings.binding(\.display.heroBlend.strength), range: 0.2 ... 1)
+                SettingsDeferredSlider(title: "Overlay Height", value: settings.binding(\.display.heroBlend.height), range: 0.2 ... 1)
             }
             Toggle(isOn: settings.binding(\.heroTrailer.autoAdvance)) {
                 settingLabel(

@@ -110,6 +110,13 @@ struct AppearanceSettingsView: View {
                             Text("Glass Glow")
                             Text("Adds soft light around the floating bar while you press or drag it.")
                         }
+                        SettingsDeferredSlider(title: "Top Bar Size", value: settings.binding(\.display.topBarSize.size), range: TopBarSizePreferences.range)
+                        SettingsDeferredSlider(title: "Top Bar Height", value: settings.binding(\.display.topBarSize.height), range: TopBarSizePreferences.range)
+                        SettingsDeferredSlider(title: "Top Bar Width", value: settings.binding(\.display.topBarSize.width), range: TopBarSizePreferences.range)
+                        Button("Reset Top Bar Size") {
+                            settings.update { $0.display.topBarSize = TopBarSizePreferences() }
+                        }
+                        .disabled(settings.preferences.display.topBarSize == TopBarSizePreferences())
                     }
                 }
 

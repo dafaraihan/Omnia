@@ -118,10 +118,12 @@ struct NuvioTopBar: View {
         .frame(width: width, height: barHeight)
         .clipShape(Capsule())
         .background { if reduceTransparency { OmniaPageBackground().clipShape(Capsule()) } }
-        .omniaGlass(.navigationBar, in: Capsule())
+        .omniaGlass(.navigationBar, base: .clear, in: Capsule())
         .contentShape(Capsule())
         .scaleEffect(reduceMotion || dragIndex == nil ? 1 : 1.025)
         .simultaneousGesture(pressGesture(tabWidth: tabWidth))
+        .scaleEffect(display.topBarSize.size)
+        .frame(width: width * display.topBarSize.size, height: barHeight * display.topBarSize.size)
         .onHover { hovering in
             withAnimation(reduceMotion ? nil : Self.chromeAnimation) { isHovered = hovering }
         }
@@ -134,15 +136,15 @@ struct NuvioTopBar: View {
 
     private var barHeight: CGFloat {
         #if os(iOS)
-        stacksLabels ? (showsLabels ? 64 : 52) : (showsLabels ? 52 : 48)
+        (stacksLabels ? (showsLabels ? 64 : 52) : (showsLabels ? 52 : 48)) * display.topBarSize.height
         #else
-        Self.height
+        Self.height * display.topBarSize.height
         #endif
     }
 
     private var verticalInset: CGFloat {
         #if os(iOS)
-        min(Self.inset, (barHeight - 44) / 2)
+        max(min(Self.inset, (barHeight - 44) / 2), 0)
         #else
         Self.inset
         #endif
@@ -152,12 +154,12 @@ struct NuvioTopBar: View {
 
     private func itemWidth(showsLabels: Bool) -> CGFloat {
         if stacksLabels {
-            let desired = min(maximumWidth - 32, 480)
+            let desired = min(maximumWidth - 32, 480 * display.topBarSize.width)
             let minimum = CGFloat(destinations.count) * 44 + Self.inset * 2
             let width = min(max(desired, minimum), max(maximumWidth - 16, minimum))
             return (width - Self.inset * 2) / CGFloat(max(destinations.count, 1))
         }
-        return Self.compactItemWidth + (showsLabels ? Self.labelWidth : 0)
+        return (Self.compactItemWidth + (showsLabels ? Self.labelWidth : 0)) * display.topBarSize.width
     }
 
     /// iPhone has no room for labels beside the icons, so they sit under
@@ -189,7 +191,7 @@ struct NuvioTopBar: View {
 
     /// A window too narrow for labelled tabs shows icons only.
     private var labelsFit: Bool {
-        stacksLabels || itemWidth(showsLabels: true) * CGFloat(destinations.count) + Self.inset * 2 <= maximumWidth
+        stacksLabels || itemWidth(showsLabels: true) * CGFloat(destinations.count) + Self.inset * 2 <= maximumWidth / display.topBarSize.size
     }
 
     /// A smaller avatar leaves room for the label under it.

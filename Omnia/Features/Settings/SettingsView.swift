@@ -134,7 +134,7 @@ struct SettingsView: View {
         case .videoPlayer:
             return "Player, subtitles, and auto-play"
         case .subtitle:
-            return "Language and appearance"
+            return "Controls, menus and subtitles"
         case .appearance:
             return "Home, collections, and detail pages"
         case .about:

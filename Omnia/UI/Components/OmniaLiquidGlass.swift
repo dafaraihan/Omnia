@@ -121,6 +121,20 @@ extension View {
     }
 }
 
+/// iOS gives sheets its own glass; with Menus and Panels off they get a solid
+/// page behind them instead.
+struct OmniaPanelSheetBackground: ViewModifier {
+    @Environment(\.displayPreferences) private var display
+
+    func body(content: Content) -> some View {
+        if display.liquidGlass.applies(to: .panels) {
+            content
+        } else {
+            content.presentationBackground { OmniaPageBackground() }
+        }
+    }
+}
+
 private struct OmniaSystemGlassButton: ViewModifier {
     @Environment(\.displayPreferences) private var display
 
@@ -345,7 +359,9 @@ extension View {
         }
         .animation(.easeOut(duration: 0.16), value: isPresented.wrappedValue)
         #else
-        sheet(isPresented: isPresented, content: content)
+        sheet(isPresented: isPresented) {
+            content().modifier(OmniaPanelSheetBackground())
+        }
         #endif
     }
     /// The streams page covers the whole window on macOS, like Nuvio's,
@@ -377,7 +393,9 @@ extension View {
                     .presentationBackground(.clear)
             }
         } else {
-            sheet(isPresented: isPresented, content: content)
+            sheet(isPresented: isPresented) {
+                content().modifier(OmniaPanelSheetBackground())
+            }
         }
         #endif
     }

@@ -3,6 +3,36 @@ import SwiftUI
 struct SubtitleAppearanceSettingsView: View {
     @Environment(SettingsPreferencesStore.self) private var settings
     @State private var showsResetConfirmation = false
+    @State private var showsMenuInPreview = true
+    @State private var draftSize: PlayerSizePreferences?
+
+    /// The preview follows a size slider while the drag is still going.
+    private var previewDisplay: DisplayPreferences {
+        var display = settings.preferences.display
+        if let draftSize { display.playerSize = draftSize }
+        return display
+    }
+
+    private func sizeSlider(
+        _ title: String,
+        _ keyPath: WritableKeyPath<PlayerSizePreferences, Double>,
+        range: ClosedRange<Double> = PlayerSizePreferences.range
+    ) -> some View {
+        SettingsDeferredSlider(
+            title: title,
+            value: Binding(
+                get: { settings.preferences.display.playerSize[keyPath: keyPath] },
+                set: { value in settings.update { $0.display.playerSize[keyPath: keyPath] = value } }
+            ),
+            range: range,
+            onDraft: { value in
+                guard let value else { draftSize = nil; return }
+                var size = settings.preferences.display.playerSize
+                size[keyPath: keyPath] = value
+                draftSize = size
+            }
+        )
+    }
 
     var body: some View {
         subtitleSettings
@@ -13,8 +43,25 @@ struct SubtitleAppearanceSettingsView: View {
             Section("Live Preview") {
                 MacSubtitlePlaybackPreview(
                     style: settings.preferences.playbackSubtitleStyle,
-                    height: previewHeight
+                    height: previewHeight,
+                    showsMenu: showsMenuInPreview
                 )
+                .environment(\.displayPreferences, previewDisplay)
+                Toggle("Show a Menu in the Preview", isOn: $showsMenuInPreview)
+            }
+
+            Section {
+                sizeSlider("Controls Size", \.controls)
+                sizeSlider("Timeline Length", \.timelineLength, range: 0.5 ... 1)
+                sizeSlider("Menu Size", \.menuSize)
+                sizeSlider("Menu Width", \.menuWidth)
+                sizeSlider("Menu Height", \.menuHeight)
+                Button("Reset Player Size") {
+                    settings.update { $0.display.playerSize = PlayerSizePreferences() }
+                }
+                .disabled(settings.preferences.display.playerSize == PlayerSizePreferences())
+            } header: {
+                Text("Controls and Menus")
             }
 
             Section("Language") {
@@ -130,10 +177,51 @@ struct SubtitleAppearanceSettingsView: View {
             }
 
             Section {
+                Toggle(isOn: settings.binding(\.playbackBehavior.stripSDHSubtitles)) {
+                    Text("Strip SDH Text")
+                    Text("Removes sound descriptions and speaker names, like [door creaks].")
+                }
+                Toggle(isOn: settings.binding(\.playbackBehavior.useForcedSubtitles)) {
+                    Text("Use Forced Subtitles")
+                    Text("When the audio is in your subtitle language, shows only forced subtitles, such as signs and foreign dialogue.")
+                }
+                Toggle(isOn: settings.binding(\.playbackBehavior.showOnlyPreferredSubtitleLanguages)) {
+                    Text("Only Preferred Languages")
+                    Text("Add-on subtitles in other languages aren't added to the player.")
+                }
+                #if OMNIA_MPV
+                Toggle(isOn: settings.binding(\.playbackBehavior.autoSyncsSubtitles)) {
+                    Text("Auto Sync Subtitles")
+                    Text("When an add-on subtitle starts, Omnia listens to the speech for up to three minutes and lines the subtitle up with it. Subtitles inside the video are left as they are.")
+                }
+                SubtitleDoubleSlider(
+                    title: "Subtitle Delay",
+                    value: Binding(
+                        get: { settings.preferences.playbackSubtitleStyle.delaySeconds },
+                        // Tenth-of-a-second steps, like the player's own control.
+                        set: { value in
+                            settings.update { $0.playbackSubtitleStyle.delaySeconds = (value * 10).rounded() / 10 }
+                        }
+                    ),
+                    range: -10 ... 10,
+                    valueLabel: { String(format: "%+.1f s", $0) }
+                )
+                Button("Reset Delay") {
+                    settings.update { $0.playbackSubtitleStyle.delaySeconds = 0 }
+                }
+                .disabled(settings.preferences.playbackSubtitleStyle.delaySeconds == 0)
+                #endif
+            } header: {
+                Text("Subtitles")
+            } footer: {
+                Text("Subtitles from add-ons such as OpenSubtitles are added to the player's list as they arrive. The delay applies to every video; a delay set in the player's Sync panel is kept for that title only, and a positive delay shows subtitles later.")
+            }
+
+            Section {
                 Button("Reset to Defaults", role: .destructive) { showsResetConfirmation = true }
             }
         }
-        .omniaNavigationTitle("Subtitle")
+        .omniaNavigationTitle("Player Appearance")
         .confirmationDialog("Reset subtitle preferences?", isPresented: $showsResetConfirmation, titleVisibility: .visible) {
             Button("Reset", role: .destructive) {
                 settings.update {
