@@ -1,5 +1,32 @@
 import SwiftUI
 
+/// The sign-in panel in a sheet, from Settings › Account or the signed-out alert.
+struct AccountSignInSheet: View {
+    @Environment(OmniaAccount.self) private var account
+    let onClose: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                AuthPanel(onSignedIn: onClose)
+                    .padding(OmniaDevice.isPhone ? 20 : 36)
+                    .frame(maxWidth: .infinity)
+            }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        account.cancelCode()
+                        onClose()
+                    }
+                }
+            }
+        }
+        #if os(macOS)
+        .frame(minWidth: 460, minHeight: 600)
+        #endif
+    }
+}
+
 /// Nuvio's sign in and sign up, in Omnia's style: email and password,
 /// a code by email instead of a password, Google or Apple, and
 /// the code that confirms a new account. Used by onboarding and by

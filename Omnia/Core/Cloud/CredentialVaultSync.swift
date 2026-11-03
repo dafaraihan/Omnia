@@ -12,19 +12,22 @@ final class CredentialVaultSync {
     private(set) var conflictIDs: [String] = []
     private(set) var hasPendingChanges = false
     private(set) var identityBlocked = false
-    private(set) var sessionEnded = false
 
     @ObservationIgnored private let profiles: ProfileStore
     @ObservationIgnored private let account: OmniaAccount
     @ObservationIgnored private let local: CredentialVaultLocalStore
     @ObservationIgnored private let client: CredentialVaultClient
-    @ObservationIgnored private var owner: UUID?
+    private var owner: UUID?
     @ObservationIgnored private var state = CredentialVaultDeviceState()
     @ObservationIgnored private var generation = UUID()
     @ObservationIgnored private var work: Task<Void, Never>?
     @ObservationIgnored private var isApplying = false
     @ObservationIgnored private var localFailure = false
     @ObservationIgnored private var changesDuringSync = false
+
+    /// Signed out without asking for it. This device keeps its credentials and
+    /// their owner, and picks the sync back up when that account signs in again.
+    var sessionEnded: Bool { owner != nil && account.user == nil }
 
     init(account: OmniaAccount, profiles: ProfileStore) {
         self.profiles = profiles
@@ -53,6 +56,12 @@ final class CredentialVaultSync {
         work?.cancel()
         work = nil
         isSyncing = false
+        // Only Sign Out clears this device. A session that ended by itself leaves
+        // everything in place; local changes queue until the next sign-in.
+        if next == nil, !account.isSigningOut {
+            isRestoring = false
+            return
+        }
         isRestoring = next != nil
         isApplying = true
         defer { isApplying = false }
@@ -72,8 +81,6 @@ final class CredentialVaultSync {
                 }
                 incoming.adoptingGuest = isFirstUse && !oldValues.isEmpty
             }
-            // The session ended without Sign Out, so say so wherever credentials are entered.
-            sessionEnded = next == nil && owner != nil && !account.isSigningOut
             // Publish both snapshots before mutation. The marker makes an interrupted
             // transition recover the snapshot named by the last committed owner.
             try CredentialVaultDiskStore.save(incoming, owner: next)

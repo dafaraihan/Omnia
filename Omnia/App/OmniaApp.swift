@@ -26,6 +26,8 @@ struct OmniaApp: App {
     @State private var profileData: ProfileDataSync
     @State private var credentialVault: CredentialVaultSync
     @State private var isPrepared = false
+    @State private var dismissedSignedOutNotice = false
+    @State private var showsSignIn = false
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -159,6 +161,18 @@ struct OmniaApp: App {
             .environment(credentialVault)
             .environment(\.showsMediaCardLabels, settings.preferences.showMediaCardLabels)
             .environment(\.displayPreferences, settings.preferences.display)
+            .alert("You've Been Signed Out", isPresented: Binding(
+                get: { isPrepared && credentialVault.sessionEnded && !dismissedSignedOutNotice && !showsSignIn },
+                set: { if !$0 { dismissedSignedOutNotice = true } }
+            )) {
+                Button("Sign In") { showsSignIn = true }
+                Button("Not Now", role: .cancel) { dismissedSignedOutNotice = true }
+            } message: {
+                Text("Your profiles, settings and credentials are still on this \(OmniaDevice.name), but they aren't syncing. Sign in again to pick up where you left off.")
+            }
+            .sheet(isPresented: $showsSignIn) {
+                AccountSignInSheet { showsSignIn = false }
+            }
             .task {
                 guard !isPrepared else { return }
                 if account.localResetPending {

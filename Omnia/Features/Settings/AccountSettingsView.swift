@@ -52,22 +52,7 @@ struct AccountSettingsView: View {
             withAnimation(.smooth(duration: 0.6)) { appeared = true }
         }
         .sheet(isPresented: $isSigningIn) {
-            ScrollView {
-                AuthPanel(onSignedIn: { isSigningIn = false })
-                    .padding(36)
-                    .frame(maxWidth: .infinity)
-            }
-            #if os(macOS)
-            .frame(minWidth: 460, minHeight: 600)
-            #endif
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        account.cancelCode()
-                        isSigningIn = false
-                    }
-                }
-            }
+            AccountSignInSheet { isSigningIn = false }
         }
         .sheet(item: $editingProfile) { target in
             ProfileEditorView(target: target)
@@ -338,9 +323,11 @@ struct AccountSettingsView: View {
                         .font(.system(size: 26))
                         .foregroundStyle(OmniaBrandColors.gradient)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("Keep everything in sync")
+                        Text(credentialVault.sessionEnded ? "You've been signed out" : "Keep everything in sync")
                             .font(.body.weight(.semibold))
-                        Text("Sign in to back up this device's setup and restore saved profiles, provider keys, media servers and Live TV sources. Omnia's backend manages vault encryption.")
+                        Text(credentialVault.sessionEnded
+                            ? "Your profiles, settings and credentials are still on this \(OmniaDevice.name), but they aren't syncing. Sign in again to pick up where you left off."
+                            : "Sign in to back up this device's setup and restore saved profiles, provider keys, media servers and Live TV sources. Omnia's backend manages vault encryption.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }

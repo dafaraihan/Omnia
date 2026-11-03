@@ -87,6 +87,25 @@ final class OmniaAccount {
                 )
             )
         )
+        observeSessionEnd()
+    }
+
+    /// The SDK drops the session by itself when the server says it's gone, for
+    /// example revoked or its account deleted. Without this the app only finds
+    /// out at the next launch, and keeps calling a dead session until then.
+    private func observeSessionEnd() {
+        guard let client else { return }
+        Task { [weak self] in
+            for await (event, _) in client.auth.authStateChanges where event == .signedOut {
+                self?.sessionDidEnd()
+            }
+        }
+    }
+
+    private func sessionDidEnd() {
+        guard user != nil, !isSigningOut, !localResetPending else { return }
+        try? willChangeIdentity?(nil)
+        user = nil
     }
 
     func restoreSession() async {
@@ -417,7 +436,9 @@ final class OmniaAccount {
         do {
             try await willSignOut?()
             try willChangeIdentity?(nil)
-            try await client.auth.signOut()
+            // This device only. The SDK's default ends the session everywhere,
+            // which silently signed out the account's other devices.
+            try await client.auth.signOut(scope: .local)
             user = nil
             localResetPending = true
             UserDefaults.standard.set(true, forKey: "sign-out-local-reset-pending")
