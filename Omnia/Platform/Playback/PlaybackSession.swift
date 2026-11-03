@@ -468,6 +468,16 @@ final class PlaybackSession {
         pictureInPictureController.rate = { [weak self] in self?.playbackRate ?? 1 }
         pictureInPictureController.audioTrack = { [weak self] in self?.audioTracks.first(where: \.isSelected) }
         pictureInPictureController.subtitleTrack = { [weak self] in self?.subtitleTracks.first(where: \.isSelected) }
+        pictureInPictureController.unavailable = { [weak self] reason in
+            self?.recoveryNotice = reason.map { "Picture in Picture couldn't start: \($0)" }
+                ?? "Picture in Picture isn't available for this video right now."
+        }
+        pictureInPictureController.willRestore = { [weak self] in
+            self?.isPictureInPictureActive = false
+        }
+        pictureInPictureController.closedFromWindow = { [weak self] in
+            self?.stop()
+        }
         pictureInPictureController.handoffFailed = { [weak self] in
             self?.recoveryNotice = "Picture in Picture is unavailable for this source or track selection. Playback continues in Omnia."
         }

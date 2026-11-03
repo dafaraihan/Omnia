@@ -65,6 +65,9 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
     private var readiness: NSKeyValueObservation?
     private var preparation: Task<Void, Never>?
     private var backgroundObserver: NSObjectProtocol?
+    private var activeObserver: NSObjectProtocol?
+    private var startedInBackground = false
+    private var isRestoring = false
     private var startTask: Task<Void, Never>?
     private var handingOff = false
     private var handoffWasPlaying = false
@@ -83,6 +86,11 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
     var handoffFailed: (() -> Void)?
     var beginHandoff: (() -> Void)?
     var endHandoff: ((Double, Bool) -> Void)?
+    var unavailable: ((String?) -> Void)?
+    /// The floating window's Back to app button, before it closes.
+    var willRestore: (() -> Void)?
+    /// The floating window's close button.
+    var closedFromWindow: (() -> Void)?
 
     override init() {
         super.init()
@@ -90,14 +98,28 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
             forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                guard let self, self.isHandoff, self.isPlaying?() == true else { return }
+                guard let self else { return }
+                if self.controller?.isPictureInPictureActive == true { self.startedInBackground = true }
+                guard self.isHandoff, self.isPlaying?() == true else { return }
                 self.start()
+            }
+        }
+        // Coming back to Omnia returns a video that floated when the user
+        // left, as other video apps do.
+        activeObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.startedInBackground else { return }
+                self.startedInBackground = false
+                self.controller?.stopPictureInPicture()
             }
         }
     }
 
     deinit {
         if let backgroundObserver { NotificationCenter.default.removeObserver(backgroundObserver) }
+        if let activeObserver { NotificationCenter.default.removeObserver(activeObserver) }
     }
 
     func activateAudioSession() {
@@ -190,7 +212,10 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
     private func start() {
         guard let controller, controller.isPictureInPicturePossible,
               !controller.isPictureInPictureActive, startTask == nil,
-              let player, player.currentItem?.status == .readyToPlay else { return }
+              let player, player.currentItem?.status == .readyToPlay else {
+            if controller?.isPictureInPictureActive != true, startTask == nil { unavailable?(nil) }
+            return
+        }
         if !isHandoff { controller.startPictureInPicture(); return }
         let target = position?() ?? 0
         let token = generation
@@ -311,16 +336,27 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
         publish()
     }
     func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        let wasClosed = !isRestoring
+        isRestoring = false
+        startedInBackground = false
         restore(completed: true)
         publish()
+        if wasClosed { closedFromWindow?() }
     }
     func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, failedToStartPictureInPictureWithError error: Error) {
         restore()
         handoffFailed?()
+        unavailable?(error.localizedDescription)
         publish()
     }
     func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void) {
-        completionHandler(true)
+        isRestoring = true
+        willRestore?()
+        // Lets the player come back on screen for the window to land on.
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(350))
+            completionHandler(true)
+        }
     }
 }
 

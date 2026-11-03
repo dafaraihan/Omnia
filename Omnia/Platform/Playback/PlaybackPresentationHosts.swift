@@ -36,8 +36,8 @@ struct PhonePlaybackPresentation: UIViewControllerRepresentable {
     }
 }
 
-/// Lives in the presenting scene, so replacing a source or entering PiP does
-/// not release orientation. Only dismissal releases the scene request.
+/// Lives in the presenting scene, so replacing a source does not release
+/// orientation. Dismissal or a floating video releases the scene request.
 struct PhonePlaybackOrientationHost: UIViewRepresentable {
     let isPresented: Bool
 

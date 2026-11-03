@@ -88,10 +88,16 @@ struct OmniaRootView: View {
         .preferredColorScheme(onboardingCompleted ? store.appearance.colorScheme : nil)
         #if os(iOS)
         .background {
-            PhonePlaybackOrientationHost(isPresented: playback.isPresentingPlayer || playback.isPictureInPictureActive)
+            PhonePlaybackOrientationHost(isPresented: playback.isPresentingPlayer && !playback.isPictureInPictureActive)
                 .frame(width: 0, height: 0)
         }
-        .fullScreenCover(isPresented: $playback.isPresentingPlayer) {
+        // A floating video leaves Omnia usable underneath.
+        .fullScreenCover(isPresented: Binding(
+            get: { playback.isPresentingPlayer && !playback.isPictureInPictureActive },
+            set: { isPresented in
+                if !isPresented, !playback.isPictureInPictureActive { playback.isPresentingPlayer = false }
+            }
+        )) {
             PhonePlaybackPresentation(content: AnyView(PlaybackExperienceView()))
                 .ignoresSafeArea()
         }
