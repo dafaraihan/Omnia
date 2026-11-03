@@ -126,11 +126,15 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
         attach(player, handoff: false)
     }
 
+    private static let unplayableExtensions: Set<String> = ["mkv", "avi", "webm", "flv", "wmv", "vob", "iso", "m2ts"]
+
     func prepare(source: PlaybackSource) {
         reset()
         // Header-bearing sources stay with the authorized native player:
         // AVURLAsset has no public arbitrary HTTP-header API.
         guard source.requestHeaders.isEmpty else { return }
+        // AVFoundation can't open these, so there's no point connecting to ask.
+        guard !Self.unplayableExtensions.contains(source.url.pathExtension.lowercased()) else { return }
         let token = generation
         preparation = Task { [weak self] in
             let asset = AVURLAsset(url: source.url)

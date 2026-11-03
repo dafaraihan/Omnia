@@ -186,11 +186,7 @@ private struct TrackerAccountCard: View {
         case .idle:
             notConnected
         case .requestingCode:
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
-                Text(kind.usesAPIKey ? "Checking the key with \(kind.title)…" : "Asking \(kind.title) for a code…")
-            }
-            .font(.callout)
+            OmniaLoadingRow(kind.usesAPIKey ? "Checking the key with \(kind.title)…" : "Asking \(kind.title) for a code…")
         case .waiting(let code):
             VStack(alignment: .leading, spacing: 4) {
                 Text("Enter this code on \(kind.title)")

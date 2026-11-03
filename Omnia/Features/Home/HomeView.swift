@@ -214,7 +214,7 @@ struct HomeView: View {
                         if let upcomingResult, !upcomingResult.items.isEmpty {
                             upcomingShelf(upcomingResult)
                         } else if isLoadingUpcoming {
-                            ProgressView("Checking upcoming episodes…")
+                            OmniaLoadingRow("Checking upcoming episodes…")
                                 .frame(maxWidth: .infinity, minHeight: 100)
                         }
                     }
@@ -251,7 +251,7 @@ struct HomeView: View {
                             .frame(maxWidth: .infinity, minHeight: 220)
                         }
                     } else if metadata.isLoadingCatalogs, metadata.homeCatalogs.isEmpty {
-                        ProgressView("Loading your cinema…")
+                        OmniaLoadingRow("Loading your cinema…")
                             .frame(maxWidth: .infinity, minHeight: 180)
                     } else if metadata.homeCatalogs.isEmpty, continuing.isEmpty {
                         ContentUnavailableView(
@@ -719,6 +719,7 @@ struct HomeView: View {
     private var heroTrailerIsPlaying: Bool {
         !isOnboardingPreview && isActiveDestination && sourcePlaybackItem == nil && !playback.isPresentingPlayer && !playback.hasPlayer && !playback.isPictureInPictureActive && scenePhase == .active
             && HeroTrailerFocus.shared.homeMayPlay && heroIsOnScreen && windowIsVisible
+            && !ProcessInfo.processInfo.isLowPowerModeEnabled
     }
 
     private var loadingHero: some View {

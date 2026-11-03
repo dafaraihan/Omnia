@@ -84,7 +84,7 @@ struct PagedMetadataCatalogView: View {
         }
         .overlay {
             if items.isEmpty && isLoading {
-                ProgressView("Finding titles…")
+                OmniaLoadingRow("Finding titles…")
             } else if items.isEmpty && hasReachedEnd {
                 ContentUnavailableView(
                     "No Titles Available",

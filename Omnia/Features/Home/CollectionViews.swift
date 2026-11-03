@@ -474,6 +474,7 @@ struct CollectionFolderView: View {
             case .loading:
                 ProgressView()
                     .controlSize(.small)
+                    .frame(maxWidth: .infinity)
             case .failed:
                 Text(failureReason([section.id]) ?? "This catalog didn't respond.")
                     .foregroundStyle(.secondary)
@@ -521,7 +522,7 @@ struct CollectionFolderView: View {
     @ViewBuilder
     private func loadingOrEmpty(isLoading: Bool, failed: Bool, reason: String? = nil) -> some View {
         if isLoading {
-            ProgressView("Loading \(folder.title)…")
+            OmniaLoadingRow("Loading \(folder.title)…")
                 .frame(maxWidth: .infinity, minHeight: 220)
         } else if failed {
             ContentUnavailableView {

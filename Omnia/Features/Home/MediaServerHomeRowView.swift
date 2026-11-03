@@ -38,6 +38,7 @@ struct MediaServerHomeRowView: View {
                 SectionHeader(title: row.title)
                 ProgressView()
                     .controlSize(.small)
+                    .frame(maxWidth: .infinity)
                     .accessibilityLabel("Loading \(row.title)")
             }
         } else if state == .failed {
@@ -68,7 +69,7 @@ struct MediaServerLibraryBrowseView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 20) {
                 if isLoading && items.isEmpty {
-                    ProgressView("Loading \(title)…")
+                    OmniaLoadingRow("Loading \(title)…")
                         .frame(maxWidth: .infinity, minHeight: 220)
                 } else if let errorMessage, items.isEmpty {
                     ContentUnavailableView("Library Unavailable", systemImage: "server.rack", description: Text(errorMessage))

@@ -642,7 +642,6 @@ final class PlaybackSession {
         )
         #else
         mpv.setVolume(100)
-        pictureInPictureController.prepare(source: source)
         #endif
         mpv.setPlaybackRate(playbackRate)
         mpv.setVideoAspectMode(.original)
@@ -1616,7 +1615,10 @@ final class PlaybackSession {
         stateTask?.cancel()
         stateTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(250))
+                // A paused player has little to report; property changes still
+                // arrive through the player's own callback.
+                let interval = self?.isPaused == true ? 750 : 250
+                try? await Task.sleep(for: .milliseconds(interval))
                 guard !Task.isCancelled else { return }
                 self?.refreshState()
             }
@@ -1686,6 +1688,11 @@ final class PlaybackSession {
         if player.hasRenderedVideoFrame != hasRenderedVideoFrame {
             hasRenderedVideoFrame = player.hasRenderedVideoFrame
             autoSyncSubtitlesIfNeeded()
+            #if os(iOS)
+            // Probing opens a second connection to the source, so it waits until
+            // the video is playing rather than competing with the start.
+            if hasRenderedVideoFrame, let source { pictureInPictureController.prepare(source: source) }
+            #endif
         }
         #if os(macOS)
         let usesSystemVolume = synchronizeOutputVolume()

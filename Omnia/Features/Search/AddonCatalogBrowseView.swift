@@ -29,7 +29,7 @@ struct AddonCatalogBrowseView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 20) {
                 if isLoading && items.isEmpty {
-                    ProgressView("Loading \(title)…")
+                    OmniaLoadingRow("Loading \(title)…")
                         .frame(maxWidth: .infinity, minHeight: 220)
                 } else if let errorMessage, items.isEmpty {
                     ContentUnavailableView("Catalog Unavailable", systemImage: "wifi.exclamationmark", description: Text(errorMessage))

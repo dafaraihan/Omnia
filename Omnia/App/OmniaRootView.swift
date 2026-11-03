@@ -51,7 +51,7 @@ struct OmniaRootView: View {
             if account.localResetPending {
                 VStack(spacing: 16) {
                     if account.isResettingLocalData {
-                        ProgressView("Preparing a fresh start…")
+                        OmniaLoadingRow("Preparing a fresh start…")
                     } else {
                         Text(account.errorMessage ?? "Local cleanup needs to finish.")
                         Button("Retry Cleanup") { Task { await account.finishLocalSignOut() } }
@@ -60,13 +60,13 @@ struct OmniaRootView: View {
                 .padding(28)
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
             } else if account.isSigningOut {
-                ProgressView("Syncing and signing out…")
+                OmniaLoadingRow("Syncing and signing out…")
                     .padding(28)
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
             } else if credentialVault.isRestoring || credentialVault.identityBlocked {
                 VStack(spacing: 16) {
                     if credentialVault.isRestoring {
-                        ProgressView("Restoring saved credentials…")
+                        OmniaLoadingRow("Restoring saved credentials…")
                     } else {
                         Label("Secure storage needs attention", systemImage: "lock.trianglebadge.exclamationmark")
                         Text("Unlock Keychain, then retry. Your saved credentials have been kept.")

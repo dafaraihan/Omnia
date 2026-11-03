@@ -35,6 +35,7 @@ struct AddonHomeCatalogRow: View {
                 SectionHeader(title: title)
                 ProgressView()
                     .controlSize(.small)
+                    .frame(maxWidth: .infinity)
                     .accessibilityLabel("Loading \(title)")
             }
         } else if state == .failed {

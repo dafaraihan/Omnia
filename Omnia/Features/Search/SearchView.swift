@@ -14,6 +14,31 @@ enum SearchViewPresentation {
     #endif
 }
 
+/// The latest answers for recent searches, in memory only, so going back to
+/// a word (or deleting a letter) doesn't start from an empty page.
+@MainActor
+private enum SearchResultMemory {
+    private static var entries: [String: (date: Date, items: [MediaItem])] = [:]
+    private static let limit = 24
+    private static let maximumAge: TimeInterval = 5 * 60
+
+    static func key(query: String, source: SearchFilterPreferences.Source, addons: [InstalledAddon]) -> String {
+        "\(query.lowercased())|\(source)|\(addons.filter(\.isEnabled).map(\.id).joined(separator: ","))"
+    }
+
+    static func results(for key: String) -> [MediaItem]? {
+        guard let entry = entries[key], Date.now.timeIntervalSince(entry.date) < maximumAge else { return nil }
+        return entry.items
+    }
+
+    static func remember(_ items: [MediaItem], for key: String) {
+        entries[key] = (.now, items)
+        if entries.count > limit, let oldest = entries.min(by: { $0.value.date < $1.value.date })?.key {
+            entries[oldest] = nil
+        }
+    }
+}
+
 struct SearchView: View {
     @Environment(\.displayPreferences) private var display
     @Environment(OmniaStore.self) private var store
@@ -108,9 +133,14 @@ struct SearchView: View {
                 isSearchingAddons = false
                 return
             }
+            // Words searched moments ago show at once, then refresh below.
+            let cacheKey = SearchResultMemory.key(query: text, source: source, addons: store.installedAddons)
+            if let remembered = SearchResultMemory.results(for: cacheKey) {
+                addonResults = remembered
+            }
             // Each search asks every add-on search catalog, so wait until typing
             // pauses rather than searching on every few keystrokes.
-            try? await Task.sleep(for: .milliseconds(450))
+            try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled else { return }
             isSearchingAddons = true
             // Only the chosen source is asked. Results from the previous
@@ -150,6 +180,7 @@ struct SearchView: View {
                   request == searchKey
             else { return }
             addonResults = SearchResultRanking.unique(addonMatches.map(\.item) + serverItems)
+            SearchResultMemory.remember(addonResults, for: cacheKey)
             isSearchingAddons = false
             if !results.isEmpty { history.record(text) }
             if searchesMetadata { await loadRelatedResults(for: text) }
@@ -252,7 +283,7 @@ struct SearchView: View {
             } else if (metadata.isSearching || isSearchingAddons) && results.isEmpty {
                 // Keep earlier results on screen while the next query runs;
                 // only an empty result set shows the spinner.
-                ProgressView("Searching…")
+                OmniaLoadingRow("Searching…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if results.isEmpty, filters.isFiltered, !unfilteredResults.isEmpty {
                 ContentUnavailableView(

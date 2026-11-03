@@ -14,7 +14,7 @@ struct NativePlaybackNoticesView: View {
         Group {
             switch state {
             case .loading:
-                ProgressView("Loading notices…")
+                OmniaLoadingRow("Loading notices…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             case let .loaded(notices) where notices.isEmpty:
                 ContentUnavailableView(

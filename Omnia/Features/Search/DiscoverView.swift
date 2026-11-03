@@ -142,7 +142,7 @@ struct DiscoverView: View {
                 if hasBuiltInCatalogs || !discoverAddonCatalogs.isEmpty {
                     discoverShelves
                 } else if metadata.isLoadingCatalogs {
-                    ProgressView("Finding something good…")
+                    OmniaLoadingRow("Finding something good…")
                         .frame(maxWidth: .infinity, minHeight: 280)
                 } else {
                     unavailableState
@@ -378,7 +378,7 @@ struct AddonCatalogShelf: View {
                         Text(errorMessage).foregroundStyle(.secondary)
                         retryButton
                     } else if isLoading {
-                        ProgressView("Refreshing catalog…").controlSize(.small)
+                        OmniaLoadingRow("Refreshing catalog…").controlSize(.small)
                     }
                     ShelfScrollView(items: visibleItems, itemSpan: MediaBrowseMetrics.posterItemSpan(display), accessibilityLabel: title) { item in
                         MediaPoster(item: item)
@@ -387,7 +387,7 @@ struct AddonCatalogShelf: View {
             } else if !didFinishLoading {
                 VStack(alignment: .leading, spacing: 10) {
                     SectionHeader(title: title)
-                    ProgressView("Loading catalog…").controlSize(.small)
+                    OmniaLoadingRow("Loading catalog…").controlSize(.small)
                 }
             } else if let errorMessage {
                 VStack(alignment: .leading, spacing: 8) {

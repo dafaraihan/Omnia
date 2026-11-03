@@ -447,7 +447,7 @@ private struct AppPreview: View {
                         .scaleEffect(geometry.size.width / 1100, anchor: .topLeading)
                         .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
                     } else if isLoading {
-                        ProgressView("Loading Omnia preview…")
+                        OmniaLoadingRow("Loading Omnia preview…")
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
                         ContentUnavailableView {

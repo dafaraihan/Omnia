@@ -72,7 +72,7 @@ struct LibraryView: View {
                     .padding(.top, 12)
             }
             if sections.allSatisfy(\.items.isEmpty), let tracker, trackerLibrary.state(tracker) == .syncing {
-                ProgressView("Reading \(tracker.shortTitle)…")
+                OmniaLoadingRow("Reading \(tracker.shortTitle)…")
                     .frame(maxWidth: .infinity, minHeight: 360)
             } else if sections.allSatisfy(\.items.isEmpty), let tracker {
                 ContentUnavailableView(

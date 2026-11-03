@@ -118,7 +118,7 @@ struct AddonsSettingsView: View {
 
             Section("Installed Add-ons") {
                 if store.installedAddonsAreLoading {
-                    ProgressView("Loading Add-ons…")
+                    OmniaLoadingRow("Loading Add-ons…")
                 } else if store.installedAddons.isEmpty {
                     ContentUnavailableView(
                         "No Add-ons",

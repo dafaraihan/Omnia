@@ -622,11 +622,7 @@ struct MetadataProviderDetailView: View {
                     }
 
                     if isTestingConnection {
-                        HStack(spacing: 8) {
-                            ProgressView()
-                            Text("Checking connection…")
-                        }
-                        .foregroundStyle(.secondary)
+                        OmniaLoadingRow("Checking connection…")
                     } else if let connectionStatus {
                         Text(connectionStatus)
                             .foregroundStyle(.secondary)

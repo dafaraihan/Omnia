@@ -72,7 +72,7 @@ struct LiveTVView: View {
         } else if live.channels.isEmpty {
             switch live.channelState {
             case .idle, .loading:
-                ProgressView("Loading channels…")
+                OmniaLoadingRow("Loading channels…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             case let .failed(message):
                 ContentUnavailableView {

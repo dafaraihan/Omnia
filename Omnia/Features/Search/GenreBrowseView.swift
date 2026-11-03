@@ -127,7 +127,7 @@ struct GenreBrowseView: View {
         .contentMargins(.vertical, 24, for: .scrollContent)
         .overlay {
             if feed.items.isEmpty && feed.isLoading {
-                ProgressView("Finding \(topic.title) titles…")
+                OmniaLoadingRow("Finding \(topic.title) titles…")
             } else if visibleItems.isEmpty && !feed.hasMore && !feed.isLoading {
                 ContentUnavailableView {
                     Label("No \(topic.title) Titles", systemImage: "film.stack")

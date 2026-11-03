@@ -237,13 +237,8 @@ struct PlaybackSourceSheet: View {
             }
 
             if isResolving {
-                VStack(spacing: 12) {
-                    ProgressView()
-                    Text("Finding sources…")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                OmniaLoadingRow("Finding sources…")
+                    .frame(maxHeight: .infinity)
             } else if candidates.isEmpty {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
@@ -1635,7 +1630,7 @@ struct PlaybackExperienceView: View {
             if playback.isRecoveringSource {
                 // A failed source is being fetched again or replaced; the
                 // error shows only if that doesn't work.
-                ProgressView("Reconnecting to the source…")
+                OmniaLoadingRow("Reconnecting to the source…")
                     .controlSize(.large)
                     .tint(.white)
                     .foregroundStyle(.white)

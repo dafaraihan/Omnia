@@ -357,7 +357,7 @@ struct AccountSettingsView: View {
     private var credentialSyncStatus: some View {
         VStack(alignment: .leading, spacing: 10) {
             if credentialVault.isSyncing {
-                ProgressView("Syncing saved credentials…")
+                OmniaLoadingRow("Syncing saved credentials…")
             } else if let problem = credentialVault.problem {
                 Label(problem, systemImage: "exclamationmark.icloud")
                     .font(.caption)

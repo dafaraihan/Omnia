@@ -73,7 +73,7 @@ struct ProgressSettingsView: View {
                 Button("Clear Watchlist", role: .destructive) { destructiveAction = .clearWatchlist }
             }
 
-            if isWorking { ProgressView("Updating local data…") }
+            if isWorking { OmniaLoadingRow("Updating local data…") }
             if store.localMediaPersistenceFailed {
                 Label("Local storage is unavailable. Try again after checking available disk space.", systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.red)

@@ -308,7 +308,7 @@ private struct PluginSettingsSheet: View {
         NavigationStack {
             Form {
                 if isLoading {
-                    ProgressView("Loading Settings…")
+                    OmniaLoadingRow("Loading Settings…")
                         .frame(maxWidth: .infinity)
                 } else if let loadError {
                     Label(loadError, systemImage: "exclamationmark.triangle.fill")

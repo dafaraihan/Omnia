@@ -1454,7 +1454,7 @@ struct MacPlaybackChrome: View {
                 tracks: playback.audioTracks
             ) {
             case .loading:
-                ProgressView("Tracks still loading")
+                OmniaLoadingRow("Tracks still loading")
             case .empty:
                 Text("No audio tracks")
                     .foregroundStyle(.secondary)
@@ -1506,7 +1506,7 @@ struct MacPlaybackChrome: View {
                     tracks: playback.subtitleTracks
                 ) {
                 case .loading:
-                    ProgressView("Tracks still loading")
+                    OmniaLoadingRow("Tracks still loading")
                 case .empty:
                     Text("No embedded subtitles")
                         .foregroundStyle(.secondary)
