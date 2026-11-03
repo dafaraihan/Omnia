@@ -3,12 +3,11 @@
 
 Run from the release step, after packaging the .ipa:
 
-    Scripts/update-sideload-source.py --ipa Omnia-0.3.5-iPhone-iPad.ipa \
-        --notes notes.md --output <Omnia-Releases checkout>
+    Scripts/update-sideload-source.py --ipa Omnia-0.3.5-iPhone-iPad.ipa --notes notes.md
 
-Writes source.json and README.md into the output folder, and copies the icon
-and header there on first use. Everything about the version is read from the .ipa itself.
-Publishing the result is a separate step.
+Updates altstore/source.json. Everything about the version is read from the
+.ipa itself. Commit and push the result after the release is published, so
+SideStore never offers a version whose download isn't there yet.
 """
 import argparse
 import datetime
@@ -16,7 +15,6 @@ import hashlib
 import json
 import plistlib
 import re
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -24,8 +22,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-TEMPLATES = ROOT / "Distribution" / "SideStore"
-ICON = ROOT / "Omnia" / "Assets.xcassets" / "AppIcon.appiconset" / "AppIcon-1024.png"
+SOURCE_FOLDER = ROOT / "altstore"
 # Every signed app has these; they say nothing about what the app can do.
 ROUTINE_ENTITLEMENTS = {
     "application-identifier",
@@ -59,18 +56,16 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--ipa", type=Path, required=True)
     parser.add_argument("--notes", type=Path, required=True)
-    parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--repo", default="Laviora/Omnia-Releases")
+    parser.add_argument("--repo", default="Laviora/Omnia")
     parser.add_argument("--branch", default="main")
     args = parser.parse_args()
 
     info, entitlements = read_ipa(args.ipa)
     version = info["CFBundleShortVersionString"]
     raw = f"https://raw.githubusercontent.com/{args.repo}/{args.branch}"
-    args.output.mkdir(parents=True, exist_ok=True)
 
-    source_file = args.output / "source.json"
-    template = (TEMPLATES / "source.template.json").read_text().replace("{{ASSETS}}", raw)
+    source_file = SOURCE_FOLDER / "source.json"
+    template = (SOURCE_FOLDER / "source.template.json").read_text().replace("{{RAW}}", raw)
     source = json.loads(source_file.read_text() if source_file.exists() else template)
     app = source["apps"][0]
     if app["bundleIdentifier"] != info["CFBundleIdentifier"]:
@@ -95,12 +90,6 @@ def main():
     }
 
     source_file.write_text(json.dumps(source, indent=2, ensure_ascii=False) + "\n")
-    readme = (TEMPLATES / "README.template.md").read_text()
-    (args.output / "README.md").write_text(readme.replace("{{SOURCE_URL}}", f"{raw}/source.json"))
-    if not (args.output / "icon.png").exists():
-        shutil.copy(ICON, args.output / "icon.png")
-    if not (args.output / "header.png").exists():
-        shutil.copy(TEMPLATES / "header.png", args.output / "header.png")
     print(f"Added Omnia {version} ({entry['buildVersion']}) to {source_file}")
 
 
