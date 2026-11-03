@@ -24,6 +24,7 @@ struct LiveTVSettingsView: View {
 
     var body: some View {
         OmniaSettingsForm {
+            AccountBackupNotice()
             Section {
                 Toggle(isOn: Binding(
                     get: { live.configuration.showsInNavigation },

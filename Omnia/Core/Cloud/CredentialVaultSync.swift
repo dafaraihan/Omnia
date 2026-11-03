@@ -12,6 +12,7 @@ final class CredentialVaultSync {
     private(set) var conflictIDs: [String] = []
     private(set) var hasPendingChanges = false
     private(set) var identityBlocked = false
+    private(set) var sessionEnded = false
 
     @ObservationIgnored private let profiles: ProfileStore
     @ObservationIgnored private let account: OmniaAccount
@@ -22,7 +23,6 @@ final class CredentialVaultSync {
     @ObservationIgnored private var generation = UUID()
     @ObservationIgnored private var work: Task<Void, Never>?
     @ObservationIgnored private var isApplying = false
-    @ObservationIgnored private var hasEverBound = false
     @ObservationIgnored private var localFailure = false
     @ObservationIgnored private var changesDuringSync = false
 
@@ -33,7 +33,6 @@ final class CredentialVaultSync {
         client = CredentialVaultClient(account: account)
         do {
             let savedOwner = try KeychainStore.value(account: CredentialVaultDiskStore.ownerAccount)
-            hasEverBound = savedOwner != nil
             owner = savedOwner.flatMap(UUID.init(uuidString:))
             state = try CredentialVaultDiskStore.load(owner: owner)
             try recoverStoredWrites()
@@ -62,12 +61,19 @@ final class CredentialVaultSync {
             try CredentialVaultDiskStore.save(state, owner: owner)
             let oldValues = state.values
             var incoming = next == nil ? CredentialVaultDeviceState() : try CredentialVaultDiskStore.load(owner: next)
-            let adopt = owner == nil && !hasEverBound && next != nil
-            if adopt {
-                incoming.values = oldValues
-                incoming.pending = oldValues.mapValues { CredentialVaultPendingChange(revision: 0, data: $0) }
-                incoming.adoptingGuest = true
+            // Signing in keeps what was entered while signed out. Sign-out already
+            // emptied the guest copy, so nothing of a previous account is in it.
+            // What this account already holds wins, and is never overwritten.
+            if owner == nil, next != nil {
+                let isFirstUse = !(try CredentialVaultDiskStore.hasSnapshot(owner: next))
+                for (id, value) in oldValues where incoming.values[id] == nil {
+                    incoming.values[id] = value
+                    incoming.pending[id] = CredentialVaultPendingChange(revision: incoming.revisions[id] ?? 0, data: value)
+                }
+                incoming.adoptingGuest = isFirstUse && !oldValues.isEmpty
             }
+            // The session ended without Sign Out, so say so wherever credentials are entered.
+            sessionEnded = next == nil && owner != nil && !account.isSigningOut
             // Publish both snapshots before mutation. The marker makes an interrupted
             // transition recover the snapshot named by the last committed owner.
             try CredentialVaultDiskStore.save(incoming, owner: next)
@@ -81,9 +87,7 @@ final class CredentialVaultSync {
             }
             if let next {
                 try KeychainStore.save(next.uuidString, account: CredentialVaultDiskStore.ownerAccount)
-                hasEverBound = true
             } else {
-                // Retain a marker after sign-out so another account cannot adopt old guest data.
                 try KeychainStore.save("signed-out", account: CredentialVaultDiskStore.ownerAccount)
             }
             owner = next
@@ -139,7 +143,6 @@ final class CredentialVaultSync {
                 try captureChanges()
                 try CredentialVaultDiskStore.save(state, owner: owner)
             }
-            hasEverBound = saved != nil
             localFailure = false
             identityBlocked = false
             isRestoring = false
@@ -207,7 +210,10 @@ final class CredentialVaultSync {
             var failed: [String] = []
             for summary in index.sorted(by: { applyOrder($0.id, $1.id) }) {
                 try check(owner, ticket)
-                guard state.revisions[summary.id] != summary.revision else { continue }
+                // Same revision but nothing here: an earlier restore didn't land
+                // (or an older build couldn't store it), so fetch it again.
+                let isMissing = !summary.deleted && state.values[summary.id] == nil && state.pending[summary.id] == nil
+                guard state.revisions[summary.id] != summary.revision || isMissing else { continue }
                 do {
                     let remote = try await client.read(id: summary.id)
                     try check(owner, ticket)

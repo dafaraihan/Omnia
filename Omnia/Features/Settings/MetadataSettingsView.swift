@@ -11,6 +11,7 @@ struct MetadataSettingsView: View {
 
     var body: some View {
         OmniaSettingsForm {
+            AccountBackupNotice()
             // Every user adds their own keys; nothing TMDB or TVDB is built
             // in. These open the same pages as Metadata Sources › Providers.
             Section {

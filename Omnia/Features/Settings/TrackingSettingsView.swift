@@ -16,6 +16,7 @@ struct TrackingSettingsView: View {
 
     var body: some View {
         OmniaSettingsForm {
+            AccountBackupNotice()
             ForEach(Array(TrackerKind.allCases.enumerated()), id: \.element) { index, kind in
                 Section {
                     TrackerAccountCard(kind: kind)

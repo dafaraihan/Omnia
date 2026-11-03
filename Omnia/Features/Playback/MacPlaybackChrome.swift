@@ -715,6 +715,17 @@ struct MacPlaybackChrome: View {
             )
         }
         .foregroundStyle(.white)
+        // A tap or click anywhere outside an open menu closes it. Behind the
+        // controls, so another control still works on the first press.
+        .background {
+            if activePanel != nil {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .ignoresSafeArea()
+                    .onTapGesture { activePanel = nil }
+                    .accessibilityHidden(true)
+            }
+        }
         .onChange(of: playback.purpose) { _, _ in
             activePanel = nil
             subtitlePage = .overview

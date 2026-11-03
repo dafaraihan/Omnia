@@ -26,6 +26,7 @@ struct MediaServersSettingsView: View {
 
     var body: some View {
         OmniaSettingsForm {
+            AccountBackupNotice()
             Section {
                 if servers.connections.isEmpty {
                     Text("No servers connected yet.")

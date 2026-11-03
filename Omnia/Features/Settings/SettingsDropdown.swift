@@ -5,7 +5,7 @@ import SwiftUI
 /// On macOS the list is drawn by Omnia instead of a system menu, because a
 /// system menu always highlights in the Mac's own accent color. Here the
 /// current value, the hovered row and the checkmark all follow the accent
-/// chosen in Settings › Layout. iOS keeps the native menu picker.
+/// chosen in Settings › Layout. iOS uses the system menu for the list.
 struct SettingsDropdown<Value: Hashable>: View {
     private let title: String
     private let subtitle: String?
@@ -53,22 +53,49 @@ struct SettingsDropdown<Value: Hashable>: View {
             systemImage: systemImage
         )
         #else
-        Picker(selection: $selection) {
-            ForEach(Array(sections.enumerated()), id: \.offset) { index, options in
-                if index > 0 { Divider() }
-                ForEach(options, id: \.self) { option in
-                    if let systemImage {
-                        Label(label(option), systemImage: systemImage(option)).tag(option)
-                    } else {
-                        Text(label(option)).tag(option)
-                    }
+        // Laid out by hand: a Form's own menu picker drops the value below the
+        // title as soon as the subtitle runs long.
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
             }
-        } label: {
-            Text(title)
-            if let subtitle { Text(subtitle) }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Menu {
+                Picker(selection: $selection) {
+                    ForEach(Array(sections.enumerated()), id: \.offset) { index, options in
+                        if index > 0 { Divider() }
+                        ForEach(options, id: \.self) { option in
+                            if let systemImage {
+                                Label(label(option), systemImage: systemImage(option)).tag(option)
+                            } else {
+                                Text(label(option)).tag(option)
+                            }
+                        }
+                    }
+                } label: {
+                    EmptyView()
+                }
+                .pickerStyle(.inline)
+            } label: {
+                HStack(spacing: 4) {
+                    Text(label(selection))
+                        .lineLimit(1)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.footnote.weight(.medium))
+                }
+                .foregroundStyle(.tint)
+            }
+            .fixedSize()
         }
-        .pickerStyle(.menu)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(title)
+        .accessibilityValue(label(selection))
         #endif
     }
 }

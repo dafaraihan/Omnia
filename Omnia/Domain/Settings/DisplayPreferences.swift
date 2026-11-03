@@ -447,6 +447,7 @@ nonisolated struct CollectionCardPreferences: Codable, Equatable, Sendable {
     var size: Size = .matchPosters
     var corners: Corners = .rounded
     var titles: Titles = .automatic
+    var folderCards: FolderCards = .asImported
 
     static let `default` = Self()
 
@@ -459,6 +460,33 @@ nonisolated struct CollectionCardPreferences: Codable, Equatable, Sendable {
         size = (try? c.decodeIfPresent(Size.self, forKey: .size)) ?? d.size
         corners = (try? c.decodeIfPresent(Corners.self, forKey: .corners)) ?? d.corners
         titles = (try? c.decodeIfPresent(Titles.self, forKey: .titles)) ?? d.titles
+        folderCards = (try? c.decodeIfPresent(FolderCards.self, forKey: .folderCards)) ?? d.folderCards
+    }
+
+    /// The cards inside an opened folder. An Xperience or Nuvio export only
+    /// shapes the folder's tile; its titles are portrait posters.
+    enum FolderCards: String, Codable, CaseIterable, Identifiable, Sendable {
+        case asImported
+        case matchPosters
+        case landscape
+
+        var id: Self { self }
+
+        var title: String {
+            switch self {
+            case .asImported: "As Imported"
+            case .matchPosters: "Match Poster Card Style"
+            case .landscape: "Landscape"
+            }
+        }
+
+        func usesLandscape(posterStyleIsLandscape: Bool) -> Bool {
+            switch self {
+            case .asImported: false
+            case .matchPosters: posterStyleIsLandscape
+            case .landscape: true
+            }
+        }
     }
 
     enum Shape: String, Codable, CaseIterable, Identifiable, Sendable {

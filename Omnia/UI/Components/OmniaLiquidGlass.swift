@@ -266,7 +266,74 @@ extension View {
         }
         .animation(.easeOut(duration: 0.2), value: isPresented.wrappedValue)
         #else
-        sheet(isPresented: isPresented, content: content)
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            // iPadOS centres every sheet as a floating card, so this one is
+            // drawn by hand to stay docked to the bottom edge, as on iPhone.
+            fullScreenCover(isPresented: isPresented) {
+                DockedStreamsSheet(onClose: { isPresented.wrappedValue = false }, content: content)
+                    .presentationBackground(.clear)
+            }
+        } else {
+            sheet(isPresented: isPresented, content: content)
+        }
         #endif
     }
 }
+
+#if os(iOS)
+/// The stream picker on iPad: an iPhone-style sheet with room for an iPad.
+/// Drag it down or tap beside it to close.
+private struct DockedStreamsSheet<Content: View>: View {
+    let onClose: () -> Void
+    @ViewBuilder let content: () -> Content
+    @State private var dragOffset: CGFloat = 0
+
+    private static var shape: UnevenRoundedRectangle {
+        UnevenRoundedRectangle(topLeadingRadius: 34, topTrailingRadius: 34, style: .continuous)
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .bottom) {
+                Color.black.opacity(0.28)
+                    .contentShape(Rectangle())
+                    .onTapGesture(perform: onClose)
+                    .accessibilityHidden(true)
+
+                VStack(spacing: 0) {
+                    Capsule()
+                        .fill(.secondary)
+                        .frame(width: 44, height: 5)
+                        .frame(maxWidth: .infinity, minHeight: 22)
+                        .contentShape(Rectangle())
+                        .gesture(dismissDrag)
+                        .accessibilityHidden(true)
+                    content()
+                }
+                .frame(
+                    width: min(proxy.size.width - 48, 900),
+                    height: proxy.size.height * 0.88 + proxy.safeAreaInsets.bottom
+                )
+                .glassEffect(.regular, in: Self.shape)
+                .clipShape(Self.shape)
+                .offset(y: dragOffset)
+                .accessibilityAddTraits(.isModal)
+                .accessibilityAction(.escape, onClose)
+            }
+            .ignoresSafeArea(edges: .bottom)
+        }
+    }
+
+    private var dismissDrag: some Gesture {
+        DragGesture()
+            .onChanged { dragOffset = max($0.translation.height, 0) }
+            .onEnded { value in
+                if value.predictedEndTranslation.height > 200 {
+                    onClose()
+                } else {
+                    withAnimation(.snappy) { dragOffset = 0 }
+                }
+            }
+    }
+}
+#endif

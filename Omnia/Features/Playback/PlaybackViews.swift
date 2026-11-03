@@ -188,7 +188,7 @@ struct PlaybackSourceSheet: View {
             sourcePanel
         }
         .tint(settings.preferences.display.accentColor)
-        .presentationDetents([.medium, .large])
+        .modifier(StreamSheetSizing())
         #endif
     }
 
@@ -2840,6 +2840,19 @@ private struct PlaybackTouchGestures: View {
         return hours > 0
             ? String(format: "%d:%02d:%02d", hours, minutes, remainder)
             : String(format: "%d:%02d", minutes, remainder)
+    }
+}
+#endif
+
+#if os(iOS)
+/// iPhone's sheet stops at two heights; iPad's is sized by omniaStreamsPage.
+private struct StreamSheetSizing: ViewModifier {
+    func body(content: Content) -> some View {
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            content
+        } else {
+            content.presentationDetents([.medium, .large])
+        }
     }
 }
 #endif

@@ -56,8 +56,14 @@ struct StreamsPageLayout<Panel: View>: View {
                 .keyboardShortcut(.cancelAction)
                 .help("Back")
                 .accessibilityLabel("Back")
+                #if os(macOS)
+                // Beside the window's traffic lights, on their centre line.
+                .padding(.leading, 86)
+                .padding(.top, 8)
+                #else
                 .padding(.leading, 18)
                 .padding(.top, 18)
+                #endif
             }
         }
         .environment(\.colorScheme, .dark)

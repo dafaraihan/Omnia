@@ -4,6 +4,9 @@
 //
 
 import SwiftUI
+#if os(iOS)
+import UIKit
+#endif
 
 /// The shared rhythm for every media browse page. Anime, Search, Discover,
 /// Library, and provider catalog pages must always use the same poster width,
@@ -55,10 +58,22 @@ enum MediaBrowseMetrics {
 
     /// As many columns as fit at the poster width, then stretched so the
     /// grid fills the row instead of leaving a gap on the trailing side.
+    /// A row's card width would leave one or two enormous columns on iPhone,
+    /// so its grids fit two landscape cards or three posters across.
+    private static func gridMinimum(_ display: DisplayPreferences) -> CGFloat {
+        let width = display.landscapePosters ? display.landscapePosterCardWidth : display.posterCardWidth
+        #if os(iOS)
+        if UIDevice.current.userInterfaceIdiom == .phone {
+            return min(width, display.landscapePosters ? 160 : 104)
+        }
+        #endif
+        return width
+    }
+
     static func posterGridColumns(_ display: DisplayPreferences) -> [GridItem] {
         [GridItem(
             .adaptive(
-                minimum: display.landscapePosters ? display.landscapePosterCardWidth : display.posterCardWidth,
+                minimum: gridMinimum(display),
                 maximum: .infinity
             ),
             spacing: gridSpacing,

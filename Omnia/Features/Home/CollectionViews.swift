@@ -200,15 +200,12 @@ struct CollectionFolderView: View {
         let title: String
     }
 
-    /// A folder drawn as a landscape or wide tile (as imported, or set in
-    /// Settings › Layout › Collections) lists its titles as backdrop cards,
-    /// as Nuvio does; other folders keep the poster style.
+    /// Settings › Layout › Collections › Cards in Folders. By default titles
+    /// keep the imported portrait posters, whatever shape the folder's tile is.
     private var cardDisplay: DisplayPreferences {
         var cardDisplay = display
-        switch display.collectionCard.shape.resolved(folder.tileShape, landscapePosters: display.landscapePosters) {
-        case .landscape, .wide: cardDisplay.landscapePosters = true
-        case .poster, .square: break
-        }
+        cardDisplay.landscapePosters = display.collectionCard.folderCards
+            .usesLandscape(posterStyleIsLandscape: display.landscapePosters)
         return cardDisplay
     }
 

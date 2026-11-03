@@ -74,10 +74,16 @@ struct CollectionsSettingsView: View {
                     selection: settings.binding(\.display.collectionCard.titles),
                     options: Array(CollectionCardPreferences.Titles.allCases)
                 ) { titles in titles.title }
+                SettingsDropdown(
+                    "Cards in Folders",
+                    subtitle: "The titles shown when a folder is open.",
+                    selection: settings.binding(\.display.collectionCard.folderCards),
+                    options: Array(CollectionCardPreferences.FolderCards.allCases)
+                ) { cards in cards.title }
             } header: {
                 Text("Card Style")
             } footer: {
-                Text("Applies to every collection row on Home. As Imported keeps each collection's own tile shape, and Automatic shows a folder's name only when the folder asks for it or has no cover. Match Poster Card Style follows the poster layout, size, or corner setting. Folder Names is independent because posters have no matching name setting. Depth and hover glow follow Poster Card Style.")
+                Text("Applies to every collection row on Home. As Imported keeps each collection's own tile shape and shows the titles inside as portrait posters, and Automatic shows a folder's name only when the folder asks for it or has no cover. Match Poster Card Style follows the poster layout, size, or corner setting. Folder Names is independent because posters have no matching name setting. Depth and hover glow follow Poster Card Style.")
             }
 
             if collections.collections.isEmpty {
