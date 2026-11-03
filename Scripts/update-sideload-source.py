@@ -5,7 +5,7 @@ Run from the release step, after packaging the .ipa:
 
     Scripts/update-sideload-source.py --ipa Omnia-0.3.5-iPhone-iPad.ipa --notes notes.md
 
-Updates altstore/source.json. Everything about the version is read from the
+Updates store.json at the repository root. Everything about the version is read from the
 .ipa itself. Commit and push the result after the release is published, so
 SideStore never offers a version whose download isn't there yet.
 """
@@ -64,8 +64,8 @@ def main():
     version = info["CFBundleShortVersionString"]
     raw = f"https://raw.githubusercontent.com/{args.repo}/{args.branch}"
 
-    source_file = SOURCE_FOLDER / "source.json"
-    template = (SOURCE_FOLDER / "source.template.json").read_text().replace("{{RAW}}", raw)
+    source_file = ROOT / "store.json"
+    template = (SOURCE_FOLDER / "store.template.json").read_text().replace("{{RAW}}", raw)
     source = json.loads(source_file.read_text() if source_file.exists() else template)
     app = source["apps"][0]
     if app["bundleIdentifier"] != info["CFBundleIdentifier"]:
