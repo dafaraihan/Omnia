@@ -22,6 +22,16 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "0.3.7",
+          "buildVersion": "11",
+          "date": "2026-11-03T19:05:54Z",
+          "localizedDescription": "Picture in Picture for every video on iPhone and iPad, Low Power Mode, App Lock, and more ways to size and style Omnia.\n\nNew\n- Picture in Picture for videos played by Omnia's own player on iPhone and iPad, including MKV, from the button or when you swipe home. This is new and still needs testing on real devices, so tell us if the floating window stays black.\n- While a video floats, you can keep using Omnia underneath. Coming back returns it to the player.\n- Low Power Mode: turns off hero trailers and Omnia's glass. It follows your device's setting by default, or you can turn it on or off in Settings > Layout.\n- New Episode Reminders: a notification on the day a new episode of a saved or in-progress series airs. Turn it on in Settings > Layout > Upcoming.\n- App Lock: Face ID, Touch ID or your passcode for Settings and for switching profiles. Turn it on in Settings > Account.\n- Player Appearance, in Settings > Playback: sliders for the size of player controls, timeline and menus with a live preview, together with all subtitle settings.\n- Top Bar Size, Height and Width sliders on iPad and Mac.\n- Gradient Overlay switch with strength and height sliders in Settings > Layout > Home Layout.\n\nImproved\n- Top bar tabs now respond the moment you touch them.\n- Liquid Glass sliders are smooth, with the preview following your finger.\n- The top bar's glass now matches the other controls.\n- iPhone can now turn off the navigation bar's glass.\n- A longer volume slider in the iPhone player.\n- All artwork placeholders are now plain grey.\n- On iPhone, the trailer mute button on title pages is now at the top right, as on Home.\n\nFixed\n- Turning off Menus and Panels now removes glass from the source picker and other sheets.\n- Sound should now play with your iPhone or iPad on silent, in the player and in trailers.\n- Closing the floating video now stops playback.",
+          "downloadURL": "https://github.com/dafaraihan/Omnia/releases/download/v0.3.7/Omnia-0.3.7-iPhone-iPad.ipa",
+          "size": 33161665,
+          "sha256": "371f215bb11ea382d866dd7216c8922b6c32f8596a02ec89799525e4bf7b97b9",
+          "minOSVersion": "26.5"
+        },
+        {
           "version": "0.3.6",
           "buildVersion": "10",
           "date": "2026-11-03T17:50:19Z",
@@ -45,6 +55,7 @@
       "appPermissions": {
         "entitlements": [],
         "privacy": {
+          "NSFaceIDUsageDescription": "Omnia uses Face ID to unlock Settings and profile switching when you turn those locks on.",
           "NSLocalNetworkUsageDescription": "Omnia connects to Jellyfin or Emby servers on your local network."
         }
       }
