@@ -66,7 +66,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--ipa", type=Path, required=True)
     parser.add_argument("--notes", type=Path, required=True)
-    parser.add_argument("--repo", default="Laviora/Omnia")
+    parser.add_argument("--repo", default="dafaraihan/Omnia")
     parser.add_argument("--branch", default="main")
     args = parser.parse_args()
 

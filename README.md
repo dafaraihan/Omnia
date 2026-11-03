@@ -9,11 +9,11 @@ Built with SwiftUI and libmpv for macOS, iPhone and iPad, from one project.
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20iOS%20%7C%20iPadOS-black)
 ![Built with SwiftUI](https://img.shields.io/badge/built%20with-SwiftUI-orange)
-[![Latest release](https://img.shields.io/github/v/release/Laviora/Omnia)](https://github.com/Laviora/Omnia/releases/latest)
+[![Latest release](https://img.shields.io/github/v/release/dafaraihan/Omnia)](https://github.com/dafaraihan/Omnia/releases/latest)
 
-### [⬇&nbsp;&nbsp;Download Omnia for macOS (.dmg)](https://github.com/Laviora/Omnia/releases/download/v0.3.5/Omnia-0.3.5.dmg)
+### [⬇&nbsp;&nbsp;Download Omnia for macOS (.dmg)](https://github.com/dafaraihan/Omnia/releases/download/v0.3.5/Omnia-0.3.5.dmg)
 
-macOS 26 or later, Apple silicon or Intel · iPhone and iPad with [SideStore or AltStore](#install) · [All releases](https://github.com/Laviora/Omnia/releases)
+macOS 26 or later, Apple silicon or Intel · iPhone and iPad with [SideStore or AltStore](#install) · [All releases](https://github.com/dafaraihan/Omnia/releases)
 
 [Features](#features) · [Install](#install) · [Build from source](#build-from-source)
 
@@ -69,14 +69,14 @@ Screenshots are not included yet. Omnia only shows what your own add-ons provide
 Add this source, then install **Omnia** from it. New versions appear there after each release.
 
 ```
-https://raw.githubusercontent.com/Laviora/Omnia/main/store.json
+https://raw.githubusercontent.com/dafaraihan/Omnia/main/store.json
 ```
 
-Or grab the `.ipa` from [the latest release](https://github.com/Laviora/Omnia/releases/latest). It's signed with your own Apple account when you install it.
+Or grab the `.ipa` from [the latest release](https://github.com/dafaraihan/Omnia/releases/latest). It's signed with your own Apple account when you install it.
 
 ### Mac
 
-1. [Download Omnia-0.3.5.dmg](https://github.com/Laviora/Omnia/releases/download/v0.3.5/Omnia-0.3.5.dmg), or pick a version from [Releases](https://github.com/Laviora/Omnia/releases).
+1. [Download Omnia-0.3.5.dmg](https://github.com/dafaraihan/Omnia/releases/download/v0.3.5/Omnia-0.3.5.dmg), or pick a version from [Releases](https://github.com/dafaraihan/Omnia/releases).
 2. Open the `.dmg` and drag **Omnia** into **Applications**.
 3. Open Omnia from Applications.
 
@@ -104,7 +104,7 @@ After that, Omnia opens normally.
 
 ```sh
 brew install mpv libtorrent-rasterbar
-git clone https://github.com/Laviora/Omnia.git
+git clone https://github.com/dafaraihan/Omnia.git
 cd Omnia
 open Omnia.xcodeproj
 ```
