@@ -356,7 +356,15 @@ struct OmniaRootView: View {
                 }
             }
         }
-        .task(id: profiles.activeProfile) { await updateProfileTabImage() }
+        .task(id: ProfileTabImageKey(profile: profiles.activeProfile, isSelected: selection == .settings, accent: accentColor)) {
+            await updateProfileTabImage()
+        }
+    }
+
+    private struct ProfileTabImageKey: Equatable {
+        let profile: ViewerProfile?
+        let isSelected: Bool
+        let accent: Color
     }
 
     /// Native tabs extract an Image from their label, so rasterize the same
@@ -368,7 +376,13 @@ struct OmniaRootView: View {
             return
         }
         func render() {
-            let renderer = ImageRenderer(content: ProfileAvatarView(profile: profile, size: 26))
+            // The same accent glow as the iPad and Mac bar, while its tab is open.
+            let isSelected = selection == .settings
+            let renderer = ImageRenderer(
+                content: ProfileAvatarView(profile: profile, size: 26, isSelected: isSelected)
+                    .shadow(color: isSelected ? accentColor.opacity(0.9) : .clear, radius: 4)
+                    .padding(5)
+            )
             renderer.scale = 3
             // The native tab bar reads UIImage's rendering mode; the SwiftUI
             // Image modifier alone leaves UIKit free to template the avatar.

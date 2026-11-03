@@ -583,20 +583,14 @@ struct HomeView: View {
 
             // Dynamic Background Color: the hero melts into the artwork's
             // colour, the same one the rows below sit on, so there is no edge.
-            if usesDynamicBackground, !isCardHero {
-                HomeArtworkBackground(item: featured)
-                    .environment(\.colorScheme, .dark)
-                    .mask {
-                        LinearGradient(
-                            stops: [
-                                .init(color: .clear, location: 0.5),
-                                .init(color: .black.opacity(0.75), location: 0.86),
-                                .init(color: .black, location: 1)
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    }
+            // On iPad and Mac a playing trailer stays uncovered.
+            if usesDynamicBackground, !isCardHero, OmniaDevice.isPhone || !heroTrailer.isVisible {
+                HeroBottomBlend(item: featured)
+                    .transition(.opacity)
+            }
+            if heroTrailer.isVisible, !isCardHero {
+                HeroTrailerTopFade(item: featured, usesWash: usesDynamicBackground)
+                    .transition(.opacity)
             }
 
             // FeaturedBackdrop correctly opts out of hit-testing so it can be

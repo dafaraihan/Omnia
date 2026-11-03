@@ -201,6 +201,60 @@ struct HomeArtworkBackground: View {
     }
 }
 
+/// Melts a hero's lower part into the artwork wash under it, so the hero and
+/// the rows below read as one surface.
+struct HeroBottomBlend: View {
+    let item: MediaItem
+
+    var body: some View {
+        HomeArtworkBackground(item: item)
+            .environment(\.colorScheme, .dark)
+            .mask {
+                LinearGradient(
+                    stops: [
+                        .init(color: .clear, location: 0.42),
+                        .init(color: .black.opacity(0.55), location: 0.66),
+                        .init(color: .black.opacity(0.92), location: 0.84),
+                        .init(color: .black, location: 0.94)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
+    }
+}
+
+/// Over a playing trailer: covers the black bar some trailers have at the top.
+struct HeroTrailerTopFade: View {
+    let item: MediaItem
+    var usesWash: Bool
+
+    private var mask: LinearGradient {
+        LinearGradient(
+            stops: [
+                .init(color: .black, location: 0),
+                .init(color: .black.opacity(0.8), location: 0.1),
+                .init(color: .clear, location: 0.3)
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+
+    var body: some View {
+        Group {
+            if usesWash {
+                HomeArtworkBackground(item: item).environment(\.colorScheme, .dark)
+            } else {
+                Color.black
+            }
+        }
+        .mask { mask }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
 private nonisolated struct ArtworkTint: Equatable, Sendable {
     let red: Double
     let green: Double
@@ -446,14 +500,8 @@ struct WindowHeroBackdrop: View {
                 OmniaPageBackground()
 
                 if let accentItem {
-                    Group {
-                        if state.presentation?.source == .home {
-                            HomeArtworkBackground(item: accentItem)
-                                .environment(\.colorScheme, .dark)
-                        } else {
-                            HeroAccentBackground(item: accentItem).equatable()
-                        }
-                    }
+                    HomeArtworkBackground(item: accentItem)
+                        .environment(\.colorScheme, .dark)
                         .frame(width: proxy.size.width, height: proxy.size.height)
                         .opacity(accentVisible ? 1 : 0)
                 }

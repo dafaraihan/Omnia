@@ -132,16 +132,18 @@ struct ContinueWatchingCard: View {
             .clipShape(.rect(cornerRadius: cornerRadius, style: .continuous))
             .cardDepth(.continueWatching, cornerRadius: cornerRadius, fallbackBorderOpacity: 0.24)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(cardPresentation.primaryText)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                Text(cardPresentation.secondaryText)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.secondary)
+            if display.continueWatchingShowsLabels {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(cardPresentation.primaryText)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Text(cardPresentation.secondaryText)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.secondary)
+                }
+                .frame(width: cardWidth, alignment: .leading)
             }
-            .frame(width: cardWidth, alignment: .leading)
         }
     }
 

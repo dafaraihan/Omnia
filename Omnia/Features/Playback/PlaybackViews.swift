@@ -1542,6 +1542,7 @@ struct PlaybackChromeMetadata: Equatable {
 }
 
 struct PlaybackExperienceView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     #if os(iOS)
     @FocusState private var hasKeyboardFocus: Bool
     #endif
@@ -1752,7 +1753,8 @@ struct PlaybackExperienceView: View {
                         isExclusiveFullScreen: playback.isFullScreenActive
                     )
                 )
-                .transition(.opacity)
+                // Settles into place rather than only fading.
+                .transition(reduceMotion ? .opacity : .scale(scale: 1.02).combined(with: .opacity))
                 .zIndex(10)
             }
         }
@@ -1793,7 +1795,7 @@ struct PlaybackExperienceView: View {
                     .accessibilityAddTraits(.updatesFrequently)
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: showsChrome)
+        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.3, dampingFraction: 0.9), value: showsChrome)
         .animation(.easeInOut(duration: 0.2), value: skipNotice)
         .onAppear { revealChrome() }
         .onDisappear {

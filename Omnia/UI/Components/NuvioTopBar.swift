@@ -229,11 +229,13 @@ struct NuvioTopBar: View {
                         .transition(.opacity)
                 }
             }
+            // Inside the button, so the whole tab answers and not only its
+            // icon and label.
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .scaleEffect(!reduceMotion && isHighlighted && isPressing ? 1.06 : 1)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .contentShape(Rectangle())
         .help(destination.title(for: profiles.activeProfile))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(destination.title(for: profiles.activeProfile))
@@ -284,18 +286,15 @@ struct NuvioTopBar: View {
     // MARK: Interaction
 
     private func pressGesture(tabWidth: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 0, coordinateSpace: .local)
+        // Starts only once the pointer moves, so a tap is left to the tab's button.
+        DragGesture(minimumDistance: 6, coordinateSpace: .local)
             .onChanged { value in
                 pointer = value.location
                 if !isPressing {
                     isPressing = true
                     withAnimation(reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.9)) { glowOpacity = 1 }
                 }
-                // A press stays on its tab until the pointer actually moves.
-                let moved = hypot(value.translation.width, value.translation.height) > 4
-                if moved || dragIndex != nil {
-                    dragIndex = index(at: value.location.x, tabWidth: tabWidth)
-                }
+                dragIndex = index(at: value.location.x, tabWidth: tabWidth)
             }
             .onEnded { value in
                 let target = index(at: value.location.x, tabWidth: tabWidth)
@@ -306,7 +305,7 @@ struct NuvioTopBar: View {
                     glowOpacity = 0
                     pointer = nil
                 }
-                if isInside, hypot(value.translation.width, value.translation.height) > 4, destinations.indices.contains(target) {
+                if isInside, destinations.indices.contains(target) {
                     select(destinations[target])
                 }
             }

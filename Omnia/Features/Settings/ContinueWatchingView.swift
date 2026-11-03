@@ -30,6 +30,12 @@ struct ContinueWatchingSettingsView: View {
                 ContinueWatchingLivePreview(style: settings.preferences.display.continueWatchingStyle)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
+                if settings.preferences.display.continueWatchingStyle != .card {
+                    Toggle(isOn: settings.binding(\.display.continueWatchingShowsLabels)) {
+                        Text("Show Labels")
+                        Text("The title and details under each card.")
+                    }
+                }
                 SettingsDropdown(
                     "Size",
                     selection: settings.binding(\.display.continueWatchingCard.size),

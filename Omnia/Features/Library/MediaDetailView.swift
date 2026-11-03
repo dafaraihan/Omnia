@@ -228,7 +228,7 @@ struct MediaDetailView: View {
         ZStack(alignment: .bottomLeading) {
             #if os(iOS)
             if isPortraitPhone {
-                PortraitHeroArtwork(item: displayItem)
+                PortraitHeroArtwork(item: displayItem, blendsIntoPage: usesArtworkBackground)
             } else {
                 HeroArtworkCanvas(item: displayItem, source: .detail, artworkAlignment: .topTrailing)
             }
@@ -237,6 +237,17 @@ struct MediaDetailView: View {
             #endif
 
             HomeHeroTrailerLayer(model: heroTrailer, isPlaying: heroTrailerIsPlaying)
+
+            // Same as Home: the hero melts into the page's artwork colour, and
+            // on iPad and Mac a playing trailer stays uncovered.
+            if usesArtworkBackground, OmniaDevice.isPhone || !heroTrailer.isVisible {
+                HeroBottomBlend(item: displayItem)
+                    .transition(.opacity)
+            }
+            if heroTrailer.isVisible {
+                HeroTrailerTopFade(item: displayItem, usesWash: usesArtworkBackground)
+                    .transition(.opacity)
+            }
 
             if showsPlayingHeroTrailer {
                 Button { openHeroTrailer() } label: {
@@ -372,7 +383,8 @@ struct MediaDetailView: View {
         .padding(.bottom, 72)
         .background {
             if usesArtworkBackground {
-                HeroAccentBackground(item: displayItem)
+                HomeArtworkBackground(item: displayItem)
+                    .environment(\.colorScheme, .dark)
             } else {
                 pageBackground
             }
@@ -891,7 +903,8 @@ struct MediaDetailView: View {
         // The same accent as the info sections, so the page doesn't end in
         // a light band under them or when it bounces.
         if usesArtworkBackground {
-            HeroAccentBackground(item: displayItem)
+            HomeArtworkBackground(item: displayItem)
+                    .environment(\.colorScheme, .dark)
         } else {
             pageBackground
         }

@@ -598,6 +598,7 @@ struct MacPlaybackChrome: View {
         #endif
     }
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var activePanel: MacPlaybackPanel?
     @State private var episodeSeasonNumber: Int?
     @State private var subtitlePage: MacSubtitlePanelPage = .overview
@@ -672,14 +673,18 @@ struct MacPlaybackChrome: View {
                     }
                     .equatable()
                         .frame(
-                            width: activePanel == .episodes || activePanel == .channels
-                                ? min(480, max(0, geometry.size.width - 48))
-                                : min(390, max(0, geometry.size.width - 48))
+                            width: isPhone
+                                ? min(activePanel == .episodes || activePanel == .channels ? 340 : 280, geometry.size.width - 48)
+                                : activePanel == .episodes || activePanel == .channels
+                                    ? min(480, max(0, geometry.size.width - 48))
+                                    : min(390, max(0, geometry.size.width - 48))
                         )
                         .frame(
                             height: panelHeight(
                                 activePanel,
-                                maximumHeight: min(520, max(100, geometry.size.height - (isShort ? 90 : 190)))
+                                maximumHeight: isPhone
+                                    ? min(260, max(100, geometry.size.height - 90))
+                                    : min(520, max(100, geometry.size.height - (isShort ? 90 : 190)))
                             )
                         )
                         .padding(.trailing, isPhone ? 0 : 30)
@@ -711,6 +716,7 @@ struct MacPlaybackChrome: View {
             )
         }
         .foregroundStyle(.white)
+        .animation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.86), value: activePanel)
         // A tap or click anywhere outside an open menu closes it. Behind the
         // controls, so another control still works on the first press.
         .background {

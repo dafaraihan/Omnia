@@ -762,6 +762,8 @@ nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
     var continueWatchingCard: ContinueWatchingCardPreferences = .default { didSet { rememberCardStyle() } }
     var continueWatchingStyle: ContinueWatchingStyle = .wide { didSet { rememberCardStyle() } }
     var continueWatchingSort: ContinueWatchingSort = .recent
+    /// The title and details under Wide and Poster cards.
+    var continueWatchingShowsLabels = true
     var continueWatchingEpisodeThumbnails = true
     /// Each card's picture: the title's artwork, or the scene it stopped on.
     var continueWatchingArtwork: ContinueWatchingArtwork = .artwork
@@ -820,6 +822,7 @@ nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
             continueWatchingCard = d.continueWatchingCard
         }
         continueWatchingStyle = (try? c.decodeIfPresent(ContinueWatchingStyle.self, forKey: .continueWatchingStyle)) ?? d.continueWatchingStyle
+        continueWatchingShowsLabels = (try? c.decodeIfPresent(Bool.self, forKey: .continueWatchingShowsLabels)) ?? d.continueWatchingShowsLabels
         continueWatchingSort = (try? c.decodeIfPresent(ContinueWatchingSort.self, forKey: .continueWatchingSort)) ?? d.continueWatchingSort
         continueWatchingEpisodeThumbnails = (try? c.decodeIfPresent(Bool.self, forKey: .continueWatchingEpisodeThumbnails)) ?? d.continueWatchingEpisodeThumbnails
         continueWatchingArtwork = (try? c.decodeIfPresent(ContinueWatchingArtwork.self, forKey: .continueWatchingArtwork)) ?? d.continueWatchingArtwork
