@@ -57,7 +57,9 @@ struct AccountSettingsView: View {
                     .padding(36)
                     .frame(maxWidth: .infinity)
             }
+            #if os(macOS)
             .frame(minWidth: 460, minHeight: 600)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {

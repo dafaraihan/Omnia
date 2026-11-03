@@ -35,7 +35,11 @@ struct MediaPoster: View {
                 ArtworkView(item: item, prefersBackdrop: usesBackdropCard)
                     .aspectRatio(isLandscape ? 1.72 : 2 / 3, contentMode: .fit)
                     .frame(maxWidth: fillsAvailableWidth ? .infinity : nil)
-                    .frame(width: fillsAvailableWidth ? nil : cardWidth)
+                    // A set height too, or a two-line title shrinks the art in a shelf.
+                    .frame(
+                        width: fillsAvailableWidth ? nil : cardWidth,
+                        height: fillsAvailableWidth ? nil : cardWidth / (isLandscape ? 1.72 : 2 / 3)
+                    )
                     .clipShape(.rect(cornerRadius: cornerRadius, style: .continuous))
                     .overlay {
                         if style == .landscape {

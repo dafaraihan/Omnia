@@ -198,7 +198,7 @@ struct AppearanceSettingsView: View {
         var parts = [display.posterWidth.title]
         if display.landscapePosters { parts.append("Landscape") }
         if display.cardDepth.isEnabled { parts.append("Depth") }
-        if display.cardHover.isEnabled { parts.append("Hover") }
+        if display.cardHover.isEnabled, !OmniaDevice.isPhone { parts.append("Hover") }
         return parts.joined(separator: " · ")
     }
 

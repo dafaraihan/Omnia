@@ -34,6 +34,24 @@ extension Color {
 /// The device's name in copy, as in "stays on this Mac".
 enum OmniaDevice {
     @MainActor
+    static var isPhone: Bool {
+        #if os(iOS)
+        UIDevice.current.userInterfaceIdiom == .phone
+        #else
+        false
+        #endif
+    }
+
+    @MainActor
+    static var isPad: Bool {
+        #if os(iOS)
+        UIDevice.current.userInterfaceIdiom == .pad
+        #else
+        false
+        #endif
+    }
+
+    @MainActor
     static var name: String {
         #if os(macOS)
         "Mac"

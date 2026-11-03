@@ -26,7 +26,7 @@ struct MetadataSettingsView: View {
             } header: {
                 Text("API Keys")
             } footer: {
-                Text("Your own free TMDB and TVDB keys unlock artwork, logos, details and search beyond your add-ons; fanart.tv adds textless posters for the iPhone's hero. Keys stay in this device's Keychain.")
+                Text("Your own free TMDB and TVDB keys unlock artwork, logos, details and search beyond your add-ons; fanart.tv adds textless posters for the iPhone's hero. Keys stay in this device's Keychain and, when you're signed in, in your account's encrypted vault.")
             }
 
             Section {

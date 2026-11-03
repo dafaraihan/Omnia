@@ -454,7 +454,7 @@ struct StreamSelectionSettingsView: View {
     }
 }
 
-private struct LanguagePicker: View {
+struct LanguagePicker: View {
     let title: String
     @Binding var selection: PreferredLanguage
     let includesNone: Bool

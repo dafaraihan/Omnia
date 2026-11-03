@@ -19,12 +19,12 @@ struct SubtitleAppearanceSettingsView: View {
 
             Section("Language") {
                 Toggle("Subtitles Enabled", isOn: settings.binding(\.subtitlesEnabled))
-                SubtitleSettingsLanguagePicker(
+                LanguagePicker(
                     "Preferred subtitles",
                     selection: settings.binding(\.preferredSubtitleLanguage),
                     includesNone: true
                 )
-                SubtitleSettingsLanguagePicker(
+                LanguagePicker(
                     "Subtitle fallback",
                     selection: settings.binding(\.subtitleFallbackLanguage),
                     includesNone: true
@@ -197,34 +197,6 @@ struct SubtitleDoubleSlider: View {
     }
 }
 
-private struct SubtitleSettingsLanguagePicker: View {
-    let title: String
-    @Binding var selection: PreferredLanguage
-    let includesNone: Bool
-
-    init(_ title: String, selection: Binding<PreferredLanguage>, includesNone: Bool) {
-        self.title = title
-        _selection = selection
-        self.includesNone = includesNone
-    }
-
-    var body: some View {
-        SettingsDropdown(
-            title,
-            selection: $selection,
-            sections: [
-                includesNone ? [.followSystem, PreferredLanguage.none] : [.followSystem],
-                PlaybackLanguageCatalog.codes.map { PreferredLanguage.language($0) }
-            ]
-        ) { language in
-            switch language {
-            case .followSystem: "Follow System"
-            case .none: "Off / No preference"
-            case let .language(code): PlaybackLanguageCatalog.name(for: code)
-            }
-        }
-    }
-}
 
 private extension PlaybackSubtitleBackground {
     var settingsTitle: String {

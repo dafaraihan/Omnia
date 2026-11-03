@@ -357,7 +357,11 @@ struct AddonCatalogShelf: View {
     }
 
     private var requestIdentity: RequestIdentity { RequestIdentity(addon: addon, catalog: catalog) }
-    private var title: String { catalog.name?.trimmedNonEmpty ?? catalog.id }
+    /// With the type, as on Home: Cinemeta has a "Popular" for movies and for series.
+    private var title: String {
+        let name = catalog.name?.trimmedNonEmpty ?? catalog.id
+        return "\(name) - \(AddonHomeCatalog.typeLabel(for: catalog.type))"
+    }
     private var visibleItems: [MediaItem] {
         guard let filters else { return items }
         return DiscoverFilterPresentation.apply(filters, to: items)

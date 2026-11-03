@@ -1547,6 +1547,9 @@ struct PlaybackChromeMetadata: Equatable {
 }
 
 struct PlaybackExperienceView: View {
+    #if os(iOS)
+    @FocusState private var hasKeyboardFocus: Bool
+    #endif
     @Environment(PlaybackSession.self) private var playback
     @Environment(SettingsPreferencesStore.self) private var settings
     @Environment(OmniaStore.self) private var store
@@ -1850,27 +1853,8 @@ struct PlaybackExperienceView: View {
         }
         #if os(macOS)
         .background {
-            MacPlaybackKeyboardMonitor { action in
-                switch action {
-                case .seekBackward10:
-                    playback.seek(by: -10)
-                    revealChrome()
-                case .seekForward10:
-                    playback.seek(by: 10)
-                    revealChrome()
-                case .togglePause:
-                    playback.togglePause()
-                    revealChrome()
-                case .close:
-                    // Esc leaves full screen first, as it does across macOS.
-                    if playback.isFullScreenActive {
-                        playback.setFullScreen(false)
-                    } else {
-                        playback.stop()
-                    }
-                }
-            }
-            .frame(width: 0, height: 0)
+            MacPlaybackKeyboardMonitor { perform($0) }
+                .frame(width: 0, height: 0)
         }
         .onHover { isHovering in
             if !isHovering {
@@ -1881,6 +1865,15 @@ struct PlaybackExperienceView: View {
         }
         #endif
         #if os(iOS)
+        // A keyboard attached to an iPad or iPhone drives the player as on the Mac.
+        .focusable()
+        .focused($hasKeyboardFocus)
+        .focusEffectDisabled()
+        .onAppear { hasKeyboardFocus = true }
+        .onKeyPress(.leftArrow) { perform(.seekBackward10); return .handled }
+        .onKeyPress(.rightArrow) { perform(.seekForward10); return .handled }
+        .onKeyPress(.space) { perform(.togglePause); return .handled }
+        .onKeyPress(.escape) { perform(.close); return .handled }
         // The controls stay hidden while loading, and an iPhone or iPad has
         // no Escape key: a source that never loads must still be closable.
         .overlay(alignment: .topLeading) {
@@ -1959,6 +1952,30 @@ struct PlaybackExperienceView: View {
         if playback.durationSeconds == nil { return "Buffering…" }
         return "Starting playback…"
     }
+
+    private func perform(_ action: MacPlaybackKeyboardAction) {
+        switch action {
+        case .seekBackward10:
+            playback.seek(by: -10)
+            revealChrome()
+        case .seekForward10:
+            playback.seek(by: 10)
+            revealChrome()
+        case .togglePause:
+            playback.togglePause()
+            revealChrome()
+        case .close:
+            #if os(macOS)
+            // Esc leaves full screen first, as it does across macOS.
+            if playback.isFullScreenActive {
+                playback.setFullScreen(false)
+                return
+            }
+            #endif
+            playback.stop()
+        }
+    }
+
 
     /// Episodes for a show started from Continue Watching, which keeps no
     /// season list: from the add-on that lists it in add-on mode, else from
@@ -2421,11 +2438,7 @@ private struct PlaybackLoadingOverlay: View {
     @State private var breathes = false
 
     private var isPhone: Bool {
-        #if os(iOS)
-        UIDevice.current.userInterfaceIdiom == .phone
-        #else
-        false
-        #endif
+        OmniaDevice.isPhone
     }
 
     var body: some View {

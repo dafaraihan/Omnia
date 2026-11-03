@@ -102,6 +102,8 @@ struct PosterCardSettingsView: View {
                 }
             }
 
+            // iPhone has no pointer to hover with; iPad can have one.
+            if !OmniaDevice.isPhone {
             Section {
                 Toggle(isOn: settings.binding(\.display.cardHover.isEnabled)) {
                     Text("Hover Glow")
@@ -144,6 +146,7 @@ struct PosterCardSettingsView: View {
                 } header: {
                     Text("Apply Hover Glow To")
                 }
+            }
             }
 
             Section {

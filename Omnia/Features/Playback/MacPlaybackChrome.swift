@@ -587,11 +587,7 @@ struct MacPlaybackChrome: View {
     #endif
 
     private var isPhone: Bool {
-        #if os(iOS)
-        UIDevice.current.userInterfaceIdiom == .phone
-        #else
-        false
-        #endif
+        OmniaDevice.isPhone
     }
 
     private var isShort: Bool {
