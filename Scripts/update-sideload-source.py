@@ -5,9 +5,9 @@ Run from the release step, after packaging the .ipa:
 
     Scripts/update-sideload-source.py --ipa Omnia-0.3.5-iPhone-iPad.ipa --notes notes.md
 
-Updates store.json at the repository root. Everything about the version is read from the
-.ipa itself. Commit and push the result after the release is published, so
-SideStore never offers a version whose download isn't there yet.
+Updates store.json at the repository root and commits it. Everything about the
+version is read from the .ipa itself. Run it after the release is published, and
+push the commit, so SideStore never offers a version whose download isn't there.
 """
 import argparse
 import datetime
@@ -91,6 +91,8 @@ def main():
 
     source_file.write_text(json.dumps(source, indent=2, ensure_ascii=False) + "\n")
     print(f"Added Omnia {version} ({entry['buildVersion']}) to {source_file}")
+    subprocess.run(["git", "-C", str(ROOT), "add", "store.json"], check=True)
+    subprocess.run(["git", "-C", str(ROOT), "commit", "-m", f"Add Omnia {version} to store.json"], check=True)
 
 
 if __name__ == "__main__":

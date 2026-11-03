@@ -2,6 +2,7 @@
   "name": "Omnia",
   "subtitle": "Your own add-ons, on every Apple device.",
   "description": "Omnia plays what your own Stremio add-ons, playlists and media servers provide. It hosts no content.",
+  "website": "https://github.com/Laviora/Omnia",
   "iconURL": "{{RAW}}/Omnia/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png",
   "headerURL": "{{RAW}}/altstore/header.png",
   "tintColor": "#705CFF",

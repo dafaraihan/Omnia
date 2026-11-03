@@ -69,7 +69,7 @@ Screenshots are not included yet. Omnia only shows what your own add-ons provide
 Add this source, then install **Omnia** from it. New versions appear there after each release.
 
 ```
-https://github.com/Laviora/Omnia/raw/refs/heads/main/store.json
+https://raw.githubusercontent.com/Laviora/Omnia/main/store.json
 ```
 
 Or grab the `.ipa` from [the latest release](https://github.com/Laviora/Omnia/releases/latest). It's signed with your own Apple account when you install it.
