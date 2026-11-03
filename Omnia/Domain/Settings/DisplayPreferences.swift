@@ -736,6 +736,23 @@ nonisolated struct CardAppearance: Codable, Equatable, Sendable {
 
 /// How Omnia looks: accent, cards, Continue Watching and the title page.
 /// Every value here is read by the views that draw it.
+enum LowPowerMode: String, Codable, CaseIterable, Identifiable, Sendable {
+    /// Follows the system's Low Power Mode.
+    case automatic
+    case on
+    case off
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .automatic: "Follow System"
+        case .on: "On"
+        case .off: "Off"
+        }
+    }
+}
+
 /// The fade from a hero's artwork into the page below it.
 struct HeroBlendPreferences: Codable, Equatable, Sendable {
     var isEnabled = true
@@ -840,6 +857,10 @@ nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
     var continueWatchingSort: ContinueWatchingSort = .recent
     /// Settings › Layout › Liquid Glass.
     var liquidGlass = LiquidGlassPreferences()
+    /// Settings › Layout › Low Power Mode.
+    var lowPowerMode = LowPowerMode.automatic
+    /// Settings › Layout › Upcoming › New Episode Reminders.
+    var episodeNotifications = false
     /// Settings › Layout › Home Layout › Hero.
     var heroBlend = HeroBlendPreferences()
     /// The title and details under Wide and Poster cards.
@@ -902,6 +923,8 @@ nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
             continueWatchingCard = d.continueWatchingCard
         }
         continueWatchingStyle = (try? c.decodeIfPresent(ContinueWatchingStyle.self, forKey: .continueWatchingStyle)) ?? d.continueWatchingStyle
+        lowPowerMode = (try? c.decodeIfPresent(LowPowerMode.self, forKey: .lowPowerMode)) ?? d.lowPowerMode
+        episodeNotifications = (try? c.decodeIfPresent(Bool.self, forKey: .episodeNotifications)) ?? d.episodeNotifications
         heroBlend = (try? c.decodeIfPresent(HeroBlendPreferences.self, forKey: .heroBlend)) ?? d.heroBlend
         liquidGlass = (try? c.decodeIfPresent(LiquidGlassPreferences.self, forKey: .liquidGlass)) ?? d.liquidGlass
         continueWatchingShowsLabels = (try? c.decodeIfPresent(Bool.self, forKey: .continueWatchingShowsLabels)) ?? d.continueWatchingShowsLabels

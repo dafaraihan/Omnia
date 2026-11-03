@@ -116,17 +116,29 @@ struct ProfilePickerView: View {
             .padding(.vertical, 12)
     }
 
+    private func open(_ profile: ViewerProfile) {
+        if profile.isLocked, profile.id != profiles.activeProfileID || profiles.needsSelection {
+            unlocking = profile
+        } else {
+            profiles.select(profile.id)
+            choose(profile)
+        }
+    }
+
     @ViewBuilder
     private func tileContent(avatarSize: CGFloat) -> some View {
                 ForEach(Array(profiles.profiles.enumerated()), id: \.element.id) { index, profile in
                     Button {
                         if isManaging {
                             editing = .edit(profile)
-                        } else if profile.isLocked, profile.id != profiles.activeProfileID || profiles.needsSelection {
-                            unlocking = profile
+                        } else if DeviceLock.shared.locksProfiles {
+                            Task {
+                                if await DeviceLock.shared.authenticate(reason: "Switch to \(profile.name)") {
+                                    open(profile)
+                                }
+                            }
                         } else {
-                            profiles.select(profile.id)
-                            choose(profile)
+                            open(profile)
                         }
                     } label: {
                         ProfileTile(profile: profile, isManaging: isManaging, avatarSize: avatarSize)

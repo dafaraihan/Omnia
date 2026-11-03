@@ -36,6 +36,8 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Omnia uses Face ID to unlock Settings and profile switching when you turn those locks on.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Omnia connects to Jellyfin or Emby servers on your local network.</string>
 	<key>OmniaTrackerApps</key>

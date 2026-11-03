@@ -71,6 +71,12 @@ struct AppearanceSettingsView: View {
 
             Section {
                 SettingsRouteLink(route: .liquidGlass, summary: liquidGlassSummary)
+                SettingsDropdown(
+                    "Low Power Mode",
+                    subtitle: "Turns off hero trailers and Omnia's glass to save battery.",
+                    selection: settings.binding(\.display.lowPowerMode),
+                    options: LowPowerMode.allCases
+                ) { $0.title }
                 Toggle(isOn: settings.binding(\.display.amoledBlack)) {
                     Text("AMOLED Black")
                     Text("Use true black behind pages in Dark appearance.")

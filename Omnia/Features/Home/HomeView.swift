@@ -396,7 +396,7 @@ struct HomeView: View {
                 displayFeatured,
                 preferences: settings.preferences.heroTrailer,
                 metadata: metadata,
-                autoplayAllowed: !reduceMotion
+                autoplayAllowed: !reduceMotion && !usesLowPower
             )
         }
         .task(id: "\(heroCandidateKey)-\(heroIndex)-\(isActiveDestination)-\(heroTrailer.holdsCarousel)-\(reduceMotion)-\(heroIsOnScreen)-\(windowIsVisible)-\(heroCarousel.autoAdvance)-\(heroCarousel.intervalSeconds)-\(playback.isPresentingPlayer)-\(playback.hasPlayer)-\(scenePhase)") {
@@ -419,6 +419,10 @@ struct HomeView: View {
         .task(id: upcomingTaskKey) {
             guard !isOnboardingPreview else { return }
             await loadUpcoming()
+        }
+        .task(id: episodeReminderKey) {
+            guard !isOnboardingPreview, settings.preferences.display.episodeNotifications else { return }
+            await scheduleEpisodeReminders()
         }
         .onChange(of: heroCandidateKey) { _, _ in
             heroIndex = 0
@@ -705,9 +709,13 @@ struct HomeView: View {
         playback.startTrailer(item: featured, source: handoff.source, startAt: handoff.position, preferences: settings.preferences)
     }
 
+    private var usesLowPower: Bool {
+        LowPowerMonitor.shared.isActive(settings.preferences.display.lowPowerMode)
+    }
+
     private var heroTrailerKey: String {
         let preferences = settings.preferences.heroTrailer
-        return "\(featured?.id ?? "")-\(preferences.autoplay)-\(preferences.startDelaySeconds)-\(preferences.startsWithSound)-\(reduceMotion)-\(heroTrailerReplay)"
+        return "\(usesLowPower)-\(featured?.id ?? "")-\(preferences.autoplay)-\(preferences.startDelaySeconds)-\(preferences.startsWithSound)-\(reduceMotion)-\(heroTrailerReplay)"
     }
 
     /// The trailer pauses in a hidden tab, while the streams page is open,
@@ -857,6 +865,32 @@ struct HomeView: View {
                 if !isPresented { sourcePlaybackItem = nil }
             }
         )
+    }
+
+    private var reminderSeries: [MediaItem] {
+        store.localMediaSnapshots
+            .filter { $0.item.kind == .series && ($0.isInWatchlist || ($0.item.progress ?? 0) > 0) }
+            .map(\.item)
+    }
+
+    private var episodeReminderKey: String {
+        let day = Calendar.current.startOfDay(for: .now).timeIntervalSince1970
+        let ids = reminderSeries.map(\.id).joined(separator: "|")
+        return "\(settings.preferences.display.episodeNotifications)-\(day)-\(ids)"
+    }
+
+    /// Looks further ahead than the Home shelf, whose range is its own setting.
+    private func scheduleEpisodeReminders() async {
+        let service = UpcomingService(now: { .now }, calendar: .current) { item in
+            let enriched = await metadata.details(for: item)
+            guard enriched.details?.seasons.contains(where: { !$0.episodes.isEmpty }) == true else {
+                throw UpcomingServiceError.metadataUnavailable
+            }
+            return enriched
+        }
+        let result = await service.load(savedItems: reminderSeries, lookAheadDays: 60, itemLimit: nil)
+        guard !Task.isCancelled else { return }
+        await EpisodeNotifications.schedule(result.items)
     }
 
     private func loadUpcoming() async {

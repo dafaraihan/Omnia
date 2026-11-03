@@ -29,6 +29,16 @@ struct OmniaApp: App {
     @State private var dismissedSignedOutNotice = false
     @State private var showsSignIn = false
     @State private var pendingAddonInstall: URL?
+    /// Low Power Mode drops custom glass everywhere, without changing what
+    /// the Liquid Glass page has saved.
+    private var effectiveDisplay: DisplayPreferences {
+        var display = settings.preferences.display
+        if LowPowerMonitor.shared.isActive(display.lowPowerMode) {
+            display.liquidGlass.isEnabled = false
+        }
+        return display
+    }
+
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -167,7 +177,7 @@ struct OmniaApp: App {
             .environment(profileData)
             .environment(credentialVault)
             .environment(\.showsMediaCardLabels, settings.preferences.showMediaCardLabels)
-            .environment(\.displayPreferences, settings.preferences.display)
+            .environment(\.displayPreferences, effectiveDisplay)
             .alert("You've Been Signed Out", isPresented: Binding(
                 get: { isPrepared && credentialVault.sessionEnded && !dismissedSignedOutNotice && !showsSignIn },
                 set: { if !$0 { dismissedSignedOutNotice = true } }

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct UpcomingSettingsView: View {
     @Environment(SettingsPreferencesStore.self) private var settings
+    @State private var remindersDenied = false
 
     var body: some View {
         OmniaSettingsForm {
@@ -9,6 +10,20 @@ struct UpcomingSettingsView: View {
                 Toggle("Show on Home", isOn: settings.binding(\.showUpcoming))
             } footer: {
                 Text("Shows future episodes for series saved locally in Omnia.")
+            }
+
+            Section {
+                Toggle(isOn: Binding(
+                    get: { settings.preferences.display.episodeNotifications },
+                    set: { setReminders($0) }
+                )) {
+                    Text("New Episode Reminders")
+                    Text("A notification on the day a new episode of a saved or in-progress series airs.")
+                }
+            } footer: {
+                if remindersDenied {
+                    Text("Notifications are off for Omnia. Turn them on in your device's Settings, then try again.")
+                }
             }
 
             Section("Range") {
@@ -33,5 +48,19 @@ struct UpcomingSettingsView: View {
             }
         }
         .omniaNavigationTitle("Upcoming")
+    }
+
+    private func setReminders(_ enabled: Bool) {
+        Task {
+            if enabled {
+                let granted = await EpisodeNotifications.requestAuthorization()
+                remindersDenied = !granted
+                settings.update { $0.display.episodeNotifications = granted }
+            } else {
+                remindersDenied = false
+                settings.update { $0.display.episodeNotifications = false }
+                await EpisodeNotifications.cancelAll()
+            }
+        }
     }
 }

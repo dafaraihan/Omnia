@@ -11,7 +11,34 @@ struct SettingsView: View {
     @State private var hoveredRoute: SettingsRoute?
     #endif
 
+    @Environment(\.scenePhase) private var scenePhase
+
     var body: some View {
+        Group {
+            if DeviceLock.shared.locksSettings, !DeviceLock.shared.isSettingsUnlocked {
+                lockedSettings
+            } else {
+                unlockedSettings
+            }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { DeviceLock.shared.relock() }
+        }
+    }
+
+    private var lockedSettings: some View {
+        ContentUnavailableView {
+            Label("Settings Are Locked", systemImage: "lock.fill")
+        } actions: {
+            Button("Unlock with \(DeviceLock.shared.methodName)") {
+                Task { await DeviceLock.shared.unlockSettings() }
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .task { await DeviceLock.shared.unlockSettings() }
+    }
+
+    private var unlockedSettings: some View {
         rootSettingsContent
             .omniaNavigationTitle(AppDestination.settings.title(for: profiles.activeProfile), screen: .settings)
         #if os(macOS)

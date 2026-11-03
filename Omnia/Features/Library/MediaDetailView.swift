@@ -175,7 +175,7 @@ struct MediaDetailView: View {
                 displayItem,
                 preferences: settings.preferences.heroTrailer,
                 metadata: metadata,
-                autoplayAllowed: !reduceMotion
+                autoplayAllowed: !reduceMotion && !usesLowPower
             )
         }
         #if os(macOS)
@@ -190,9 +190,13 @@ struct MediaDetailView: View {
         }
     }
 
+    private var usesLowPower: Bool {
+        LowPowerMonitor.shared.isActive(settings.preferences.display.lowPowerMode)
+    }
+
     private var heroTrailerKey: String {
         let preferences = settings.preferences.heroTrailer
-        return "\(item.id)-\(resolvedItem != nil)-\(displayItem.details?.heroTrailer?.id ?? "")-\(preferences.autoplay)-\(preferences.startDelaySeconds)-\(preferences.startsWithSound)-\(reduceMotion)"
+        return "\(usesLowPower)-\(item.id)-\(resolvedItem != nil)-\(displayItem.details?.heroTrailer?.id ?? "")-\(preferences.autoplay)-\(preferences.startDelaySeconds)-\(preferences.startsWithSound)-\(reduceMotion)"
     }
 
     /// Paused while the streams page is open, while something is playing,
