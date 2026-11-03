@@ -333,7 +333,7 @@ nonisolated struct RemoteArtworkImageData: @unchecked Sendable {
 }
 
 nonisolated enum RemoteArtworkFetcher {
-    private static let session: URLSession = {
+    static let session: URLSession = {
         let configuration = URLSessionConfiguration.default
         configuration.urlCache = .shared
         configuration.requestCachePolicy = .returnCacheDataElseLoad

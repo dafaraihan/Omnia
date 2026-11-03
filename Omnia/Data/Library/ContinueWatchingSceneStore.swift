@@ -36,6 +36,12 @@ final class ContinueWatchingSceneStore {
         }
     }
 
+    /// Frames of what was watched go with the account at sign-out.
+    func removeAll() {
+        try? FileManager.default.removeItem(at: directory)
+        scenes = [:]
+    }
+
     func sceneURL(for mediaID: String) -> URL? {
         scenes[Self.key(for: mediaID)]
     }

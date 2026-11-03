@@ -913,7 +913,7 @@ nonisolated enum LiveTVNameResolution {
         guard let url = components?.url else { return nil }
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 8)
         request.setValue("application/dns-json", forHTTPHeaderField: "Accept")
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
+        guard let (data, response) = try? await OmniaNetwork.noStore.data(for: request),
               (response as? HTTPURLResponse)?.statusCode == 200,
               let reply = try? JSONDecoder().decode(Reply.self, from: data)
         else { return nil }

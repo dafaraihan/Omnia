@@ -110,6 +110,10 @@ private struct CustomAvatarLink: View {
                         TextField("Paste an Image Link", text: $link, prompt: Text("https://…/avatar.webp"))
                             .textFieldStyle(.roundedBorder)
                             .autocorrectionDisabled()
+                            #if os(iOS)
+                            .textInputAutocapitalization(.never)
+                            .keyboardType(.URL)
+                            #endif
                             // Handled here, so Return doesn't also press the
                             // sheet's default button.
                             .onKeyPress(.return) {

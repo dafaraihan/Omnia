@@ -67,12 +67,7 @@ struct PlaybackDiagnosticsSettingsView: View {
 
     private func copyReport() {
         let report = PlaybackFailureLog.shared.report
-        #if os(macOS)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(report, forType: .string)
-        #else
-        UIPasteboard.general.string = report
-        #endif
+        OmniaPasteboard.copy(report)
         didCopy = true
         Task {
             try? await Task.sleep(for: .seconds(2))

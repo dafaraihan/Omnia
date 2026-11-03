@@ -316,7 +316,7 @@ struct AuthPanel: View {
             TextField(title, text: text)
                 .textFieldStyle(.plain)
                 .focused($focusedField, equals: field)
-                .autocorrectionDisabled()
+                .modifier(AuthFieldEntry(isEmail: field == .email))
         }
         .modifier(AuthFieldBackground())
     }
@@ -392,5 +392,24 @@ private struct AuthFieldBackground: ViewModifier {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .strokeBorder(.separator, lineWidth: 1)
             }
+    }
+}
+
+/// An address as typed, with the keyboard and autofill for one. Other fields,
+/// such as a name, follow the device's own typing settings.
+private struct AuthFieldEntry: ViewModifier {
+    let isEmail: Bool
+
+    func body(content: Content) -> some View {
+        if isEmail {
+            content
+                .autocorrectionDisabled()
+                #if os(iOS)
+                .textInputAutocapitalization(.never)
+                .keyboardType(.emailAddress)
+                #endif
+        } else {
+            content
+        }
     }
 }

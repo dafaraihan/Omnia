@@ -375,7 +375,7 @@ private struct StalkerProviderSection: View {
                 TextField("MAC Address", text: $macAddress, prompt: Text(verbatim: "00:1A:79:00:00:00"))
                     .autocorrectionDisabled()
                     #if os(iOS)
-                    .textInputAutocapitalization(.characters)
+                    .textInputAutocapitalization(.never)
                     #endif
                 TextField("Username (Optional)", text: $username, prompt: Text(verbatim: "Username"))
                     .autocorrectionDisabled()

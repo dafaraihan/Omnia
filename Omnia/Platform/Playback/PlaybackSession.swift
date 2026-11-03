@@ -1045,7 +1045,7 @@ final class PlaybackSession {
         request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
         let data: Data
         do {
-            let (body, response) = try await URLSession.shared.data(for: request)
+            let (body, response) = try await OmniaNetwork.noStore.data(for: request)
             guard (response as? HTTPURLResponse).map({ (200 ..< 300).contains($0.statusCode) }) ?? true else {
                 throw SubtitleSyncProblem.unavailable
             }

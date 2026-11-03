@@ -164,7 +164,7 @@ private nonisolated final class PluginSession: @unchecked Sendable {
                 let message = exception?.toString() ?? "Unknown error"
                 let line = exception?.objectForKeyedSubscript("line")?.toString() ?? "?"
                 self?.lastException = "\(message) (line \(line))"
-                Self.logger.error("Plugin \(self?.configuration.scraperID ?? "", privacy: .public): \(message, privacy: .public)")
+                Self.logger.error("Plugin \(self?.configuration.scraperID ?? "", privacy: .public): \(message, privacy: .private)")
             }
             install(in: context)
 
@@ -221,9 +221,9 @@ private nonisolated final class PluginSession: @unchecked Sendable {
                 self?.queue.async { self?.consoleProblem = String(message.prefix(300)) }
             }
             if level == "error" {
-                Self.logger.error("Plugin \(id, privacy: .public): \(message, privacy: .public)")
+                Self.logger.error("Plugin \(id, privacy: .public): \(message, privacy: .private)")
             } else {
-                Self.logger.debug("Plugin \(id, privacy: .public): \(message, privacy: .public)")
+                Self.logger.debug("Plugin \(id, privacy: .public): \(message, privacy: .private)")
             }
         }
         define("__omnia_result", result)

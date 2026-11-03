@@ -303,6 +303,9 @@ struct StreamSelectionSettingsView: View {
                     TextField("Regex Pattern", text: settings.binding(\.playbackBehavior.autoSelectionRegex), prompt: Text("(2160p|4k|1080p)"))
                         .font(.body.monospaced())
                         .autocorrectionDisabled()
+                        #if os(iOS)
+                        .textInputAutocapitalization(.never)
+                        #endif
                     Menu("Insert a Preset") {
                         ForEach(StreamRegexPreset.all) { preset in
                             Button(preset.title) {

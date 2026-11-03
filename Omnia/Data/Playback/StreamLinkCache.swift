@@ -103,18 +103,42 @@ final class StreamLinkCacheStore {
 
     func removeAll() {
         defaults.removeObject(forKey: Self.storageKey)
+        if let fileURL = Self.fileURL { try? FileManager.default.removeItem(at: fileURL) }
     }
 
+    /// A stream link can hold a provider's token in its path, so links stay in
+    /// a protected file left out of device backups, not in preferences.
+    private static let fileURL: URL? = {
+        guard var directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return nil }
+        directory.append(path: "StreamLinks", directoryHint: .isDirectory)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? directory.setResourceValues(values)
+        return directory.appending(path: "links.json")
+    }()
+
     private func load() -> [String: CachedStreamLink] {
-        guard let data = defaults.data(forKey: Self.storageKey) else { return [:] }
+        // Links saved before the file existed move over on first read.
+        if let old = defaults.data(forKey: Self.storageKey),
+           let values = try? JSONDecoder().decode([String: CachedStreamLink].self, from: old) {
+            save(values)
+            defaults.removeObject(forKey: Self.storageKey)
+            return values
+        }
+        guard let fileURL = Self.fileURL, let data = try? Data(contentsOf: fileURL) else { return [:] }
         return (try? JSONDecoder().decode([String: CachedStreamLink].self, from: data)) ?? [:]
     }
 
     private func save(_ values: [String: CachedStreamLink]) {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        guard let data = try? encoder.encode(values) else { return }
-        defaults.set(data, forKey: Self.storageKey)
+        guard let fileURL = Self.fileURL, let data = try? encoder.encode(values) else { return }
+        #if os(macOS)
+        try? data.write(to: fileURL, options: .atomic)
+        #else
+        try? data.write(to: fileURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        #endif
     }
 }
 

@@ -46,6 +46,10 @@ struct PluginsSettingsView: View {
                 HStack {
                     TextField("Repository URL", text: $repositoryInput, prompt: Text(verbatim: "https://example.com/manifest.json"))
                         .autocorrectionDisabled()
+                        #if os(iOS)
+                        .textInputAutocapitalization(.never)
+                        .keyboardType(.URL)
+                        #endif
                         .onSubmit(addRepository)
                     if isAdding {
                         ProgressView().controlSize(.small)
@@ -83,6 +87,9 @@ struct PluginsSettingsView: View {
                 HStack {
                     SecureField("TMDB API Key", text: $tmdbKeyDraft, prompt: Text(plugins.hasTMDBKey ? "Saved" : "Optional"))
                         .autocorrectionDisabled()
+                        #if os(iOS)
+                        .textInputAutocapitalization(.never)
+                        #endif
                         .onSubmit(saveTMDBKey)
                     Button(plugins.hasTMDBKey && tmdbKeyDraft.isEmpty ? "Remove" : "Save", action: saveTMDBKey)
                         .disabled(!plugins.hasTMDBKey && tmdbKeyDraft.isEmpty)
@@ -355,6 +362,9 @@ private struct PluginSettingsSheet: View {
                 } else {
                     TextField(field.label, text: textBinding(field), prompt: placeholder.map { Text($0) })
                         .autocorrectionDisabled()
+                        #if os(iOS)
+                        .textInputAutocapitalization(.never)
+                        #endif
                 }
                 if let detail = field.detail {
                     Text(detail).font(.caption).foregroundStyle(.secondary)

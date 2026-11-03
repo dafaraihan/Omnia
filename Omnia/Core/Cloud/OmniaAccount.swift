@@ -81,6 +81,7 @@ final class OmniaAccount {
             supabaseKey: configuration.publishableKey,
             options: .init(
                 auth: .init(
+                    storage: DeviceOnlySessionStorage(),
                     redirectToURL: Self.redirectURL,
                     flowType: .pkce,
                     emitLocalSessionAsInitialSession: true
@@ -417,7 +418,7 @@ final class OmniaAccount {
     }
 
     func handle(callback url: URL) {
-        guard url.scheme == Self.redirectURL.scheme, let client else { return }
+        guard url.scheme == Self.redirectURL.scheme, url.host == Self.redirectURL.host, let client else { return }
         Task {
             do {
                 try apply(try await client.auth.session(from: url))
@@ -563,5 +564,35 @@ private final class AppleAuthorization: NSObject, ASAuthorizationControllerDeleg
     private func reset() {
         continuation = nil
         controller = nil
+    }
+}
+
+/// The sign-in session in Omnia's own Keychain items. The SDK's default class
+/// lets an encrypted backup carry the session to another device; these stay on
+/// this one. A session saved by the SDK before this existed is moved across, so
+/// updating never signs anyone out.
+private struct DeviceOnlySessionStorage: AuthLocalStorage {
+    private let legacy = KeychainLocalStorage()
+
+    private func account(_ key: String) -> String { "auth-session.\(key)" }
+
+    func store(key: String, value: Data) throws {
+        try KeychainStore.save(value.base64EncodedString(), account: account(key))
+        try? legacy.remove(key: key)
+    }
+
+    func retrieve(key: String) throws -> Data? {
+        if let saved = try KeychainStore.value(account: account(key)) {
+            return Data(base64Encoded: saved)
+        }
+        guard let old = try legacy.retrieve(key: key) else { return nil }
+        // Still readable from the old place if this save fails.
+        try? store(key: key, value: old)
+        return old
+    }
+
+    func remove(key: String) throws {
+        try KeychainStore.delete(account: account(key))
+        try? legacy.remove(key: key)
     }
 }

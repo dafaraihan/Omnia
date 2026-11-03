@@ -149,7 +149,7 @@ enum PluginStreamResolver {
             URLQueryItem(name: "api_key", value: apiKey)
         ]
         guard let url = components.url,
-              let (data, response) = try? await URLSession.shared.data(from: url),
+              let (data, response) = try? await OmniaNetwork.noStore.data(from: url),
               (response as? HTTPURLResponse)?.statusCode == 200,
               let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
         else { return nil }

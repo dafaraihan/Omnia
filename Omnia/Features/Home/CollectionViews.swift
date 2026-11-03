@@ -726,7 +726,7 @@ private enum AnimatedCoverData {
 
     static func load(_ url: URL) async -> Data? {
         guard url.scheme?.lowercased() == "https",
-              let (data, response) = try? await URLSession.shared.data(from: url),
+              let (data, response) = try? await RemoteArtworkFetcher.session.data(from: url),
               (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? false,
               data.count <= maximumBytes
         else { return nil }

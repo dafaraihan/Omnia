@@ -205,7 +205,7 @@ final class ProfileStore {
 
     /// Five wrong tries lock the profile for 30 seconds, then longer.
     func checkPIN(_ pin: String, for id: UUID) -> PINResult {
-        var attempts = failedPINAttempts[id] ?? (0, nil)
+        var attempts = failedPINAttempts[id] ?? savedPINAttempts(id)
         if let lockedUntil = attempts.lockedUntil, lockedUntil > .now { return .lockedOut(until: lockedUntil) }
         guard let stored = try? KeychainStore.value(account: Self.pinAccount(id)) else {
             // A missing/locked Keychain item must not weaken profile protection.
@@ -214,6 +214,7 @@ final class ProfileStore {
         let parts = stored.split(separator: ":", maxSplits: 1).map(String.init)
         if parts.count == 2, Self.hash(pin, salt: parts[0]) == parts[1] {
             failedPINAttempts[id] = nil
+            savePINAttempts(nil, for: id)
             return .accepted
         }
         attempts.count += 1
@@ -221,10 +222,26 @@ final class ProfileStore {
             let lockedUntil = Date.now.addingTimeInterval(30 * Double(attempts.count - 4))
             attempts.lockedUntil = lockedUntil
             failedPINAttempts[id] = attempts
+            savePINAttempts(attempts, for: id)
             return .lockedOut(until: lockedUntil)
         }
         failedPINAttempts[id] = attempts
+        savePINAttempts(attempts, for: id)
         return .wrong
+    }
+
+    /// Kept across launches, so quitting the app doesn't reset the lockout.
+    private func savedPINAttempts(_ id: UUID) -> (count: Int, lockedUntil: Date?) {
+        let defaults = UserDefaults.standard
+        let key = "profile-pin-attempts.\(id.uuidString)"
+        return (defaults.integer(forKey: key + ".count"), defaults.object(forKey: key + ".until") as? Date)
+    }
+
+    private func savePINAttempts(_ attempts: (count: Int, lockedUntil: Date?)?, for id: UUID) {
+        let defaults = UserDefaults.standard
+        let key = "profile-pin-attempts.\(id.uuidString)"
+        defaults.set(attempts?.count, forKey: key + ".count")
+        defaults.set(attempts?.lockedUntil, forKey: key + ".until")
     }
 
     func vaultPINIDs() -> [UUID] { profiles.map(\.id) }

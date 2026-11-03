@@ -28,6 +28,7 @@ struct OmniaApp: App {
     @State private var isPrepared = false
     @State private var dismissedSignedOutNotice = false
     @State private var showsSignIn = false
+    @State private var pendingAddonInstall: URL?
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -70,6 +71,9 @@ struct OmniaApp: App {
             await profileData.resetAfterSignOut()
             try await store.resetLibraryAfterSignOut()
             SearchHistoryStore.shared.clear()
+            ContinueWatchingSceneStore.shared.removeAll()
+            PlaybackFailureLog.shared.removeAll()
+            StreamLinkCacheStore().removeAll()
             SearchHistoryStore.shared.isEnabled = true
             EpisodeShuffleStore.shared.resetAfterSignOut()
             for key in [
@@ -173,6 +177,18 @@ struct OmniaApp: App {
             .sheet(isPresented: $showsSignIn) {
                 AccountSignInSheet { showsSignIn = false }
             }
+            .alert("Install This Add-on?", isPresented: Binding(
+                get: { pendingAddonInstall != nil },
+                set: { if !$0 { pendingAddonInstall = nil } }
+            ), presenting: pendingAddonInstall) { url in
+                Button("Install") {
+                    pendingAddonInstall = nil
+                    Task { try? await store.installAddon(manifestURL: url) }
+                }
+                Button("Cancel", role: .cancel) { pendingAddonInstall = nil }
+            } message: { url in
+                Text("A link asked Omnia to install an add-on from \(url.host() ?? "an unknown address"). Only continue if you trust it: add-ons see what you browse and supply what you play.")
+            }
             .task {
                 guard !isPrepared else { return }
                 if account.localResetPending {
@@ -244,7 +260,9 @@ struct OmniaApp: App {
                 if TrackerAccountStore.shared.handleCallback(url) {
                     // AniList's sign-in returning to omnia://anilist.
                 } else if let manifestURL = AddonInstallCallback.manifestURL(from: url) {
-                    Task { try? await store.installAddon(manifestURL: manifestURL) }
+                    // Any web page can open this link, and an add-on sees what you
+                    // browse and supplies what plays, so it needs a person's yes.
+                    pendingAddonInstall = manifestURL
                 } else {
                     account.handle(callback: url)
                 }

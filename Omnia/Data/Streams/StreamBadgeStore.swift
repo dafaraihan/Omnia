@@ -107,7 +107,7 @@ final class StreamBadgeStore {
 
         var request = URLRequest(url: url, timeoutInterval: 20)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
+        guard let (data, response) = try? await OmniaNetwork.noStore.data(for: request),
               (response as? HTTPURLResponse).map({ 200..<300 ~= $0.statusCode }) ?? false
         else { throw StreamBadgeImportError.unreadable }
 

@@ -256,3 +256,21 @@ private nonisolated final class RedirectDelegate: NSObject, URLSessionTaskDelega
         completionHandler(request)
     }
 }
+
+/// For one-off requests outside `HTTPTransport`. Nothing stays on disk: a
+/// request URL can carry an API key or an add-on's token, which the shared
+/// session would keep in its cache and match cookies against.
+nonisolated enum OmniaNetwork {
+    static let noStore: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.urlCache = nil
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        configuration.httpCookieAcceptPolicy = .never
+        configuration.urlCredentialStorage = nil
+        configuration.tlsMinimumSupportedProtocolVersion = .TLSv12
+        configuration.timeoutIntervalForRequest = 30
+        return URLSession(configuration: configuration)
+    }()
+}

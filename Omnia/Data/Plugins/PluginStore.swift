@@ -343,7 +343,7 @@ final class PluginStore {
     private nonisolated static func fetch(_ url: URL) async throws -> Data {
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30)
         request.setValue("application/json, text/javascript, */*", forHTTPHeaderField: "Accept")
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await OmniaNetwork.noStore.data(for: request)
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             throw DownloadError.status(http.statusCode)
         }

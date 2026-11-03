@@ -285,12 +285,7 @@ struct AddonsSettingsView: View {
     }
 
     private func copyManifestLink(_ url: URL) {
-        #if os(macOS)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(url.absoluteString, forType: .string)
-        #else
-        UIPasteboard.general.string = url.absoluteString
-        #endif
+        OmniaPasteboard.copySensitive(url.absoluteString)
         statusMessage = "Add-on link copied."
     }
 
