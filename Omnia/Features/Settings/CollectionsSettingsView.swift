@@ -7,7 +7,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// Home › Collections: make collections, or import a Nuvio or Xperience
-/// `collections.json`, then edit, show, hide, pin, reorder or remove each.
+/// `collections.json`, then drag to reorder, and show, edit or remove each.
 /// Folder sources are checked against the installed add-ons so a missing
 /// add-on is visible here.
 struct CollectionsSettingsView: View {
@@ -20,7 +20,10 @@ struct CollectionsSettingsView: View {
     @State private var exportDocument: SettingsJSONDocument?
     @State private var collectionToRemove: HomeCollection?
     @State private var statusMessage: String?
-    @State private var expandedCollectionIDs: Set<String> = []
+    @State private var editingCollection: HomeCollection?
+    @State private var draggedCollectionID: String?
+    @State private var dragStartIndex = 0
+    @State private var reorderRowHeight: CGFloat = 60
 
     var body: some View {
         OmniaSettingsForm {
@@ -83,7 +86,7 @@ struct CollectionsSettingsView: View {
             } header: {
                 Text("Card Style")
             } footer: {
-                Text("Applies to every collection row on Home. As Imported keeps each collection's own tile shape and shows the titles inside as portrait posters, and Automatic shows a folder's name only when the folder asks for it or has no cover. Match Poster Card Style follows the poster layout, size, or corner setting. Folder Names is independent because posters have no matching name setting. Depth and hover glow follow Poster Card Style.")
+                Text("Applies to every collection row on Home. As Imported keeps each collection's own tile shape and shows the titles inside as portrait posters, and Automatic shows a folder's name only when the folder asks for it or has no cover. Poster Card Style can apply its own look to all of these with one button. Depth and hover glow follow Poster Card Style.")
             }
 
             if collections.collections.isEmpty {
@@ -95,12 +98,21 @@ struct CollectionsSettingsView: View {
                     )
                 }
             } else {
-                ForEach(collections.collections) { collection in
-                    collectionSection(collection)
+                Section {
+                    ForEach(collections.collections) { collection in
+                        collectionRow(collection)
+                    }
+                } header: {
+                    Text("Your Collections")
+                } footer: {
+                    Text("Drag to reorder. A missing catalog usually means its add-on isn't installed; open a collection to see which.")
                 }
             }
         }
         .omniaNavigationTitle("Collections")
+        .navigationDestination(item: $editingCollection) { collection in
+            CollectionEditorView(collection: collection)
+        }
         .fileImporter(isPresented: $showsImporter, allowedContentTypes: [.json]) { result in
             importFile(result)
         }
@@ -128,120 +140,116 @@ struct CollectionsSettingsView: View {
         }
     }
 
-    private func collectionSection(_ collection: HomeCollection) -> some View {
+    private func collectionRow(_ collection: HomeCollection) -> some View {
         let availability = sourceAvailability(for: collection)
+        let isComplete = availability.available == availability.total
+        let isVisible = visibilityBinding(for: collection)
+        let folderCount = "\(collection.folders.count) \(collection.folders.count == 1 ? "folder" : "folders")"
 
-        let index = collections.collections.firstIndex { $0.id == collection.id } ?? 0
+        return HStack(spacing: 12) {
+            Image(systemName: "line.3.horizontal")
+                .foregroundStyle(draggedCollectionID == collection.id ? .primary : .tertiary)
+                .frame(width: 30, height: 44)
+                .contentShape(Rectangle())
+                .highPriorityGesture(reorderGesture(for: collection))
+                .help("Drag to reorder")
+                .accessibilityHidden(true)
 
-        return Section {
-            NavigationLink {
-                CollectionEditorView(collection: collection)
-            } label: {
-                Label("Edit Collection", systemImage: "pencil")
-            }
-            .settingsLinkRow()
-            Toggle(isOn: visibilityBinding(for: collection)) {
-                rowLabel("Show on Home", detail: "\(collection.folders.count) \(collection.folders.count == 1 ? "folder" : "folders")")
-            }
-            Toggle(isOn: pinBinding(for: collection)) {
-                rowLabel("Pin to Top", detail: "Keep this collection above every catalog on Home.")
-            }
-            HStack {
-                rowLabel(
-                    availability.available == availability.total ? "All Catalogs Available" : "Some Catalogs Unavailable",
-                    detail: "\(availability.available) of \(availability.total) folder catalogs come from installed add-ons."
-                )
-                Spacer()
-                Image(systemName: availability.available == availability.total ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                    .foregroundStyle(availability.available == availability.total ? .green : .orange)
-                    .accessibilityHidden(true)
-            }
-            DisclosureGroup(isExpanded: expansionBinding(for: collection)) {
-                ForEach(collection.folders) { folder in
-                    let folderAvailability = sourceAvailability(for: folder)
-                    let problems = sourceProblems(for: folder)
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack {
-                            Text(folder.title)
-                            Spacer()
-                            Text("\(folderAvailability.available) of \(folderAvailability.total) catalogs")
-                                .font(.caption)
-                                .foregroundStyle(folderAvailability.available == 0 ? .orange : .secondary)
-                        }
-                        ForEach(problems.prefix(3), id: \.self) { problem in
-                            Text(problem)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        if problems.count > 3 {
-                            Text("And \(problems.count - 3) more.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 5) {
+                    Text(collection.title)
+                        .lineLimit(1)
+                    if collection.pinToTop {
+                        Image(systemName: "pin.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .accessibilityLabel("Pinned")
                     }
-                    .padding(.vertical, 2)
                 }
-            } label: {
-                Text("Folders")
+                Text(isComplete ? folderCount : "\(folderCount) · \(availability.available) of \(availability.total) catalogs available")
+                    .font(.caption)
+                    .foregroundStyle(isComplete ? AnyShapeStyle(.secondary) : AnyShapeStyle(.orange))
+                    .lineLimit(1)
             }
-            if collections.collections.count > 1 {
-                HStack(spacing: 16) {
-                    Button("Move Up", systemImage: "chevron.up") {
-                        collections.move(collection, by: -1)
-                    }
-                    .disabled(index == 0)
-                    Button("Move Down", systemImage: "chevron.down") {
-                        collections.move(collection, by: 1)
-                    }
-                    .disabled(index == collections.collections.count - 1)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .opacity(isVisible.wrappedValue ? 1 : 0.5)
+
+            HStack(spacing: 14) {
+                Button {
+                    isVisible.wrappedValue.toggle()
+                } label: {
+                    Image(systemName: isVisible.wrappedValue ? "eye" : "eye.slash")
+                        .frame(width: 26, height: 26)
+                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.borderless)
+                .help(isVisible.wrappedValue ? "Hide from Home" : "Show on Home")
+                .accessibilityLabel(isVisible.wrappedValue ? "Hide \(collection.title) from Home" : "Show \(collection.title) on Home")
+
+                Button {
+                    editingCollection = collection
+                } label: {
+                    Image(systemName: "pencil")
+                        .frame(width: 26, height: 26)
+                        .contentShape(Rectangle())
+                }
+                .help("Edit")
+                .accessibilityLabel("Edit \(collection.title)")
+
+                Button(role: .destructive) {
+                    collectionToRemove = collection
+                } label: {
+                    Image(systemName: "trash")
+                        .frame(width: 26, height: 26)
+                        .contentShape(Rectangle())
+                }
+                .help("Remove")
+                .accessibilityLabel("Remove \(collection.title)")
             }
-            Button("Remove Collection…", systemImage: "trash", role: .destructive) {
-                collectionToRemove = collection
+            .buttonStyle(.borderless)
+        }
+        .opacity(draggedCollectionID == collection.id ? 0.72 : 1)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { reorderRowHeight = $0 }
+        .accessibilityAction(named: "Move Up") { step(collection, by: -1) }
+        .accessibilityAction(named: "Move Down") { step(collection, by: 1) }
+    }
+
+    /// Dragging the handle moves the row a place for each row's height dragged.
+    /// Held to the handle, so swiping anywhere else still scrolls the page.
+    private func reorderGesture(for collection: HomeCollection) -> some Gesture {
+        DragGesture(minimumDistance: 2, coordinateSpace: .global)
+            .onChanged { value in
+                let all = collections.collections
+                guard let current = all.firstIndex(where: { $0.id == collection.id }) else { return }
+                if draggedCollectionID != collection.id {
+                    draggedCollectionID = collection.id
+                    dragStartIndex = current
+                }
+                let steps = Int((value.translation.height / max(reorderRowHeight, 1)).rounded())
+                step(collection, to: min(max(dragStartIndex + steps, 0), all.count - 1))
             }
-        } header: {
-            Text(collection.title)
+            .onEnded { _ in draggedCollectionID = nil }
+    }
+
+    private func step(_ collection: HomeCollection, by offset: Int) {
+        guard let current = collections.collections.firstIndex(where: { $0.id == collection.id }) else { return }
+        step(collection, to: min(max(current + offset, 0), collections.collections.count - 1))
+    }
+
+    private func step(_ collection: HomeCollection, to target: Int) {
+        guard let current = collections.collections.firstIndex(where: { $0.id == collection.id }),
+              let destination = AddonReorder.destination(from: current, over: target) else { return }
+        withAnimation(.easeInOut(duration: 0.16)) {
+            collections.move(fromOffsets: IndexSet(integer: current), toOffset: destination)
         }
     }
 
     // MARK: Helpers
-
-    private func rowLabel(_ title: String, detail: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-            Text(detail)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
 
     private func sourceAvailability(for folder: HomeCollectionFolder) -> (available: Int, total: Int) {
         let available = folder.sources.filter {
             HomeCollectionSourceResolver.resolve($0, in: store.installedAddons) != nil
         }.count
         return (available, folder.sources.count)
-    }
-
-    /// One line per catalog that won't load, or might not, saying why.
-    private func sourceProblems(for folder: HomeCollectionFolder) -> [String] {
-        let lines = folder.sources.compactMap { source -> String? in
-            guard let resolved = HomeCollectionSourceResolver.resolve(source, in: store.installedAddons) else {
-                let name = HomeCollectionSourceResolver.readableName(source.catalogId)
-                return "\(name): \(HomeCollectionSourceResolver.unavailableReason(for: source, in: store.installedAddons))"
-            }
-            let name = resolved.catalog.name.flatMap { $0.isEmpty ? nil : $0 } ?? HomeCollectionSourceResolver.readableName(source.catalogId)
-            if let failure = AddonDiagnostics.shared.catalogFailure(addon: resolved.addon, catalog: resolved.catalog) {
-                return "\(name): \(failure.message)"
-            }
-            if !resolved.isListed {
-                return "\(name): \(resolved.addon.displayName) doesn't list this catalog, so Omnia asks for it anyway."
-            }
-            return nil
-        }
-        var seen = Set<String>()
-        return lines.filter { seen.insert($0).inserted }
     }
 
     private func sourceAvailability(for collection: HomeCollection) -> (available: Int, total: Int) {
@@ -290,25 +298,6 @@ struct CollectionsSettingsView: View {
         )
     }
 
-    private func pinBinding(for collection: HomeCollection) -> Binding<Bool> {
-        Binding(
-            get: { collections.collections.first { $0.id == collection.id }?.pinToTop ?? false },
-            set: { collections.setPinned($0, for: collection) }
-        )
-    }
-
-    private func expansionBinding(for collection: HomeCollection) -> Binding<Bool> {
-        Binding(
-            get: { expandedCollectionIDs.contains(collection.id) },
-            set: { isExpanded in
-                if isExpanded {
-                    expandedCollectionIDs.insert(collection.id)
-                } else {
-                    expandedCollectionIDs.remove(collection.id)
-                }
-            }
-        )
-    }
 }
 
 /// A few of your folders drawn as they'll look on Home, or a sample tile
@@ -338,8 +327,8 @@ private struct CollectionCardPreview: View {
     }
 
     private var sampleTile: some View {
-        let shape = display.collectionCard.shape.resolved(.poster, landscapePosters: display.landscapePosters)
-        let radius = display.collectionCard.corners.radius(for: display)
+        let shape = display.collectionCard.shape.resolved(.poster)
+        let radius = display.collectionCard.corners.radius
         return ZStack(alignment: .bottomLeading) {
             LinearGradient(
                 colors: [display.accentColor.opacity(0.85), .black],

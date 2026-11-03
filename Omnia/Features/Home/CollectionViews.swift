@@ -58,19 +58,18 @@ struct CollectionFolderTile: View {
     /// Card Style.
     static func width(for folderShape: HomeCollectionFolder.TileShape, display: DisplayPreferences) -> CGFloat {
         let card = display.collectionCard
-        let shape = card.shape.resolved(folderShape, landscapePosters: display.landscapePosters)
-        let portrait = card.size == .matchPosters ? display.posterCardWidth : PosterWidthPreset.standard.width
+        let shape = card.shape.resolved(folderShape)
+        let portrait = PosterWidthPreset.standard.width
         let base: CGFloat = switch shape {
         case .poster: portrait
         case .square: portrait * 1.25
-        case .landscape, .wide:
-            card.size == .matchPosters ? display.landscapePosterCardWidth : MediaBrowseMetrics.landscapeCardWidth
+        case .landscape, .wide: MediaBrowseMetrics.landscapeCardWidth
         }
         return (base * card.size.scale).rounded()
     }
 
     static func height(for folderShape: HomeCollectionFolder.TileShape, display: DisplayPreferences) -> CGFloat {
-        let shape = display.collectionCard.shape.resolved(folderShape, landscapePosters: display.landscapePosters)
+        let shape = display.collectionCard.shape.resolved(folderShape)
         return width(for: folderShape, display: display) / CGFloat(shape.aspectRatio)
     }
 
@@ -82,7 +81,7 @@ struct CollectionFolderTile: View {
     @Environment(PlaybackSession.self) private var playback
     #endif
 
-    private var cornerRadius: CGFloat { display.collectionCard.corners.radius(for: display) }
+    private var cornerRadius: CGFloat { display.collectionCard.corners.radius }
 
     private var showsTitle: Bool {
         switch display.collectionCard.titles {
@@ -237,8 +236,7 @@ struct CollectionFolderView: View {
     /// keep the imported portrait posters, whatever shape the folder's tile is.
     private var cardDisplay: DisplayPreferences {
         var cardDisplay = display
-        cardDisplay.landscapePosters = display.collectionCard.folderCards
-            .usesLandscape(posterStyleIsLandscape: display.landscapePosters)
+        cardDisplay.landscapePosters = display.collectionCard.folderCards == .landscape
         return cardDisplay
     }
 

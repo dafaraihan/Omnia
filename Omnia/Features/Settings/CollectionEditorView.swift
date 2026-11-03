@@ -75,6 +75,10 @@ struct CollectionEditorView: View {
             } footer: {
                 Text("Each folder is a tile in the collection's row on Home and opens its catalogs.")
             }
+
+            if !draft.folders.isEmpty {
+                CollectionCatalogStatusSection(folders: draft.folders)
+            }
         }
         .omniaNavigationTitle(draft.title.isEmpty ? "New Collection" : draft.title)
         .onChange(of: backdropText) { _, text in
@@ -451,5 +455,64 @@ private extension View {
             .textInputAutocapitalization(.never)
             .keyboardType(.URL)
             #endif
+    }
+}
+
+/// Which catalogs of each folder can load, and why not, moved here from the
+/// Collections list to keep that list to one row per collection.
+private struct CollectionCatalogStatusSection: View {
+    @Environment(OmniaStore.self) private var store
+    let folders: [HomeCollectionFolder]
+
+    var body: some View {
+        Section("Catalog Status") {
+            ForEach(folders) { folder in
+                let available = folder.sources.filter {
+                    HomeCollectionSourceResolver.resolve($0, in: store.installedAddons) != nil
+                }.count
+                let problems = sourceProblems(for: folder)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack {
+                        Text(folder.title)
+                        Spacer()
+                        Text("\(available) of \(folder.sources.count) catalogs")
+                            .font(.caption)
+                            .foregroundStyle(available == 0 ? .orange : .secondary)
+                    }
+                    ForEach(problems.prefix(3), id: \.self) { problem in
+                        Text(problem)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if problems.count > 3 {
+                        Text("And \(problems.count - 3) more.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+        }
+    }
+
+    /// One line per catalog that won't load, or might not, saying why.
+    private func sourceProblems(for folder: HomeCollectionFolder) -> [String] {
+        let lines = folder.sources.compactMap { source -> String? in
+            guard let resolved = HomeCollectionSourceResolver.resolve(source, in: store.installedAddons) else {
+                let name = HomeCollectionSourceResolver.readableName(source.catalogId)
+                return "\(name): \(HomeCollectionSourceResolver.unavailableReason(for: source, in: store.installedAddons))"
+            }
+            let name = resolved.catalog.name.flatMap { $0.isEmpty ? nil : $0 } ?? HomeCollectionSourceResolver.readableName(source.catalogId)
+            if let failure = AddonDiagnostics.shared.catalogFailure(addon: resolved.addon, catalog: resolved.catalog) {
+                return "\(name): \(failure.message)"
+            }
+            if !resolved.isListed {
+                return "\(name): \(resolved.addon.displayName) doesn't list this catalog, so Omnia asks for it anyway."
+            }
+            return nil
+        }
+        var seen = Set<String>()
+        return lines.filter { seen.insert($0).inserted }
     }
 }

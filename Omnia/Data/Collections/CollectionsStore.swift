@@ -3,6 +3,7 @@
 //  Omnia
 //
 
+import SwiftUI
 import Foundation
 import Observation
 
@@ -98,12 +99,9 @@ final class CollectionsStore {
         save()
     }
 
-    /// Nuvio's up and down arrows. Pinned collections keep this order too.
-    func move(_ collection: HomeCollection, by offset: Int) {
-        guard let index = collections.firstIndex(where: { $0.id == collection.id }) else { return }
-        let target = index + offset
-        guard collections.indices.contains(target) else { return }
-        collections.swapAt(index, target)
+    /// Drag and drop in Settings. Pinned collections keep this order too.
+    func move(fromOffsets source: IndexSet, toOffset destination: Int) {
+        collections.move(fromOffsets: source, toOffset: destination)
         save()
     }
 

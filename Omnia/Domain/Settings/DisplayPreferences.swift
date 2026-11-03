@@ -387,13 +387,23 @@ nonisolated struct ContinueWatchingCardPreferences: Codable, Equatable, Sendable
         corners = (try? c.decodeIfPresent(Corners.self, forKey: .corners)) ?? .styleDefault
     }
 
+    /// Reads saved settings. "matchPosters" was a live link to Poster Card Style
+    /// until Nov 2026; it becomes the poster values, so nothing looks different.
+    init(from decoder: Decoder, posterWidth: PosterWidthPreset, posterCorner: PosterCornerPreset) throws {
+        struct Raw: Decodable { var size: String?; var corners: String? }
+        let raw = try Raw(from: decoder)
+        size = raw.size == "matchPosters" ? Size(rawValue: posterWidth.rawValue) ?? .styleDefault
+            : raw.size.flatMap(Size.init(rawValue:)) ?? .styleDefault
+        corners = raw.corners == "matchPosters" ? Corners(rawValue: posterCorner.rawValue) ?? .styleDefault
+            : raw.corners.flatMap(Corners.init(rawValue:)) ?? .styleDefault
+    }
+
     enum Size: String, Codable, CaseIterable, Identifiable, Sendable {
-        case styleDefault, matchPosters, compact, small, standard, large, extraLarge
+        case styleDefault, compact, small, standard, large, extraLarge
         var id: Self { self }
         var title: String {
             switch self {
             case .styleDefault: "Style Default"
-            case .matchPosters: "Match Poster Card Style"
             case .compact: "Compact"
             case .small: "Small"
             case .standard: "Standard"
@@ -403,7 +413,7 @@ nonisolated struct ContinueWatchingCardPreferences: Codable, Equatable, Sendable
         }
         func posterWidth(for display: DisplayPreferences) -> CGFloat {
             switch self {
-            case .styleDefault, .matchPosters: display.posterCardWidth
+            case .styleDefault: display.posterCardWidth
             case .compact: PosterWidthPreset.compact.width
             case .small: PosterWidthPreset.small.width
             case .standard: PosterWidthPreset.standard.width
@@ -414,12 +424,11 @@ nonisolated struct ContinueWatchingCardPreferences: Codable, Equatable, Sendable
     }
 
     enum Corners: String, Codable, CaseIterable, Identifiable, Sendable {
-        case styleDefault, matchPosters, square, subtle, rounded, round
+        case styleDefault, square, subtle, rounded, round
         var id: Self { self }
         var title: String {
             switch self {
             case .styleDefault: "Style Default"
-            case .matchPosters: "Match Poster Card Style"
             case .square: "Square"
             case .subtle: "Subtle"
             case .rounded: "Rounded"
@@ -429,7 +438,6 @@ nonisolated struct ContinueWatchingCardPreferences: Codable, Equatable, Sendable
         func radius(for display: DisplayPreferences) -> CGFloat {
             switch self {
             case .styleDefault: display.continueWatchingStyle == .wide ? 16 : display.posterCornerRadius
-            case .matchPosters: display.posterCornerRadius
             case .square: PosterCornerPreset.square.radius
             case .subtle: PosterCornerPreset.subtle.radius
             case .rounded: PosterCornerPreset.rounded.radius
@@ -444,7 +452,7 @@ nonisolated struct ContinueWatchingCardPreferences: Codable, Equatable, Sendable
 /// tiles as they looked before the option existed.
 nonisolated struct CollectionCardPreferences: Codable, Equatable, Sendable {
     var shape: Shape = .asImported
-    var size: Size = .matchPosters
+    var size: Size = .standard
     var corners: Corners = .rounded
     var titles: Titles = .automatic
     var folderCards: FolderCards = .asImported
@@ -463,11 +471,40 @@ nonisolated struct CollectionCardPreferences: Codable, Equatable, Sendable {
         folderCards = (try? c.decodeIfPresent(FolderCards.self, forKey: .folderCards)) ?? d.folderCards
     }
 
+    /// Reads saved settings. "matchPosters" was a live link to Poster Card Style
+    /// until Nov 2026, and the default size; it becomes the poster values, so
+    /// nothing looks different.
+    init(from decoder: Decoder, poster: PosterWidthPreset, corner: PosterCornerPreset, landscape: Bool) throws {
+        struct Raw: Decodable {
+            var shape: String?, size: String?, corners: String?, titles: Titles?, folderCards: String?
+        }
+        let raw = (try? Raw(from: decoder)) ?? Raw()
+        self.init(poster: poster, corner: corner, landscape: landscape, raw: (raw.shape, raw.size, raw.corners, raw.titles, raw.folderCards))
+    }
+
+    /// For a saved profile from before these settings existed at all.
+    init(poster: PosterWidthPreset, corner: PosterCornerPreset, landscape: Bool) {
+        self.init(poster: poster, corner: corner, landscape: landscape, raw: (nil, nil, nil, nil, nil))
+    }
+
+    private init(
+        poster: PosterWidthPreset, corner: PosterCornerPreset, landscape: Bool,
+        raw: (shape: String?, size: String?, corners: String?, titles: Titles?, folderCards: String?)
+    ) {
+        shape = raw.shape == "matchPosters" ? (landscape ? .landscape : .poster)
+            : raw.shape.flatMap(Shape.init(rawValue:)) ?? .asImported
+        size = raw.size.flatMap(Size.init(rawValue:)) ?? Size(rawValue: poster.rawValue) ?? .standard
+        corners = raw.corners == "matchPosters" ? Corners(rawValue: corner.rawValue) ?? .rounded
+            : raw.corners.flatMap(Corners.init(rawValue:)) ?? .rounded
+        titles = raw.titles ?? .automatic
+        folderCards = raw.folderCards == "matchPosters" ? (landscape ? .landscape : .asImported)
+            : raw.folderCards.flatMap(FolderCards.init(rawValue:)) ?? .asImported
+    }
+
     /// The cards inside an opened folder. An Xperience or Nuvio export only
     /// shapes the folder's tile; its titles are portrait posters.
     enum FolderCards: String, Codable, CaseIterable, Identifiable, Sendable {
         case asImported
-        case matchPosters
         case landscape
 
         var id: Self { self }
@@ -475,16 +512,7 @@ nonisolated struct CollectionCardPreferences: Codable, Equatable, Sendable {
         var title: String {
             switch self {
             case .asImported: "As Imported"
-            case .matchPosters: "Match Poster Card Style"
             case .landscape: "Landscape"
-            }
-        }
-
-        func usesLandscape(posterStyleIsLandscape: Bool) -> Bool {
-            switch self {
-            case .asImported: false
-            case .matchPosters: posterStyleIsLandscape
-            case .landscape: true
             }
         }
     }
@@ -492,7 +520,6 @@ nonisolated struct CollectionCardPreferences: Codable, Equatable, Sendable {
     enum Shape: String, Codable, CaseIterable, Identifiable, Sendable {
         /// Each collection's own tile shape, from its editor or import.
         case asImported
-        case matchPosters
         case poster
         case square
         case landscape
@@ -502,7 +529,6 @@ nonisolated struct CollectionCardPreferences: Codable, Equatable, Sendable {
 
         var title: String {
             switch self {
-            case .matchPosters: "Match Poster Card Style"
             case .asImported: "As Imported"
             case .poster: "Poster"
             case .square: "Square"
@@ -511,9 +537,8 @@ nonisolated struct CollectionCardPreferences: Codable, Equatable, Sendable {
             }
         }
 
-        func resolved(_ folderShape: HomeCollectionFolder.TileShape, landscapePosters: Bool) -> HomeCollectionFolder.TileShape {
+        func resolved(_ folderShape: HomeCollectionFolder.TileShape) -> HomeCollectionFolder.TileShape {
             switch self {
-            case .matchPosters: landscapePosters ? .landscape : .poster
             case .asImported: folderShape
             case .poster: .poster
             case .square: .square
@@ -523,64 +548,31 @@ nonisolated struct CollectionCardPreferences: Codable, Equatable, Sendable {
         }
     }
 
+    /// The same steps as Poster Card Style, so its size can be applied exactly.
     enum Size: String, Codable, CaseIterable, Identifiable, Sendable {
-        /// Portrait tiles follow Poster Card Style's size.
-        case matchPosters
-        case small
-        case standard
-        case large
-        case extraLarge
+        case compact, small, standard, large, extraLarge
 
         var id: Self { self }
 
-        var title: String {
-            switch self {
-            case .matchPosters: "Match Poster Card Style"
-            case .small: "Small"
-            case .standard: "Standard"
-            case .large: "Large"
-            case .extraLarge: "Extra Large"
-            }
-        }
+        private var preset: PosterWidthPreset { PosterWidthPreset(rawValue: rawValue) ?? .standard }
 
-        var scale: CGFloat {
-            switch self {
-            case .matchPosters, .standard: 1
-            case .small: 0.85
-            case .large: 1.15
-            case .extraLarge: 1.3
-            }
-        }
+        var title: String { preset.title }
+
+        @MainActor
+        var scale: CGFloat { preset.width / PosterWidthPreset.standard.width }
     }
 
+    /// The same steps as Poster Card Style, so its corners can be applied exactly.
     enum Corners: String, Codable, CaseIterable, Identifiable, Sendable {
-        case matchPosters
-        case square
-        case subtle
-        case rounded
-        case round
+        case square, subtle, rounded, round
 
         var id: Self { self }
 
-        var title: String {
-            switch self {
-            case .matchPosters: "Match Poster Card Style"
-            case .square: "Square"
-            case .subtle: "Subtle"
-            case .rounded: "Rounded"
-            case .round: "Round"
-            }
-        }
+        private var preset: PosterCornerPreset { PosterCornerPreset(rawValue: rawValue) ?? .rounded }
 
-        func radius(for display: DisplayPreferences) -> CGFloat {
-            switch self {
-            case .matchPosters: display.posterCornerRadius
-            case .square: 0
-            case .subtle: 8
-            case .rounded: 16
-            case .round: 24
-            }
-        }
+        var title: String { preset.title }
+
+        var radius: CGFloat { preset.radius }
     }
 
     enum Titles: String, Codable, CaseIterable, Identifiable, Sendable {
@@ -708,6 +700,40 @@ nonisolated enum HoverPreviewDelay: Double, Codable, CaseIterable, Identifiable,
     }
 }
 
+/// iPhone, iPad or Mac. Worked out from the model name rather than UIDevice so
+/// settings can be decoded off the main actor.
+nonisolated enum OmniaDeviceClass: String, Sendable {
+    case phone, pad, mac
+
+    static let current: Self = {
+        #if os(macOS)
+        return .mac
+        #else
+        if let simulated = ProcessInfo.processInfo.environment["SIMULATOR_MODEL_IDENTIFIER"] {
+            return simulated.hasPrefix("iPad") ? .pad : .phone
+        }
+        var size = 0
+        sysctlbyname("hw.machine", nil, &size, nil, 0)
+        var machine = [CChar](repeating: 0, count: size)
+        sysctlbyname("hw.machine", &machine, &size, nil, 0)
+        return String(cString: machine).hasPrefix("iPad") ? .pad : .phone
+        #endif
+    }()
+}
+
+/// How cards look on one kind of device: a size that suits a Mac is too big
+/// for an iPhone, so each keeps its own unless the viewer shares one set.
+nonisolated struct CardAppearance: Codable, Equatable, Sendable {
+    var posterWidth: PosterWidthPreset
+    var posterCorner: PosterCornerPreset
+    var landscapePosters: Bool
+    var cardDepth: CardDepthPreferences
+    var cardHover: CardHoverPreferences
+    var continueWatchingCard: ContinueWatchingCardPreferences
+    var continueWatchingStyle: ContinueWatchingStyle
+    var collectionCard: CollectionCardPreferences
+}
+
 /// How Omnia looks: accent, cards, Continue Watching and the title page.
 /// Every value here is read by the views that draw it.
 nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
@@ -717,15 +743,15 @@ nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
     var customGradientHexes = Self.defaultCustomGradient
     var amoledBlack = false
 
-    var posterWidth: PosterWidthPreset = .standard
-    var posterCorner: PosterCornerPreset = .rounded
-    var landscapePosters = false
+    var posterWidth: PosterWidthPreset = .standard { didSet { rememberCardStyle() } }
+    var posterCorner: PosterCornerPreset = .rounded { didSet { rememberCardStyle() } }
+    var landscapePosters = false { didSet { rememberCardStyle() } }
     /// Nuvio's Custom Poster Source: a poster service URL pattern such as
     /// `https://api.ratingposterdb.com/KEY/imdb/poster-default/{imdb_id}.jpg`.
     /// Empty uses each title's own poster (Dafa, 2026-10-27).
     var customPosterURLPattern = ""
-    var cardDepth: CardDepthPreferences = .default
-    var cardHover: CardHoverPreferences = .default
+    var cardDepth: CardDepthPreferences = .default { didSet { rememberCardStyle() } }
+    var cardHover: CardHoverPreferences = .default { didSet { rememberCardStyle() } }
 
     var topBarStyle: TopBarStyle = .adaptive
     var topBarGlow = true
@@ -733,14 +759,14 @@ nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
     var hoverPreviewEnabled = false
     var hoverPreviewDelay: HoverPreviewDelay = .two
 
-    var continueWatchingCard: ContinueWatchingCardPreferences = .default
-    var continueWatchingStyle: ContinueWatchingStyle = .wide
+    var continueWatchingCard: ContinueWatchingCardPreferences = .default { didSet { rememberCardStyle() } }
+    var continueWatchingStyle: ContinueWatchingStyle = .wide { didSet { rememberCardStyle() } }
     var continueWatchingSort: ContinueWatchingSort = .recent
     var continueWatchingEpisodeThumbnails = true
     /// Each card's picture: the title's artwork, or the scene it stopped on.
     var continueWatchingArtwork: ContinueWatchingArtwork = .artwork
     /// Settings › Layout › Collections › Card Style.
-    var collectionCard: CollectionCardPreferences = .default
+    var collectionCard: CollectionCardPreferences = .default { didSet { rememberCardStyle() } }
     /// Nuvio's Next Up behaviour: after an episode ends, the row offers the
     /// one after the furthest episode watched, not the one just finished.
     var nextUpFromFurthestEpisode = true
@@ -787,12 +813,21 @@ nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
         cardHover = (try? c.decodeIfPresent(CardHoverPreferences.self, forKey: .cardHover)) ?? d.cardHover
         hoverPreviewEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .hoverPreviewEnabled)) ?? d.hoverPreviewEnabled
         hoverPreviewDelay = (try? c.decodeIfPresent(HoverPreviewDelay.self, forKey: .hoverPreviewDelay)) ?? d.hoverPreviewDelay
-        continueWatchingCard = (try? c.decodeIfPresent(ContinueWatchingCardPreferences.self, forKey: .continueWatchingCard)) ?? d.continueWatchingCard
+        if c.contains(.continueWatchingCard), let nested = try? c.superDecoder(forKey: .continueWatchingCard),
+           let card = try? ContinueWatchingCardPreferences(from: nested, posterWidth: posterWidth, posterCorner: posterCorner) {
+            continueWatchingCard = card
+        } else {
+            continueWatchingCard = d.continueWatchingCard
+        }
         continueWatchingStyle = (try? c.decodeIfPresent(ContinueWatchingStyle.self, forKey: .continueWatchingStyle)) ?? d.continueWatchingStyle
         continueWatchingSort = (try? c.decodeIfPresent(ContinueWatchingSort.self, forKey: .continueWatchingSort)) ?? d.continueWatchingSort
         continueWatchingEpisodeThumbnails = (try? c.decodeIfPresent(Bool.self, forKey: .continueWatchingEpisodeThumbnails)) ?? d.continueWatchingEpisodeThumbnails
         continueWatchingArtwork = (try? c.decodeIfPresent(ContinueWatchingArtwork.self, forKey: .continueWatchingArtwork)) ?? d.continueWatchingArtwork
-        collectionCard = (try? c.decodeIfPresent(CollectionCardPreferences.self, forKey: .collectionCard)) ?? d.collectionCard
+        if c.contains(.collectionCard), let nested = try? c.superDecoder(forKey: .collectionCard) {
+            collectionCard = try CollectionCardPreferences(from: nested, poster: posterWidth, corner: posterCorner, landscape: landscapePosters)
+        } else {
+            collectionCard = CollectionCardPreferences(poster: posterWidth, corner: posterCorner, landscape: landscapePosters)
+        }
         nextUpFromFurthestEpisode = (try? c.decodeIfPresent(Bool.self, forKey: .nextUpFromFurthestEpisode)) ?? d.nextUpFromFurthestEpisode
         showsUnairedNextUp = (try? c.decodeIfPresent(Bool.self, forKey: .showsUnairedNextUp)) ?? d.showsUnairedNextUp
         blursNextUp = (try? c.decodeIfPresent(Bool.self, forKey: .blursNextUp)) ?? d.blursNextUp
@@ -804,6 +839,9 @@ nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
         detailSectionOrder = Self.completeOrder((try? c.decodeIfPresent([LenientDetailSection].self, forKey: .detailSectionOrder))?.compactMap(\.value) ?? d.detailSectionOrder)
         posterTransition = (try? c.decodeIfPresent(Bool.self, forKey: .posterTransition)) ?? d.posterTransition
         episodeShuffleAvailable = (try? c.decodeIfPresent(Bool.self, forKey: .episodeShuffleAvailable)) ?? d.episodeShuffleAvailable
+        cardStyles = (try? c.decodeIfPresent([String: CardAppearance].self, forKey: .cardStyles)) ?? [:]
+        sharesCardStyles = (try? c.decodeIfPresent(Bool.self, forKey: .sharesCardStyles)) ?? false
+        adoptCardStyleForThisDevice()
     }
 
     /// Drops repeats and appends sections a saved order doesn't know yet.
@@ -873,6 +911,72 @@ nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
         usesAccentGradient
             ? AnyShapeStyle(LinearGradient(colors: accentGradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
             : AnyShapeStyle(accentColor)
+    }
+
+    /// Each device class's card style, carried in the synced settings so a device
+    /// never changes another's. The plain fields above are this device's.
+    var cardStyles: [String: CardAppearance] = [:]
+    /// Poster Card Style › Same Style on All Devices.
+    var sharesCardStyles = false
+
+    private var cardAppearance: CardAppearance {
+        CardAppearance(
+            posterWidth: posterWidth, posterCorner: posterCorner, landscapePosters: landscapePosters,
+            cardDepth: cardDepth, cardHover: cardHover, continueWatchingCard: continueWatchingCard,
+            continueWatchingStyle: continueWatchingStyle, collectionCard: collectionCard
+        )
+    }
+
+    private mutating func rememberCardStyle() {
+        cardStyles[OmniaDeviceClass.current.rawValue] = cardAppearance
+    }
+
+    /// After decoding, the plain fields hold the shared values. This device's own
+    /// set replaces them, unless the viewer shares one set. The first time an
+    /// iPhone sees this, it starts from them with sizes capped to Small.
+    private mutating func adoptCardStyleForThisDevice() {
+        let device = OmniaDeviceClass.current
+        guard !sharesCardStyles else {
+            cardStyles[device.rawValue] = cardAppearance
+            return
+        }
+        if let own = cardStyles[device.rawValue] {
+            posterWidth = own.posterWidth
+            posterCorner = own.posterCorner
+            landscapePosters = own.landscapePosters
+            cardDepth = own.cardDepth
+            cardHover = own.cardHover
+            continueWatchingCard = own.continueWatchingCard
+            continueWatchingStyle = own.continueWatchingStyle
+            collectionCard = own.collectionCard
+            return
+        }
+        if device == .phone {
+            let order = PosterWidthPreset.allCases
+            let cap = order.firstIndex(of: .small) ?? 0
+            if (order.firstIndex(of: posterWidth) ?? 0) > cap { posterWidth = .small }
+            if [.standard, .large, .extraLarge].contains(collectionCard.size) { collectionCard.size = .small }
+            if [.standard, .large, .extraLarge].contains(continueWatchingCard.size) { continueWatchingCard.size = .small }
+        }
+        rememberCardStyle()
+    }
+
+    /// Poster Card Style › Apply to All Cards: one copy of the poster look into
+    /// Collections, folders and Continue Watching, which stay independent after.
+    mutating func applyPosterStyleToAllCards() {
+        collectionCard.shape = landscapePosters ? .landscape : .poster
+        collectionCard.size = CollectionCardPreferences.Size(rawValue: posterWidth.rawValue) ?? .standard
+        collectionCard.corners = CollectionCardPreferences.Corners(rawValue: posterCorner.rawValue) ?? .rounded
+        collectionCard.folderCards = landscapePosters ? .landscape : .asImported
+        continueWatchingCard.size = ContinueWatchingCardPreferences.Size(rawValue: posterWidth.rawValue) ?? .standard
+        continueWatchingCard.corners = ContinueWatchingCardPreferences.Corners(rawValue: posterCorner.rawValue) ?? .rounded
+    }
+
+    /// Whether Apply to All Cards has nothing left to do.
+    var allCardsMatchPosterStyle: Bool {
+        var applied = self
+        applied.applyPosterStyleToAllCards()
+        return applied.collectionCard == collectionCard && applied.continueWatchingCard == continueWatchingCard
     }
 
     var posterCardWidth: CGFloat { posterWidth.width }

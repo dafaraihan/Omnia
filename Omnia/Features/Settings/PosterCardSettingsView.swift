@@ -43,6 +43,21 @@ struct PosterCardSettingsView: View {
                 Text("Poster Card Style")
             }
 
+            Section {
+                Toggle(isOn: settings.binding(\.display.sharesCardStyles)) {
+                    Text("Same Style on All Devices")
+                    Text("Off, this \(OmniaDevice.name) keeps its own card styles, since a size that suits a Mac can be too big for an iPhone.")
+                }
+                Button("Apply to All Cards", systemImage: "square.on.square") {
+                    settings.update { $0.display.applyPosterStyleToAllCards() }
+                }
+                .disabled(display.allCardsMatchPosterStyle)
+            } footer: {
+                Text(display.allCardsMatchPosterStyle
+                    ? "Collections, their folders and Continue Watching already use this style."
+                    : "Copies this size, corner and layout to Collections, their folders and Continue Watching. You can still change each one on its own page afterwards.")
+            }
+
             customPosterSourceSection
 
             Section {

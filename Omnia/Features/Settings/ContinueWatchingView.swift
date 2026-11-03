@@ -64,7 +64,7 @@ struct ContinueWatchingSettingsView: View {
             } header: {
                 Text("Row")
             } footer: {
-                Text("Paused Scene shows the frame where you stopped, saved when you close the player; titles you haven't played since use their artwork. Style Default keeps each layout’s original size and corners. Match Poster Card Style follows changes in Layout › Poster Card Style.")
+                Text("Paused Scene shows the frame where you stopped, saved when you close the player; titles you haven't played since use their artwork. Style Default keeps each layout’s original size and corners. Poster Card Style can apply its own to these with one button.")
             }
 
             Section {
