@@ -232,7 +232,14 @@ final class LiveMetadataStore {
     func enrichedDetails(for source: MediaItem, integrations: IntegrationPreferences, language: String = "en-US") async -> MediaItem {
         guard let client else { return source }
         let route = Self.isExplicitlyAnime(source) ? metadataRouting.anime : route(for: source.metadataType)
-        let providers = route.requestedProviders.filter(\.isServedByMetadataService)
+        // A provider switched on here counts even when Metadata Sources doesn't
+        // list it, at the lowest priority. Anime keeps its own source order.
+        let listed = route.requestedProviders.filter(\.isServedByMetadataService)
+        let unlisted: [MetadataProviderIdentifier] = Self.isExplicitlyAnime(source) ? [] : [
+            integrations.tmdb.enabled ? .tmdb : nil,
+            integrations.tvdb.enabled ? .tvdb : nil,
+        ].compactMap { $0 }.filter { !listed.contains($0) }
+        let providers = listed + unlisted
         var result = source
         // Applying preferred last gives its nonempty enabled values precedence.
         for provider in providers.reversed() {
@@ -1154,6 +1161,24 @@ private nonisolated enum MetadataDetailCache {
         remember(entry, for: key)
         guard let directory, let data = try? JSONEncoder().encode(entry) else { return }
         try? data.write(to: directory.appendingPathComponent(key), options: .atomic)
+        pruneOnce(directory)
+    }
+
+    private static let didPrune = Mutex(false)
+
+    /// Entries past their age are never read again, and earlier builds wrote
+    /// keys no later launch could find. Clears them once per launch.
+    private static func pruneOnce(_ directory: URL) {
+        guard didPrune.withLock({ let first = !$0; $0 = true; return first }) else { return }
+        let files = (try? FileManager.default.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: [.contentModificationDateKey]
+        )) ?? []
+        for file in files {
+            let modified = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+            if Date.now.timeIntervalSince(modified ?? .distantPast) >= maximumAge {
+                try? FileManager.default.removeItem(at: file)
+            }
+        }
     }
 
     private static func remember(_ entry: Entry, for key: String) {

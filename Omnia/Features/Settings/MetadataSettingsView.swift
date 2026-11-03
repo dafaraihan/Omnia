@@ -220,7 +220,7 @@ struct TVDBEnrichmentSettingsView: View {
             Section {
                 Toggle("Enable TVDB Enrichment", isOn: settings.binding(\.integrations.tvdb.enabled))
             } footer: {
-                Text("Replace enabled fields with available TVDB information using your own API key. Missing sections preserve existing information. Metadata Sources determine provider priority.")
+                Text("Replace enabled fields with available TVDB information using your own API key. Missing sections preserve existing information. Metadata Sources sets the priority; if TVDB isn't listed there, it comes last. Anime titles follow the Anime order only.")
             }
             Section("Modules") {
                 module("Trailers", \.useTrailers)

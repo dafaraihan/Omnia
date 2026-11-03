@@ -142,27 +142,57 @@ struct ContinueWatchingStylePreview: View {
     }
 }
 
-/// Full-size, interactive sample using the same depth and hover effects as Home.
+/// The real card, drawing a title the viewer is watching, or else one from
+/// their catalogs, so the settings above show as they will on Home.
 struct ContinueWatchingLivePreview: View {
     let style: ContinueWatchingStyle
     @Environment(\.displayPreferences) private var display
+    @Environment(OmniaStore.self) private var store
+    @Environment(LiveMetadataStore.self) private var metadata
+    @Environment(AddonCatalogStore.self) private var addonCatalogs
+
+    private var watching: MediaItem? {
+        store.localMediaSnapshots
+            .filter { $0.progress != nil }
+            .max { ($0.lastPlayedAt ?? .distantPast) < ($1.lastPlayedAt ?? .distantPast) }?
+            .item
+    }
+
+    /// The first title with artwork from what Home already loaded.
+    private var catalogItem: MediaItem? {
+        let enabled = AddonCatalogStore.catalogs(in: store).filter {
+            store.isCatalogEnabled(for: $0.addon, catalog: $0.catalog)
+        }
+        let candidates = enabled.flatMap { addonCatalogs.rows[$0.key]?.items ?? [] }
+            + metadata.topSeries + metadata.topMovies + metadata.seriesCatalog + metadata.movieCatalog
+        return candidates.first { $0.backdropURL != nil && $0.artworkURL != nil }
+            ?? candidates.first { $0.artworkURL != nil }
+    }
+
+    private var item: MediaItem {
+        if let watching { return watching }
+        var sample = catalogItem ?? MediaItem(
+            id: "settings-continue-watching-preview", title: "Your Title",
+            year: "2026", kind: .series, overview: "", genres: [], symbol: "tv",
+            artworkColors: MediaItem.placeholderArtworkColors,
+            progress: nil
+        )
+        sample.progress = 0.6
+        sample.positionSeconds = 1620
+        sample.durationSeconds = 2700
+        if sample.kind == .series {
+            sample.resumeSeasonNumber = 1
+            sample.resumeEpisodeNumber = 3
+        }
+        return sample
+    }
 
     private var previewDisplay: DisplayPreferences {
         var value = display
         value.continueWatchingStyle = style
-        // Preview data has no captured scene or remote artwork.
-        value.continueWatchingArtwork = .artwork
+        // Only a title really being watched has a paused scene to show.
+        if watching == nil { value.continueWatchingArtwork = .artwork }
         return value
-    }
-
-    private var item: MediaItem {
-        MediaItem(
-            id: "settings-continue-watching-preview", title: "Continue Watching Preview",
-            year: "2026", kind: .series, overview: "", genres: [], symbol: "tv",
-            artworkColors: MediaItem.placeholderArtworkColors,
-            progress: 0.6, positionSeconds: 1620, durationSeconds: 2700,
-            resumeSeasonNumber: 1, resumeEpisodeNumber: 3, resumeEpisodeTitle: "Episode Preview"
-        )
     }
 
     var body: some View {

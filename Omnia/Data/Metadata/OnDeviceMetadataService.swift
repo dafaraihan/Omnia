@@ -10,6 +10,7 @@
 //  add-ons such as Cinemeta provide catalogs, details and search.
 //
 
+import CryptoKit
 import Foundation
 
 nonisolated enum OnDeviceMetadataError: LocalizedError, Sendable {
@@ -59,11 +60,12 @@ actor OnDeviceMetadataService {
         return value
     }
 
-    /// Process-scoped opaque identity: credentials never enter disk cache keys or diagnostics.
+    /// A one-way digest, stable across launches because it names files in the
+    /// disk cache. The credential itself never enters a key or diagnostics.
     nonisolated static func credentialIdentity(_ provider: String) -> String {
-        var identity = Hasher()
-        identity.combine(storedKey(provider))
-        return String(identity.finalize())
+        guard let key = storedKey(provider) else { return "none" }
+        return SHA256.hash(data: Data("omnia.metadata.credential|\(provider)|\(key)".utf8))
+            .map { String(format: "%02x", $0) }.joined()
     }
 
     func findTMDB(externalID: String, source: String, type: String, language: String) async throws -> Data {

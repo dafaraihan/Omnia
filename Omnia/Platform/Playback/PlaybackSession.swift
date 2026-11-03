@@ -1625,8 +1625,14 @@ final class PlaybackSession {
             positionSeconds = position.isFinite ? max(position, 0) : 0
             let duration = trailerPlayer.currentItem?.duration.seconds ?? 0
             durationSeconds = duration.isFinite && duration > 0 ? duration : nil
-            isPaused = trailerPlayer.timeControlStatus != .playing
+            // Buffering isn't paused: the pause overlay is for a chosen pause.
+            isPaused = trailerPlayer.timeControlStatus == .paused
             if positionSeconds > 0 { hasRenderedVideoFrame = true }
+            // A trailer has nothing after it, so reaching its end closes the player.
+            if isPaused, let durationSeconds, positionSeconds >= durationSeconds - 0.25 {
+                stop(persisting: false)
+                return
+            }
             if trailerPlayer.currentItem?.status == .failed {
                 playbackError = "The trailer could not be played. Close the player and try again."
             }
