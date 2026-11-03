@@ -22,6 +22,16 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "0.3.6",
+          "buildVersion": "10",
+          "date": "2026-11-03T17:50:19Z",
+          "localizedDescription": "Liquid Glass you can control, a smoother hero, and many fixes across iPhone, iPad and Mac.\n\nNew\n- Liquid Glass settings, in Settings > Layout > Liquid Glass: an overall switch, a style, an intensity slider, separate switches for each part of the app, and a live preview.\n- Show or hide the labels under Wide and Poster Continue Watching cards.\n- Up to 6 hero catalogs instead of 2.\n\nImproved\n- Play, View Details and the other hero buttons now use Liquid Glass on iPhone and iPad, like the Mac.\n- The hero now melts into the section below it, on Home and on title pages.\n- A soft fade at the top of the hero covers the black bars some trailers have.\n- On iPad and Mac, a playing trailer is no longer covered by the colour overlay.\n- Hero dots are plain dots, with no pill behind them.\n- Discover now has a magnifying glass icon.\n- On iPhone, the trailer mute button moved to the top right, and the Profile tab glows in your accent colour.\n- Player menus on iPhone are smaller and stay the same size in every aspect ratio.\n- Player controls and menus now animate in and out, and follow Reduce Motion.\n- Onboarding shows the real Home and title pages at the right scale on iPhone.\n\nFixed\n- Top bar on iPad and Mac: tabs now respond across their whole area, not only on the icon and label.\n- Opening a hero trailer in the player now continues where it was, instead of starting over.\n- Onboarding: no oversized scrollbar, and the page dots no longer sit on the buttons or text.\n- Updating from SideStore no longer sends you back through onboarding if you are signed in.\n- The Picture in Picture button on iPhone and iPad now tells you when a video can't use it. MKV files and sources that need special headers can't float yet.",
+          "downloadURL": "https://github.com/dafaraihan/Omnia/releases/download/v0.3.6/Omnia-0.3.6-iPhone-iPad.ipa",
+          "size": 33054966,
+          "sha256": "fc1a91276bf9333105da6af69ab1f7de9e8e40bd65096c8a1e65f924f0659edc",
+          "minOSVersion": "26.5"
+        },
+        {
           "version": "0.3.5",
           "buildVersion": "9",
           "date": "2026-11-03T16:12:52Z",
