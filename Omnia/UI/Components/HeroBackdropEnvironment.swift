@@ -449,6 +449,7 @@ struct WindowHeroBackdrop: View {
                     Group {
                         if state.presentation?.source == .home {
                             HomeArtworkBackground(item: accentItem)
+                                .environment(\.colorScheme, .dark)
                         } else {
                             HeroAccentBackground(item: accentItem).equatable()
                         }

@@ -3,6 +3,7 @@
 //  Omnia
 //
 
+import ImageIO
 import SwiftUI
 #if os(macOS)
 import AppKit
@@ -73,6 +74,14 @@ struct CollectionFolderTile: View {
         return width(for: folderShape, display: display) / CGFloat(shape.aspectRatio)
     }
 
+    #if os(iOS)
+    @State private var isOnScreen = false
+    @State private var animatedCovers = AnimatedCoverLimiter.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(PlaybackSession.self) private var playback
+    #endif
+
     private var cornerRadius: CGFloat { display.collectionCard.corners.radius(for: display) }
 
     private var showsTitle: Bool {
@@ -92,16 +101,15 @@ struct CollectionFolderTile: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
 
-            #if os(macOS)
-            // The animated cover plays over the still one only while the
-            // pointer is on the tile. It loads ahead, so hovering starts it
-            // at once; without a still cover its first frame stays visible.
+            // The animated cover plays over the still one: while the pointer
+            // is on the tile, or on touch screens while it's on screen. It
+            // loads ahead, so it starts at once; without a still cover its
+            // first frame stays visible.
             if folder.focusGifEnabled, let animated = folder.focusGifUrl {
-                AnimatedCoverImage(url: animated, isPlaying: isHovered, staysDecoded: folder.coverImageUrl == nil)
+                AnimatedCoverImage(url: animated, isPlaying: playsAnimatedCover, staysDecoded: folder.coverImageUrl == nil)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .opacity(isHovered || folder.coverImageUrl == nil ? 1 : 0)
+                    .opacity(playsAnimatedCover || folder.coverImageUrl == nil ? 1 : 0)
             }
-            #endif
 
             if showsTitle {
                 LinearGradient(colors: [.clear, .black.opacity(0.7)], startPoint: .center, endPoint: .bottom)
@@ -117,11 +125,36 @@ struct CollectionFolderTile: View {
         // Settings › Appearance › Poster Cards draws the hover edge and lift.
         .cardDepth(.collections, cornerRadius: cornerRadius)
         .onHover { isHovered = $0 }
+        #if os(iOS)
+        .onScrollVisibilityChange(threshold: 0.6) { isOnScreen = $0 }
+        .onChange(of: wantsAnimatedCover, initial: true) { _, wants in
+            if wants { animatedCovers.request(folder.id) } else { animatedCovers.release(folder.id) }
+        }
+        .onDisappear { animatedCovers.release(folder.id) }
+        #endif
         .contentShape(.rect(cornerRadius: cornerRadius))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(folder.title)
         .accessibilityAddTraits(.isButton)
     }
+
+    private var playsAnimatedCover: Bool {
+        #if os(iOS)
+        animatedCovers.playing.contains(folder.id)
+        #else
+        isHovered
+        #endif
+    }
+
+    #if os(iOS)
+    /// Motion stops for Reduce Motion, Low Power Mode, and whenever the tile
+    /// can't be seen, such as behind the player.
+    private var wantsAnimatedCover: Bool {
+        folder.focusGifEnabled && folder.focusGifUrl != nil && isOnScreen
+            && !reduceMotion && scenePhase == .active && !playback.isPresentingPlayer
+            && !ProcessInfo.processInfo.isLowPowerModeEnabled
+    }
+    #endif
 
     private var fallback: some View {
         ZStack {
@@ -686,6 +719,111 @@ struct CollectionFolderView: View {
     }
 }
 
+/// Fetches an animated cover through the shared cache. It comes from a
+/// collection file, so only a bounded HTTPS response is accepted.
+private enum AnimatedCoverData {
+    static let maximumBytes = 32 * 1_024 * 1_024
+
+    static func load(_ url: URL) async -> Data? {
+        guard url.scheme?.lowercased() == "https",
+              let (data, response) = try? await URLSession.shared.data(from: url),
+              (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? false,
+              data.count <= maximumBytes
+        else { return nil }
+        return data
+    }
+}
+
+#if os(iOS)
+/// Touch screens have no hover, so covers play while on screen. A shelf of
+/// GIFs would keep the CPU busy, so only a few play at once and the rest wait.
+@MainActor
+@Observable
+final class AnimatedCoverLimiter {
+    static let shared = AnimatedCoverLimiter()
+    private static let limit = 3
+
+    private(set) var playing: Set<String> = []
+    private var waiting: [String] = []
+
+    func request(_ id: String) {
+        guard !playing.contains(id), !waiting.contains(id) else { return }
+        if playing.count < Self.limit { playing.insert(id) } else { waiting.append(id) }
+    }
+
+    func release(_ id: String) {
+        waiting.removeAll { $0 == id }
+        guard playing.remove(id) != nil, !waiting.isEmpty else { return }
+        playing.insert(waiting.removeFirst())
+    }
+}
+
+/// An animated GIF filling its frame. ImageIO decodes one frame at a time, so
+/// a long GIF doesn't sit in memory the way a frame array would.
+struct AnimatedCoverImage: View {
+    let url: URL
+    var isPlaying = true
+    var staysDecoded = true
+    @State private var data: Data?
+
+    var body: some View {
+        AnimatedCoverLayerView(data: isPlaying || staysDecoded ? data : nil, isPlaying: isPlaying)
+            .task(id: url) { data = await AnimatedCoverData.load(url) }
+            .accessibilityHidden(true)
+            .allowsHitTesting(false)
+    }
+}
+
+private struct AnimatedCoverLayerView: UIViewRepresentable {
+    let data: Data?
+    let isPlaying: Bool
+
+    func makeUIView(context: Context) -> CoverView {
+        let view = CoverView()
+        view.clipsToBounds = true
+        view.layer.contentsGravity = .resizeAspectFill
+        return view
+    }
+
+    func updateUIView(_ view: CoverView, context: Context) {
+        view.update(data: data, isPlaying: isPlaying)
+    }
+
+    static func dismantleUIView(_ view: CoverView, coordinator: ()) {
+        view.update(data: nil, isPlaying: false)
+    }
+
+    final class CoverView: UIView {
+        private var current: Data?
+        private var isAnimating = false
+        /// Read by ImageIO's callback, which runs on the main queue.
+        private var generation = 0
+
+        func update(data: Data?, isPlaying: Bool) {
+            guard data != current || isPlaying != isAnimating else { return }
+            current = data
+            isAnimating = isPlaying
+            generation += 1
+            guard let data else {
+                layer.contents = nil
+                return
+            }
+            let token = generation
+            let playsOn = isPlaying
+            CGAnimateImageDataWithBlock(data as CFData, nil) { [weak self] _, image, stop in
+                guard let self, self.generation == token else {
+                    stop.pointee = true
+                    return
+                }
+                self.layer.contents = image
+                // At rest, the first frame is all that's needed.
+                if !playsOn { stop.pointee = true }
+            }
+        }
+    }
+}
+#endif
+
 #if os(macOS)
 /// An animated GIF filling its frame like `scaledToFill()`. AsyncImage only
 /// shows a GIF's first frame.
@@ -727,14 +865,12 @@ struct AnimatedCoverImage: View {
 
     private static func prefetch(_ url: URL) async {
         guard prefetched.insert(url).inserted else { return }
-        _ = try? await URLSession.shared.data(from: url)
+        _ = await AnimatedCoverData.load(url)
     }
 
     /// Loads through the shared cache, so covers don't download again.
     private static func load(_ url: URL) async -> NSImage? {
-        guard let (data, response) = try? await URLSession.shared.data(from: url),
-              (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? false
-        else { return nil }
+        guard let data = await AnimatedCoverData.load(url) else { return nil }
         return NSImage(data: data)
     }
 }

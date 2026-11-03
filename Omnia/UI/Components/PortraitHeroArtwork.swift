@@ -13,19 +13,21 @@ import SwiftUI
 /// carries its own title.
 struct PortraitHeroArtwork: View {
     let item: MediaItem
+    /// The page's colour fades in over the art instead of the dark floor.
+    var blendsIntoPage = false
     @State private var textlessPoster: (itemID: String, url: URL)?
 
     var body: some View {
         ZStack {
             if let textlessPoster, textlessPoster.itemID == item.id {
                 artwork(textlessPoster.url)
-                fade(darkness: 0.78)
+                fade(darkness: blendsIntoPage ? 0.3 : 0.78)
             } else if item.backdropURL != nil {
                 FeaturedBackdrop(item: item, artworkAlignment: .center)
-                fade(darkness: 0.78)
+                fade(darkness: blendsIntoPage ? 0.3 : 0.78)
             } else if let poster = item.artworkURL {
                 artwork(poster)
-                fade(darkness: 0.92)
+                fade(darkness: blendsIntoPage ? 0.3 : 0.92)
             }
         }
         .task(id: item.id) {

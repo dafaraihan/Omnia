@@ -103,24 +103,26 @@ struct VideoPlayerSettingsView: View {
 
             Section {
                 LabeledContent("Default player", value: "Omnia (in-app)")
-                #if os(macOS)
+                #if OMNIA_MPV
                 LabeledContent("Playback engine", value: "libmpv")
                 SettingsDropdown(
                     "Decoder",
                     selection: settings.binding(\.playbackBehavior.decoderPriority),
                     options: Array(DecoderPriority.allCases)
                 ) { priority in priority.title }
+                #else
+                LabeledContent("Playback engine", value: "AVPlayer")
+                #endif
+                #if os(macOS)
                 Toggle(isOn: settings.binding(\.playbackBehavior.metalRendering)) {
                     Text("Metal Rendering")
                     Text("Draws video with gpu-next on Metal, as Nuvio does, for sharper scaling and HDR tone mapping. If Metal can't start, the player uses OpenGL and notes why in Diagnostics. Applies from the next video.")
                 }
-                #else
-                LabeledContent("Playback engine", value: "AVPlayer")
                 #endif
             } header: {
                 Text("Player")
             } footer: {
-                #if os(macOS)
+                #if OMNIA_MPV
                 Text("\(behavior.decoderPriority.detail) Applies from the next title you play.")
                 #else
                 Text("Playback always stays inside Omnia.")
@@ -182,7 +184,7 @@ struct VideoPlayerSettingsView: View {
                     Text("Only Preferred Languages")
                     Text("Add-on subtitles in other languages aren't added to the player.")
                 }
-                #if os(macOS)
+                #if OMNIA_MPV
                 Toggle(isOn: settings.binding(\.playbackBehavior.autoSyncsSubtitles)) {
                     Text("Auto Sync Subtitles")
                     Text("When an add-on subtitle starts, Omnia listens to the speech for up to three minutes and lines the subtitle up with it. Subtitles inside the video are left as they are.")

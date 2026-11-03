@@ -281,6 +281,9 @@ struct HomeView: View {
                 .background {
                     HomeArtworkBackground(item: displayFeatured, isEnabled: usesDynamicBackground)
                 }
+                // The wash is always a dark colour, in Light appearance too,
+                // so text on the rows has to stay light.
+                .environment(\.colorScheme, usesDynamicBackground ? .dark : colorScheme)
             }
         }
         .background {
@@ -554,7 +557,7 @@ struct HomeView: View {
             Group {
                 #if os(iOS)
                 if isPortraitPhone {
-                    PortraitHeroArtwork(item: featured)
+                    PortraitHeroArtwork(item: featured, blendsIntoPage: usesDynamicBackground)
                 } else {
                     landscapeHeroArtwork(featured)
                 }
@@ -577,6 +580,24 @@ struct HomeView: View {
             }
 
             HomeHeroTrailerLayer(model: heroTrailer, isPlaying: heroTrailerIsPlaying)
+
+            // Dynamic Background Color: the hero melts into the artwork's
+            // colour, the same one the rows below sit on, so there is no edge.
+            if usesDynamicBackground, !isCardHero {
+                HomeArtworkBackground(item: featured)
+                    .environment(\.colorScheme, .dark)
+                    .mask {
+                        LinearGradient(
+                            stops: [
+                                .init(color: .clear, location: 0.5),
+                                .init(color: .black.opacity(0.75), location: 0.86),
+                                .init(color: .black, location: 1)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    }
+            }
 
             // FeaturedBackdrop correctly opts out of hit-testing so it can be
             // reused behind detail content. Give Home a separate clear link
@@ -911,6 +932,7 @@ struct HomeView: View {
         Color.clear
         #else
         HomeArtworkBackground(item: displayFeatured, isEnabled: usesDynamicBackground)
+            .environment(\.colorScheme, usesDynamicBackground ? .dark : colorScheme)
         #endif
     }
 
