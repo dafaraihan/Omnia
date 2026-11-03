@@ -43,7 +43,102 @@ enum OmniaLiquidGlassPresentation {
     }
 }
 
+enum OmniaGlassBase {
+    case clear, regular
+}
+
+/// Every glass surface goes through here, so Settings › Layout › Liquid Glass
+/// reaches all of them.
+private struct OmniaGlassSurface<S: Shape>: ViewModifier {
+    @Environment(\.displayPreferences) private var display
+
+    let element: OmniaGlassElement
+    let base: OmniaGlassBase
+    let interactive: Bool
+    let shape: S
+
+    private var preferences: LiquidGlassPreferences { display.liquidGlass }
+
+    /// Below the middle of the slider the glass thins to clear. Above it, a
+    /// frost layer builds up under the glass.
+    private var frost: Double {
+        let intensity = preferences.intensity
+        return intensity < 0.5 ? intensity * 0.6 : (intensity - 0.5) * 1.6
+    }
+
+    private var usesClearBelowMiddle: Bool { preferences.intensity < 0.5 }
+
+    private var glass: Glass {
+        let resolved: OmniaGlassBase = switch preferences.style {
+        case .standard: usesClearBelowMiddle ? .clear : base
+        case .clear: .clear
+        case .frosted: .regular
+        }
+        let glass: Glass = resolved == .clear ? .clear : .regular
+        return interactive ? glass.interactive() : glass
+    }
+
+    func body(content: Content) -> some View {
+        if preferences.applies(to: element) {
+            content
+                .background {
+                    shape.fill(.ultraThinMaterial)
+                        .opacity(frost)
+                        .allowsHitTesting(false)
+                }
+                .glassEffect(glass, in: shape)
+        } else {
+            content.background {
+                switch element {
+                case .actionButtons:
+                    shape.fill(.white)
+                case .playerControls:
+                    shape.fill(.black.opacity(0.55))
+                case .navigationBar, .panels:
+                    shape.fill(.regularMaterial)
+                }
+            }
+        }
+    }
+}
+
+extension View {
+    func omniaGlass<S: Shape>(
+        _ element: OmniaGlassElement,
+        base: OmniaGlassBase = .regular,
+        interactive: Bool = false,
+        in shape: S
+    ) -> some View {
+        modifier(OmniaGlassSurface(element: element, base: base, interactive: interactive, shape: shape))
+    }
+
+    /// The system's glass button, or its plain counterpart with glass off.
+    func omniaSystemGlassButton(
+        _ element: OmniaGlassElement = .panels,
+        prominent: Bool = false
+    ) -> some View {
+        modifier(OmniaSystemGlassButton(element: element, prominent: prominent))
+    }
+}
+
+private struct OmniaSystemGlassButton: ViewModifier {
+    @Environment(\.displayPreferences) private var display
+
+    let element: OmniaGlassElement
+    let prominent: Bool
+
+    func body(content: Content) -> some View {
+        switch (display.liquidGlass.applies(to: element), prominent) {
+        case (true, true): content.buttonStyle(.glassProminent)
+        case (true, false): content.buttonStyle(.glass)
+        case (false, true): content.buttonStyle(.borderedProminent)
+        case (false, false): content.buttonStyle(.bordered)
+        }
+    }
+}
+
 private struct OmniaLiquidGlassButtonBody<Label: View, S: Shape>: View {
+    @Environment(\.displayPreferences) private var display
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.isEnabled) private var isEnabled
     @State private var isHovering = false
@@ -51,6 +146,7 @@ private struct OmniaLiquidGlassButtonBody<Label: View, S: Shape>: View {
     let label: Label
     let shape: S
     let role: OmniaLiquidGlassSurfaceRole
+    let element: OmniaGlassElement
     let isPressed: Bool
 
     var body: some View {
@@ -71,8 +167,10 @@ private struct OmniaLiquidGlassButtonBody<Label: View, S: Shape>: View {
                     .fill(.black.opacity(darkening))
                     .allowsHitTesting(false)
             }
-            .glassEffect(.clear.interactive(), in: shape)
-            .scaleEffect(transform.scale)
+            .omniaGlass(element, base: .clear, interactive: true, in: shape)
+            // White on glass; black on the solid white fill it falls back to.
+            .foregroundStyle(element == .actionButtons && !display.liquidGlass.applies(to: .actionButtons) ? .black : .white)
+            .scaleEffect(isPressed ? 0.97 : transform.scale)
             .offset(y: transform.verticalOffset)
             .opacity(isEnabled ? 1 : 0.45)
             .animation(reduceMotion ? nil : .smooth(duration: 0.16), value: isHovering)
@@ -84,12 +182,14 @@ private struct OmniaLiquidGlassButtonBody<Label: View, S: Shape>: View {
 struct OmniaLiquidGlassButtonStyle<S: Shape>: ButtonStyle {
     let shape: S
     var role: OmniaLiquidGlassSurfaceRole = .control
+    var element: OmniaGlassElement = .actionButtons
 
     func makeBody(configuration: Configuration) -> some View {
         OmniaLiquidGlassButtonBody(
             label: configuration.label,
             shape: shape,
             role: role,
+            element: element,
             isPressed: configuration.isPressed
         )
     }
@@ -148,7 +248,7 @@ private struct OmniaInteractiveLiquidGlass<S: Shape>: ViewModifier {
         content
             .contentShape(shape)
             .background(shape.fill(.black.opacity(opacity)))
-            .glassEffect(.clear.interactive(), in: shape)
+            .omniaGlass(.playerControls, base: .clear, interactive: true, in: shape)
             .scaleEffect(transform.scale)
             .offset(y: transform.verticalOffset)
             .animation(reduceMotion ? nil : .smooth(duration: 0.16), value: isHovering)
@@ -162,29 +262,32 @@ extension View {
         in shape: S,
         role: OmniaLiquidGlassSurfaceRole = .sidebar
     ) -> some View {
-        glassEffect(.clear, in: shape)
+        omniaGlass(.playerControls, base: .clear, in: shape)
     }
 
     func omniaCircularGlassButton(
-        role: OmniaLiquidGlassSurfaceRole = .control
+        role: OmniaLiquidGlassSurfaceRole = .control,
+        element: OmniaGlassElement = .actionButtons
     ) -> some View {
-        buttonStyle(OmniaLiquidGlassButtonStyle(shape: Circle(), role: role))
+        buttonStyle(OmniaLiquidGlassButtonStyle(shape: Circle(), role: role, element: element))
             .contentShape(Circle())
     }
 
     func omniaCapsuleGlassButton(
-        role: OmniaLiquidGlassSurfaceRole = .control
+        role: OmniaLiquidGlassSurfaceRole = .control,
+        element: OmniaGlassElement = .actionButtons
     ) -> some View {
-        buttonStyle(OmniaLiquidGlassButtonStyle(shape: Capsule(), role: role))
+        buttonStyle(OmniaLiquidGlassButtonStyle(shape: Capsule(), role: role, element: element))
             .contentShape(Capsule())
     }
 
     func omniaRoundedGlassButton(
         cornerRadius: CGFloat = 14,
-        role: OmniaLiquidGlassSurfaceRole = .control
+        role: OmniaLiquidGlassSurfaceRole = .control,
+        element: OmniaGlassElement = .panels
     ) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        return buttonStyle(OmniaLiquidGlassButtonStyle(shape: shape, role: role))
+        return buttonStyle(OmniaLiquidGlassButtonStyle(shape: shape, role: role, element: element))
             .contentShape(shape)
     }
 
@@ -205,7 +308,7 @@ extension View {
 
     func omniaModalGlass<S: Shape>(in shape: S) -> some View {
         background(shape.fill(.black.opacity(OmniaLiquidGlassSurfaceRole.modal.baseDarkeningOpacity)))
-            .glassEffect(.clear, in: shape)
+            .omniaGlass(.panels, base: .clear, in: shape)
             .clipShape(shape)
     }
 }
@@ -314,7 +417,7 @@ private struct DockedStreamsSheet<Content: View>: View {
                     width: min(proxy.size.width - 48, 900),
                     height: proxy.size.height * 0.88 + proxy.safeAreaInsets.bottom
                 )
-                .glassEffect(.regular, in: Self.shape)
+                .omniaGlass(.panels, in: Self.shape)
                 .clipShape(Self.shape)
                 .offset(y: dragOffset)
                 .accessibilityAddTraits(.isModal)

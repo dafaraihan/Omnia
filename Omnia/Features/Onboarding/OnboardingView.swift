@@ -69,14 +69,16 @@ struct OnboardingView: View {
                 switch step {
                 case .welcome: welcome
                 case .features:
-                    // The page dots sit over the bottom, so the last row scrolls clear.
-                    ScrollView { features.padding(.top, 12).padding(.bottom, 56) }
+                    // Stops above the page dots, so nothing scrolls under them.
+                    ScrollView { features.padding(.top, 12).padding(.bottom, 12) }
                         .scrollIndicators(.never)
+                        .padding(.bottom, 36)
                 case .account: accountStep
                 case .profile:
                     if isCompact {
-                        ScrollView { profileStep.padding(.bottom, 56) }
+                        ScrollView { profileStep.padding(.bottom, 12) }
                             .scrollIndicators(.never)
+                            .padding(.bottom, 36)
                     } else {
                         profileStep
                     }
@@ -155,7 +157,7 @@ struct OnboardingView: View {
             }
             HStack(spacing: 12) {
                 Button("Back") { step = .welcome }
-                    .buttonStyle(.glass)
+                    .omniaSystemGlassButton()
                     .controlSize(.large)
                 nextButton("Continue") { step = .account }
             }
@@ -275,7 +277,7 @@ struct OnboardingView: View {
                 .font(.headline)
                 .frame(minWidth: 180, minHeight: 30)
         }
-        .buttonStyle(.glassProminent)
+        .omniaSystemGlassButton(prominent: true)
         .tint(OmniaBrandColors.violet)
         .controlSize(.large)
         .disabled(!isEnabled)

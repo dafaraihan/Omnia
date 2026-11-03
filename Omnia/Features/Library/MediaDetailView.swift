@@ -612,11 +612,7 @@ struct MediaDetailView: View {
                 resumeProgress: playbackActionTitle == "Resume" ? resumeProgressPresentation : nil
             )
         }
-        #if os(macOS)
         .omniaCapsuleGlassButton()
-        #else
-        .buttonStyle(.plain)
-        #endif
     }
 
     /// Settings › Layout › Detail Page › Shuffle.

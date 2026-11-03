@@ -116,7 +116,7 @@ struct NuvioTopBar: View {
         .frame(width: width, height: barHeight)
         .clipShape(Capsule())
         .background { if reduceTransparency { OmniaPageBackground().clipShape(Capsule()) } }
-        .glassEffect(.regular, in: Capsule())
+        .omniaGlass(.navigationBar, in: Capsule())
         .contentShape(Capsule())
         .scaleEffect(reduceMotion || dragIndex == nil ? 1 : 1.025)
         .simultaneousGesture(pressGesture(tabWidth: tabWidth))

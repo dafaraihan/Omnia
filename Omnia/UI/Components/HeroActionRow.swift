@@ -85,22 +85,10 @@ struct HeroActionRow<Primary: View>: View {
         Button(action: action.perform) {
             Image(systemName: action.systemImage)
                 .font(.body.weight(.semibold))
-                #if os(macOS)
-                .foregroundStyle(.white)
-                #else
-                .foregroundStyle(actionForeground)
-                #endif
                 .frame(width: controlSize == .small ? 44 : 46, height: controlSize == .small ? 44 : 46)
                 .contentShape(Circle())
-                #if !os(macOS)
-                .background(actionBackground, in: Circle())
-                #endif
         }
-        #if os(macOS)
         .omniaCircularGlassButton()
-        #else
-        .buttonStyle(.plain)
-        #endif
         .disabled(!action.isEnabled)
         .accessibilityLabel(action.accessibilityLabel)
     }
@@ -109,30 +97,12 @@ struct HeroActionRow<Primary: View>: View {
         Button(action: libraryAction) {
             Image(systemName: isSaved ? "checkmark" : "plus")
                 .font(.body.weight(.semibold))
-                #if os(macOS)
-                .foregroundStyle(.white)
-                #else
-                .foregroundStyle(actionForeground)
-                #endif
                 .frame(width: controlSize == .small ? 44 : 46, height: controlSize == .small ? 44 : 46)
                 .contentShape(Circle())
-                #if !os(macOS)
-                .background(actionBackground, in: Circle())
-                #endif
         }
-        #if os(macOS)
         .omniaCircularGlassButton()
-        #else
-        .buttonStyle(.plain)
-        #endif
         .accessibilityLabel(isSaved ? "In My List" : "Add to My List")
     }
-
-    // Playback and library actions retain their high-contrast white treatment
-    // over artwork in both appearances; page appearance must not alter their
-    // cinematic affordance.
-    private var actionBackground: Color { .white }
-    private var actionForeground: Color { .black }
 }
 
 /// The identically styled primary pill used in every cinematic hero.
@@ -157,18 +127,10 @@ struct HeroPrimaryActionLabel: View {
                 .frame(width: 56)
             }
         }
-            #if os(macOS)
-            .foregroundStyle(.white)
-            #else
-            .foregroundStyle(.black)
-            #endif
             .padding(.horizontal, 14)
             // A stable, longer primary hit target makes Play, Resume, and
             // Rewatch feel like the same deliberate playback action.
             .frame(width: controlSize == .small ? 160 : 176, height: controlSize == .small ? 44 : 46)
             .contentShape(Capsule())
-            #if !os(macOS)
-            .background(.white, in: Capsule())
-            #endif
     }
 }

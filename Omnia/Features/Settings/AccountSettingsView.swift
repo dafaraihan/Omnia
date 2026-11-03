@@ -109,7 +109,7 @@ struct AccountSettingsView: View {
             Button("Edit Profile", systemImage: "pencil") {
                 editingProfile = .edit(profile)
             }
-            .buttonStyle(.glass)
+            .omniaSystemGlassButton()
         }
         .opacity(appeared ? 1 : 0)
     }
@@ -127,7 +127,7 @@ struct AccountSettingsView: View {
             stat(value: timeWatched, label: "Time Watched", symbol: "clock.fill")
         }
         .padding(.vertical, 18)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .omniaGlass(.panels, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .opacity(appeared ? 1 : 0)
         .offset(y: appeared ? 0 : 12)
     }
@@ -239,7 +239,7 @@ struct AccountSettingsView: View {
                     Label("Switch Profile", systemImage: "person.2.circle")
                         .frame(maxWidth: isCompact ? .infinity : nil)
                 }
-                .buttonStyle(.glassProminent)
+                .omniaSystemGlassButton(prominent: true)
                 .controlSize(.large)
             }
             Divider()
@@ -337,7 +337,7 @@ struct AccountSettingsView: View {
                     account.errorMessage = nil
                     isSigningIn = true
                 }
-                .buttonStyle(.glassProminent)
+                .omniaSystemGlassButton(prominent: true)
                 .tint(OmniaBrandColors.violet)
                 .disabled(!account.isConfigured)
                 if !account.isConfigured {
@@ -457,7 +457,7 @@ struct AccountSettingsView: View {
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .omniaGlass(.panels, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .opacity(appeared ? 1 : 0)
         .offset(y: appeared ? 0 : 16)
     }

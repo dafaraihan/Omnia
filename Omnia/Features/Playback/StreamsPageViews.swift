@@ -30,7 +30,7 @@ struct StreamsPageLayout<Panel: View>: View {
                         .frame(maxWidth: isWide ? 640 : .infinity, maxHeight: .infinity)
                         .background(.black.opacity(0.34), in: .rect(cornerRadius: 26, style: .continuous))
                         #if os(macOS)
-                        .glassEffect(.clear, in: .rect(cornerRadius: 26, style: .continuous))
+                        .omniaGlass(.panels, base: .clear, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
                         #endif
                         .clipShape(.rect(cornerRadius: 26, style: .continuous))
                         .overlay {
@@ -108,7 +108,7 @@ struct StreamsPlayerPanelLayout<Panel: View>: View {
                 .frame(maxHeight: .infinity)
                 .background(.black.opacity(0.45), in: .rect(cornerRadius: 26, style: .continuous))
                 #if os(macOS)
-                .glassEffect(.clear, in: .rect(cornerRadius: 26, style: .continuous))
+                .omniaGlass(.panels, base: .clear, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
                 #endif
                 .clipShape(.rect(cornerRadius: 26, style: .continuous))
                 .overlay {

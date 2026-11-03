@@ -1075,11 +1075,7 @@ struct HomeView: View {
                     NavigationLink(value: featured) {
                         HeroPrimaryActionLabel(title: "View Details")
                     }
-                    #if os(macOS)
                     .omniaCapsuleGlassButton()
-                    #else
-                    .buttonStyle(.plain)
-                    #endif
                 }
             }
             // AsyncImage keeps state while SwiftUI reuses a view tree.
@@ -1116,7 +1112,7 @@ struct HomeView: View {
                 NavigationLink(value: featured) {
                     HeroPrimaryActionLabel(title: "View Details")
                 }
-                .buttonStyle(.plain)
+                .omniaCapsuleGlassButton()
             }
             .id(featured.id)
             .transition(.heroIdentity)
@@ -1346,7 +1342,7 @@ private struct HeroNavigationButtonStyle: ButtonStyle {
             .background {
                 Capsule()
                     .fill(.clear)
-                    .glassEffect(.regular, in: Capsule())
+                    .omniaGlass(.panels, in: Capsule())
                     .opacity(isActive ? 1 : 0)
             }
             .contentShape(Capsule())

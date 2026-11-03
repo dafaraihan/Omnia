@@ -33,7 +33,7 @@ struct ShelfNavigationButton: View {
             .font(.body.weight(.semibold))
             .foregroundStyle(.primary.opacity(0.78))
             .frame(width: 40, height: 62)
-            .glassEffect(.regular.interactive(), in: Capsule())
+            .omniaGlass(.panels, interactive: true, in: Capsule())
             .contentShape(Capsule())
             .accessibilityLabel(label)
     }

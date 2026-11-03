@@ -88,6 +88,7 @@ enum SettingsRoute: Hashable, Sendable {
     case playbackResolver
     case playbackDiagnostics
     case appearance
+    case liquidGlass
     case posterCards
     case streams
     case continueWatching
@@ -108,7 +109,7 @@ enum SettingsRoute: Hashable, Sendable {
     /// The pages each root page opens, so search finds them from the root.
     var children: [SettingsRoute] {
         switch self {
-        case .appearance: [.home, .catalogs, .collections, .continueWatching, .progress, .upcoming, .posterCards, .detailPage, .streams]
+        case .appearance: [.liquidGlass, .home, .catalogs, .collections, .continueWatching, .progress, .upcoming, .posterCards, .detailPage, .streams]
         case .contentDiscovery: [.addons, .mediaServers, .liveTV, .plugins]
         case .videoPlayer: [.streamSelection, .subtitle, .playbackResolver, .playbackDiagnostics]
         case .account: [.tracking]
@@ -158,6 +159,7 @@ enum SettingsRoute: Hashable, Sendable {
         case .playbackResolver: "Playback Resolver"
         case .playbackDiagnostics: "Playback Diagnostics"
         case .appearance: "Layout"
+        case .liquidGlass: "Liquid Glass"
         case .posterCards: "Poster Card Style"
         case .streams: "Streams"
         case .continueWatching: "Continue Watching"
@@ -197,6 +199,7 @@ enum SettingsRoute: Hashable, Sendable {
         case .playbackResolver: "lock.shield"
         case .playbackDiagnostics: "stethoscope"
         case .appearance: "circle.lefthalf.filled"
+        case .liquidGlass: "drop.halffull"
         case .posterCards: "rectangle.portrait.on.rectangle.portrait"
         case .streams: "play.square.stack"
         case .continueWatching: "play.circle"
@@ -230,6 +233,7 @@ enum SettingsRoute: Hashable, Sendable {
         case .playbackResolver: ["endpoint", "bearer token", "approved add-ons", "approved HTTPS hosts"]
         case .playbackDiagnostics: ["diagnostics", "log", "errors", "failures", "could not play", "libmpv", "copy"]
         case .appearance: ["appearance", "theme", "system", "light", "dark", "accent", "color", "AMOLED", "black", "hover preview", "poster", "glow", "gradient", "top bar style", "glass glow", "adaptive", "compact", "expanded", "iPadOS", "standard"]
+        case .liquidGlass: ["liquid glass", "glass", "transparency", "frosted", "blur", "intensity"]
         case .streams: ["streams", "sources", "badges", "Fusion", "size", "add-on logo", "background", "cinematic", "search bar", "pin"]
         case .posterCards: ["poster", "card", "width", "size", "corner", "radius", "landscape", "depth", "glow", "sheen", "edge", "custom poster", "poster source", "RPDB", "rating posters"]
         case .continueWatching: ["continue watching", "resume", "style", "sort", "thumbnails", "finished"]

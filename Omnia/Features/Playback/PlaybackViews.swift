@@ -1659,7 +1659,7 @@ struct PlaybackExperienceView: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
-                    .glassEffect(.regular, in: .capsule)
+                    .omniaGlass(.playerControls, in: Capsule())
                     .padding(.top, 28)
                     .transition(.move(edge: .top).combined(with: .opacity))
                     .accessibilityAddTraits(.updatesFrequently)
@@ -1789,7 +1789,7 @@ struct PlaybackExperienceView: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
-                    .glassEffect(.regular, in: Capsule())
+                    .omniaGlass(.playerControls, in: Capsule())
                     .padding(28)
                     .transition(.opacity)
                     .accessibilityAddTraits(.updatesFrequently)
@@ -1883,7 +1883,7 @@ struct PlaybackExperienceView: View {
                         .foregroundStyle(.white)
                         .frame(width: 44, height: 44)
                         .contentShape(Circle())
-                        .glassEffect(.regular, in: Circle())
+                        .omniaGlass(.playerControls, in: Circle())
                 }
                 .buttonStyle(.plain)
                 .padding(18)
@@ -2531,7 +2531,7 @@ private struct PlaybackPromptOverlay: View {
                         .frame(minHeight: 46)
                         .contentShape(Capsule())
                 }
-                .omniaCapsuleGlassButton()
+                .omniaCapsuleGlassButton(element: .playerControls)
                 .keyboardShortcut(.return, modifiers: [])
                 .accessibilityHint("Seeks past the detected segment")
             }
@@ -2585,7 +2585,7 @@ private struct PlaybackPromptOverlay: View {
                             .frame(minHeight: 32)
                             .contentShape(Capsule())
                     }
-                    .omniaCapsuleGlassButton()
+                    .omniaCapsuleGlassButton(element: .playerControls)
                     .accessibilityHint("Plays the next episode")
                     if let cancel {
                         Button(action: cancel) {
@@ -2595,7 +2595,7 @@ private struct PlaybackPromptOverlay: View {
                                 .frame(minHeight: 32)
                                 .contentShape(Capsule())
                         }
-                        .omniaCapsuleGlassButton()
+                        .omniaCapsuleGlassButton(element: .playerControls)
                         .accessibilityHint("Stops the next episode from starting automatically")
                     }
                 }
@@ -2604,7 +2604,7 @@ private struct PlaybackPromptOverlay: View {
             .frame(width: 230, alignment: .leading)
         }
         .padding(12)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .omniaGlass(.playerControls, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Up Next")
     }
@@ -2823,7 +2823,7 @@ private struct PlaybackTouchGestures: View {
             .foregroundStyle(.white)
             .padding(.horizontal, 18)
             .padding(.vertical, 12)
-            .glassEffect(.regular, in: Capsule())
+            .omniaGlass(.playerControls, in: Capsule())
             .allowsHitTesting(false)
             .transition(.opacity)
             .accessibilityAddTraits(.updatesFrequently)

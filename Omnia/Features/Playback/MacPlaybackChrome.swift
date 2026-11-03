@@ -508,15 +508,15 @@ struct MacSubtitlePlaybackPreview: View {
 
 private extension View {
     func playbackCircleGlassButton() -> some View {
-        omniaCircularGlassButton()
+        omniaCircularGlassButton(element: .playerControls)
     }
 
     func playbackRoundedGlassButton(cornerRadius: CGFloat = 14) -> some View {
-        omniaRoundedGlassButton(cornerRadius: cornerRadius)
+        omniaRoundedGlassButton(cornerRadius: cornerRadius, element: .playerControls)
     }
 
     func playbackCapsuleGlassButton() -> some View {
-        omniaCapsuleGlassButton()
+        omniaCapsuleGlassButton(element: .playerControls)
     }
 }
 
@@ -699,7 +699,7 @@ struct MacPlaybackChrome: View {
                         .font(.callout.weight(.semibold))
                         .padding(.horizontal, 14)
                         .padding(.vertical, 8)
-                        .glassEffect(.regular, in: Capsule())
+                        .omniaGlass(.playerControls, in: Capsule())
                         .padding(.top, 70)
                         .transition(.opacity)
                 }
@@ -789,12 +789,19 @@ struct MacPlaybackChrome: View {
                         }
                     }
                     #else
+                    // Left tappable when unavailable, so it can say why.
                     circleButton(
                         symbol: playback.isPictureInPictureActive ? "pip.exit" : "pip.enter",
                         label: playback.isPictureInPictureActive ? "Exit Picture in Picture" : "Enter Picture in Picture",
-                        hint: "Requires a source supported by Picture in Picture",
-                        isEnabled: playback.isPictureInPictureActive || playback.isPictureInPictureAvailable
-                    ) { playback.togglePictureInPicture() }
+                        hint: "Requires a source supported by Picture in Picture"
+                    ) {
+                        if playback.isPictureInPictureActive || playback.isPictureInPictureAvailable {
+                            playback.togglePictureInPicture()
+                        } else {
+                            showPictureInPictureNotice()
+                        }
+                    }
+                    .opacity(playback.isPictureInPictureActive || playback.isPictureInPictureAvailable ? 1 : 0.5)
                     #endif
                 }
             }
@@ -1137,7 +1144,7 @@ struct MacPlaybackChrome: View {
             for: .scrollIndicators
         )
         .contentMargins(.trailing, 6, for: .scrollIndicators)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
+        .omniaGlass(.playerControls, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
         .accessibilityElement(children: .contain)
     }
 
@@ -1174,7 +1181,7 @@ struct MacPlaybackChrome: View {
                         .font(.subheadline.weight(.semibold))
                     }
                     .menuStyle(.button)
-                    .buttonStyle(.glass)
+                    .omniaSystemGlassButton(.playerControls)
                     .fixedSize()
                     .accessibilityLabel("Season")
                 } else if let season = selectedEpisodeSeason {
@@ -1308,7 +1315,7 @@ struct MacPlaybackChrome: View {
                         .lineLimit(1)
                 }
                 .menuStyle(.button)
-                .buttonStyle(.glass)
+                .omniaSystemGlassButton(.playerControls)
                 .fixedSize()
                 .accessibilityLabel("Category")
             }
@@ -1438,6 +1445,10 @@ struct MacPlaybackChrome: View {
                 )
             }
         }
+    }
+
+    private func showPictureInPictureNotice() {
+        showChannelNotice("Picture in Picture doesn't work with this video's format yet.")
     }
 
     private func showChannelNotice(_ text: String) {

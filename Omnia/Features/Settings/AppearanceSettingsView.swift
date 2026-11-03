@@ -70,6 +70,7 @@ struct AppearanceSettingsView: View {
             }
 
             Section {
+                SettingsRouteLink(route: .liquidGlass, summary: liquidGlassSummary)
                 Toggle(isOn: settings.binding(\.display.amoledBlack)) {
                     Text("AMOLED Black")
                     Text("Use true black behind pages in Dark appearance.")
@@ -153,6 +154,11 @@ struct AppearanceSettingsView: View {
             }
         }
         .omniaNavigationTitle("Layout")
+    }
+
+    private var liquidGlassSummary: String {
+        let glass = settings.preferences.display.liquidGlass
+        return glass.isEnabled ? glass.style.title : "Off"
     }
 
     private var homeLayoutSummary: String {

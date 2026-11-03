@@ -342,7 +342,7 @@ struct AuthPanel: View {
             .font(.headline)
             .frame(maxWidth: .infinity, minHeight: 30)
         }
-        .buttonStyle(.glassProminent)
+        .omniaSystemGlassButton(prominent: true)
         .tint(OmniaBrandColors.violet)
         .controlSize(.large)
         .disabled(!isEnabled)
@@ -360,7 +360,7 @@ struct AuthPanel: View {
             }
             .frame(maxWidth: .infinity, minHeight: 28)
         }
-        .buttonStyle(.glass)
+        .omniaSystemGlassButton()
         .controlSize(.large)
     }
 

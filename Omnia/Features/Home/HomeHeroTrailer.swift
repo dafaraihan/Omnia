@@ -212,12 +212,7 @@ struct HomeHeroTrailerMuteButton: View {
                 .contentTransition(.symbolEffect(.replace))
                 .frame(width: 38, height: 38)
         }
-        #if os(macOS)
         .omniaCircularGlassButton()
-        #else
-        .buttonStyle(.plain)
-        .background(.ultraThinMaterial, in: .circle)
-        #endif
         .help(model.isMuted ? "Unmute Trailer" : "Mute Trailer")
         .accessibilityLabel(model.isMuted ? "Unmute trailer" : "Mute trailer")
         .transition(.opacity.combined(with: .scale(scale: 0.85)))

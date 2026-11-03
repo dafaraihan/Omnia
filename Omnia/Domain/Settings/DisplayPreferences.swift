@@ -736,6 +736,63 @@ nonisolated struct CardAppearance: Codable, Equatable, Sendable {
 
 /// How Omnia looks: accent, cards, Continue Watching and the title page.
 /// Every value here is read by the views that draw it.
+/// The parts of the app the Liquid Glass settings can switch.
+enum OmniaGlassElement: Sendable {
+    case navigationBar, actionButtons, playerControls, panels
+}
+
+enum LiquidGlassStyle: String, Codable, CaseIterable, Identifiable, Sendable {
+    /// Each part keeps the glass designed for it.
+    case standard
+    case clear
+    case frosted
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .standard: "Standard"
+        case .clear: "Clear"
+        case .frosted: "Frosted"
+        }
+    }
+}
+
+struct LiquidGlassPreferences: Codable, Equatable, Sendable {
+    var isEnabled = true
+    var style = LiquidGlassStyle.standard
+    /// 0.5 is the designed look. Lower is more see-through, higher more frosted.
+    var intensity = 0.5
+    var navigationBar = true
+    var actionButtons = true
+    var playerControls = true
+    var panels = true
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = LiquidGlassPreferences()
+        isEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .isEnabled)) ?? d.isEnabled
+        style = (try? c.decodeIfPresent(LiquidGlassStyle.self, forKey: .style)) ?? d.style
+        intensity = min(max((try? c.decodeIfPresent(Double.self, forKey: .intensity)) ?? d.intensity, 0), 1)
+        navigationBar = (try? c.decodeIfPresent(Bool.self, forKey: .navigationBar)) ?? d.navigationBar
+        actionButtons = (try? c.decodeIfPresent(Bool.self, forKey: .actionButtons)) ?? d.actionButtons
+        playerControls = (try? c.decodeIfPresent(Bool.self, forKey: .playerControls)) ?? d.playerControls
+        panels = (try? c.decodeIfPresent(Bool.self, forKey: .panels)) ?? d.panels
+    }
+
+    func applies(to element: OmniaGlassElement) -> Bool {
+        guard isEnabled else { return false }
+        switch element {
+        case .navigationBar: return navigationBar
+        case .actionButtons: return actionButtons
+        case .playerControls: return playerControls
+        case .panels: return panels
+        }
+    }
+}
+
 nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
     var accentTheme: AccentTheme = .blue
     var customAccentHex = "7C5CFF"
@@ -762,6 +819,8 @@ nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
     var continueWatchingCard: ContinueWatchingCardPreferences = .default { didSet { rememberCardStyle() } }
     var continueWatchingStyle: ContinueWatchingStyle = .wide { didSet { rememberCardStyle() } }
     var continueWatchingSort: ContinueWatchingSort = .recent
+    /// Settings › Layout › Liquid Glass.
+    var liquidGlass = LiquidGlassPreferences()
     /// The title and details under Wide and Poster cards.
     var continueWatchingShowsLabels = true
     var continueWatchingEpisodeThumbnails = true
@@ -822,6 +881,7 @@ nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
             continueWatchingCard = d.continueWatchingCard
         }
         continueWatchingStyle = (try? c.decodeIfPresent(ContinueWatchingStyle.self, forKey: .continueWatchingStyle)) ?? d.continueWatchingStyle
+        liquidGlass = (try? c.decodeIfPresent(LiquidGlassPreferences.self, forKey: .liquidGlass)) ?? d.liquidGlass
         continueWatchingShowsLabels = (try? c.decodeIfPresent(Bool.self, forKey: .continueWatchingShowsLabels)) ?? d.continueWatchingShowsLabels
         continueWatchingSort = (try? c.decodeIfPresent(ContinueWatchingSort.self, forKey: .continueWatchingSort)) ?? d.continueWatchingSort
         continueWatchingEpisodeThumbnails = (try? c.decodeIfPresent(Bool.self, forKey: .continueWatchingEpisodeThumbnails)) ?? d.continueWatchingEpisodeThumbnails

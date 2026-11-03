@@ -44,7 +44,7 @@ struct ProfilePickerView: View {
                 Button(isManaging ? "Done" : "Manage Profiles") {
                     withAnimation(.smooth) { isManaging.toggle() }
                 }
-                .buttonStyle(.glass)
+                .omniaSystemGlassButton()
                 .controlSize(.large)
                 .opacity(appeared ? 1 : 0)
             }
@@ -55,7 +55,7 @@ struct ProfilePickerView: View {
                 Button(action: onCancel) {
                     Label("Back", systemImage: "chevron.left")
                 }
-                .buttonStyle(.glass)
+                .omniaSystemGlassButton()
                 .keyboardShortcut(.cancelAction)
                 .padding(20)
                 .opacity(appeared ? 1 : 0)
@@ -378,7 +378,7 @@ struct ProfileEditorView: View {
                     Button("Use Initial Instead", systemImage: "textformat") {
                         avatarID = nil
                     }
-                    .buttonStyle(.glass)
+                    .omniaSystemGlassButton()
                     .disabled(avatarID == nil)
                 }
             }
