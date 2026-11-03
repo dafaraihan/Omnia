@@ -112,13 +112,6 @@ nonisolated enum TopBarStyle: String, Codable, CaseIterable, Identifiable, Senda
         }
     }
     var isNuvio: Bool { self != .native }
-    static var availableStyles: [Self] {
-        #if os(iOS)
-        allCases
-        #else
-        [.adaptive, .expanded, .compact]
-        #endif
-    }
     init(from decoder: Decoder) throws {
         let value = try decoder.singleValueContainer().decode(String.self)
         self = Self(rawValue: value) ?? .adaptive

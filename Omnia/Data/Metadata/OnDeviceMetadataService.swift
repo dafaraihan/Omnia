@@ -38,6 +38,7 @@ actor OnDeviceMetadataService {
 
     private typealias JSON = [String: Any]
 
+    private var cachedTVDBArtworkTypes: [JSON]?
     private let session: URLSession = {
         let configuration = URLSessionConfiguration.default
         configuration.timeoutIntervalForRequest = 20
@@ -415,7 +416,9 @@ actor OnDeviceMetadataService {
             }
             for try await season in group { resolved.append(season) }
         }
-        return resolved.sorted { $0.0 < $1.0 }.map(\.1)
+        // A season with no episodes (unaired, or its request failed) gets no
+        // tab; enrichment keeps the source's own copy of it.
+        return resolved.sorted { $0.0 < $1.0 }.map(\.1).filter { ($0["episodes"] as? [JSON])?.isEmpty == false }
     }
 
     // MARK: TVDB
@@ -482,6 +485,14 @@ actor OnDeviceMetadataService {
                 item["posterPath"] = path
             }
         }
+    }
+
+    /// TVDB's fixed list of artwork kinds, kept once it has loaded.
+    private func tvdbArtworkTypes() async -> [JSON] {
+        if let cachedTVDBArtworkTypes { return cachedTVDBArtworkTypes }
+        let types = Self.records((try? await tvdb("/artwork/types"))?["data"])
+        if !types.isEmpty { cachedTVDBArtworkTypes = types }
+        return types
     }
 
     private func tvdbTitleDetails(_ value: JSON, type: String, language: String, modules: TMDBEnrichmentPreferences) async -> JSON {
@@ -581,8 +592,7 @@ actor OnDeviceMetadataService {
                 throw OnDeviceMetadataError.unusableResponse
             }
             normalized["details"] = await tvdbTitleDetails(data, type: type, language: language, modules: modules)
-            let artworkTypes = (try? await tvdb("/artwork/types")) ?? [:]
-            Self.applyTVDBArtwork(data, to: &normalized, types: Self.records(artworkTypes["data"]))
+            Self.applyTVDBArtwork(data, to: &normalized, types: await tvdbArtworkTypes())
             let translations = data["translations"] as? JSON ?? [:]
             let languageCode = Self.tvdbLanguage(language)
             if let title = Self.records(translations["nameTranslations"]).first(where: { $0["language"] as? String == languageCode }).flatMap({ Self.text($0["name"]) }) {

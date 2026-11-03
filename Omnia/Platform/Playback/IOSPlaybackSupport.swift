@@ -17,10 +17,13 @@ final class IOSOutputVolumeController {
         }
     }
 
-    func setVolume(_ value: Double) {
-        guard let slider = view.subviews.compactMap({ $0 as? UISlider }).first, slider.isEnabled else { return }
+    /// False when the output route doesn't let the app change its volume.
+    @discardableResult
+    func setVolume(_ value: Double) -> Bool {
+        guard let slider = view.subviews.compactMap({ $0 as? UISlider }).first, slider.isEnabled else { return false }
         slider.value = Float(min(max(value, 0), 1))
         slider.sendActions(for: .valueChanged)
+        return true
     }
 }
 

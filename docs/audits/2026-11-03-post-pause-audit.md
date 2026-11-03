@@ -118,3 +118,19 @@ Not checked anywhere, and needing a physical device: PiP, hardware volume, scree
 3. Messy: volume value, trailer buffering, Mac Standard, TVDB key notice, artwork types, empty seasons, dead code.
 
 PiP on MKV stays as described. A real fix needs an mpv sample-buffer output, which is separate work.
+
+## Fixes applied
+
+All Broken, Placeholder and Messy items above are fixed on `main`.
+
+| Group | Change | Verified |
+|---|---|---|
+| Broken and Placeholder | Stable digest for the detail cache key, old files pruned once per launch | Build only: the simulators have no provider key, so no entries were written |
+| | TMDB and TVDB Enrichment apply when not listed in Metadata Sources, at lowest priority; anime keeps its own order | Build only: needs a TVDB key |
+| | Trailer closes at its end; buffering no longer reads as paused | Build only |
+| | Continue Watching preview draws a real title | Ran on iPhone |
+| iPad | Home hero and shelves run behind the sidebar; text and buttons stay clear | Ran on iPad Air 11-inch, landscape and portrait |
+| | Sidebar starts closed when upright | Ran on iPad Air 11-inch |
+| Messy | Volume value set at once, confirmed by the observer | Build only: needs a device |
+| | Standard selectable on the Mac again | Build only |
+| | TVDB row says when the key is missing; artwork types cached; empty TMDB seasons dropped; dead code removed | Build only |

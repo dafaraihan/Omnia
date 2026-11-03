@@ -833,8 +833,12 @@ final class PlaybackSession {
         player?.setVolume(100)
         #endif
         avPlayer?.volume = 1
-        outputVolumeController.setVolume(min(max(value, 0), 1))
-        volume = Double(AVAudioSession.sharedInstance().outputVolume)
+        // outputVolume updates a moment later, and its observer confirms then;
+        // reading it here would show the previous level during a drag.
+        let requested = min(max(value, 0), 1)
+        volume = outputVolumeController.setVolume(requested)
+            ? requested
+            : Double(AVAudioSession.sharedInstance().outputVolume)
         #endif
     }
 

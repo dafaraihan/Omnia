@@ -34,12 +34,6 @@ struct ContinueWatchingCard: View {
         }
     }
 
-    /// Nuvio's Card style: a landscape card 1.2 times its landscape poster,
-    /// so it follows Poster Card Style's width.
-    static func cardStyleWidth(for display: DisplayPreferences) -> CGFloat {
-        (display.continueWatchingCard.size.posterWidth(for: display) * 180 / 110 * 1.2).rounded()
-    }
-
     private var style: ContinueWatchingStyle { display.continueWatchingStyle }
     private var isPoster: Bool { style == .poster }
 

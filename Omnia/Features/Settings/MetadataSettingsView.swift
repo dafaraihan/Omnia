@@ -39,7 +39,7 @@ struct MetadataSettingsView: View {
                     route: .tvdbEnrichment,
                     providerID: "tvdb",
                     title: "TVDB Enrichment",
-                    detail: settings.preferences.integrations.tvdb.enabled ? "On" : "Off"
+                    detail: tvdbSummary
                 )
                 IntegrationLinkRow(
                     route: .animeEnrichment,
@@ -80,6 +80,11 @@ struct MetadataSettingsView: View {
         _ = keyChanges
         guard let credential = UserManagedProviderCredential(rawValue: id) else { return "" }
         return ProviderCredentialStore.isConfigured(credential) ? "Saved" : "Not set"
+    }
+
+    private var tvdbSummary: String {
+        guard settings.preferences.integrations.tvdb.enabled else { return "Off" }
+        return ProviderCredentialStore.isConfigured(.tvdb) ? "On" : "Needs your TVDB API key"
     }
 
     private var tmdbSummary: String {

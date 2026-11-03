@@ -95,7 +95,7 @@ struct AppearanceSettingsView: View {
                         barStyleTitle,
                         subtitle: settings.preferences.display.topBarStyle.detail,
                         selection: settings.binding(\.display.topBarStyle),
-                        options: TopBarStyle.availableStyles
+                        options: TopBarStyle.allCases
                     ) { $0.title }
 
                     if settings.preferences.display.topBarStyle.isNuvio {
