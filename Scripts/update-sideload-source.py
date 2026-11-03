@@ -5,9 +5,12 @@ Run from the release step, after packaging the .ipa:
 
     Scripts/update-sideload-source.py --ipa Omnia-0.3.5-iPhone-iPad.ipa --notes notes.md
 
-Updates store.json at the repository root and commits it. Everything about the
-version is read from the .ipa itself. Run it after the release is published, and
-push the commit, so SideStore never offers a version whose download isn't there.
+Removes the signing profile from the .ipa, because it lists the developer's
+device IDs and SideStore and AltStore re-sign the app anyway. Then updates
+store.json at the repository root and commits it. Everything about the version
+is read from the .ipa itself. Run it before uploading the .ipa, and push the
+commit after the release is published, so SideStore never offers a version whose
+download isn't there.
 """
 import argparse
 import datetime
@@ -30,6 +33,13 @@ ROUTINE_ENTITLEMENTS = {
     "get-task-allow",
     "keychain-access-groups",
 }
+
+
+def strip_signing_profile(path):
+    with zipfile.ZipFile(path) as archive:
+        extras = [n for n in archive.namelist() if n.endswith("/embedded.mobileprovision") or n.startswith("__MACOSX/")]
+    if extras:
+        subprocess.run(["zip", "-q", "-d", str(path), *extras], check=True)
 
 
 def read_ipa(path):
@@ -60,6 +70,7 @@ def main():
     parser.add_argument("--branch", default="main")
     args = parser.parse_args()
 
+    strip_signing_profile(args.ipa)
     info, entitlements = read_ipa(args.ipa)
     version = info["CFBundleShortVersionString"]
     raw = f"https://raw.githubusercontent.com/{args.repo}/{args.branch}"
