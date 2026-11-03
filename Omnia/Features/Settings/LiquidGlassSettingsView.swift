@@ -146,6 +146,9 @@ private struct LiquidGlassPreview: View {
         }
         .frame(height: OmniaDevice.isPhone ? 200 : 240)
         .clipped()
+        .labelStyle(.titleAndIcon)
+        .environment(\.colorScheme, .dark)
+        .allowsHitTesting(false)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Preview of the current Liquid Glass settings")
     }
