@@ -55,7 +55,7 @@ private struct MediaHoverPreviewCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             ZStack(alignment: .bottomLeading) {
-                LinearGradient(colors: item.artworkColors, startPoint: .topLeading, endPoint: .bottomTrailing)
+                MediaItem.placeholderArtworkColor
                 CachedArtworkImage(url: item.backdropURL ?? item.artworkURL, size: CGSize(width: 320, height: 180)) { phase in
                     phase.image?.resizable().scaledToFill()
                 }

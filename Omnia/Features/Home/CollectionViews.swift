@@ -157,7 +157,7 @@ struct CollectionFolderTile: View {
 
     private var fallback: some View {
         ZStack {
-            LinearGradient(colors: MediaItem.placeholderArtworkColors, startPoint: .topLeading, endPoint: .bottomTrailing)
+            MediaItem.placeholderArtworkColor
             if let emoji = folder.coverEmoji {
                 Text(emoji)
                     .font(.system(size: 44))

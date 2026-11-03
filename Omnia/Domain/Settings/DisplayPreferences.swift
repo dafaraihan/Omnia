@@ -736,6 +736,25 @@ nonisolated struct CardAppearance: Codable, Equatable, Sendable {
 
 /// How Omnia looks: accent, cards, Continue Watching and the title page.
 /// Every value here is read by the views that draw it.
+/// The fade from a hero's artwork into the page below it.
+struct HeroBlendPreferences: Codable, Equatable, Sendable {
+    var isEnabled = true
+    /// How solid the fade gets, from 0 to 1.
+    var strength = 1.0
+    /// How much of the hero the fade covers, from the bottom.
+    var height = 0.58
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = HeroBlendPreferences()
+        isEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .isEnabled)) ?? d.isEnabled
+        strength = min(max((try? c.decodeIfPresent(Double.self, forKey: .strength)) ?? d.strength, 0.2), 1)
+        height = min(max((try? c.decodeIfPresent(Double.self, forKey: .height)) ?? d.height, 0.2), 1)
+    }
+}
+
 /// The parts of the app the Liquid Glass settings can switch.
 enum OmniaGlassElement: Sendable {
     case navigationBar, actionButtons, playerControls, panels
@@ -821,6 +840,8 @@ nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
     var continueWatchingSort: ContinueWatchingSort = .recent
     /// Settings › Layout › Liquid Glass.
     var liquidGlass = LiquidGlassPreferences()
+    /// Settings › Layout › Home Layout › Hero.
+    var heroBlend = HeroBlendPreferences()
     /// The title and details under Wide and Poster cards.
     var continueWatchingShowsLabels = true
     var continueWatchingEpisodeThumbnails = true
@@ -881,6 +902,7 @@ nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
             continueWatchingCard = d.continueWatchingCard
         }
         continueWatchingStyle = (try? c.decodeIfPresent(ContinueWatchingStyle.self, forKey: .continueWatchingStyle)) ?? d.continueWatchingStyle
+        heroBlend = (try? c.decodeIfPresent(HeroBlendPreferences.self, forKey: .heroBlend)) ?? d.heroBlend
         liquidGlass = (try? c.decodeIfPresent(LiquidGlassPreferences.self, forKey: .liquidGlass)) ?? d.liquidGlass
         continueWatchingShowsLabels = (try? c.decodeIfPresent(Bool.self, forKey: .continueWatchingShowsLabels)) ?? d.continueWatchingShowsLabels
         continueWatchingSort = (try? c.decodeIfPresent(ContinueWatchingSort.self, forKey: .continueWatchingSort)) ?? d.continueWatchingSort

@@ -103,6 +103,26 @@ struct HomeSettingsView: View {
     /// The hero carousel's pace and Nuvio Enhanced's hero trailer options.
     private var heroTrailerSection: some View {
         Section {
+            Toggle(isOn: settings.binding(\.display.heroBlend.isEnabled)) {
+                settingLabel(
+                    "Gradient Overlay",
+                    detail: "Fade the hero's artwork into the page below it. Off while a trailer plays on iPad and Mac."
+                )
+            }
+            if settings.preferences.display.heroBlend.isEnabled {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Overlay Strength")
+                    Slider(value: settings.binding(\.display.heroBlend.strength), in: 0.2...1) {
+                        Text("Overlay Strength")
+                    }
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Overlay Height")
+                    Slider(value: settings.binding(\.display.heroBlend.height), in: 0.2...1) {
+                        Text("Overlay Height")
+                    }
+                }
+            }
             Toggle(isOn: settings.binding(\.heroTrailer.autoAdvance)) {
                 settingLabel(
                     "Auto-Advance",

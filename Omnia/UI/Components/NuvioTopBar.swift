@@ -67,6 +67,8 @@ struct NuvioTopBar: View {
     @Environment(ProfileStore.self) private var profiles
     @State private var isHovered = false
     @State private var isPressing = false
+    @State private var pressedDestination: AppDestination?
+    @State private var lastPress = Date.distantPast
     @State private var dragIndex: Int?
     @State private var pointer: CGPoint?
     @State private var glowOpacity: Double = 0
@@ -216,7 +218,10 @@ struct NuvioTopBar: View {
 
     private func tab(_ destination: AppDestination, isHighlighted: Bool) -> some View {
         let layout = stacksLabels ? AnyLayout(VStackLayout(spacing: 2)) : AnyLayout(HStackLayout(spacing: 6))
-        return Button { select(destination) } label: {
+        // A press has already selected the tab; this action is for the keyboard.
+        return Button {
+            if Date().timeIntervalSince(lastPress) > 0.6 { select(destination) }
+        } label: {
             layout {
                 icon(destination, isHighlighted: isHighlighted)
                     .frame(width: destination == .settings && profiles.activeProfile != nil ? avatarSize : Self.iconSize + 4)
@@ -285,29 +290,39 @@ struct NuvioTopBar: View {
 
     // MARK: Interaction
 
+    /// Selects on touch down, like a system tab bar, so the tab answers
+    /// straight away rather than on release. Dragging moves across the tabs.
     private func pressGesture(tabWidth: CGFloat) -> some Gesture {
-        // Starts only once the pointer moves, so a tap is left to the tab's button.
-        DragGesture(minimumDistance: 6, coordinateSpace: .local)
+        DragGesture(minimumDistance: 0, coordinateSpace: .local)
             .onChanged { value in
                 pointer = value.location
+                lastPress = Date()
                 if !isPressing {
                     isPressing = true
                     withAnimation(reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.9)) { glowOpacity = 1 }
+                    let target = index(at: value.location.x, tabWidth: tabWidth)
+                    if destinations.indices.contains(target) {
+                        pressedDestination = destinations[target]
+                        select(destinations[target])
+                    }
+                } else if hypot(value.translation.width, value.translation.height) > 6 {
+                    dragIndex = index(at: value.location.x, tabWidth: tabWidth)
                 }
-                dragIndex = index(at: value.location.x, tabWidth: tabWidth)
             }
             .onEnded { value in
                 let target = index(at: value.location.x, tabWidth: tabWidth)
                 let isInside = value.location.y >= -12 && value.location.y <= barHeight + 12
                 isPressing = false
                 dragIndex = nil
+                lastPress = Date()
                 withAnimation(reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.9)) {
                     glowOpacity = 0
                     pointer = nil
                 }
-                if isInside, destinations.indices.contains(target) {
+                if isInside, destinations.indices.contains(target), destinations[target] != pressedDestination {
                     select(destinations[target])
                 }
+                pressedDestination = nil
             }
     }
 

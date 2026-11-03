@@ -201,26 +201,40 @@ struct HomeArtworkBackground: View {
     }
 }
 
-/// Melts a hero's lower part into the artwork wash under it, so the hero and
-/// the rows below read as one surface.
+/// Melts a hero's lower part into what sits under it: the artwork wash with
+/// Dynamic Background Color, otherwise the page. Set in Settings › Layout ›
+/// Home Layout › Hero.
 struct HeroBottomBlend: View {
+    @Environment(\.displayPreferences) private var display
+
     let item: MediaItem
+    var usesWash: Bool
 
     var body: some View {
-        HomeArtworkBackground(item: item)
-            .environment(\.colorScheme, .dark)
-            .mask {
-                LinearGradient(
-                    stops: [
-                        .init(color: .clear, location: 0.42),
-                        .init(color: .black.opacity(0.55), location: 0.66),
-                        .init(color: .black.opacity(0.92), location: 0.84),
-                        .init(color: .black, location: 0.94)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
+        let blend = display.heroBlend
+        let top = 1 - blend.height
+        Group {
+            if usesWash {
+                HomeArtworkBackground(item: item).environment(\.colorScheme, .dark)
+            } else {
+                OmniaPageBackground()
             }
+        }
+        .mask {
+            LinearGradient(
+                stops: [
+                    .init(color: .clear, location: top),
+                    .init(color: .black.opacity(0.55), location: top + blend.height * 0.41),
+                    .init(color: .black.opacity(0.92), location: top + blend.height * 0.72),
+                    .init(color: .black, location: top + blend.height * 0.9)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
+        .opacity(blend.strength)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 
@@ -339,11 +353,7 @@ struct HeroAccentBackground: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: item.artworkColors,
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+            MediaItem.placeholderArtworkColor
 
             if let url = item.backdropURL ?? item.artworkURL {
                 // The fill image is laid out as an overlay so its aspect-fill size
@@ -522,11 +532,7 @@ struct WindowHeroBackdrop: View {
                     // Home's Card hero draws its own artwork inside the card.
                     if !isHome || homeLayout.preferences.heroStyle == .fullBleed {
                         ZStack {
-                            LinearGradient(
-                                colors: presentation.item.artworkColors,
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
+                            MediaItem.placeholderArtworkColor
 
                             FeaturedBackdrop(
                                 item: presentation.item,

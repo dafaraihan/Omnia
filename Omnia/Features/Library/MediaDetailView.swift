@@ -240,8 +240,8 @@ struct MediaDetailView: View {
 
             // Same as Home: the hero melts into the page's artwork colour, and
             // on iPad and Mac a playing trailer stays uncovered.
-            if usesArtworkBackground, OmniaDevice.isPhone || !heroTrailer.isVisible {
-                HeroBottomBlend(item: displayItem)
+            if settings.preferences.display.heroBlend.isEnabled, OmniaDevice.isPhone || !heroTrailer.isVisible {
+                HeroBottomBlend(item: displayItem, usesWash: usesArtworkBackground)
                     .transition(.opacity)
             }
             if heroTrailer.isVisible {
@@ -284,12 +284,13 @@ struct MediaDetailView: View {
             #endif
             }
         }
-        // In the hero's bottom-right corner, scrolling away with it
-        // (Dafa, 2026-10-22).
-        .overlay(alignment: .bottomTrailing) {
+        // In the hero's bottom-right corner, scrolling away with it, or
+        // top-right on iPhone, as on Home.
+        .overlay(alignment: OmniaDevice.isPhone ? .topTrailing : .bottomTrailing) {
             HomeHeroTrailerMuteButton(model: heroTrailer)
-                .padding(.trailing, 28)
-                .padding(.bottom, 34)
+                .padding(.trailing, OmniaDevice.isPhone ? 16 : 28)
+                .padding(.top, OmniaDevice.isPhone ? 62 : 0)
+                .padding(.bottom, OmniaDevice.isPhone ? 0 : 34)
                 .animation(.snappy(duration: 0.25), value: heroTrailer.isVisible)
         }
         .frame(maxWidth: .infinity)

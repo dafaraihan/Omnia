@@ -551,7 +551,7 @@ struct HomeView: View {
     private func hero(_ featured: MediaItem) -> some View {
         ZStack(alignment: .bottomLeading) {
             if isCardHero {
-                LinearGradient(colors: featured.artworkColors, startPoint: .topLeading, endPoint: .bottomTrailing)
+                MediaItem.placeholderArtworkColor
             }
 
             Group {
@@ -584,8 +584,8 @@ struct HomeView: View {
             // Dynamic Background Color: the hero melts into the artwork's
             // colour, the same one the rows below sit on, so there is no edge.
             // On iPad and Mac a playing trailer stays uncovered.
-            if usesDynamicBackground, !isCardHero, OmniaDevice.isPhone || !heroTrailer.isVisible {
-                HeroBottomBlend(item: featured)
+            if settings.preferences.display.heroBlend.isEnabled, !isCardHero, OmniaDevice.isPhone || !heroTrailer.isVisible {
+                HeroBottomBlend(item: featured, usesWash: usesDynamicBackground)
                     .transition(.opacity)
             }
             if heroTrailer.isVisible, !isCardHero {
@@ -1249,7 +1249,7 @@ private struct UpcomingEpisodeCard: View {
         NavigationLink(value: item.series) {
             VStack(alignment: .leading, spacing: 8) {
                 ZStack(alignment: .bottomLeading) {
-                    LinearGradient(colors: item.series.artworkColors, startPoint: .topLeading, endPoint: .bottomTrailing)
+                    MediaItem.placeholderArtworkColor
                     CachedArtworkImage(
                         url: item.episode.stillURL ?? item.series.backdropURL ?? item.series.artworkURL,
                         size: CGSize(width: 304, height: 171)

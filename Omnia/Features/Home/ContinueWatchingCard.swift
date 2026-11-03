@@ -327,7 +327,7 @@ struct ContinueWatchingCard: View {
             if style == .card {
                 cardBackground
             } else {
-                LinearGradient(colors: item.artworkColors, startPoint: .topLeading, endPoint: .bottomTrailing)
+                MediaItem.placeholderArtworkColor
             }
             Image(systemName: item.symbol)
                 .font(.system(size: 42, weight: .light))

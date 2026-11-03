@@ -69,12 +69,7 @@ struct ArtworkView: View {
 
     private var fallbackArtwork: some View {
         ZStack {
-            LinearGradient(colors: item.artworkColors, startPoint: .topLeading, endPoint: .bottomTrailing)
-
-            Image(systemName: item.symbol)
-                .font(.system(size: 44, weight: .light))
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(.white.opacity(0.72))
+            MediaItem.placeholderArtworkColor
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

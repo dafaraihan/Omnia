@@ -53,6 +53,21 @@ struct IOSPlayerScreenReader: UIViewRepresentable {
     func updateUIView(_ view: IOSPlayerScreenView, context: Context) { view.changed = changed }
 }
 
+/// A muted hero trailer leaves other apps' audio alone. With sound it plays
+/// like any other video, through the silent switch.
+enum OmniaPreviewAudio {
+    @MainActor
+    static func update(muted: Bool) {
+        let session = AVAudioSession.sharedInstance()
+        if muted {
+            try? session.setCategory(.ambient, mode: .default)
+        } else {
+            try? session.setCategory(.playback, mode: .moviePlayback)
+            try? session.setActive(true)
+        }
+    }
+}
+
 /// AVKit owns the floating window and its system controls. A native mpv
 /// source may hand off to an AVPlayer only when AVFoundation can open it.
 @MainActor

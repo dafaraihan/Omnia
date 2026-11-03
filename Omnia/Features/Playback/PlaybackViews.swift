@@ -2448,7 +2448,7 @@ private struct PlaybackLoadingOverlay: View {
                     .overlay {
                         RemoteArtworkImage(url: backdrop)
                             .background {
-                                LinearGradient(colors: item.artworkColors, startPoint: .topLeading, endPoint: .bottomTrailing)
+                                MediaItem.placeholderArtworkColor
                             }
                     }
                     .clipped()

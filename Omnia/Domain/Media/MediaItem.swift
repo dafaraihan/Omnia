@@ -13,9 +13,9 @@ nonisolated struct MediaItem: Identifiable, Hashable, Sendable {
         case episode = "Episode"
     }
 
-    /// Neutral graphite shown while artwork loads or when a title has none,
-    /// like the system's own placeholders, instead of a tinted gradient.
-    static let placeholderArtworkColors: [Color] = [Color(white: 0.22), Color(white: 0.11)]
+    /// Plain grey shown while artwork loads or when a title has none.
+    static let placeholderArtworkColor = Color(white: 0.28)
+    static let placeholderArtworkColors: [Color] = [placeholderArtworkColor, placeholderArtworkColor]
 
     let id: String
     let title: String

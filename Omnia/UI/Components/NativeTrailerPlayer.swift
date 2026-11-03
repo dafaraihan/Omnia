@@ -41,6 +41,7 @@ struct NativeTrailerPlayer {
         private var notifications: [NSObjectProtocol] = []
         private var watchdog: Task<Void, Never>?
         private var wantsPlayback = false
+        private var lastMuted: Bool?
         private var finished = false
         private var playlistLoader: TrailerPlaylistLoader?
 
@@ -98,6 +99,12 @@ struct NativeTrailerPlayer {
 
         func update(muted: Bool, playing: Bool) {
             guard !finished else { return }
+            #if os(iOS)
+            if lastMuted != muted {
+                lastMuted = muted
+                OmniaPreviewAudio.update(muted: muted)
+            }
+            #endif
             player?.isMuted = muted
             let wasPlaying = wantsPlayback
             wantsPlayback = playing
