@@ -1713,7 +1713,12 @@ final class PlaybackSession {
             autoSyncSubtitlesIfNeeded()
             #if os(iOS)
             // iOS needs a frame on screen before it will float a video.
-            if hasRenderedVideoFrame { pictureInPictureController.attachSampleBuffers() }
+            if hasRenderedVideoFrame {
+                // mpv's audio output sets up the session as it opens, so
+                // Omnia's playback settings go back on once it has.
+                pictureInPictureController.activateAudioSession()
+                pictureInPictureController.attachSampleBuffers()
+            }
             #endif
         }
         #if os(macOS)

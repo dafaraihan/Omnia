@@ -56,8 +56,12 @@ struct IOSPlayerScreenReader: UIViewRepresentable {
 /// A muted hero trailer leaves other apps' audio alone. With sound it plays
 /// like any other video, through the silent switch.
 enum OmniaPreviewAudio {
+    /// A preview behind the open player mustn't change the player's audio.
+    @MainActor static var playerOwnsSession = false
+
     @MainActor
     static func update(muted: Bool) {
+        guard !playerOwnsSession else { return }
         let session = AVAudioSession.sharedInstance()
         if muted {
             try? session.setCategory(.ambient, mode: .default)
@@ -155,12 +159,14 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
             try session.setCategory(.playback, mode: .moviePlayback)
             try session.setActive(true)
             ownsAudioSession = true
+            OmniaPreviewAudio.playerOwnsSession = true
         } catch {
             stateChanged?(false, false)
         }
     }
 
     func deactivateAudioSession() {
+        OmniaPreviewAudio.playerOwnsSession = false
         guard ownsAudioSession else { return }
         do {
             try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
