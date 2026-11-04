@@ -257,7 +257,13 @@ final class RemoteArtworkCache {
     private init() {
         // Images are decoded at the size they are drawn, so this holds a few
         // hundred cards; NSCache also gives memory back when the Mac needs it.
+        // A large Home outgrows a small cache, and every card then decoded
+        // again and flashed its placeholder when scrolled back to.
+        #if os(macOS)
+        memory.totalCostLimit = 384 * 1_024 * 1_024
+        #else
         memory.totalCostLimit = 192 * 1_024 * 1_024
+        #endif
     }
 
     /// Rounds a pixel length up to the next step of 64.

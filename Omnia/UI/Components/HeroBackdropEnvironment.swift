@@ -43,6 +43,10 @@ final class HeroBackdropState {
     }
 
     func report(_ item: MediaItem, frame: CGRect, from source: HeroBackdropSource, owner: UUID? = nil) {
+        // Scrolled past: nothing to move, so the rest of the page's scrolling
+        // doesn't redraw the window backdrop on every tick.
+        let current = source == .home ? homePresentation : detailPresentation
+        if let current, current.item.id == item.id, current.frame.maxY <= 0, frame.maxY <= 0 { return }
         switch source {
         case .home:
             if let owner {
@@ -181,10 +185,16 @@ struct HomeArtworkBackground: View {
         return item?.backdropURL ?? item?.artworkURL
     }
 
+    /// A colour already worked out shows at once. Starting blank and fading in
+    /// made the page flash each time a new copy of this view appeared.
+    private var shownTint: ArtworkTint? {
+        tint ?? artworkURL.flatMap { ArtworkTintMemory.colors[$0] }
+    }
+
     var body: some View {
         OmniaPageBackground()
             .overlay {
-                if artworkURL != nil, let tint {
+                if artworkURL != nil, let tint = shownTint {
                     Color(red: tint.red, green: tint.green, blue: tint.blue).opacity(0.42)
                 }
             }
@@ -194,6 +204,7 @@ struct HomeArtworkBackground: View {
                 // Keep the preceding tint while the next artwork is loading.
                 let next = await ArtworkTintCache.shared.tint(for: url)
                 guard !Task.isCancelled else { return }
+                if let next { ArtworkTintMemory.colors[url] = next }
                 tint = next
             }
             .allowsHitTesting(false)
@@ -201,9 +212,66 @@ struct HomeArtworkBackground: View {
     }
 }
 
+/// A vertical fade in the page's colour. It draws one plain gradient: masking
+/// a full copy of the page over a moving trailer costs an extra GPU pass every
+/// frame.
+private struct HeroWashFade: View {
+    @Environment(\.displayPreferences) private var display
+    @Environment(\.self) private var environment
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
+    @State private var tint: ArtworkTint?
+
+    let item: MediaItem
+    let stops: [(location: Double, opacity: Double)]
+
+    private var artworkURL: URL? {
+        guard !reduceTransparency, contrast != .increased else { return nil }
+        return item.backdropURL ?? item.artworkURL
+    }
+
+    /// The same colour as `HomeArtworkBackground` in dark: the tint at 42%
+    /// over the page, worked out once.
+    private var color: Color {
+        var dark = environment
+        dark.colorScheme = .dark
+        #if os(iOS)
+        let system = Color(uiColor: .systemBackground)
+        #else
+        let system = Color(nsColor: .windowBackgroundColor)
+        #endif
+        let page = (display.amoledBlack ? Color.black : system).resolve(in: dark)
+        guard let tint = tint ?? artworkURL.flatMap({ ArtworkTintMemory.colors[$0] }) else {
+            return Color(page)
+        }
+        return Color(
+            red: Double(page.red) * 0.58 + tint.red * 0.42,
+            green: Double(page.green) * 0.58 + tint.green * 0.42,
+            blue: Double(page.blue) * 0.58 + tint.blue * 0.42
+        )
+    }
+
+    var body: some View {
+        let color = color
+        LinearGradient(
+            stops: stops.map { .init(color: color.opacity($0.opacity), location: $0.location) },
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .task(id: artworkURL) {
+            guard let url = artworkURL else { tint = nil; return }
+            let next = await ArtworkTintCache.shared.tint(for: url)
+            guard !Task.isCancelled else { return }
+            if let next { ArtworkTintMemory.colors[url] = next }
+            tint = next
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
 /// Melts a hero's lower part into the artwork wash under it, so the hero and
-/// the rows below read as one surface. Set in Settings › Layout › Home Layout
-/// › Hero.
+/// the rows below read as one surface. Set in Settings › Layout.
 struct HeroBottomBlend: View {
     @Environment(\.displayPreferences) private var display
 
@@ -212,23 +280,12 @@ struct HeroBottomBlend: View {
     var body: some View {
         let blend = display.heroBlend
         let top = 1 - blend.height
-        HomeArtworkBackground(item: item)
-            .environment(\.colorScheme, .dark)
-        .mask {
-            LinearGradient(
-                stops: [
-                    .init(color: .clear, location: top),
-                    .init(color: .black.opacity(0.55), location: top + blend.height * 0.41),
-                    .init(color: .black.opacity(0.92), location: top + blend.height * 0.72),
-                    .init(color: .black, location: top + blend.height * 0.9)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        }
-        .opacity(blend.strength)
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
+        HeroWashFade(item: item, stops: [
+            (top, 0),
+            (top + blend.height * 0.41, 0.55 * blend.strength),
+            (top + blend.height * 0.72, 0.92 * blend.strength),
+            (top + blend.height * 0.9, blend.strength)
+        ])
     }
 }
 
@@ -240,26 +297,10 @@ struct HeroTrailerBottomFade: View {
     var usesWash: Bool
 
     var body: some View {
-        Group {
-            if usesWash {
-                HomeArtworkBackground(item: item).environment(\.colorScheme, .dark)
-            } else if colorScheme == .dark {
-                OmniaPageBackground()
-            }
+        // Without the wash, fading into a light page would hide the hero's text.
+        if usesWash || colorScheme == .dark {
+            HeroWashFade(item: item, stops: [(0.78, 0), (0.92, 0.6), (1, 1)])
         }
-        .mask {
-            LinearGradient(
-                stops: [
-                    .init(color: .clear, location: 0.78),
-                    .init(color: .black.opacity(0.6), location: 0.92),
-                    .init(color: .black, location: 1)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        }
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
     }
 }
 
@@ -268,30 +309,29 @@ struct HeroTrailerTopFade: View {
     let item: MediaItem
     var usesWash: Bool
 
-    private var mask: LinearGradient {
-        LinearGradient(
-            stops: [
-                .init(color: .black, location: 0),
-                .init(color: .black.opacity(0.8), location: 0.1),
-                .init(color: .clear, location: 0.3)
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-    }
-
     var body: some View {
-        Group {
-            if usesWash {
-                HomeArtworkBackground(item: item).environment(\.colorScheme, .dark)
-            } else {
-                Color.black
-            }
+        if usesWash {
+            HeroWashFade(item: item, stops: [(0, 1), (0.1, 0.8), (0.3, 0)])
+        } else {
+            LinearGradient(
+                stops: [
+                    .init(color: .black, location: 0),
+                    .init(color: .black.opacity(0.8), location: 0.1),
+                    .init(color: .clear, location: 0.3)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
         }
-        .mask { mask }
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
     }
+}
+
+/// Colours already worked out, readable while a view draws.
+@MainActor
+private enum ArtworkTintMemory {
+    static var colors: [URL: ArtworkTint] = [:]
 }
 
 private nonisolated struct ArtworkTint: Equatable, Sendable {
@@ -521,6 +561,19 @@ enum WindowHeroBackdropLayout {
     }
 }
 
+/// Only the artwork changing redraws it; scrolling just moves it.
+private struct WindowHeroArtwork: View, Equatable {
+    let item: MediaItem
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.item.id == rhs.item.id && lhs.item.backdropURL == rhs.item.backdropURL
+    }
+
+    var body: some View {
+        FeaturedBackdrop(item: item, artworkAlignment: .topTrailing)
+    }
+}
+
 struct WindowHeroBackdrop: View {
     let state: HeroBackdropState
     @Environment(HomeLayoutStore.self) private var homeLayout
@@ -559,10 +612,8 @@ struct WindowHeroBackdrop: View {
                         ZStack {
                             MediaItem.placeholderArtworkColor
 
-                            FeaturedBackdrop(
-                                item: presentation.item,
-                                artworkAlignment: .topTrailing
-                            )
+                            WindowHeroArtwork(item: presentation.item)
+                                .equatable()
 
                             LinearGradient(
                                 colors: [.clear, .black.opacity(0.22), .black.opacity(0.68)],
