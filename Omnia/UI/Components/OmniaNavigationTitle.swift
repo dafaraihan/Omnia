@@ -80,17 +80,41 @@ extension View {
                     ToolbarItem(placement: .principal) { Color.clear.frame(width: 1, height: 1) }
                 }
         } else {
-            self.navigationTitle(title)
+            self.modifier(PlainPageTitleModifier(title: title))
         }
         #endif
     }
 }
+
+#if os(iOS)
+/// Beside Settings' categories on iPad, pages keep the same small title bar,
+/// so nothing jumps between a page and its sub-pages. The first page draws
+/// its own big title instead.
+private struct PlainPageTitleModifier: ViewModifier {
+    let title: String
+    @Environment(\.settingsPreviewModel) private var settingsColumns
+    @Environment(\.isPresented) private var isPresented
+
+    func body(content: Content) -> some View {
+        if settingsColumns == nil {
+            content.navigationTitle(title)
+        } else {
+            content
+                .navigationTitle(isPresented ? title : "")
+                .toolbarTitleDisplayMode(.inline)
+        }
+    }
+}
+#endif
 
 #if os(macOS)
 private struct MacPushedToolbarTitleModifier: ViewModifier {
     /// Nil shows the Back button alone.
     let title: String?
     @Environment(\.dismiss) private var dismiss
+    /// False for a stack's first page, such as a Settings page beside its
+    /// categories, which has nowhere to go back to and draws its own title.
+    @Environment(\.isPresented) private var isPresented
 
     func body(content: Content) -> some View {
         content
@@ -98,6 +122,7 @@ private struct MacPushedToolbarTitleModifier: ViewModifier {
             .toolbarTitleDisplayMode(.inline)
             .navigationBarBackButtonHidden()
             .toolbar {
+                if isPresented {
                 ToolbarItem(placement: .navigation) {
                     Button {
                         dismiss()
@@ -117,6 +142,7 @@ private struct MacPushedToolbarTitleModifier: ViewModifier {
                             .accessibilityAddTraits(.isHeader)
                     }
                     .sharedBackgroundVisibility(.hidden)
+                }
                 }
             }
     }

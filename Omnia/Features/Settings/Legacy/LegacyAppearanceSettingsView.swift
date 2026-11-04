@@ -94,8 +94,8 @@ struct LegacyAppearanceSettingsView: View {
                     Text("Fades the hero into the page below it. Needs Dynamic Background Color, or Artwork Color on title pages.")
                 }
                 if settings.preferences.display.heroBlend.isEnabled {
-                    SettingsDeferredSlider(title: "Overlay Strength", value: settings.binding(\.display.heroBlend.strength), range: 0.2 ... 1)
-                    SettingsDeferredSlider(title: "Overlay Height", value: settings.binding(\.display.heroBlend.height), range: 0.2 ... 1)
+                    SettingsDeferredSlider(title: "Overlay Strength", value: settings.binding(\.display.heroBlend.strength), range: 0.2 ... 1, previewKeyPath: \.heroBlend.strength)
+                    SettingsDeferredSlider(title: "Overlay Height", value: settings.binding(\.display.heroBlend.height), range: 0.2 ... 1, previewKeyPath: \.heroBlend.height)
                     Button("Reset Overlay") {
                         settings.update { $0.display.heroBlend = HeroBlendPreferences() }
                     }
@@ -123,9 +123,9 @@ struct LegacyAppearanceSettingsView: View {
                             Text("Glass Glow")
                             Text("Adds soft light around the floating bar while you press or drag it.")
                         }
-                        SettingsDeferredSlider(title: "Top Bar Size", value: settings.binding(\.display.topBarSize.size), range: TopBarSizePreferences.range)
-                        SettingsDeferredSlider(title: "Top Bar Height", value: settings.binding(\.display.topBarSize.height), range: TopBarSizePreferences.range)
-                        SettingsDeferredSlider(title: "Top Bar Width", value: settings.binding(\.display.topBarSize.width), range: TopBarSizePreferences.range)
+                        SettingsDeferredSlider(title: "Top Bar Size", value: settings.binding(\.display.topBarSize.size), range: TopBarSizePreferences.range, previewKeyPath: \.topBarSize.size)
+                        SettingsDeferredSlider(title: "Top Bar Height", value: settings.binding(\.display.topBarSize.height), range: TopBarSizePreferences.range, previewKeyPath: \.topBarSize.height)
+                        SettingsDeferredSlider(title: "Top Bar Width", value: settings.binding(\.display.topBarSize.width), range: TopBarSizePreferences.range, previewKeyPath: \.topBarSize.width)
                         Button("Reset Top Bar Size") {
                             settings.update { $0.display.topBarSize = TopBarSizePreferences() }
                         }

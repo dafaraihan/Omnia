@@ -4,6 +4,7 @@ import SwiftUI
 /// Settings › Layout › Liquid Glass.
 struct LegacyLiquidGlassSettingsView: View {
     @Environment(SettingsPreferencesStore.self) private var settings
+    @Environment(\.settingsPreviewInColumn) private var previewInColumn
 
     @State private var draftIntensity: Double?
 
@@ -18,12 +19,14 @@ struct LegacyLiquidGlassSettingsView: View {
 
     var body: some View {
         OmniaSettingsForm {
+            if !previewInColumn {
             Section {
-                LiquidGlassPreview()
+                LegacyLiquidGlassPreview()
                     .environment(\.displayPreferences, previewDisplay)
                     .listRowInsets(EdgeInsets())
             } header: {
                 Text("Preview")
+            }
             }
 
             Section {
@@ -41,7 +44,8 @@ struct LegacyLiquidGlassSettingsView: View {
                         maximumLabel: "Frosted",
                         value: settings.binding(\.display.liquidGlass.intensity),
                         range: 0 ... 1,
-                        onDraft: { draftIntensity = $0 }
+                        onDraft: { draftIntensity = $0 },
+                        previewKeyPath: \.liquidGlass.intensity
                     )
                 }
             } header: {
@@ -99,7 +103,7 @@ struct LegacyLiquidGlassSettingsView: View {
 
 /// Live: built from the same glass as the real controls, over moving colour
 /// so the glass has something to bend.
-private struct LiquidGlassPreview: View {
+struct LegacyLiquidGlassPreview: View {
     private static let colors: [Color] = [.indigo, .pink, .orange, .teal]
 
     var body: some View {

@@ -6,6 +6,7 @@ import SwiftUI
 struct LegacyPosterCardSettingsView: View {
     @Environment(SettingsPreferencesStore.self) private var settings
     @State private var posterPatternDraft = ""
+    @Environment(\.settingsPreviewInColumn) private var previewInColumn
 
     private var display: DisplayPreferences { settings.preferences.display }
 
@@ -15,10 +16,12 @@ struct LegacyPosterCardSettingsView: View {
 
     var body: some View {
         OmniaSettingsForm {
-            Section {
-                PosterCardPreview(display: display)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
+            if !previewInColumn {
+                Section {
+                    LegacyPosterCardPreview(display: display)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                }
             }
 
             Section {
@@ -276,7 +279,7 @@ struct LegacyPosterCardSettingsView: View {
 
 /// A sample card drawn with the current size, corners and depth, so each
 /// change shows before leaving Settings.
-private struct PosterCardPreview: View {
+struct LegacyPosterCardPreview: View {
     let display: DisplayPreferences
 
     private var size: CGSize {

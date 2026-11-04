@@ -506,6 +506,10 @@ struct SettingsDeferredSlider: View {
     @Binding var value: Double
     let range: ClosedRange<Double>
     var onDraft: (Double?) -> Void = { _ in }
+    /// Shows the drag in the preview column.
+    var previewKeyPath: WritableKeyPath<DisplayPreferences, Double>?
+
+    @Environment(\.settingsPreviewModel) private var previewModel
 
     @State private var draft: Double?
 
@@ -529,6 +533,7 @@ struct SettingsDeferredSlider: View {
                         set: { newValue in
                             draft = newValue
                             onDraft(newValue)
+                            if let previewKeyPath { previewModel?.setDraft(previewKeyPath, newValue) }
                         }
                     ),
                     in: range
@@ -539,6 +544,7 @@ struct SettingsDeferredSlider: View {
                     value = draft
                     self.draft = nil
                     onDraft(nil)
+                    if let previewKeyPath { previewModel?.setDraft(previewKeyPath, nil) }
                 }
                 // The title and value are above; macOS would repeat the title here.
                 .labelsHidden()

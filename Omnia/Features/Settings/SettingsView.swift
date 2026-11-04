@@ -300,20 +300,22 @@ extension SettingsRoute {
 
 /// The top of Settings: who this is, and whether they're synced.
 struct SettingsProfileCard: View {
+    var avatarSize: CGFloat = 52
     @Environment(OmniaAccount.self) private var account
     @Environment(ProfileStore.self) private var profiles
 
     var body: some View {
         HStack(spacing: 14) {
             if let profile = profiles.activeProfile {
-                ProfileAvatarView(profile: profile, size: 52)
+                ProfileAvatarView(profile: profile, size: avatarSize)
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(profiles.activeProfile?.name ?? "Profile")
-                    .font(.title3.weight(.semibold))
+                    .font(avatarSize < 52 ? .headline : .title3.weight(.semibold))
                     .foregroundStyle(.primary)
+                    .lineLimit(1)
                 Text(account.user == nil ? "Not signed in" : "Synced to your account")
-                    .font(.subheadline)
+                    .font(avatarSize < 52 ? .caption : .subheadline)
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
@@ -324,8 +326,16 @@ struct SettingsProfileCard: View {
 
 struct SettingsDestinationView: View {
     let route: SettingsRoute
+    @Environment(\.settingsPreviewModel) private var previewModel
 
     var body: some View {
+        page
+            .onAppear {
+                if let previewModel { previewModel.kind = route.previewKind }
+            }
+    }
+
+    private var page: some View {
         settingsContent {
             switch route {
             case .account:

@@ -416,6 +416,9 @@ struct HomeView: View {
                 // replacement task begins immediately with a fresh interval.
             }
         }
+        .onChange(of: displayFeatured?.id, initial: true) { _, _ in
+            if let displayFeatured { HomeFeaturedMemory.item = displayFeatured }
+        }
         .task(id: upcomingTaskKey) {
             guard !isOnboardingPreview else { return }
             await loadUpcoming()

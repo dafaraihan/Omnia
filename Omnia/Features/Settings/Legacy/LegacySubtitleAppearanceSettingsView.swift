@@ -4,6 +4,7 @@ import SwiftUI
 struct LegacySubtitleAppearanceSettingsView: View {
     @Environment(SettingsPreferencesStore.self) private var settings
     @State private var showsResetConfirmation = false
+    @Environment(\.settingsPreviewInColumn) private var previewInColumn
     @State private var showsMenuInPreview = true
     @State private var draftSize: PlayerSizePreferences?
 
@@ -32,6 +33,8 @@ struct LegacySubtitleAppearanceSettingsView: View {
                 size[keyPath: keyPath] = value
                 draftSize = size
             }
+            ,
+            previewKeyPath: (\DisplayPreferences.playerSize as WritableKeyPath<DisplayPreferences, PlayerSizePreferences>).appending(path: keyPath)
         )
     }
 
@@ -41,6 +44,7 @@ struct LegacySubtitleAppearanceSettingsView: View {
 
     private var subtitleSettings: some View {
         OmniaSettingsForm {
+            if !previewInColumn {
             Section("Live Preview") {
                 MacSubtitlePlaybackPreview(
                     style: settings.preferences.playbackSubtitleStyle,
@@ -49,6 +53,7 @@ struct LegacySubtitleAppearanceSettingsView: View {
                 )
                 .environment(\.displayPreferences, previewDisplay)
                 Toggle("Show a Menu in the Preview", isOn: $showsMenuInPreview)
+            }
             }
 
             Section {

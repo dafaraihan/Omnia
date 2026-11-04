@@ -359,7 +359,12 @@ struct OmniaRootView: View {
             }
 
             Tab(value: AppDestination.settings) {
-                tabStack { SettingsView() }
+                if isCompactWidth {
+                    tabStack { SettingsView() }
+                } else {
+                    SettingsThreeColumnView()
+                        .toolbar(usesNuvioBar ? .hidden : .automatic, for: .tabBar)
+                }
             } label: {
                 Label {
                     Text(AppDestination.settings.title(for: profiles.activeProfile))
@@ -561,7 +566,19 @@ struct OmniaRootView: View {
         .scrollContentBackground(.hidden)
     }
 
+    @ViewBuilder
     private func macNavigationStack(for destination: AppDestination) -> some View {
+        if destination == .settings {
+            SettingsThreeColumnView()
+                .id(destination)
+                .environment(\.isActiveDestination, destination == navigation.selection)
+                .tint(accentColor)
+        } else {
+            macPagesStack(for: destination)
+        }
+    }
+
+    private func macPagesStack(for destination: AppDestination) -> some View {
         NavigationStack(path: macPath(for: destination)) {
             Group {
                 switch destination {
