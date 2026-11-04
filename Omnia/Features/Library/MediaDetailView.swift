@@ -167,6 +167,7 @@ struct MediaDetailView: View {
             guard !isOnboardingPreview else { return }
             shufflePrimary = isShuffleActive ? pickShuffleEpisode() : nil
         }
+        .omniaMediaDetailMenuDestination()
         .task(id: heroTrailerKey) {
             // Wait for the page's own details so the trailer matches what
             // the page shows instead of fetching them a second time.
@@ -213,7 +214,7 @@ struct MediaDetailView: View {
 
     private func openHeroTrailer() {
         guard showsPlayingHeroTrailer, let handoff = heroTrailer.consumeForPlayback() else { return }
-        playback.startTrailer(item: displayItem, source: handoff.source, startAt: handoff.position, preferences: settings.preferences)
+        playback.startTrailer(item: displayItem, source: handoff.source, adopting: handoff.handoff, preferences: settings.preferences)
     }
 
     @ViewBuilder

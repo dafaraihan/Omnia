@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import SwiftUI
 import Observation
 import AVFoundation
 
@@ -491,6 +492,9 @@ final class PlaybackSession {
             self?.player?.beginSampleBufferOutput { frame in handler(frame) } ?? false
         }
         pictureInPictureController.endFrames = { [weak self] in self?.player?.endSampleBufferOutput() }
+        pictureInPictureController.captureFrame = { [weak self] handler in
+            self?.player?.captureCurrentFrame { frame in handler(frame) }
+        }
         pictureInPictureController.beginHandoff = { [weak self] in self?.player?.pause() }
         pictureInPictureController.endHandoff = { [weak self] position, playing in
             guard let self else { return }
@@ -503,7 +507,7 @@ final class PlaybackSession {
     #endif
 
     /// Uses AVFoundation on every platform so the generated master retains its audio renditions.
-    func startTrailer(item: MediaItem, source: HeroTrailerSource, startAt position: Double = 0, preferences: SettingsPreferences) {
+    func startTrailer(item: MediaItem, source: HeroTrailerSource, adopting handoff: TrailerHandoff?, preferences: SettingsPreferences) {
         stop(persisting: true)
         purpose = .trailer
         recoveryContext = nil
@@ -511,17 +515,25 @@ final class PlaybackSession {
         recoveryNotice = nil
         mediaItem = item
         playbackError = nil
-        let asset: AVURLAsset
-        if let playlist = source.playlist {
-            let loader = TrailerPlaylistLoader(playlist: playlist)
-            trailerPlaylistLoader = loader
-            asset = AVURLAsset(url: loader.url)
-            asset.resourceLoader.setDelegate(loader, queue: loader.queue)
+        let player: AVPlayer
+        if let handoff {
+            player = handoff.player
+            player.isMuted = false
+            player.preventsDisplaySleepDuringVideoPlayback = true
+            trailerPlaylistLoader = handoff.playlistLoader
         } else {
-            asset = AVURLAsset(url: source.url)
+            let asset: AVURLAsset
+            if let playlist = source.playlist {
+                let loader = TrailerPlaylistLoader(playlist: playlist)
+                trailerPlaylistLoader = loader
+                asset = AVURLAsset(url: loader.url)
+                asset.resourceLoader.setDelegate(loader, queue: loader.queue)
+            } else {
+                asset = AVURLAsset(url: source.url)
+            }
+            player = AVPlayer(playerItem: AVPlayerItem(asset: asset))
+            player.allowsExternalPlayback = false
         }
-        let player = AVPlayer(playerItem: AVPlayerItem(asset: asset))
-        player.allowsExternalPlayback = false
         trailerPlayer = player
         #if os(macOS)
         usesWholeScreen = preferences.playbackBehavior.usesWholeScreen
@@ -532,11 +544,15 @@ final class PlaybackSession {
         pictureInPictureController.activateAudioSession()
         pictureInPictureController.configure(player: player)
         #endif
-        isPresentingPlayer = true
-        // Carries on from where the hero preview was.
-        if position > 0 {
-            player.seek(to: CMTime(seconds: position, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        // Already playing, so no loading overlay; and the same picture carries
+        // on, so the player appears without sliding in.
+        if handoff != nil {
+            hasRenderedVideoFrame = true
+            positionSeconds = player.currentTime().seconds
         }
+        var transaction = Transaction()
+        transaction.disablesAnimations = handoff != nil
+        withTransaction(transaction) { isPresentingPlayer = true }
         player.playImmediately(atRate: Float(playbackRate))
         observePlaybackState()
     }

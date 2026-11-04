@@ -1,15 +1,22 @@
 import SwiftUI
 import AVFoundation
 
+/// A running preview's player, passed on whole to the full player, so its
+/// buffer, position and sound carry over rather than starting again.
+struct TrailerHandoff {
+    let player: AVPlayer
+    let playlistLoader: TrailerPlaylistLoader?
+}
+
 /// A decorative, cropped preview with no web content or playback controls.
-/// Each instance owns its player; it never changes the main playback session.
+/// Each instance owns its player until it is handed to the main playback session.
 struct NativeTrailerPlayer {
     enum Event { case playing, paused, ended, failed }
 
     let source: HeroTrailerSource
     var isMuted: Bool
     var isPlaying: Bool
-    var registerPause: ((@escaping () -> Double) -> Void)? = nil
+    var registerHandoff: ((@escaping () -> TrailerHandoff?) -> Void)? = nil
     let onEvent: (Event) -> Void
     @Environment(\.scenePhase) private var scenePhase
 
@@ -18,12 +25,7 @@ struct NativeTrailerPlayer {
     fileprivate func configure(_ view: TrailerVideoView, coordinator: Coordinator) {
         coordinator.onEvent = onEvent
         coordinator.start(source: source, layer: view.videoLayer, muted: isMuted)
-        // Pauses the preview and says where it stopped, for the full player.
-        registerPause? { [weak coordinator] in
-            coordinator?.update(muted: true, playing: false)
-            let position = coordinator?.position ?? 0
-            return position.isFinite ? position : 0
-        }
+        registerHandoff? { [weak coordinator] in coordinator?.handOff() }
         coordinator.update(muted: isMuted, playing: isPlaying && scenePhase == .active)
     }
 
@@ -95,7 +97,22 @@ struct NativeTrailerPlayer {
             }
         }
 
-        var position: Double { player?.currentTime().seconds ?? 0 }
+        /// Gives up the player without pausing it.
+        func handOff() -> TrailerHandoff? {
+            guard let player, !finished else { return nil }
+            let handoff = TrailerHandoff(player: player, playlistLoader: playlistLoader)
+            finished = true
+            onEvent = nil
+            watchdog?.cancel()
+            watchdog = nil
+            observations.removeAll()
+            notifications.forEach(NotificationCenter.default.removeObserver)
+            notifications.removeAll()
+            videoLayer?.player = nil
+            self.player = nil
+            playlistLoader = nil
+            return handoff
+        }
 
         func update(muted: Bool, playing: Bool) {
             guard !finished else { return }

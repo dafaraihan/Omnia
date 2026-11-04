@@ -710,7 +710,7 @@ struct HomeView: View {
 
     private func openHeroTrailer(_ featured: MediaItem) {
         guard showsPlayingHeroTrailer, let handoff = heroTrailer.consumeForPlayback() else { return }
-        playback.startTrailer(item: featured, source: handoff.source, startAt: handoff.position, preferences: settings.preferences)
+        playback.startTrailer(item: featured, source: handoff.source, adopting: handoff.handoff, preferences: settings.preferences)
     }
 
     private var usesLowPower: Bool {

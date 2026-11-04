@@ -152,6 +152,10 @@ typedef void (^OMMpvTrackSelectionCompletion)(
 /// queue. Returns NO if it can't. The end call goes back to the Metal output.
 - (BOOL)beginSampleBufferOutput:(void (^)(CVPixelBufferRef frame))frameHandler;
 - (void)endSampleBufferOutput;
+/// Copies the frame on screen, off the main thread, for the floating window
+/// to open with. It needs the GPU, so only call it while Omnia is on screen.
+/// `frameHandler` isn't called if there's none to copy.
+- (void)captureCurrentFrame:(void (^)(CVPixelBufferRef frame))frameHandler;
 #endif
 /// Saves the frame on screen, without subtitles, as an image at `URL` (the
 /// extension picks the format). Blocks until the file is written.

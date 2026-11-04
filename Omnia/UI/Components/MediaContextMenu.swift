@@ -118,7 +118,7 @@ private struct MediaContextMenuModifier: ViewModifier {
     let item: MediaItem
     let placement: MediaContextPlacement
     #if os(iOS)
-    @State private var opensDetail = false
+    @Environment(\.openMediaDetailFromMenu) private var openFromMenu
     #endif
 
     func body(content: Content) -> some View {
@@ -130,18 +130,40 @@ private struct MediaContextMenuModifier: ViewModifier {
             }
         #else
         // A link inside an iOS menu doesn't navigate, so Go to Movie / Show
-        // opens the page through this destination.
+        // opens the page through the stack's shared destination. Having one
+        // on each card, inside a lazy list, slowed scrolling.
         content
             .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 14, style: .continuous))
             .contextMenu {
-                MediaContextMenuItems(item: item, placement: placement, openDetail: { opensDetail = true })
-            }
-            .navigationDestination(isPresented: $opensDetail) {
-                MediaDetailView(item: item)
+                MediaContextMenuItems(item: item, placement: placement, openDetail: openFromMenu.map { open in { open(item) } })
             }
         #endif
     }
 }
+
+#if os(iOS)
+private struct OpenMediaDetailFromMenuKey: EnvironmentKey {
+    static let defaultValue: (@MainActor (MediaItem) -> Void)? = nil
+}
+
+extension EnvironmentValues {
+    var openMediaDetailFromMenu: (@MainActor (MediaItem) -> Void)? {
+        get { self[OpenMediaDetailFromMenuKey.self] }
+        set { self[OpenMediaDetailFromMenuKey.self] = newValue }
+    }
+}
+
+/// One destination on the stack, for every card's Go to Movie / Show.
+struct MediaDetailMenuDestination: ViewModifier {
+    @State private var item: MediaItem?
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.openMediaDetailFromMenu) { item = $0 }
+            .navigationDestination(item: $item) { MediaDetailView(item: $0) }
+    }
+}
+#endif
 
 /// The menu's items, in their own view. `isSaved` scans the library and
 /// watch history, and a menu's items are built with the card; here that

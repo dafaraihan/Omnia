@@ -27,6 +27,9 @@
 #pragma clang diagnostic pop
 #endif
 #import <QuartzCore/QuartzCore.h>
+#if !TARGET_OS_OSX
+#import <Accelerate/Accelerate.h>
+#endif
 #import <os/lock.h>
 #import <math.h>
 #import <stdatomic.h>
@@ -805,7 +808,10 @@ static void OMMpvRequestRedraw(void *context) {
     int _softwarePoolHeight;
     atomic_bool _softwareRenderPending;
     BOOL _softwareOutputActive;
+    BOOL _softwareStarted;
+    BOOL _returningToMetal;
     NSString *_savedHwdec;
+    NSString *_savedFramedrop;
     #endif
 }
 @property (nonatomic, readwrite) OMMpvVideoView *videoView;
@@ -814,6 +820,7 @@ static void OMMpvRequestRedraw(void *context) {
 - (void)drainEvents;
 #if !TARGET_OS_OSX
 - (void)scheduleSoftwareRender;
+- (void)startSoftwareOutput:(void (^)(CVPixelBufferRef))frameHandler;
 - (void)freeSoftwareContext;
 - (void)updateSoftwareSize;
 #endif
@@ -1216,7 +1223,15 @@ static void OMMpvWakeup(void *context) {
     if (_usingMetalRendering) {
         // gpu-next presents on its own; a configured output with a sized
         // video means a frame is on screen.
+        #if !TARGET_OS_OSX
+        // Switching outputs for Picture in Picture isn't a new start, so the
+        // loading overlay stays away.
+        if (_softwareOutputActive) return YES;
+        if (![self flagForProperty:"vo-configured"]) return _returningToMetal;
+        _returningToMetal = NO;
+        #else
         if (![self flagForProperty:"vo-configured"]) return NO;
+        #endif
     } else {
         #if TARGET_OS_OSX
         if (!_videoView.videoLayer.didRenderFrame) return NO;
@@ -1633,32 +1648,107 @@ static void OMMpvSoftwareUpdate(void *context) {
     atomic_store(&_softwareHeight, ((int)(height * scale)) & ~1);
 }
 
+/// mpv's raw frames leave the alpha byte unset.
+static void OMMpvFillAlpha(uint8_t *pixels, int width, int height, size_t stride) {
+    vImage_Buffer buffer = { pixels, (vImagePixelCount)height, (vImagePixelCount)width, stride };
+    vImageOverwriteChannelsWithScalar_ARGB8888(255, &buffer, &buffer, 0x1, kvImageNoFlags);
+}
+
+- (void)captureCurrentFrame:(void (^)(CVPixelBufferRef))frameHandler {
+    #if TARGET_OS_SIMULATOR
+    // The Simulator's Metal driver aborts on the buffer this readback needs.
+    return;
+    #endif
+    if (!_mpv || _stopped) return;
+    if (!_softwareQueue) {
+        _softwareQueue = dispatch_queue_create("omnia.mpv.software-frames", DISPATCH_QUEUE_SERIAL);
+    }
+    mpv_handle *mpv = _mpv;
+    void (^handler)(CVPixelBufferRef) = [frameHandler copy];
+    dispatch_async(_softwareQueue, ^{
+        if (self->_mpv != mpv || self->_stopped) return;
+        const char *arguments[] = { "screenshot-raw", "video", "bgra", NULL };
+        mpv_node result;
+        if (mpv_command_ret(mpv, arguments, &result) < 0) return;
+        int64_t width = 0, height = 0, stride = 0;
+        void *data = NULL;
+        size_t size = 0;
+        if (result.format == MPV_FORMAT_NODE_MAP) {
+            for (int i = 0; i < result.u.list->num; i++) {
+                const char *key = result.u.list->keys[i];
+                mpv_node *value = &result.u.list->values[i];
+                if (!strcmp(key, "w")) width = value->u.int64;
+                else if (!strcmp(key, "h")) height = value->u.int64;
+                else if (!strcmp(key, "stride")) stride = value->u.int64;
+                else if (!strcmp(key, "data") && value->format == MPV_FORMAT_BYTE_ARRAY) {
+                    data = value->u.ba->data;
+                    size = value->u.ba->size;
+                }
+            }
+        }
+        if (data && width > 0 && height > 0 && stride > 0 && size >= (size_t)(stride * height)) {
+            NSDictionary *attributes = @{ (id)kCVPixelBufferIOSurfacePropertiesKey: @{} };
+            CVPixelBufferRef buffer = NULL;
+            if (CVPixelBufferCreate(kCFAllocatorDefault, width, height, kCVPixelFormatType_32BGRA,
+                                    (__bridge CFDictionaryRef)attributes, &buffer) == kCVReturnSuccess) {
+                CVPixelBufferLockBaseAddress(buffer, 0);
+                uint8_t *pixels = CVPixelBufferGetBaseAddress(buffer);
+                size_t bufferStride = CVPixelBufferGetBytesPerRow(buffer);
+                size_t rowLength = MIN(bufferStride, (size_t)stride);
+                for (int64_t y = 0; y < height; y++) {
+                    memcpy(pixels + y * bufferStride, (uint8_t *)data + y * stride, rowLength);
+                }
+                OMMpvFillAlpha(pixels, (int)width, (int)height, bufferStride);
+                CVPixelBufferUnlockBaseAddress(buffer, 0);
+                handler(buffer);
+                CVPixelBufferRelease(buffer);
+            }
+        }
+        mpv_free_node_contents(&result);
+    });
+}
+
 - (BOOL)beginSampleBufferOutput:(void (^)(CVPixelBufferRef))frameHandler {
-    if (!_mpv || _stopped || _softwareContext) return NO;
+    if (!_mpv || _stopped || _softwareOutputActive) return NO;
+    if (!_softwareQueue) {
+        _softwareQueue = dispatch_queue_create("omnia.mpv.software-frames", DISPATCH_QUEUE_SERIAL);
+    }
+    _softwareOutputActive = YES;
+    _softwareStarted = NO;
+    [self startSoftwareOutput:[frameHandler copy]];
+    return _softwareOutputActive;
+}
+
+- (void)startSoftwareOutput:(void (^)(CVPixelBufferRef))frameHandler {
+    if (!_softwareOutputActive || _softwareStarted || !_mpv || _stopped) return;
+    _softwareStarted = YES;
     mpv_render_param parameters[] = {
         { MPV_RENDER_PARAM_API_TYPE, (void *)MPV_RENDER_API_TYPE_SW },
         { MPV_RENDER_PARAM_INVALID, NULL },
     };
-    _softwareOutputActive = YES;
     if (mpv_render_context_create(&_softwareContext, _mpv, parameters) < 0) {
+        NSLog(@"[Omnia] Picture in Picture couldn't start mpv's CPU output");
         _softwareContext = NULL;
         _softwareOutputActive = NO;
-        return NO;
+        return;
     }
-    if (!_softwareQueue) {
-        _softwareQueue = dispatch_queue_create("omnia.mpv.software-frames", DISPATCH_QUEUE_SERIAL);
-    }
-    _softwareFrameHandler = [frameHandler copy];
+    _softwareFrameHandler = frameHandler;
     [self updateSoftwareSize];
 
     char *hwdec = mpv_get_property_string(_mpv, "hwdec");
     _savedHwdec = hwdec ? @(hwdec) : @"auto-safe";
     if (hwdec) mpv_free(hwdec);
+    char *framedrop = mpv_get_property_string(_mpv, "framedrop");
+    _savedFramedrop = framedrop ? @(framedrop) : @"vo";
+    if (framedrop) mpv_free(framedrop);
+    // Frames are small here, so the quickest scaler is enough, and a slow
+    // moment drops frames rather than letting the picture fall behind the sound.
+    mpv_set_property_string(_mpv, "sws-scaler", "fast-bilinear");
+    mpv_set_property_string(_mpv, "framedrop", "decoder+vo");
     // The CPU can't read frames left on the video decoder.
     mpv_set_property_string(_mpv, "hwdec", "videotoolbox-copy");
     mpv_render_context_set_update_callback(_softwareContext, OMMpvSoftwareUpdate, (__bridge void *)self);
     mpv_set_property_string(_mpv, "vo", "libmpv");
-    return YES;
 }
 
 - (void)scheduleSoftwareRender {
@@ -1707,13 +1797,7 @@ static void OMMpvSoftwareUpdate(void *context) {
         { MPV_RENDER_PARAM_INVALID, NULL },
     };
     int status = mpv_render_context_render(context, parameters);
-    if (status >= 0) {
-        // bgr0 leaves the alpha byte unset.
-        for (int y = 0; y < height; y++) {
-            uint8_t *row = pixels + (size_t)y * stride;
-            for (int x = 0; x < width; x++) row[x * 4 + 3] = 255;
-        }
-    }
+    if (status >= 0) OMMpvFillAlpha(pixels, width, height, stride);
     CVPixelBufferUnlockBaseAddress(buffer, 0);
     if (status >= 0) handler(buffer);
     CVPixelBufferRelease(buffer);
@@ -1734,18 +1818,22 @@ static void OMMpvSoftwareUpdate(void *context) {
 }
 
 - (void)endSampleBufferOutput {
-    if (!_softwareContext) return;
-    // Stops the render callback first; the context goes once mpv has moved on.
-    if (_mpv && !_stopped) {
+    if (!_softwareOutputActive) return;
+    BOOL started = _softwareContext != NULL;
+    if (started && _mpv && !_stopped) {
+        // Stops the render callback first; the context goes once mpv has moved on.
+        _returningToMetal = YES;
         mpv_set_property_string(_mpv, "vo", "gpu-next");
         mpv_set_property_string(_mpv, "hwdec", _savedHwdec.UTF8String ?: "auto-safe");
+        mpv_set_property_string(_mpv, "framedrop", _savedFramedrop.UTF8String ?: "vo");
     }
     [self freeSoftwareContext];
-    if (_mpv && !_stopped) {
+    if (started && _mpv && !_stopped) {
         // A video output that closes leaves no video track selected.
         mpv_set_property_string(_mpv, "vid", "auto");
     }
     _softwareOutputActive = NO;
+    _softwareStarted = NO;
 }
 #else
 - (void)enterPictureInPicture {
@@ -2217,6 +2305,8 @@ static void OMMpvSoftwareUpdate(void *context) {
 - (void)destroyPlayer {
     #if !TARGET_OS_OSX
     [self freeSoftwareContext];
+    // A frame copy in progress is still using the player.
+    if (_softwareQueue) dispatch_sync(_softwareQueue, ^{});
     #endif
     #if TARGET_OS_OSX
     if (_renderContext) {

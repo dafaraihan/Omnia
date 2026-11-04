@@ -110,6 +110,19 @@ extension View {
         navigationDestination(for: OmniaPageRoute.self) { route in
             route.makePage()
                 .background(OmniaPageBackground().ignoresSafeArea())
+                .omniaMediaDetailMenuDestination()
         }
+        .omniaMediaDetailMenuDestination()
+    }
+
+    /// Each page has its own, so opening from a card there pushes on top of
+    /// that page rather than going back to the stack's root first.
+    @ViewBuilder
+    func omniaMediaDetailMenuDestination() -> some View {
+        #if os(iOS)
+        modifier(MediaDetailMenuDestination())
+        #else
+        self
+        #endif
     }
 }

@@ -118,6 +118,9 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
     /// Starts and stops mpv drawing for the floating window.
     var beginFrames: ((@escaping (CVPixelBuffer) -> Void) -> Bool)?
     var endFrames: (() -> Void)?
+    /// Copies the frame on screen, for the floating window to open with.
+    var captureFrame: ((@escaping (CVPixelBuffer) -> Void) -> Void)?
+    private var resignObserver: NSObjectProtocol?
     /// The floating window's Back to app button, before it closes.
     var willRestore: (() -> Void)?
     /// The floating window's close button.
@@ -133,6 +136,15 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
                 if self.controller?.isPictureInPictureActive == true { self.startedInBackground = true }
                 guard self.isHandoff, self.isPlaying?() == true else { return }
                 self.start()
+            }
+        }
+        // Swiping home starts here, while the GPU can still copy the frame.
+        resignObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.willResignActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.usesSampleBuffers, self.controller?.isPictureInPictureActive != true else { return }
+                self.refreshSampleFrame()
             }
         }
         // Coming back to Omnia returns a video that floated when the user
@@ -151,6 +163,7 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
     deinit {
         if let backgroundObserver { NotificationCenter.default.removeObserver(backgroundObserver) }
         if let activeObserver { NotificationCenter.default.removeObserver(activeObserver) }
+        if let resignObserver { NotificationCenter.default.removeObserver(resignObserver) }
     }
 
     func activateAudioSession() {
@@ -202,6 +215,12 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
         possibility = controller?.observe(\.isPictureInPicturePossible, options: [.initial, .new]) { [weak self] _, _ in
             Task { @MainActor [weak self] in self?.publish() }
         }
+    }
+
+    /// Keeps the layer on the real picture and its shape, ready to float.
+    private func refreshSampleFrame() {
+        let layer = sampleLayer
+        captureFrame? { frame in Self.enqueue(frame, on: layer) }
     }
 
     private func syncSampleClock() {
@@ -368,6 +387,7 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
     private func start() {
         if usesSampleBuffers {
             guard let controller, controller.isPictureInPicturePossible else { unavailable?(nil); return }
+            refreshSampleFrame()
             controller.startPictureInPicture()
             return
         }
@@ -531,6 +551,8 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
     func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void) {
         isRestoring = true
         willRestore?()
+        // Back on Metal now, so the player has its picture when the window lands.
+        if usesSampleBuffers { endFrames?() }
         // Lets the player come back on screen for the window to land on.
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(350))

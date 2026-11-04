@@ -24,22 +24,22 @@ final class HomeHeroTrailerModel {
     @ObservationIgnored private var appliedStartsWithSound: Bool?
     private(set) var generation = UUID()
 
-    @ObservationIgnored private var pausePreview: (() -> Double)?
+    @ObservationIgnored private var previewHandoff: (() -> TrailerHandoff?)?
 
-    /// Pauses audio synchronously before handing the complete playlist, and the
-    /// place it had reached, to the player.
-    func consumeForPlayback() -> (source: HeroTrailerSource, position: Double)? {
+    /// Hands the running preview to the player, along with the playlist in
+    /// case it can't be passed on.
+    func consumeForPlayback() -> (source: HeroTrailerSource, handoff: TrailerHandoff?)? {
         guard isVisible, let stream else { return nil }
-        let position = pausePreview?() ?? 0
-        pausePreview = nil
+        let handoff = previewHandoff?()
+        previewHandoff = nil
         endedItemID = currentItemID
         reset()
-        return (stream, position)
+        return (stream, handoff)
     }
 
-    func registerPause(_ pause: @escaping () -> Double, for source: HeroTrailerSource) {
+    func registerHandoff(_ handoff: @escaping () -> TrailerHandoff?, for source: HeroTrailerSource) {
         guard stream == source else { return }
-        pausePreview = pause
+        previewHandoff = handoff
     }
 
     var holdsCarousel: Bool { isPending || stream != nil }
@@ -100,8 +100,7 @@ final class HomeHeroTrailerModel {
     }
 
     private func reset() {
-        _ = pausePreview?()
-        pausePreview = nil
+        previewHandoff = nil
         generation = UUID()
         stream = nil
         isVisible = false
@@ -149,7 +148,7 @@ struct HomeHeroTrailerLayer: View {
                     source: source,
                     isMuted: model.isMuted,
                     isPlaying: isPlaying,
-                    registerPause: { model.registerPause($0, for: source) }
+                    registerHandoff: { model.registerHandoff($0, for: source) }
                 ) { event in
                     model.handle(event, for: source, generation: generation)
                 }
