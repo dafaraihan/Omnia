@@ -324,6 +324,7 @@ struct SettingsPinnedPreviewPanel: View {
             SettingsCardsPreview(display: display)
         case .collections:
             CollectionCardPreview(folders: Array(collections.collections.flatMap(\.folders).prefix(4)))
+                .defaultScrollAnchor(.center, for: .alignment)
         case .continueWatching:
             ContinueWatchingLivePreview(style: display.continueWatchingStyle)
         case .theme:
@@ -596,6 +597,7 @@ struct SettingsSectionFocus: ViewModifier {
         if inColumn {
             content
                 .opacity(isDimmed ? 0.45 : 1)
+                .contentShape(Rectangle())
                 .onHover { hovering in
                     if hovering { model?.activate(kind) }
                 }
