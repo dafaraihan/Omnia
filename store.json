@@ -22,6 +22,16 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "0.3.8",
+          "buildVersion": "12",
+          "date": "2026-11-04T01:38:05Z",
+          "localizedDescription": "Smoother Picture in Picture and trailers, less work while scrolling, and clearer settings.\n\nImproved\n- Tapping a hero trailer now carries on straight away in the player, with no restart, loading screen or slide.\n- Picture in Picture comes back to the player without a loading screen, and keeps up with the sound better.\n- Scrolling does less work on iPhone and iPad: cards no longer each carry their own page link. On Mac, a hero scrolled off screen no longer redraws the window.\n- Hero fades use less graphics work over a playing trailer.\n- On iPad and Mac, a playing trailer now ends in a short fade rather than a hard edge.\n\nFixed\n- Gradient Overlay, with its strength and height sliders, is now under Dynamic Background Color in Settings > Layout.\n- Top bar and player size sliders no longer show their names twice, and now show their values.\n- The page's colour no longer flashes when a trailer starts or the hero changes.",
+          "downloadURL": "https://github.com/dafaraihan/Omnia/releases/download/v0.3.8/Omnia-0.3.8-iPhone-iPad.ipa",
+          "size": 33196608,
+          "sha256": "cc6e9bfac7ae3efd44f8582232f6f3869027d068861f0d884f22fb7359aa0560",
+          "minOSVersion": "26.5"
+        },
+        {
           "version": "0.3.7",
           "buildVersion": "11",
           "date": "2026-11-03T19:05:54Z",
