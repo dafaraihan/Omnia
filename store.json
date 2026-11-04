@@ -22,6 +22,16 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "0.3.9",
+          "buildVersion": "13",
+          "date": "2026-11-04T10:15:50Z",
+          "localizedDescription": "A new Settings on Mac and iPad with a live preview, and a sidebar you can hide.\n\nNew\n- Settings on Mac and iPad now has a sidebar, with a live preview pinned at the top of each page. It follows the section you're editing.\n- A sidebar button shows or hides the categories, so the page and preview can take the full width. Omnia remembers your choice. On Mac, the shortcut is Cmd+Ctrl+S.\n\nImproved\n- iPhone Settings is reorganised into Look, Watch, Sources and You, and its icons now match the style of the Mac and iPad sidebar.\n- The Display section in Settings > Layout is split into Theme, Display, Hero Gradient and Top Bar.",
+          "downloadURL": "https://github.com/dafaraihan/Omnia/releases/download/v0.3.9/Omnia-0.3.9-iPhone-iPad.ipa",
+          "size": 33805974,
+          "sha256": "052ed79d89ddd990aa1e2610b4213577ef5c451a7a9527f449e09f2779dc0eda",
+          "minOSVersion": "26.5"
+        },
+        {
           "version": "0.3.8",
           "buildVersion": "12",
           "date": "2026-11-04T01:38:05Z",
