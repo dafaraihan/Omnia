@@ -10,13 +10,6 @@ struct SubtitleAppearanceSettingsView: View {
 
     private var subtitleSettings: some View {
         OmniaSettingsForm {
-            Section("Live Preview") {
-                MacSubtitlePlaybackPreview(
-                    style: settings.preferences.playbackSubtitleStyle,
-                    height: previewHeight
-                )
-            }
-
             Section("Language") {
                 Toggle("Subtitles Enabled", isOn: settings.binding(\.subtitlesEnabled))
                 .settingsRow("Subtitles Enabled")
@@ -87,7 +80,7 @@ struct SubtitleAppearanceSettingsView: View {
                 }
             }
 
-            Section("Style") {
+            Section {
                 SettingsDropdown(
                     "Subtitle Background",
                     selection: styleBinding(\.background),
@@ -137,6 +130,10 @@ struct SubtitleAppearanceSettingsView: View {
                     )
                     .settingsRow("Background Color")
                 }
+            } header: {
+                SettingsSectionHeader("Style", resetTitle: "Reset to Defaults", canReset: true) {
+                    showsResetConfirmation = true
+                }
             }
 
             Section("Text") {
@@ -149,6 +146,7 @@ struct SubtitleAppearanceSettingsView: View {
                 Toggle("Outline", isOn: styleBinding(\.outlineEnabled))
                 .settingsRow("Outline")
                 if settings.preferences.playbackSubtitleStyle.outlineEnabled {
+Group {
                     ColorPicker("Outline Color", selection: hexColorBinding(\.outlineColorHex), supportsOpacity: false)
                     .settingsRow("Outline Color")
                     SubtitleDoubleSlider(
@@ -159,6 +157,8 @@ struct SubtitleAppearanceSettingsView: View {
                     )
                     .settingsRow("Outline Width")
                 }
+.settingsDependentRows()
+}
             }
 
             Section {
@@ -181,22 +181,22 @@ struct SubtitleAppearanceSettingsView: View {
                     valueLabel: { String(format: "%+.1f s", $0) }
                 )
                 .settingsRow("Subtitle Delay")
-                Button("Reset Delay") {
-                    settings.update { $0.playbackSubtitleStyle.delaySeconds = 0 }
-                }
-                .settingsRow("Reset Delay")
-                .disabled(settings.preferences.playbackSubtitleStyle.delaySeconds == 0)
                 #endif
             } header: {
-                Text("Sync and Delay")
+                SettingsSectionHeader("Sync and Delay", resetTitle: "Reset Delay", canReset: !(settings.preferences.playbackSubtitleStyle.delaySeconds == 0)) {
+                    settings.update { $0.playbackSubtitleStyle.delaySeconds = 0 }
+
+                }
             } footer: {
-                Text("Subtitles from add-ons such as OpenSubtitles are added to the player's list as they arrive. The delay applies to every video; a delay set in the player's Sync panel is kept for that title only, and a positive delay shows subtitles later.")
+                Text("The delay applies to every video. A delay set in the player is kept for that title.")
             }
 
-            Section {
-                Button("Reset to Defaults", role: .destructive) { showsResetConfirmation = true }
-                .settingsRow("Reset to Defaults")
-            }
+        }
+        .settingsPinnedPreview {
+            MacSubtitlePlaybackPreview(
+                style: settings.preferences.playbackSubtitleStyle,
+                height: previewHeight
+            )
         }
         .omniaNavigationTitle("Subtitles")
         .confirmationDialog("Reset subtitle preferences?", isPresented: $showsResetConfirmation, titleVisibility: .visible) {
@@ -255,7 +255,14 @@ struct SubtitleDoubleSlider: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            LabeledContent(title, value: valueLabel(value))
+            LabeledContent(title) {
+                SettingsValueChip(
+                    text: valueLabel(value),
+                    editText: value.formatted(.number.precision(.fractionLength(0 ... 2)).grouping(.never))
+                ) { typed in
+                    value = min(max(typed, range.lowerBound), range.upperBound)
+                }
+            }
             Slider(value: $value, in: range)
                 .accessibilityValue(valueLabel(value))
         }

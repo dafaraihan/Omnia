@@ -98,6 +98,8 @@ struct OmniaSettingsForm<Content: View>: View {
     private let content: Content
     private let tint: Color?
     private let isRoot: Bool
+    @Environment(SettingsPreferencesStore.self) private var settings: SettingsPreferencesStore?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.displayPreferences) private var display
     @Environment(\.colorScheme) private var colorScheme
 
@@ -110,6 +112,13 @@ struct OmniaSettingsForm<Content: View>: View {
     }
 
     var body: some View {
+        form
+            // Rows that depend on a switch slide in with it.
+            .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: settings?.preferences)
+    }
+
+    @ViewBuilder
+    private var form: some View {
         #if os(macOS)
         if isRoot {
             rootCards
@@ -505,9 +514,12 @@ struct SettingsDeferredSlider: View {
             HStack {
                 Text(title)
                 Spacer()
-                Text(valueText)
-                    .font(.subheadline.monospacedDigit())
-                    .foregroundStyle(.secondary)
+                SettingsValueChip(
+                    text: valueText,
+                    editText: "\(Int(((draft ?? value) * 100).rounded()))"
+                ) { typed in
+                    value = min(max(typed / 100, range.lowerBound), range.upperBound)
+                }
             }
             HStack(spacing: 10) {
                 if let minimumLabel { Text(minimumLabel).font(.caption) }
@@ -600,5 +612,123 @@ private struct SettingsFocusScroller: ViewModifier {
             try? await Task.sleep(for: .milliseconds(350))
             withAnimation { proxy.scrollTo(focus, anchor: .center) }
         }
+    }
+}
+
+/// A slider's value. Tap it to type a number.
+struct SettingsValueChip: View {
+    let text: String
+    let editText: String
+    let onCommit: (Double) -> Void
+
+    @State private var isEditing = false
+    @State private var draft = ""
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        Group {
+            if isEditing {
+                TextField("Value", text: $draft)
+                    .labelsHidden()
+                    .textFieldStyle(.plain)
+                    .multilineTextAlignment(.center)
+                    .focused($isFocused)
+                    #if os(iOS)
+                    .keyboardType(.numbersAndPunctuation)
+                    #endif
+                    .frame(width: 56)
+                    .onSubmit(commit)
+                    .onChange(of: isFocused) { _, focused in
+                        if !focused { commit() }
+                    }
+                    .onAppear { isFocused = true }
+            } else {
+                Button {
+                    draft = editText
+                    isEditing = true
+                } label: {
+                    Text(text)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Type a value")
+            }
+        }
+        .font(.subheadline.monospacedDigit())
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(.primary.opacity(0.08), in: Capsule())
+    }
+
+    private func commit() {
+        guard isEditing else { return }
+        isEditing = false
+        if let value = Double(draft.replacingOccurrences(of: ",", with: ".")) { onCommit(value) }
+    }
+}
+
+/// A section title with its reset in a "…" menu, out of the way of the rows.
+struct SettingsSectionHeader: View {
+    let title: String
+    let resetTitle: String
+    let canReset: Bool
+    let reset: () -> Void
+
+    init(_ title: String, resetTitle: String, canReset: Bool, reset: @escaping () -> Void) {
+        self.title = title
+        self.resetTitle = resetTitle
+        self.canReset = canReset
+        self.reset = reset
+    }
+
+    var body: some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Menu {
+                Button(resetTitle, role: .destructive, action: reset)
+                    .disabled(!canReset)
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .imageScale(.large)
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .accessibilityLabel("More for \(title)")
+        }
+        .settingsRow(resetTitle)
+    }
+}
+
+private struct SettingsPinnedPreview<Preview: View>: ViewModifier {
+    @ViewBuilder let preview: () -> Preview
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+
+    func body(content: Content) -> some View {
+        content.safeAreaInset(edge: .top, spacing: 0) {
+            // A phone on its side has no room to keep it on screen.
+            if verticalSizeClass != .compact || !OmniaDevice.isPhone {
+                preview()
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity)
+                    .background { OmniaPageBackground().ignoresSafeArea() }
+            }
+        }
+    }
+}
+
+extension View {
+    /// Rows that only show when another option is on.
+    func settingsDependentRows() -> some View {
+        padding(.leading, 14)
+            .transition(.opacity.combined(with: .move(edge: .top)))
+    }
+
+    /// Keeps a live preview on screen while the options scroll under it.
+    func settingsPinnedPreview<Preview: View>(@ViewBuilder _ preview: @escaping () -> Preview) -> some View {
+        modifier(SettingsPinnedPreview(preview: preview))
     }
 }

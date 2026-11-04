@@ -18,17 +18,10 @@ struct LiquidGlassSettingsView: View {
     var body: some View {
         OmniaSettingsForm {
             Section {
-                LiquidGlassPreview()
-                    .environment(\.displayPreferences, previewDisplay)
-                    .listRowInsets(EdgeInsets())
-            } header: {
-                Text("Preview")
-            }
-
-            Section {
                 Toggle("Liquid Glass", isOn: settings.binding(\.display.liquidGlass.isEnabled))
                 .settingsRow("Liquid Glass")
                 if glass.isEnabled {
+Group {
                     SettingsDropdown(
                         "Style",
                         subtitle: styleDetail,
@@ -46,6 +39,8 @@ struct LiquidGlassSettingsView: View {
                     )
                     .settingsRow("Intensity")
                 }
+.settingsDependentRows()
+}
             } header: {
                 Text("Glass")
             } footer: {
@@ -84,6 +79,11 @@ struct LiquidGlassSettingsView: View {
                     Text(systemBarsFooter)
                 }
             }
+        }
+        .settingsPinnedPreview {
+            LiquidGlassPreview()
+                .environment(\.displayPreferences, previewDisplay)
+                .clipShape(.rect(cornerRadius: 14, style: .continuous))
         }
         .omniaNavigationTitle("Liquid Glass")
     }
@@ -157,7 +157,7 @@ private struct LiquidGlassPreview: View {
                 }
             }
         }
-        .frame(height: OmniaDevice.isPhone ? 200 : 240)
+        .frame(height: OmniaDevice.isPhone ? 170 : 220)
         .clipped()
         .labelStyle(.titleAndIcon)
         .environment(\.colorScheme, .dark)

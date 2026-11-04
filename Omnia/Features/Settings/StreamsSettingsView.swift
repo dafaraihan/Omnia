@@ -102,7 +102,7 @@ struct StreamsSettingsView: View {
                 } header: {
                     Text("Pinned")
                 } footer: {
-                    Text("Right-click a stream or an add-on heading on the streams page to pin its add-on to the top.")
+                    Text("Press and hold or right-click a stream to pin it.")
                 }
             }
         }

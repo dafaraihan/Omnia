@@ -42,6 +42,7 @@ struct VideoPlayerSettingsView: View {
                 Toggle("Autoplay Next Episode", isOn: settings.binding(\.autoplayNextEpisode))
                 .settingsRow("Autoplay Next Episode")
                 if settings.preferences.autoplayNextEpisode {
+Group {
                     Toggle(isOn: settings.binding(\.playbackBehavior.nextEpisodeFallbackToAnySource)) {
                         Text("Fall Back to Any Source")
                         Text("When no source from the same release is found, play the first available one.")
@@ -49,6 +50,8 @@ struct VideoPlayerSettingsView: View {
                     .settingsRow("Fall Back to Any Source")
                     .disabled(!behavior.preferBingeGroup)
                 }
+.settingsDependentRows()
+}
                 SettingsDropdown(
                     "Show Up Next",
                     selection: settings.binding(\.playbackBehavior.nextEpisodeThresholdMode),
@@ -79,7 +82,7 @@ struct VideoPlayerSettingsView: View {
             } header: {
                 Text("Next Episode")
             } footer: {
-                Text("The threshold is used when a title has no credits timestamp. With one, Up Next appears when the credits start, after any post-credits scene.")
+                Text("The threshold is used when a title has no credits timestamp.")
             }
 
             Section {
@@ -233,6 +236,7 @@ struct StreamSelectionSections: View {
                 ) { mode in mode.title }
                 .settingsRow("Auto-play")
                 if behavior.autoSelectionMode == .regexMatch {
+Group {
                     TextField("Regex Pattern", text: settings.binding(\.playbackBehavior.autoSelectionRegex), prompt: Text("(2160p|4k|1080p)"))
                         .font(.body.monospaced())
                         .autocorrectionDisabled()
@@ -252,7 +256,10 @@ struct StreamSelectionSections: View {
                             .foregroundStyle(.orange)
                     }
                 }
+.settingsDependentRows()
+}
                 if behavior.autoSelectionMode != .manual {
+Group {
                     SettingsDropdown(
                         "Wait for Add-ons",
                         selection: settings.binding(\.playbackBehavior.selectionTimeoutSeconds),
@@ -266,6 +273,8 @@ struct StreamSelectionSections: View {
                     ) { scope in scope.title }
                     .settingsRow("Pick From")
                 }
+.settingsDependentRows()
+}
             } header: {
                 Text("Auto Stream Selection")
             } footer: {
@@ -284,7 +293,7 @@ struct StreamSelectionSections: View {
                 } header: {
                     Text("Allowed Add-ons")
                 } footer: {
-                    Text("Automatic selection only picks from these add-ons. The source list still shows all of them.")
+                    Text("Automatic selection only picks from these add-ons.")
                 }
             }
 
@@ -317,7 +326,7 @@ struct StreamSelectionSections: View {
             } header: {
                 Text("Binge Group")
             } footer: {
-                Text("Add-ons mark sources from the same release with a binge group, as in Stremio.")
+                Text("Add-ons mark sources from the same release with a binge group.")
             }
 
             Section {

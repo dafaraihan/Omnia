@@ -17,12 +17,6 @@ struct PosterCardSettingsView: View {
     var body: some View {
         OmniaSettingsForm {
             Section {
-                PosterCardPreview(display: display)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-            }
-
-            Section {
                 SettingsDropdown(
                     "Size",
                     selection: settings.binding(\.display.posterWidth),
@@ -46,7 +40,17 @@ struct PosterCardSettingsView: View {
                 }
                 .settingsRow("Show Details Under Posters")
             } header: {
-                Text("Poster Card Style")
+                SettingsSectionHeader("Poster Card Style", resetTitle: "Reset Poster Cards", canReset: true) {
+                    settings.update {
+                        let defaults = DisplayPreferences.default
+                        $0.display.posterWidth = defaults.posterWidth
+                        $0.display.posterCorner = defaults.posterCorner
+                        $0.display.landscapePosters = defaults.landscapePosters
+                        $0.display.cardDepth = defaults.cardDepth
+                        $0.display.cardHover = defaults.cardHover
+                    }
+
+                }
             }
 
             Section {
@@ -192,19 +196,10 @@ struct PosterCardSettingsView: View {
 
             }
 
-            Section {
-                Button("Reset Poster Cards") {
-                    settings.update {
-                        let defaults = DisplayPreferences.default
-                        $0.display.posterWidth = defaults.posterWidth
-                        $0.display.posterCorner = defaults.posterCorner
-                        $0.display.landscapePosters = defaults.landscapePosters
-                        $0.display.cardDepth = defaults.cardDepth
-                        $0.display.cardHover = defaults.cardHover
-                    }
-                }
-                .settingsRow("Reset Poster Cards")
-            }
+        }
+        .settingsPinnedPreview {
+            PosterCardPreview(display: display)
+                .frame(maxWidth: .infinity)
         }
         .omniaNavigationTitle("Cards")
         // A search result may be one of the Advanced options.

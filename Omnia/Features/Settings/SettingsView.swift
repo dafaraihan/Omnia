@@ -11,31 +11,8 @@ struct SettingsView: View {
     @State private var hoveredRoute: SettingsRoute?
     #endif
 
-    @Environment(\.scenePhase) private var scenePhase
-
     var body: some View {
-        Group {
-            if DeviceLock.shared.locksSettings, !DeviceLock.shared.isSettingsUnlocked {
-                lockedSettings
-            } else {
-                unlockedSettings
-            }
-        }
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .background { DeviceLock.shared.relock() }
-        }
-    }
-
-    private var lockedSettings: some View {
-        ContentUnavailableView {
-            Label("Settings Are Locked", systemImage: "lock.fill")
-        } actions: {
-            Button("Unlock with \(DeviceLock.shared.methodName)") {
-                Task { await DeviceLock.shared.unlockSettings() }
-            }
-            .buttonStyle(.borderedProminent)
-        }
-        .task { await DeviceLock.shared.unlockSettings() }
+        SettingsLockGate { unlockedSettings }
     }
 
     private var unlockedSettings: some View {
@@ -97,7 +74,7 @@ struct SettingsView: View {
                             NavigationLink {
                                 SettingsDestinationView(route: route)
                             } label: {
-                                SettingsRouteLabel(route: route, summary: summary(for: route))
+                                SettingsRouteLabel(route: route)
                             }
                             #if os(macOS)
                             .buttonStyle(MacSettingsNavigationButtonStyle(isHovered: hoveredRoute == route))
@@ -126,6 +103,23 @@ struct SettingsView: View {
         #else
         content()
         #endif
+    }
+}
+
+/// What a page is set to, beside its name.
+struct SettingsRouteSummary: View {
+    let route: SettingsRoute
+    @Environment(OmniaStore.self) private var store
+    @Environment(OmniaAccount.self) private var account
+    @Environment(SettingsPreferencesStore.self) private var settings
+    @Environment(PluginStore.self) private var plugins
+
+    var body: some View {
+        if let text = summary(for: route) {
+            Text(text)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
     }
 
     private func summary(for route: SettingsRoute) -> String? {
@@ -180,8 +174,177 @@ struct SettingsView: View {
     }
 }
 
+/// Face ID, Touch ID or the passcode in front of Settings, when turned on.
+struct SettingsLockGate<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+    @Environment(\.scenePhase) private var scenePhase
+
+    var body: some View {
+        Group {
+            if DeviceLock.shared.locksSettings, !DeviceLock.shared.isSettingsUnlocked {
+                ContentUnavailableView {
+                    Label("Settings Are Locked", systemImage: "lock.fill")
+                } actions: {
+                    Button("Unlock with \(DeviceLock.shared.methodName)") {
+                        Task { await DeviceLock.shared.unlockSettings() }
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                .task { await DeviceLock.shared.unlockSettings() }
+            } else {
+                content()
+            }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { DeviceLock.shared.relock() }
+        }
+    }
+}
+
+/// A page's coloured icon.
+struct SettingsIconTile: View {
+    let route: SettingsRoute
+
+    var body: some View {
+        Image(systemName: route.systemImage)
+            .font(.system(size: 14, weight: .medium))
+            .symbolVariant(.fill)
+            .foregroundStyle(.white)
+            .frame(width: 28, height: 28)
+            .background(route.tileColor, in: .rect(cornerRadius: 7, style: .continuous))
+            .accessibilityHidden(true)
+    }
+}
+
+extension SettingsRoute {
+    var tileColor: Color {
+        switch self {
+        case .account: .blue
+        case .appearance, .liquidGlass: .indigo
+        case .navigation: .blue
+        case .home, .catalogs, .collections, .continueWatching, .upcoming: .orange
+        case .posterCards: .pink
+        case .detailPage: .purple
+        case .videoPlayer: .red
+        case .streams: .teal
+        case .playerControls: .mint
+        case .subtitle: .cyan
+        case .addons, .plugins: .green
+        case .mediaServers, .liveTV: .brown
+        case .metadata, .metadataProvider, .metadataSources, .tmdbEnrichment, .tvdbEnrichment, .animeEnrichment: .gray
+        case .contentDiscovery: .blue
+        case .tracking: .red
+        case .notifications: .red
+        case .privacy: .blue
+        case .battery: .green
+        case .progress: .gray
+        case .about, .aboutSection: .gray
+        case .playbackResolver, .playbackDiagnostics: .gray
+        }
+    }
+}
+
+/// Settings on iPad and Mac: the groups beside the open page, like System
+/// Settings. Two panes rather than a NavigationSplitView, since on Mac this
+/// already sits in the app's own split view when it uses the sidebar.
+struct SettingsSplitView: View {
+    @Environment(OmniaStore.self) private var store
+    @Environment(OmniaAccount.self) private var account
+    @Environment(SettingsPreferencesStore.self) private var settings
+    @Environment(PluginStore.self) private var plugins
+    @Environment(ProfileStore.self) private var profiles
+    @State private var selection: SettingsRoute? = .appearance
+    @State private var focusRow: String?
+    @State private var searchText = ""
+
+    var body: some View {
+        SettingsLockGate {
+            HStack(spacing: 0) {
+                NavigationStack {
+                    sidebar
+                        .omniaNavigationTitle(AppDestination.settings.title(for: profiles.activeProfile), screen: .settings)
+                        .searchable(text: $searchText, prompt: "Search Settings")
+                }
+                .frame(width: 300)
+
+                Divider()
+                    .ignoresSafeArea()
+
+                NavigationStack {
+                    SettingsDestinationView(route: selection ?? .appearance)
+                        .environment(\.settingsFocusRow, focusRow)
+                        .omniaPageDestinations()
+                }
+                .id(selection)
+            }
+        }
+    }
+
+    private var isSearching: Bool {
+        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var sidebar: some View {
+        List(selection: Binding(
+            get: { selection },
+            set: { route in
+                focusRow = nil
+                if let route { selection = route }
+            }
+        )) {
+            if isSearching {
+                let rows = SettingsSearchIndex.matches(searchText)
+                if !rows.isEmpty {
+                    Section("Options") {
+                        ForEach(rows.prefix(40)) { row in
+                            Button {
+                                selection = row.route
+                                focusRow = row.title
+                            } label: {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(row.title)
+                                        .foregroundStyle(.primary)
+                                    Text(row.route.title)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            } else {
+                Section {
+                    SettingsProfileCard()
+                        .tag(SettingsRoute.account)
+                }
+            }
+            ForEach(SettingsRoute.filteredRootGroups(query: searchText)) { group in
+                Section(group.section.title) {
+                    ForEach(group.routes, id: \.self) { route in
+                        LabeledContent {
+                            SettingsRouteSummary(route: route)
+                                .font(.caption)
+                        } label: {
+                            Label {
+                                Text(route.title)
+                            } icon: {
+                                SettingsIconTile(route: route)
+                            }
+                        }
+                        .tag(route)
+                    }
+                }
+            }
+        }
+        .listStyle(.sidebar)
+    }
+}
+
 /// The top of Settings: who this is, and whether they're synced.
-private struct SettingsProfileCard: View {
+struct SettingsProfileCard: View {
     @Environment(OmniaAccount.self) private var account
     @Environment(ProfileStore.self) private var profiles
 
@@ -325,14 +488,18 @@ struct SettingsRouteLink: View {
                         Text(summary)
                     }
                 } label: {
-                    Label(route.title, systemImage: route.systemImage)
+                    Label {
+                        Text(route.title)
+                    } icon: {
+                        SettingsIconTile(route: route)
+                    }
                 }
             }
         } else {
             NavigationLink {
                 SettingsDestinationView(route: route)
             } label: {
-                SettingsRouteLabel(route: route, summary: summary)
+                SettingsRouteLabel(route: route, explicitSummary: summary)
             }
             #if os(macOS)
             .buttonStyle(MacSettingsNavigationButtonStyle(isHovered: isHovered))
@@ -345,7 +512,8 @@ struct SettingsRouteLink: View {
 
 private struct SettingsRouteLabel: View {
     let route: SettingsRoute
-    let summary: String?
+    /// Nil shows what the page is set to.
+    var explicitSummary: String?
 
     var body: some View {
         HStack {
@@ -353,25 +521,16 @@ private struct SettingsRouteLabel: View {
                 Text(route.title)
                     .foregroundStyle(.primary)
             } icon: {
-                #if os(macOS)
-                MacSettingsSymbolImage(systemName: route.systemImage)
-                #else
-                Image(systemName: route.systemImage)
-                #endif
+                SettingsIconTile(route: route)
             }
             Spacer(minLength: 12)
-            if let summary {
-                Text(summary)
+            if let explicitSummary {
+                Text(explicitSummary)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.trailing)
-                    .lineLimit(2)
+            } else {
+                SettingsRouteSummary(route: route)
             }
-            #if os(macOS)
-            Image(systemName: "chevron.forward")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.tertiary)
-                .accessibilityHidden(true)
-            #endif
         }
     }
 }

@@ -27,6 +27,7 @@ struct AppearanceSettingsView: View {
                 AccentSwatchGrid(selection: settings.binding(\.display.accentTheme))
                     .padding(.vertical, 4)
                 if settings.preferences.display.accentTheme == .custom {
+Group {
                     SettingsDropdown(
                         "Style",
                         selection: settings.binding(\.display.customAccentMode),
@@ -59,6 +60,8 @@ struct AppearanceSettingsView: View {
                         .accessibilityHidden(true)
                     }
                 }
+.settingsDependentRows()
+}
             } header: {
                 Text("Accent Color")
             } footer: {

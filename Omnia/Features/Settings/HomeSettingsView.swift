@@ -128,6 +128,7 @@ struct HomeSettingsView: View {
             }
             .settingsRow("Auto-Advance")
             if settings.preferences.heroTrailer.autoAdvance {
+Group {
                 SettingsDropdown(
                     "Title Duration",
                     subtitle: "How long a title stays in the hero when no trailer is playing.",
@@ -136,6 +137,8 @@ struct HomeSettingsView: View {
                 ) { "\($0) s" }
                 .settingsRow("Title Duration")
             }
+.settingsDependentRows()
+}
             Toggle(isOn: settings.binding(\.heroTrailer.autoplay)) {
                 settingLabel(
                     "Hero Trailer Playback",
@@ -144,6 +147,7 @@ struct HomeSettingsView: View {
             }
             .settingsRow("Hero Trailer Playback")
             if settings.preferences.heroTrailer.autoplay {
+Group {
                 Toggle(isOn: settings.binding(\.heroTrailer.startsWithSound)) {
                     settingLabel(
                         "Start with Sound",
@@ -166,6 +170,8 @@ struct HomeSettingsView: View {
                 ) { $0.title }
                 .settingsRow("After Trailer")
             }
+.settingsDependentRows()
+}
             }
             .disabled(!homeLayout.preferences.showsHero)
             Toggle(isOn: Binding(
@@ -180,18 +186,19 @@ struct HomeSettingsView: View {
             }
             .settingsRow("Gradient Overlay")
             if settings.preferences.display.heroBlend.isEnabled {
+Group {
                 SettingsDeferredSlider(title: "Overlay Strength", value: settings.binding(\.display.heroBlend.strength), range: 0.2 ... 1)
                 .settingsRow("Overlay Strength")
                 SettingsDeferredSlider(title: "Overlay Height", value: settings.binding(\.display.heroBlend.height), range: 0.2 ... 1)
                 .settingsRow("Overlay Height")
-                Button("Reset Overlay") {
-                    settings.update { $0.display.heroBlend = HeroBlendPreferences() }
-                }
-                .settingsRow("Reset Overlay")
-                .disabled(settings.preferences.display.heroBlend == HeroBlendPreferences())
             }
+.settingsDependentRows()
+}
         } header: {
-            Text("Hero")
+            SettingsSectionHeader("Hero", resetTitle: "Reset Overlay", canReset: !(settings.preferences.display.heroBlend == HeroBlendPreferences())) {
+                    settings.update { $0.display.heroBlend = HeroBlendPreferences() }
+
+            }
         } footer: {
             Text("The hero shows up to \(HomeLayoutPreferences.heroItemLimit) titles from its catalogs.")
         }
@@ -262,7 +269,7 @@ struct DetailPageSettingsView: View {
             } header: {
                 Text("Page")
             } footer: {
-                Text("Artwork Color tints the page below the hero with the title's artwork. Plain uses the window background.")
+                Text("Artwork Color tints the page with the title's artwork.")
             }
 
             Section {
@@ -297,7 +304,7 @@ struct DetailPageSettingsView: View {
             } header: {
                 Text("Sections")
             } footer: {
-                Text("Turned-off sections are left out of every title page. Drag a section to change the order they appear in.")
+                Text("Drag to reorder. Turned-off sections are left out.")
             }
         }
         .omniaNavigationTitle("Title Page")

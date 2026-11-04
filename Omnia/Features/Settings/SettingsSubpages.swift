@@ -29,6 +29,7 @@ struct NavigationSettingsView: View {
                     ) { $0.title }
 
                     if settings.preferences.display.topBarStyle.isNuvio {
+Group {
                         Toggle(isOn: settings.binding(\.display.topBarGlow)) {
                             Text("Glass Glow")
                             Text("Adds soft light around the floating bar while you press or drag it.")
@@ -40,14 +41,16 @@ struct NavigationSettingsView: View {
                         .settingsRow("Top Bar Height")
                         SettingsDeferredSlider(title: "Top Bar Width", value: settings.binding(\.display.topBarSize.width), range: TopBarSizePreferences.range)
                         .settingsRow("Top Bar Width")
-                        Button("Reset Top Bar Size") {
-                            settings.update { $0.display.topBarSize = TopBarSizePreferences() }
-                        }
-                        .settingsRow("Reset Top Bar Size")
-                        .disabled(settings.preferences.display.topBarSize == TopBarSizePreferences())
                     }
+.settingsDependentRows()
+}
                 }
 
+            } header: {
+                SettingsSectionHeader("Bar", resetTitle: "Reset Top Bar Size", canReset: !(settings.preferences.display.topBarSize == TopBarSizePreferences())) {
+                            settings.update { $0.display.topBarSize = TopBarSizePreferences() }
+
+                }
             } footer: {
                 Text("Choose a sidebar or a floating bar.")
             }
@@ -132,17 +135,8 @@ struct PlayerControlsSettingsView: View {
 
     var body: some View {
         OmniaSettingsForm {
-            Section("Live Preview") {
-                MacSubtitlePlaybackPreview(
-                    style: settings.preferences.playbackSubtitleStyle,
-                    height: previewHeight,
-                    showsMenu: showsMenuInPreview
-                )
-                .environment(\.displayPreferences, previewDisplay)
-                Toggle("Show a Menu in the Preview", isOn: $showsMenuInPreview)
-            }
-
             Section {
+                Toggle("Show a Menu in the Preview", isOn: $showsMenuInPreview)
                 sizeSlider("Controls Size", \.controls)
                 .settingsRow("Controls Size")
                 sizeSlider("Timeline Length", \.timelineLength, range: 0.5 ... 1)
@@ -153,13 +147,11 @@ struct PlayerControlsSettingsView: View {
                 .settingsRow("Menu Width")
                 sizeSlider("Menu Height", \.menuHeight)
                 .settingsRow("Menu Height")
-                Button("Reset Player Size") {
-                    settings.update { $0.display.playerSize = PlayerSizePreferences() }
-                }
-                .settingsRow("Reset Player Size")
-                .disabled(settings.preferences.display.playerSize == PlayerSizePreferences())
             } header: {
-                Text("Size")
+                SettingsSectionHeader("Size", resetTitle: "Reset Player Size", canReset: !(settings.preferences.display.playerSize == PlayerSizePreferences())) {
+                    settings.update { $0.display.playerSize = PlayerSizePreferences() }
+
+                }
             }
 
             Section {
@@ -188,6 +180,14 @@ struct PlayerControlsSettingsView: View {
             } header: {
                 Text("Glass")
             }
+        }
+        .settingsPinnedPreview {
+            MacSubtitlePlaybackPreview(
+                style: settings.preferences.playbackSubtitleStyle,
+                height: previewHeight,
+                showsMenu: showsMenuInPreview
+            )
+            .environment(\.displayPreferences, previewDisplay)
         }
         .omniaNavigationTitle("Player Controls")
     }
@@ -335,6 +335,7 @@ struct BatteryPerformanceSettingsView: View {
                 Toggle("Hover Preview", isOn: settings.binding(\.display.hoverPreviewEnabled))
                 .settingsRow("Hover Preview")
                 if settings.preferences.display.hoverPreviewEnabled {
+Group {
                     SettingsDropdown(
                         "Hover Preview Delay",
                         selection: settings.binding(\.display.hoverPreviewDelay),
@@ -342,6 +343,8 @@ struct BatteryPerformanceSettingsView: View {
                     ) { $0.title }
                     .settingsRow("Hover Preview Delay")
                 }
+.settingsDependentRows()
+}
             } header: {
                 Text("Browsing")
             } footer: {

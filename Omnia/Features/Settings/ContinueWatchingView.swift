@@ -77,7 +77,7 @@ struct ContinueWatchingSettingsView: View {
             } header: {
                 Text("Row")
             } footer: {
-                Text("Paused Scene shows the frame where you stopped, saved when you close the player; titles you haven't played since use their artwork. Style Default keeps each layout’s original size and corners. Poster Card Style can apply its own to these with one button.")
+                Text("Paused Scene shows the frame where you stopped.")
             }
 
             Section {
@@ -129,7 +129,7 @@ struct ContinueWatchingSettingsView: View {
             } header: {
                 Text("Behavior")
             } footer: {
-                Text("A title leaves Continue Watching once you've watched past this point. Direct playback is set in Playback.")
+                Text("A title leaves the row once you've watched past this point.")
             }
 
             Section {

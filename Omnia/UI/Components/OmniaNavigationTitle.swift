@@ -91,6 +91,9 @@ private struct MacPushedToolbarTitleModifier: ViewModifier {
     /// Nil shows the Back button alone.
     let title: String?
     @Environment(\.dismiss) private var dismiss
+    /// False for the first page of a stack, such as a Settings page beside
+    /// its sidebar, which has nowhere to go back to.
+    @Environment(\.isPresented) private var isPresented
 
     func body(content: Content) -> some View {
         content
@@ -98,6 +101,7 @@ private struct MacPushedToolbarTitleModifier: ViewModifier {
             .toolbarTitleDisplayMode(.inline)
             .navigationBarBackButtonHidden()
             .toolbar {
+if isPresented {
                 ToolbarItem(placement: .navigation) {
                     Button {
                         dismiss()
@@ -107,6 +111,7 @@ private struct MacPushedToolbarTitleModifier: ViewModifier {
                     .accessibilityLabel("Back")
                     .help("Back")
                 }
+}
 
                 if let title {
                     ToolbarSpacer(.fixed, placement: .navigation)
