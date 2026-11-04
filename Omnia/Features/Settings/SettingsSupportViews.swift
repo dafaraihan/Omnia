@@ -495,28 +495,42 @@ struct SettingsDeferredSlider: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-            Slider(
-                value: Binding(
-                    get: { draft ?? value },
-                    set: { newValue in
-                        draft = newValue
-                        onDraft(newValue)
-                    }
-                ),
-                in: range
-            ) {
+            HStack {
                 Text(title)
-            } minimumValueLabel: {
+                Spacer()
+                Text(valueText)
+                    .font(.subheadline.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            HStack(spacing: 10) {
                 if let minimumLabel { Text(minimumLabel).font(.caption) }
-            } maximumValueLabel: {
+                Slider(
+                    value: Binding(
+                        get: { draft ?? value },
+                        set: { newValue in
+                            draft = newValue
+                            onDraft(newValue)
+                        }
+                    ),
+                    in: range
+                ) {
+                    Text(title)
+                } onEditingChanged: { isEditing in
+                    guard !isEditing, let draft else { return }
+                    value = draft
+                    self.draft = nil
+                    onDraft(nil)
+                }
+                // The title and value are above; macOS would repeat the title here.
+                .labelsHidden()
+                .accessibilityValue(valueText)
                 if let maximumLabel { Text(maximumLabel).font(.caption) }
-            } onEditingChanged: { isEditing in
-                guard !isEditing, let draft else { return }
-                value = draft
-                self.draft = nil
-                onDraft(nil)
             }
         }
     }
+
+    private var valueText: String {
+        "\(Int(((draft ?? value) * 100).rounded()))%"
+    }
+}
 }

@@ -88,6 +88,18 @@ struct AppearanceSettingsView: View {
                     Text("Dynamic Background Color")
                     Text("Blend the featured artwork color into Home’s background.")
                 }
+                Toggle(isOn: settings.binding(\.display.heroBlend.isEnabled)) {
+                    Text("Gradient Overlay")
+                    Text("Fades the hero into the page below it. Needs Dynamic Background Color, or Artwork Color on title pages.")
+                }
+                if settings.preferences.display.heroBlend.isEnabled {
+                    SettingsDeferredSlider(title: "Overlay Strength", value: settings.binding(\.display.heroBlend.strength), range: 0.2 ... 1)
+                    SettingsDeferredSlider(title: "Overlay Height", value: settings.binding(\.display.heroBlend.height), range: 0.2 ... 1)
+                    Button("Reset Overlay") {
+                        settings.update { $0.display.heroBlend = HeroBlendPreferences() }
+                    }
+                    .disabled(settings.preferences.display.heroBlend == HeroBlendPreferences())
+                }
                 if showsNavigationStyle {
                     SettingsDropdown(
                         "Navigation Style",

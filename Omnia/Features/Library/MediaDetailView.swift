@@ -248,6 +248,10 @@ struct MediaDetailView: View {
                 HeroBottomBlend(item: displayItem)
                     .transition(.opacity)
             }
+            if heroTrailer.isVisible, !OmniaDevice.isPhone, settings.preferences.display.heroBlend.isEnabled {
+                HeroTrailerBottomFade(item: displayItem, usesWash: usesArtworkBackground)
+                    .transition(.opacity)
+            }
             if heroTrailer.isVisible {
                 HeroTrailerTopFade(item: displayItem, usesWash: usesArtworkBackground)
                     .transition(.opacity)

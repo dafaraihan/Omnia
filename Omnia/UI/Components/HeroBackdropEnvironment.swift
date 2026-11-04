@@ -232,6 +232,37 @@ struct HeroBottomBlend: View {
     }
 }
 
+/// Under a playing trailer on iPad and Mac: a short fade, so the video doesn't
+/// end in a hard edge, without covering the picture as the full overlay does.
+struct HeroTrailerBottomFade: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let item: MediaItem
+    var usesWash: Bool
+
+    var body: some View {
+        Group {
+            if usesWash {
+                HomeArtworkBackground(item: item).environment(\.colorScheme, .dark)
+            } else if colorScheme == .dark {
+                OmniaPageBackground()
+            }
+        }
+        .mask {
+            LinearGradient(
+                stops: [
+                    .init(color: .clear, location: 0.78),
+                    .init(color: .black.opacity(0.6), location: 0.92),
+                    .init(color: .black, location: 1)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
 /// Over a playing trailer: covers the black bar some trailers have at the top.
 struct HeroTrailerTopFade: View {
     let item: MediaItem

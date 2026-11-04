@@ -592,6 +592,10 @@ struct HomeView: View {
                 HeroBottomBlend(item: featured)
                     .transition(.opacity)
             }
+            if heroTrailer.isVisible, !isCardHero, !OmniaDevice.isPhone, settings.preferences.display.heroBlend.isEnabled {
+                HeroTrailerBottomFade(item: featured, usesWash: usesDynamicBackground)
+                    .transition(.opacity)
+            }
             if heroTrailer.isVisible, !isCardHero {
                 HeroTrailerTopFade(item: featured, usesWash: usesDynamicBackground)
                     .transition(.opacity)
