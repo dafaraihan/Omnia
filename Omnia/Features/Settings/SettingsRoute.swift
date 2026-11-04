@@ -1,4 +1,6 @@
 enum SettingsSection: Int, CaseIterable, Identifiable, Sendable {
+    case general
+    case about
     case look
     case watch
     case sources
@@ -8,6 +10,8 @@ enum SettingsSection: Int, CaseIterable, Identifiable, Sendable {
 
     var title: String {
         switch self {
+        case .general: "General"
+        case .about: "About"
         case .look: "Look"
         case .watch: "Watch"
         case .sources: "Sources"
@@ -85,6 +89,7 @@ enum SettingsRoute: Hashable, Sendable {
     case progress
     case upcoming
     case videoPlayer
+    case streamSelection
     case subtitle
     case playbackResolver
     case playbackDiagnostics
@@ -107,7 +112,13 @@ enum SettingsRoute: Hashable, Sendable {
     /// The Settings tree. Account & Profiles is the profile card above these.
     /// Navigation only has options where there is a sidebar or top bar.
     static var rootGroups: [SettingsRouteGroup] {
-        [
+        guard OmniaDevice.isPhone else {
+            return [
+                .init(section: .general, routes: [.account, .appearance, .contentDiscovery, .videoPlayer, .metadata]),
+                .init(section: .about, routes: [.about])
+            ]
+        }
+        return [
             .init(section: .look, routes: OmniaDevice.isPhone
                 ? [.appearance, .home, .posterCards, .detailPage]
                 : [.appearance, .navigation, .home, .posterCards, .detailPage]),
@@ -119,7 +130,17 @@ enum SettingsRoute: Hashable, Sendable {
 
     /// The pages a root page opens, so search finds them from the root.
     var children: [SettingsRoute] {
-        switch self {
+        if !OmniaDevice.isPhone {
+            switch self {
+            case .appearance: return [.liquidGlass, .home, .catalogs, .collections, .continueWatching, .progress, .upcoming, .posterCards, .detailPage, .streams]
+            case .contentDiscovery: return [.addons, .mediaServers, .liveTV, .plugins]
+            case .videoPlayer: return [.streamSelection, .subtitle, .playbackResolver, .playbackDiagnostics]
+            case .account: return [.tracking]
+            case .home: return []
+            default: break
+            }
+        }
+        return switch self {
         case .home: [.catalogs, .collections, .continueWatching, .upcoming]
         case .appearance: [.liquidGlass]
         case .videoPlayer: [.playbackResolver, .playbackDiagnostics]
@@ -147,6 +168,26 @@ enum SettingsRoute: Hashable, Sendable {
     }
 
     var title: String {
+        OmniaDevice.isPhone ? phoneTitle : (largeScreenTitle ?? phoneTitle)
+    }
+
+    /// iPad and Mac keep the names from before the iPhone redesign.
+    private var largeScreenTitle: String? {
+        switch self {
+        case .account: "Account"
+        case .contentDiscovery: "Content & Discovery"
+        case .home: "Home Layout"
+        case .progress: "Progress"
+        case .subtitle: "Player Appearance"
+        case .appearance: "Layout"
+        case .posterCards: "Poster Card Style"
+        case .detailPage: "Detail Page"
+        case .about: "About Omnia"
+        default: nil
+        }
+    }
+
+    private var phoneTitle: String {
         switch self {
         case .account: "Account & Profiles"
         case .contentDiscovery: "Search"
@@ -165,6 +206,7 @@ enum SettingsRoute: Hashable, Sendable {
         case .progress: "Data & Backup"
         case .upcoming: "Upcoming"
         case .videoPlayer: "Playback"
+        case .streamSelection: "Stream Selection"
         case .subtitle: "Subtitles"
         case .playbackResolver: "Playback Resolver"
         case .playbackDiagnostics: "Playback Diagnostics"
@@ -209,6 +251,7 @@ enum SettingsRoute: Hashable, Sendable {
         case .progress: "clock.arrow.circlepath"
         case .upcoming: "calendar"
         case .videoPlayer: "play.rectangle"
+        case .streamSelection: "list.bullet.rectangle"
         case .subtitle: "captions.bubble"
         case .playbackResolver: "externaldrive.connected.to.line.below"
         case .playbackDiagnostics: "stethoscope"
@@ -247,6 +290,7 @@ enum SettingsRoute: Hashable, Sendable {
         case .progress: ["local progress", "continue watching", "watchlist", "backup"]
         case .upcoming: ["episodes", "look ahead", "Home"]
         case .videoPlayer: ["video player", "player", "skip intro", "auto skip", "recap", "credits", "up next", "next episode", "threshold", "decoder", "hardware", "Metal", "rendering", "gpu-next", "OpenGL", "overlay", "audio", "subtitles", "SDH", "forced", "source selection", "auto play"]
+        case .streamSelection: ["auto play", "autoplay", "first source", "regex", "reuse last link", "binge group", "timeout", "allowed add-ons"]
         case .subtitle: ["player appearance", "subtitles", "captions", "SDH", "appearance"]
         case .playbackResolver: ["endpoint", "bearer token", "approved add-ons", "approved HTTPS hosts"]
         case .playbackDiagnostics: ["diagnostics", "log", "errors", "failures", "could not play", "libmpv", "copy"]

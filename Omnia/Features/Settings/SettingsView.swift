@@ -32,7 +32,7 @@ struct SettingsView: View {
     private var rootSettingsContent: some View {
         settingsContent {
             OmniaSettingsForm(isRoot: true) {
-                if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                if OmniaDevice.isPhone, searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Section {
                         NavigationLink {
                             SettingsDestinationView(route: .account)
@@ -48,7 +48,7 @@ struct SettingsView: View {
                         #endif
                     }
                 }
-                let matchingRows = SettingsSearchIndex.matches(searchText)
+                let matchingRows = OmniaDevice.isPhone ? SettingsSearchIndex.matches(searchText) : []
                 if !matchingRows.isEmpty {
                     Section("Options") {
                         ForEach(matchingRows.prefix(40)) { row in
@@ -113,6 +113,7 @@ struct SettingsRouteSummary: View {
     @Environment(OmniaAccount.self) private var account
     @Environment(SettingsPreferencesStore.self) private var settings
     @Environment(PluginStore.self) private var plugins
+    @Environment(ProfileStore.self) private var profiles
 
     var body: some View {
         if let text = summary(for: route) {
@@ -122,7 +123,60 @@ struct SettingsRouteSummary: View {
         }
     }
 
+    private func largeScreenSummary(for route: SettingsRoute) -> String? {
+        switch route {
+        case .account:
+            let count = profiles.profiles.count
+            let people = count == 1 ? "1 profile" : "\(count) profiles"
+            return account.user == nil ? "\(people), not signed in" : "\(people), synced to your account"
+        case .contentDiscovery:
+            return "Add-ons, media servers, Live TV, and plugins"
+        case .addons:
+            if store.installedAddonsAreLoading {
+                return "Loading…"
+            }
+            let count = store.installedAddons.filter(\.isEnabled).count
+            return count == 0 ? "No sources enabled" : "\(count) enabled"
+        case .mediaServers:
+            let count = MediaServerStore.shared.connections.count
+            return count == 0 ? "No servers" : count == 1 ? "1 server" : "\(count) servers"
+        case .liveTV:
+            return LiveTVStore.shared.hasSources ? "Set up" : "Not set up"
+        case .plugins:
+            if plugins.repositories.isEmpty { return "No repositories" }
+            guard plugins.pluginsEnabled else { return "Turned off" }
+            let count = plugins.enabledScraperCount
+            return count == 1 ? "1 plugin on" : "\(count) plugins on"
+        case .home:
+            let catalogs = AddonCatalogStore.catalogs(in: store)
+            guard !catalogs.isEmpty else { return "Built-in rows" }
+            let visible = catalogs.filter { store.isCatalogEnabled(for: $0.addon, catalog: $0.catalog) }.count
+            return "\(visible) of \(catalogs.count) catalogs visible"
+        case .catalogs:
+            return "Built-in and add-on catalogs"
+        case .collections:
+            return "Folders of catalogs on Home"
+        case .metadata:
+            return "API keys, TMDB enrichment, MDBList ratings and metadata sources"
+        case .progress:
+            return account.storageSummary
+        case .upcoming:
+            return settings.preferences.showUpcoming ? "Shown on Home" : "Hidden from Home"
+        case .videoPlayer:
+            return "Player, subtitles, and auto-play"
+        case .subtitle:
+            return "Controls, menus and subtitles"
+        case .appearance:
+            return "Home, collections, and detail pages"
+        case .about:
+            return "Resources, attributions, and licenses"
+        default:
+            return nil
+        }
+    }
+
     private func summary(for route: SettingsRoute) -> String? {
+        guard OmniaDevice.isPhone else { return largeScreenSummary(for: route) }
         let display = settings.preferences.display
         switch route {
         case .appearance:
@@ -239,107 +293,8 @@ extension SettingsRoute {
         case .battery: .green
         case .progress: .gray
         case .about, .aboutSection: .gray
-        case .playbackResolver, .playbackDiagnostics: .gray
+        case .playbackResolver, .playbackDiagnostics, .streamSelection: .gray
         }
-    }
-}
-
-/// Settings on iPad and Mac: the groups beside the open page, like System
-/// Settings. Two panes rather than a NavigationSplitView, since on Mac this
-/// already sits in the app's own split view when it uses the sidebar.
-struct SettingsSplitView: View {
-    @Environment(OmniaStore.self) private var store
-    @Environment(OmniaAccount.self) private var account
-    @Environment(SettingsPreferencesStore.self) private var settings
-    @Environment(PluginStore.self) private var plugins
-    @Environment(ProfileStore.self) private var profiles
-    @State private var selection: SettingsRoute? = .appearance
-    @State private var focusRow: String?
-    @State private var searchText = ""
-
-    var body: some View {
-        SettingsLockGate {
-            HStack(spacing: 0) {
-                NavigationStack {
-                    sidebar
-                        .omniaNavigationTitle(AppDestination.settings.title(for: profiles.activeProfile), screen: .settings)
-                        .searchable(text: $searchText, prompt: "Search Settings")
-                }
-                .frame(width: 300)
-
-                Divider()
-                    .ignoresSafeArea()
-
-                NavigationStack {
-                    SettingsDestinationView(route: selection ?? .appearance)
-                        .environment(\.settingsFocusRow, focusRow)
-                        .omniaPageDestinations()
-                }
-                .id(selection)
-            }
-        }
-    }
-
-    private var isSearching: Bool {
-        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    private var sidebar: some View {
-        List(selection: Binding(
-            get: { selection },
-            set: { route in
-                focusRow = nil
-                if let route { selection = route }
-            }
-        )) {
-            if isSearching {
-                let rows = SettingsSearchIndex.matches(searchText)
-                if !rows.isEmpty {
-                    Section("Options") {
-                        ForEach(rows.prefix(40)) { row in
-                            Button {
-                                selection = row.route
-                                focusRow = row.title
-                            } label: {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(row.title)
-                                        .foregroundStyle(.primary)
-                                    Text(row.route.title)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
-            } else {
-                Section {
-                    SettingsProfileCard()
-                        .tag(SettingsRoute.account)
-                }
-            }
-            ForEach(SettingsRoute.filteredRootGroups(query: searchText)) { group in
-                Section(group.section.title) {
-                    ForEach(group.routes, id: \.self) { route in
-                        LabeledContent {
-                            SettingsRouteSummary(route: route)
-                                .font(.caption)
-                        } label: {
-                            Label {
-                                Text(route.title)
-                            } icon: {
-                                SettingsIconTile(route: route)
-                            }
-                        }
-                        .tag(route)
-                    }
-                }
-            }
-        }
-        .listStyle(.sidebar)
     }
 }
 
@@ -376,7 +331,7 @@ struct SettingsDestinationView: View {
             case .account:
                 AccountSettingsView()
             case .contentDiscovery:
-                ContentDiscoverySettingsView()
+                if OmniaDevice.isPhone { ContentDiscoverySettingsView() } else { LegacyContentDiscoverySettingsView() }
             case .addons:
                 AddonsSettingsView()
             case .mediaServers:
@@ -386,7 +341,7 @@ struct SettingsDestinationView: View {
             case .plugins:
                 PluginsSettingsView()
             case .home:
-                HomeSettingsView()
+                if OmniaDevice.isPhone { HomeSettingsView() } else { LegacyHomeSettingsView() }
             case .catalogs:
                 CatalogsSettingsView()
             case .collections:
@@ -404,17 +359,19 @@ struct SettingsDestinationView: View {
             case .progress:
                 ProgressSettingsView()
             case .upcoming:
-                UpcomingSettingsView()
+                if OmniaDevice.isPhone { UpcomingSettingsView() } else { LegacyUpcomingSettingsView() }
             case .videoPlayer:
-                VideoPlayerSettingsView()
+                if OmniaDevice.isPhone { VideoPlayerSettingsView() } else { LegacyVideoPlayerSettingsView() }
             case .subtitle:
-                SubtitleAppearanceSettingsView()
+                if OmniaDevice.isPhone { SubtitleAppearanceSettingsView() } else { LegacySubtitleAppearanceSettingsView() }
             case .playbackDiagnostics:
                 PlaybackDiagnosticsSettingsView()
             case .playbackResolver:
                 PlaybackResolverSettingsView()
             case .appearance:
-                AppearanceSettingsView()
+                if OmniaDevice.isPhone { AppearanceSettingsView() } else { LegacyAppearanceSettingsView() }
+            case .streamSelection:
+                LegacyStreamSelectionSettingsView()
             case .navigation:
                 NavigationSettingsView()
             case .playerControls:
@@ -426,15 +383,15 @@ struct SettingsDestinationView: View {
             case .battery:
                 BatteryPerformanceSettingsView()
             case .liquidGlass:
-                LiquidGlassSettingsView()
+                if OmniaDevice.isPhone { LiquidGlassSettingsView() } else { LegacyLiquidGlassSettingsView() }
             case .posterCards:
-                PosterCardSettingsView()
+                if OmniaDevice.isPhone { PosterCardSettingsView() } else { LegacyPosterCardSettingsView() }
             case .streams:
-                StreamsSettingsView()
+                if OmniaDevice.isPhone { StreamsSettingsView() } else { LegacyStreamsSettingsView() }
             case .continueWatching:
-                ContinueWatchingSettingsView()
+                if OmniaDevice.isPhone { ContinueWatchingSettingsView() } else { LegacyContinueWatchingSettingsView() }
             case .detailPage:
-                DetailPageSettingsView()
+                if OmniaDevice.isPhone { DetailPageSettingsView() } else { LegacyDetailPageSettingsView() }
             case .about:
                 AboutSettingsView()
             case let .metadataProvider(id):
@@ -488,10 +445,14 @@ struct SettingsRouteLink: View {
                         Text(summary)
                     }
                 } label: {
-                    Label {
-                        Text(route.title)
-                    } icon: {
-                        SettingsIconTile(route: route)
+                    if OmniaDevice.isPhone {
+                        Label {
+                            Text(route.title)
+                        } icon: {
+                            SettingsIconTile(route: route)
+                        }
+                    } else {
+                        Label(route.title, systemImage: route.systemImage)
                     }
                 }
             }
@@ -521,7 +482,15 @@ private struct SettingsRouteLabel: View {
                 Text(route.title)
                     .foregroundStyle(.primary)
             } icon: {
-                SettingsIconTile(route: route)
+                if OmniaDevice.isPhone {
+                    SettingsIconTile(route: route)
+                } else {
+                    #if os(macOS)
+                    MacSettingsSymbolImage(systemName: route.systemImage)
+                    #else
+                    Image(systemName: route.systemImage)
+                    #endif
+                }
             }
             Spacer(minLength: 12)
             if let explicitSummary {

@@ -86,7 +86,7 @@ struct ProgressSettingsView: View {
             }
             if let statusMessage { Text(statusMessage).foregroundStyle(.secondary) }
         }
-        .omniaNavigationTitle("Data & Backup")
+        .omniaNavigationTitle(SettingsRoute.progress.title)
         .confirmationDialog(
             destructiveAction?.title ?? "Remove local data?",
             isPresented: Binding(get: { destructiveAction != nil }, set: { if !$0 { destructiveAction = nil } }),

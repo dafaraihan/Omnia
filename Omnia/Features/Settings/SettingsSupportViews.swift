@@ -114,7 +114,7 @@ struct OmniaSettingsForm<Content: View>: View {
     var body: some View {
         form
             // Rows that depend on a switch slide in with it.
-            .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: settings?.preferences)
+            .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: OmniaDevice.isPhone ? settings?.preferences : nil)
     }
 
     @ViewBuilder
@@ -626,6 +626,16 @@ struct SettingsValueChip: View {
     @FocusState private var isFocused: Bool
 
     var body: some View {
+        if OmniaDevice.isPhone {
+            chip
+        } else {
+            Text(text)
+                .font(.subheadline.monospacedDigit())
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var chip: some View {
         Group {
             if isEditing {
                 TextField("Value", text: $draft)
