@@ -47,17 +47,21 @@ struct ProgressSettingsView: View {
                     selection: settings.binding(\.continueWatchingLimit),
                     options: Array(BoundedItemLimit.allCases)
                 ) { limit in limit.title }
+                .settingsRow("Continue Watching items")
             } footer: {
                 Text("Fewer items reduce the amount of Home content loaded at once.")
             }
 
             Section {
                 Button("Export Local Data", systemImage: "square.and.arrow.up") { exportLocalData() }
+                .settingsRow("Export Local Data")
                     .disabled(isWorking || store.localMediaSnapshots.isEmpty)
                 Button("Import Local Data", systemImage: "square.and.arrow.down") { showsImporter = true }
+                .settingsRow("Import Local Data")
                     .disabled(isWorking)
                 if pendingImportData != nil {
                     Button("Merge Reviewed Import") { applyImport(replacingExisting: false) }
+                    .settingsRow("Merge Reviewed Import")
                     Button("Replace with Reviewed Import", role: .destructive) {
                         importConfirmation.request(.replace)
                     }
@@ -70,7 +74,9 @@ struct ProgressSettingsView: View {
 
             Section("Remove Local Data") {
                 Button("Clear Progress", role: .destructive) { destructiveAction = .clearProgress }
+                .settingsRow("Clear Progress")
                 Button("Clear Watchlist", role: .destructive) { destructiveAction = .clearWatchlist }
+                .settingsRow("Clear Watchlist")
             }
 
             if isWorking { OmniaLoadingRow("Updating local data…") }
@@ -80,7 +86,7 @@ struct ProgressSettingsView: View {
             }
             if let statusMessage { Text(statusMessage).foregroundStyle(.secondary) }
         }
-        .omniaNavigationTitle("Progress")
+        .omniaNavigationTitle("Data & Backup")
         .confirmationDialog(
             destructiveAction?.title ?? "Remove local data?",
             isPresented: Binding(get: { destructiveAction != nil }, set: { if !$0 { destructiveAction = nil } }),

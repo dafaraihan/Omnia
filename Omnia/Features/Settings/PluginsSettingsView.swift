@@ -30,6 +30,7 @@ struct PluginsSettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                .settingsRow("Use Plugins")
 
                 Toggle(isOn: Binding(get: { plugins.groupsByRepository }, set: { plugins.setGroupsByRepository($0) })) {
                     VStack(alignment: .leading, spacing: 2) {
@@ -39,6 +40,7 @@ struct PluginsSettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                .settingsRow("Group Plugin Providers by Repository")
                 .disabled(!plugins.pluginsEnabled)
             }
 
@@ -194,6 +196,7 @@ struct PluginsSettingsView: View {
                     }
                 }
             }
+            .settingsRow("Turned off by the repository.")
             .disabled(!scraper.manifestEnabled || !plugins.pluginsEnabled)
 
             HStack(spacing: 12) {

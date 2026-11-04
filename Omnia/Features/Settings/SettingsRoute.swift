@@ -1,20 +1,22 @@
-import Foundation
-
 enum SettingsSection: Int, CaseIterable, Identifiable, Sendable {
-    case account
-    case general
-    case about
+    case look
+    case watch
+    case sources
+    case you
 
     var id: Int { rawValue }
 
     var title: String {
         switch self {
-        case .account: "Account"
-        case .general: "General"
-        case .about: "About"
+        case .look: "Look"
+        case .watch: "Watch"
+        case .sources: "Sources"
+        case .you: "You"
         }
     }
 }
+
+import Foundation
 
 enum AboutSection: String, CaseIterable, Identifiable, Hashable, Sendable {
     case metadataAndDiscovery
@@ -83,11 +85,15 @@ enum SettingsRoute: Hashable, Sendable {
     case progress
     case upcoming
     case videoPlayer
-    case streamSelection
     case subtitle
     case playbackResolver
     case playbackDiagnostics
     case appearance
+    case navigation
+    case playerControls
+    case notifications
+    case privacy
+    case battery
     case liquidGlass
     case posterCards
     case streams
@@ -98,32 +104,37 @@ enum SettingsRoute: Hashable, Sendable {
     case tracking
     case aboutSection(AboutSection)
 
-    /// Nuvio's Settings tree: Layout, Content & Discovery, Playback and
-    /// Integrations under General. Omnia's own Progress page opens from
-    /// Layout › Continue Watching.
-    static let rootGroups: [SettingsRouteGroup] = [
-        .init(section: .general, routes: [.account, .appearance, .contentDiscovery, .videoPlayer, .metadata]),
-        .init(section: .about, routes: [.about])
-    ]
+    /// The Settings tree. Account & Profiles is the profile card above these.
+    /// Navigation only has options where there is a sidebar or top bar.
+    static var rootGroups: [SettingsRouteGroup] {
+        [
+            .init(section: .look, routes: OmniaDevice.isPhone
+                ? [.appearance, .home, .posterCards, .detailPage]
+                : [.appearance, .navigation, .home, .posterCards, .detailPage]),
+            .init(section: .watch, routes: [.videoPlayer, .streams, .playerControls, .subtitle]),
+            .init(section: .sources, routes: [.addons, .plugins, .mediaServers, .liveTV, .metadata, .contentDiscovery]),
+            .init(section: .you, routes: [.tracking, .notifications, .privacy, .battery, .progress, .about])
+        ]
+    }
 
-    /// The pages each root page opens, so search finds them from the root.
+    /// The pages a root page opens, so search finds them from the root.
     var children: [SettingsRoute] {
         switch self {
-        case .appearance: [.liquidGlass, .home, .catalogs, .collections, .continueWatching, .progress, .upcoming, .posterCards, .detailPage, .streams]
-        case .contentDiscovery: [.addons, .mediaServers, .liveTV, .plugins]
-        case .videoPlayer: [.streamSelection, .subtitle, .playbackResolver, .playbackDiagnostics]
-        case .account: [.tracking]
+        case .home: [.catalogs, .collections, .continueWatching, .upcoming]
+        case .appearance: [.liquidGlass]
+        case .videoPlayer: [.playbackResolver, .playbackDiagnostics]
         case .metadata: [.metadataProvider("tmdb"), .metadataProvider("tvdb"), .metadataProvider("fanart"),
                          .tmdbEnrichment, .tvdbEnrichment, .animeEnrichment, .metadataProvider("mdblist"), .metadataSources]
         default: []
         }
     }
 
-    static let allVerificationRoutes: [SettingsRoute] =
-        rootGroups.flatMap(\.routes)
+    static var allVerificationRoutes: [SettingsRoute] {
+        [.account] + rootGroups.flatMap(\.routes)
         + rootGroups.flatMap(\.routes).flatMap(\.children)
         + MetadataProvider.supported.filter { $0.id != "mdblist" && $0.id != "anilist" }.map { .metadataProvider($0.id) }
         + AboutSection.allCases.map { .aboutSection($0) }
+    }
 
     static func filteredRootGroups(query: String) -> [SettingsRouteGroup] {
         rootGroups.compactMap { group in
@@ -137,13 +148,13 @@ enum SettingsRoute: Hashable, Sendable {
 
     var title: String {
         switch self {
-        case .account: "Account"
-        case .contentDiscovery: "Content & Discovery"
+        case .account: "Account & Profiles"
+        case .contentDiscovery: "Search"
         case .addons: "Add-ons"
         case .plugins: "Plugins"
         case .mediaServers: "Media Servers"
         case .liveTV: "Live TV"
-        case .home: "Home Layout"
+        case .home: "Home"
         case .catalogs: "Catalogs"
         case .collections: "Collections"
         case .metadata: "Integrations"
@@ -151,20 +162,24 @@ enum SettingsRoute: Hashable, Sendable {
         case .tvdbEnrichment: "TVDB Enrichment"
         case .animeEnrichment: "Anime Enrichment"
         case .metadataSources: "Metadata Sources"
-        case .progress: "Progress"
+        case .progress: "Data & Backup"
         case .upcoming: "Upcoming"
         case .videoPlayer: "Playback"
-        case .streamSelection: "Stream Selection"
-        case .subtitle: "Player Appearance"
+        case .subtitle: "Subtitles"
         case .playbackResolver: "Playback Resolver"
         case .playbackDiagnostics: "Playback Diagnostics"
-        case .appearance: "Layout"
+        case .appearance: "Appearance"
+        case .navigation: "Navigation"
+        case .playerControls: "Player Controls"
+        case .notifications: "Notifications"
+        case .privacy: "Privacy & Security"
+        case .battery: "Battery & Performance"
         case .liquidGlass: "Liquid Glass"
-        case .posterCards: "Poster Card Style"
+        case .posterCards: "Cards"
         case .streams: "Streams"
         case .continueWatching: "Continue Watching"
-        case .detailPage: "Detail Page"
-        case .about: "About Omnia"
+        case .detailPage: "Title Page"
+        case .about: "About"
         case .metadataProvider("mdblist"): "MDBList Ratings"
         case let .metadataProvider(id):
             MetadataProvider.supported.first { $0.id == id }?.name ?? "Metadata Provider"
@@ -194,11 +209,15 @@ enum SettingsRoute: Hashable, Sendable {
         case .progress: "clock.arrow.circlepath"
         case .upcoming: "calendar"
         case .videoPlayer: "play.rectangle"
-        case .streamSelection: "list.bullet.rectangle"
         case .subtitle: "captions.bubble"
-        case .playbackResolver: "lock.shield"
+        case .playbackResolver: "externaldrive.connected.to.line.below"
         case .playbackDiagnostics: "stethoscope"
         case .appearance: "circle.lefthalf.filled"
+        case .navigation: "sidebar.left"
+        case .playerControls: "slider.horizontal.below.rectangle"
+        case .notifications: "bell.badge"
+        case .privacy: "lock.shield"
+        case .battery: "battery.75percent"
         case .liquidGlass: "drop.halffull"
         case .posterCards: "rectangle.portrait.on.rectangle.portrait"
         case .streams: "play.square.stack"
@@ -228,10 +247,14 @@ enum SettingsRoute: Hashable, Sendable {
         case .progress: ["local progress", "continue watching", "watchlist", "backup"]
         case .upcoming: ["episodes", "look ahead", "Home"]
         case .videoPlayer: ["video player", "player", "skip intro", "auto skip", "recap", "credits", "up next", "next episode", "threshold", "decoder", "hardware", "Metal", "rendering", "gpu-next", "OpenGL", "overlay", "audio", "subtitles", "SDH", "forced", "source selection", "auto play"]
-        case .streamSelection: ["auto play", "autoplay", "first source", "regex", "reuse last link", "binge group", "timeout", "allowed add-ons", "plugins", "sort", "sorting", "ranking", "quality", "resolution", "4K", "HDR", "Dolby Vision", "codec", "HEVC", "size", "debrid", "cached", "filters"]
-        case .subtitle: ["player appearance", "controls", "menu size", "subtitles", "captions", "SDH", "appearance"]
+        case .subtitle: ["player appearance", "subtitles", "captions", "SDH", "appearance"]
         case .playbackResolver: ["endpoint", "bearer token", "approved add-ons", "approved HTTPS hosts"]
         case .playbackDiagnostics: ["diagnostics", "log", "errors", "failures", "could not play", "libmpv", "copy"]
+        case .navigation: ["sidebar", "top bar", "tab bar", "adaptive", "size", "glass glow"]
+        case .playerControls: ["player appearance", "controls", "menu size", "timeline", "overlays", "loading", "pause"]
+        case .notifications: ["reminders", "new episode", "alerts"]
+        case .privacy: ["app lock", "Face ID", "Touch ID", "passcode", "content warnings", "parents guide"]
+        case .battery: ["low power", "energy", "decoder", "hardware", "Metal", "hover preview"]
         case .appearance: ["appearance", "theme", "system", "light", "dark", "accent", "color", "AMOLED", "black", "hover preview", "poster", "glow", "gradient", "top bar style", "glass glow", "adaptive", "compact", "expanded", "iPadOS", "standard"]
         case .liquidGlass: ["liquid glass", "glass", "transparency", "frosted", "blur", "intensity"]
         case .streams: ["streams", "sources", "badges", "Fusion", "size", "add-on logo", "background", "cinematic", "search bar", "pin"]

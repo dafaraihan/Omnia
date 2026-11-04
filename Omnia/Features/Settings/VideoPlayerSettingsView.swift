@@ -15,17 +15,13 @@ struct VideoPlayerSettingsView: View {
     var body: some View {
         OmniaSettingsForm {
             Section {
-                NavigationLink {
-                    SettingsDestinationView(route: .streamSelection)
-                } label: {
-                    LabeledContent("Stream Selection", value: streamSelectionSummary)
-                }
-                .settingsLinkRow()
                 Toggle("Play Continue Watching Directly", isOn: settings.binding(\.directContinueWatchingPlayback))
+                .settingsRow("Play Continue Watching Directly")
                 Toggle(isOn: settings.binding(\.compatibleFormatsOnly)) {
                     Text("Show Only Compatible Formats")
                     Text("Hides web pages and sources Omnia can't play from the source list.")
                 }
+                .settingsRow("Show Only Compatible Formats")
                 NavigationLink {
                     SettingsDestinationView(route: .playbackResolver)
                 } label: {
@@ -44,11 +40,13 @@ struct VideoPlayerSettingsView: View {
 
             Section {
                 Toggle("Autoplay Next Episode", isOn: settings.binding(\.autoplayNextEpisode))
+                .settingsRow("Autoplay Next Episode")
                 if settings.preferences.autoplayNextEpisode {
                     Toggle(isOn: settings.binding(\.playbackBehavior.nextEpisodeFallbackToAnySource)) {
                         Text("Fall Back to Any Source")
                         Text("When no source from the same release is found, play the first available one.")
                     }
+                    .settingsRow("Fall Back to Any Source")
                     .disabled(!behavior.preferBingeGroup)
                 }
                 SettingsDropdown(
@@ -56,6 +54,7 @@ struct VideoPlayerSettingsView: View {
                     selection: settings.binding(\.playbackBehavior.nextEpisodeThresholdMode),
                     options: Array(NextEpisodeThresholdMode.allCases)
                 ) { mode in mode.title }
+                .settingsRow("Show Up Next")
                 switch behavior.nextEpisodeThresholdMode {
                 case .percentage:
                     SettingsDropdown(
@@ -63,17 +62,20 @@ struct VideoPlayerSettingsView: View {
                         selection: settings.binding(\.playbackBehavior.nextEpisodeThresholdPercent),
                         options: Array(PlaybackBehaviorPreferences.thresholdPercentOptions)
                     ) { value in "\(value.formatted(.number.precision(.fractionLength(0 ... 1))))% watched" }
+                    .settingsRow("Threshold")
                 case .minutesBeforeEnd:
                     SettingsDropdown(
                         "Threshold",
                         selection: settings.binding(\.playbackBehavior.nextEpisodeThresholdMinutes),
                         options: Array(PlaybackBehaviorPreferences.thresholdMinuteOptions)
                     ) { value in minutesTitle(value) }
+                    .settingsRow("Threshold")
                 }
                 Toggle(isOn: settings.binding(\.playbackBehavior.preloadNextEpisodeSources)) {
                     Text("Preload Next Episode Sources")
                     Text("Looks up the next episode's sources shortly before Up Next appears.")
                 }
+                .settingsRow("Preload Next Episode Sources")
             } header: {
                 Text("Next Episode")
             } footer: {
@@ -85,6 +87,7 @@ struct VideoPlayerSettingsView: View {
                     Text("Skip Intro, Recap and Credits")
                     Text("Shows a Skip button using timestamps from IntroDB.")
                 }
+                .settingsRow("Skip Intro, Recap and Credits")
                 ForEach(PlaybackBehaviorPreferences.autoSkipKinds, id: \.self) { kind in
                     Toggle("Skip \(kind.settingsTitle) Automatically", isOn: autoSkipBinding(kind))
                 }
@@ -105,45 +108,12 @@ struct VideoPlayerSettingsView: View {
                 LabeledContent("Default player", value: "Omnia (in-app)")
                 #if OMNIA_MPV
                 LabeledContent("Playback engine", value: "libmpv")
-                SettingsDropdown(
-                    "Decoder",
-                    selection: settings.binding(\.playbackBehavior.decoderPriority),
-                    options: Array(DecoderPriority.allCases)
-                ) { priority in priority.title }
                 #else
                 LabeledContent("Playback engine", value: "AVPlayer")
                 #endif
-                #if os(macOS)
-                Toggle(isOn: settings.binding(\.playbackBehavior.metalRendering)) {
-                    Text("Metal Rendering")
-                    Text("Draws video with gpu-next on Metal, as Nuvio does, for sharper scaling and HDR tone mapping. If Metal can't start, the player uses OpenGL and notes why in Diagnostics. Applies from the next video.")
-                }
-                #endif
+                SettingsRouteLink(route: .battery, summary: "Decoder and rendering")
             } header: {
-                Text("Player")
-            } footer: {
-                #if OMNIA_MPV
-                Text("\(behavior.decoderPriority.detail) Applies from the next title you play.")
-                #else
-                Text("Playback always stays inside Omnia.")
-                #endif
-            }
-
-            Section("Overlays") {
-                Toggle(isOn: settings.binding(\.playbackBehavior.showLoadingOverlay)) {
-                    Text("Loading Overlay")
-                    Text("Shows the title's artwork until the first frame appears.")
-                }
-                Toggle("Show Loading Status", isOn: settings.binding(\.playbackBehavior.showLoadingStatus))
-                    .disabled(!behavior.showLoadingOverlay)
-                Toggle(isOn: settings.binding(\.playbackBehavior.showPauseOverlay)) {
-                    Text("Pause Overlay")
-                    Text("Shows the title's details after five seconds paused.")
-                }
-                Toggle(isOn: settings.binding(\.playbackBehavior.showContentWarnings)) {
-                    Text("Content Warnings")
-                    Text("Shows IMDb's parents guide (sex, violence, language, drugs, frightening scenes) for a few seconds when a title starts. Sends the title's IMDb ID to api.tiffara.com, as Nuvio does.")
-                }
+                Text("Engine")
             }
 
             #if os(macOS)
@@ -152,12 +122,15 @@ struct VideoPlayerSettingsView: View {
                     Text("Use Whole Screen")
                     Text("Video also covers the strip beside the camera notch. Full screen then stays in the current Space instead of opening its own. Applies from the next video.")
                 }
+                .settingsRow("Use Whole Screen")
             }
             #endif
 
             Section("Audio") {
                 LanguagePicker("Preferred audio", selection: settings.binding(\.preferredAudioLanguage), includesNone: false)
+                .settingsRow("Preferred audio")
                 LanguagePicker("Audio fallback", selection: settings.binding(\.audioFallbackLanguage), includesNone: true)
+                .settingsRow("Audio fallback")
                 SettingsDropdown(
                     "Anime audio",
                     selection: settings.binding(\.animeAudioPreference),
@@ -169,11 +142,9 @@ struct VideoPlayerSettingsView: View {
                     case .dub: "Dub"
                     }
                 }
+                .settingsRow("Anime audio")
             }
 
-            Section {
-                SettingsRouteLink(route: .subtitle, summary: "Controls, menus and subtitles")
-            }
         }
         .omniaNavigationTitle("Playback")
     }
@@ -212,11 +183,12 @@ struct VideoPlayerSettingsView: View {
 /// Settings › Video Player › Stream Selection: how sources are sorted and
 /// filtered, then Nuvio's Reuse Last Link, Auto Stream Selection and binge
 /// groups.
-struct StreamSelectionSettingsView: View {
+/// Streams › Selection: how Omnia picks a source.
+struct StreamSelectionSections: View {
+    @Binding var confirmsForget: Bool
     @Environment(SettingsPreferencesStore.self) private var settings
     @Environment(OmniaStore.self) private var store
     @Environment(PluginStore.self) private var plugins
-    @State private var confirmsForget = false
 
     private var behavior: PlaybackBehaviorPreferences {
         settings.preferences.playbackBehavior
@@ -231,7 +203,7 @@ struct StreamSelectionSettingsView: View {
     }
 
     var body: some View {
-        OmniaSettingsForm {
+        Group {
             StreamSortingSections()
 
             Section {
@@ -239,11 +211,13 @@ struct StreamSelectionSettingsView: View {
                     Text("Reuse Last Link")
                     Text("Plays the stream you last watched for a movie or episode again, without asking the add-ons.")
                 }
+                .settingsRow("Reuse Last Link")
                 SettingsDropdown(
                     "Keep Links For",
                     selection: settings.binding(\.playbackBehavior.lastLinkCacheHours),
                     options: Array(PlaybackBehaviorPreferences.lastLinkCacheHourOptions)
                 ) { hours in hoursTitle(hours) }
+                .settingsRow("Keep Links For")
                 .disabled(!behavior.reuseLastLink)
             } header: {
                 Text("Last Link")
@@ -257,6 +231,7 @@ struct StreamSelectionSettingsView: View {
                     selection: settings.binding(\.playbackBehavior.autoSelectionMode),
                     options: Array(AutoStreamSelectionMode.allCases)
                 ) { mode in mode.title }
+                .settingsRow("Auto-play")
                 if behavior.autoSelectionMode == .regexMatch {
                     TextField("Regex Pattern", text: settings.binding(\.playbackBehavior.autoSelectionRegex), prompt: Text("(2160p|4k|1080p)"))
                         .font(.body.monospaced())
@@ -283,11 +258,13 @@ struct StreamSelectionSettingsView: View {
                         selection: settings.binding(\.playbackBehavior.selectionTimeoutSeconds),
                         options: Array(StreamSelectionTimeout.options)
                     ) { seconds in StreamSelectionTimeout.title(seconds) }
+                    .settingsRow("Wait for Add-ons")
                     SettingsDropdown(
                         "Pick From",
                         selection: settings.binding(\.playbackBehavior.selectionScope),
                         options: Array(AutoStreamSelectionScope.allCases)
                     ) { scope in scope.title }
+                    .settingsRow("Pick From")
                 }
             } header: {
                 Text("Auto Stream Selection")
@@ -330,10 +307,12 @@ struct StreamSelectionSettingsView: View {
                     Text("Prefer Same Release")
                     Text("For the next episode, picks the source from the same release group as the one you're watching.")
                 }
+                .settingsRow("Prefer Same Release")
                 Toggle(isOn: settings.binding(\.playbackBehavior.reuseBingeGroup)) {
                     Text("Remember Release Per Show")
                     Text("Keeps using that release group when you come back to a show later, even in Manual mode.")
                 }
+                .settingsRow("Remember Release Per Show")
                 .disabled(!behavior.preferBingeGroup)
             } header: {
                 Text("Binge Group")
@@ -345,22 +324,9 @@ struct StreamSelectionSettingsView: View {
                 Button("Forget Saved Links and Releases", role: .destructive) {
                     confirmsForget = true
                 }
+                .settingsRow("Forget Saved Links and Releases")
             }
         }
-        .confirmationDialog(
-            "Forget saved links and releases?",
-            isPresented: $confirmsForget,
-            titleVisibility: .visible
-        ) {
-            Button("Forget", role: .destructive) {
-                StreamLinkCacheStore().removeAll()
-                BingeGroupCacheStore().removeAll()
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Titles will look up their sources again the next time you play them.")
-        }
-        .omniaNavigationTitle("Stream Selection")
     }
 
     private var regexProblem: String? {

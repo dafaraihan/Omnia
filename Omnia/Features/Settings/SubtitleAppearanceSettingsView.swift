@@ -3,36 +3,6 @@ import SwiftUI
 struct SubtitleAppearanceSettingsView: View {
     @Environment(SettingsPreferencesStore.self) private var settings
     @State private var showsResetConfirmation = false
-    @State private var showsMenuInPreview = true
-    @State private var draftSize: PlayerSizePreferences?
-
-    /// The preview follows a size slider while the drag is still going.
-    private var previewDisplay: DisplayPreferences {
-        var display = settings.preferences.display
-        if let draftSize { display.playerSize = draftSize }
-        return display
-    }
-
-    private func sizeSlider(
-        _ title: String,
-        _ keyPath: WritableKeyPath<PlayerSizePreferences, Double>,
-        range: ClosedRange<Double> = PlayerSizePreferences.range
-    ) -> some View {
-        SettingsDeferredSlider(
-            title: title,
-            value: Binding(
-                get: { settings.preferences.display.playerSize[keyPath: keyPath] },
-                set: { value in settings.update { $0.display.playerSize[keyPath: keyPath] = value } }
-            ),
-            range: range,
-            onDraft: { value in
-                guard let value else { draftSize = nil; return }
-                var size = settings.preferences.display.playerSize
-                size[keyPath: keyPath] = value
-                draftSize = size
-            }
-        )
-    }
 
     var body: some View {
         subtitleSettings
@@ -43,45 +13,47 @@ struct SubtitleAppearanceSettingsView: View {
             Section("Live Preview") {
                 MacSubtitlePlaybackPreview(
                     style: settings.preferences.playbackSubtitleStyle,
-                    height: previewHeight,
-                    showsMenu: showsMenuInPreview
+                    height: previewHeight
                 )
-                .environment(\.displayPreferences, previewDisplay)
-                Toggle("Show a Menu in the Preview", isOn: $showsMenuInPreview)
-            }
-
-            Section {
-                sizeSlider("Controls Size", \.controls)
-                sizeSlider("Timeline Length", \.timelineLength, range: 0.5 ... 1)
-                sizeSlider("Menu Size", \.menuSize)
-                sizeSlider("Menu Width", \.menuWidth)
-                sizeSlider("Menu Height", \.menuHeight)
-                Button("Reset Player Size") {
-                    settings.update { $0.display.playerSize = PlayerSizePreferences() }
-                }
-                .disabled(settings.preferences.display.playerSize == PlayerSizePreferences())
-            } header: {
-                Text("Controls and Menus")
             }
 
             Section("Language") {
                 Toggle("Subtitles Enabled", isOn: settings.binding(\.subtitlesEnabled))
+                .settingsRow("Subtitles Enabled")
                 LanguagePicker(
                     "Preferred subtitles",
                     selection: settings.binding(\.preferredSubtitleLanguage),
                     includesNone: true
                 )
+                .settingsRow("Preferred subtitles")
                 LanguagePicker(
                     "Subtitle fallback",
                     selection: settings.binding(\.subtitleFallbackLanguage),
                     includesNone: true
                 )
+                .settingsRow("Subtitle fallback")
                 Toggle("Prefer SDH Captions", isOn: Binding(
                     get: { settings.preferences.sdhPreference == .prefer },
                     set: { enabled in
                         settings.update { $0.sdhPreference = enabled ? .prefer : .followSystem }
                     }
                 ))
+                .settingsRow("Prefer SDH Captions")
+                Toggle(isOn: settings.binding(\.playbackBehavior.stripSDHSubtitles)) {
+                    Text("Strip SDH Text")
+                    Text("Removes sound descriptions and speaker names, like [door creaks].")
+                }
+                .settingsRow("Strip SDH Text")
+                Toggle(isOn: settings.binding(\.playbackBehavior.useForcedSubtitles)) {
+                    Text("Use Forced Subtitles")
+                    Text("When the audio is in your subtitle language, shows only forced subtitles, such as signs and foreign dialogue.")
+                }
+                .settingsRow("Use Forced Subtitles")
+                Toggle(isOn: settings.binding(\.playbackBehavior.showOnlyPreferredSubtitleLanguages)) {
+                    Text("Only Preferred Languages")
+                    Text("Add-on subtitles in other languages aren't added to the player.")
+                }
+                .settingsRow("Only Preferred Languages")
             }
 
             Section("Font") {
@@ -117,83 +89,85 @@ struct SubtitleAppearanceSettingsView: View {
 
             Section("Style") {
                 SettingsDropdown(
-                    "Background",
+                    "Subtitle Background",
                     selection: styleBinding(\.background),
                     options: Array(PlaybackSubtitleBackground.allCases)
                 ) { background in background.settingsTitle }
+                .settingsRow("Subtitle Background")
                 SubtitleDoubleSlider(
                     title: "Size",
                     value: styleBinding(\.fontSize),
                     range: 14 ... 72,
                     valueLabel: { "\(Int($0.rounded())) pt" }
                 )
+                .settingsRow("Size")
                 SubtitleDoubleSlider(
                     title: "Scale",
                     value: styleBinding(\.scale),
                     range: 0.5 ... 2,
                     valueLabel: { "\(Int(($0 * 100).rounded()))%" }
                 )
+                .settingsRow("Scale")
                 SubtitleDoubleSlider(
                     title: "Position",
                     value: styleBinding(\.height),
                     range: 0 ... 100,
                     valueLabel: { "\(Int($0.rounded()))" }
                 )
+                .settingsRow("Position")
                 SubtitleDoubleSlider(
                     title: "Shadow Opacity",
                     value: styleBinding(\.shadowOpacity),
                     range: 0 ... 1,
                     valueLabel: { "\(Int(($0 * 100).rounded()))%" }
                 )
+                .settingsRow("Shadow Opacity")
                 SubtitleDoubleSlider(
                     title: "Shadow Blur",
                     value: styleBinding(\.shadowBlurRadius),
                     range: 0 ... 20,
                     valueLabel: { "\(Int($0.rounded()))" }
                 )
+                .settingsRow("Shadow Blur")
                 if settings.preferences.playbackSubtitleStyle.background != .none {
                     ColorPicker(
                         "Background Color",
                         selection: hexColorBinding(\.backgroundColorHex),
                         supportsOpacity: false
                     )
+                    .settingsRow("Background Color")
                 }
             }
 
             Section("Text") {
                 ColorPicker("Text Color", selection: hexColorBinding(\.textColorHex), supportsOpacity: false)
+                .settingsRow("Text Color")
                 Toggle("Bold", isOn: styleBinding(\.isBold))
+                .settingsRow("Bold")
                 Toggle("Italic", isOn: styleBinding(\.isItalic))
+                .settingsRow("Italic")
                 Toggle("Outline", isOn: styleBinding(\.outlineEnabled))
+                .settingsRow("Outline")
                 if settings.preferences.playbackSubtitleStyle.outlineEnabled {
                     ColorPicker("Outline Color", selection: hexColorBinding(\.outlineColorHex), supportsOpacity: false)
+                    .settingsRow("Outline Color")
                     SubtitleDoubleSlider(
                         title: "Outline Width",
                         value: styleBinding(\.outlineSize),
                         range: 0.5 ... 5,
                         valueLabel: { String(format: "%.1f", $0) }
                     )
+                    .settingsRow("Outline Width")
                 }
             }
 
             Section {
-                Toggle(isOn: settings.binding(\.playbackBehavior.stripSDHSubtitles)) {
-                    Text("Strip SDH Text")
-                    Text("Removes sound descriptions and speaker names, like [door creaks].")
-                }
-                Toggle(isOn: settings.binding(\.playbackBehavior.useForcedSubtitles)) {
-                    Text("Use Forced Subtitles")
-                    Text("When the audio is in your subtitle language, shows only forced subtitles, such as signs and foreign dialogue.")
-                }
-                Toggle(isOn: settings.binding(\.playbackBehavior.showOnlyPreferredSubtitleLanguages)) {
-                    Text("Only Preferred Languages")
-                    Text("Add-on subtitles in other languages aren't added to the player.")
-                }
                 #if OMNIA_MPV
                 Toggle(isOn: settings.binding(\.playbackBehavior.autoSyncsSubtitles)) {
                     Text("Auto Sync Subtitles")
                     Text("When an add-on subtitle starts, Omnia listens to the speech for up to three minutes and lines the subtitle up with it. Subtitles inside the video are left as they are.")
                 }
+                .settingsRow("Auto Sync Subtitles")
                 SubtitleDoubleSlider(
                     title: "Subtitle Delay",
                     value: Binding(
@@ -206,22 +180,25 @@ struct SubtitleAppearanceSettingsView: View {
                     range: -10 ... 10,
                     valueLabel: { String(format: "%+.1f s", $0) }
                 )
+                .settingsRow("Subtitle Delay")
                 Button("Reset Delay") {
                     settings.update { $0.playbackSubtitleStyle.delaySeconds = 0 }
                 }
+                .settingsRow("Reset Delay")
                 .disabled(settings.preferences.playbackSubtitleStyle.delaySeconds == 0)
                 #endif
             } header: {
-                Text("Subtitles")
+                Text("Sync and Delay")
             } footer: {
                 Text("Subtitles from add-ons such as OpenSubtitles are added to the player's list as they arrive. The delay applies to every video; a delay set in the player's Sync panel is kept for that title only, and a positive delay shows subtitles later.")
             }
 
             Section {
                 Button("Reset to Defaults", role: .destructive) { showsResetConfirmation = true }
+                .settingsRow("Reset to Defaults")
             }
         }
-        .omniaNavigationTitle("Player Appearance")
+        .omniaNavigationTitle("Subtitles")
         .confirmationDialog("Reset subtitle preferences?", isPresented: $showsResetConfirmation, titleVisibility: .visible) {
             Button("Reset", role: .destructive) {
                 settings.update {

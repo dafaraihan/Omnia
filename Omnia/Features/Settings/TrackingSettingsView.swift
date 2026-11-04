@@ -34,18 +34,21 @@ struct TrackingSettingsView: View {
                     selection: $library.watchlistSource,
                     options: options(library.availableWatchlistSources, including: library.watchlistSource)
                 ) { sourceTitle($0, isLibrary: true) }
+                .settingsRow("Library Source")
                 SettingsDropdown(
                     "Watch Progress",
                     subtitle: "Choose which progress source powers resume and Continue Watching",
                     selection: $library.continueWatchingSource,
                     options: options(library.availableSources, including: library.continueWatchingSource)
                 ) { sourceTitle($0, isLibrary: false) }
+                .settingsRow("Watch Progress")
                 SettingsDropdown(
                     "More Like This Source",
                     subtitle: "Choose where recommendations come from on title pages",
                     selection: $library.moreLikeThisSource,
                     options: MoreLikeThisSource.allCases
                 ) { $0.title }
+                .settingsRow("More Like This Source")
                 .disabled(TraktExtrasClient.clientID == nil && library.moreLikeThisSource == .tmdb)
                 ForEach(TrackerKind.allCases) { kind in
                     TrackerSyncStatusLine(kind: kind)
@@ -65,11 +68,13 @@ struct TrackingSettingsView: View {
                     selection: $library.traktContinueWatchingDays,
                     options: TrackerLibraryStore.traktContinueWatchingDayOptions
                 ) { $0 == 0 ? "All" : "\($0) days" }
+                .settingsRow("Continue Watching Window")
                 .disabled(library.effectiveSource(library.continueWatchingSource).tracker != .trakt)
                 Toggle(isOn: $library.showsTraktComments) {
                     Text("Comments")
                     Text("Show Trakt reviews on title pages")
                 }
+                .settingsRow("Comments")
                 .disabled(TraktExtrasClient.clientID == nil)
             } header: {
                 Text("Trakt Features")
@@ -160,6 +165,7 @@ private struct TrackerAccountCard: View {
         Toggle(isOn: Binding(get: { trackers.scrobbles(kind) }, set: { trackers.setScrobbles($0, for: kind) })) {
             Text("Scrobble Playback")
         }
+        .settingsRow("Scrobble Playback")
         .toggleStyle(.switch)
         if let error = trackers.lastScrobbleError[kind] {
             Label("Last scrobble failed: \(error)", systemImage: "exclamationmark.triangle.fill")

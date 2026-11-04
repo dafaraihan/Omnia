@@ -159,6 +159,7 @@ struct CatalogsSettingsView: View {
                 Spacer()
                 if !homeCatalogs.isEmpty {
                     Button("Reset to Default") { showsResetConfirmation = true }
+                    .settingsRow("Reset to Default")
                         .buttonStyle(.borderless)
                         .font(.caption)
                 }

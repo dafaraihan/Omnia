@@ -35,37 +35,44 @@ struct ContinueWatchingSettingsView: View {
                         Text("Show Labels")
                         Text("The title and details under each card.")
                     }
+                    .settingsRow("Show Labels")
                 }
                 SettingsDropdown(
                     "Size",
                     selection: settings.binding(\.display.continueWatchingCard.size),
                     options: Array(ContinueWatchingCardPreferences.Size.allCases)
                 ) { $0.title }
+                .settingsRow("Size")
                 SettingsDropdown(
                     "Corners",
                     selection: settings.binding(\.display.continueWatchingCard.corners),
                     options: Array(ContinueWatchingCardPreferences.Corners.allCases)
                 ) { $0.title }
+                .settingsRow("Corners")
             } header: {
                 Text("Card Style")
             }
 
             Section {
                 Toggle("Show on Home", isOn: $showsContinueWatching)
+                .settingsRow("Show on Home")
                 SettingsDropdown(
                     "Sort By",
                     selection: settings.binding(\.display.continueWatchingSort),
                     options: Array(ContinueWatchingSort.allCases)
                 ) { sort in sort.title }
+                .settingsRow("Sort By")
                 SettingsDropdown(
                     "Artwork",
                     selection: settings.binding(\.display.continueWatchingArtwork),
                     options: Array(ContinueWatchingArtwork.allCases)
                 ) { artwork in artwork.title }
+                .settingsRow("Artwork")
                 Toggle(isOn: settings.binding(\.display.continueWatchingEpisodeThumbnails)) {
                     Text("Episode Thumbnails")
                     Text("Wide cards for shows use the episode's still instead of the show's backdrop.")
                 }
+                .settingsRow("Episode Thumbnails")
                 .disabled(settings.preferences.display.continueWatchingStyle == .poster)
             } header: {
                 Text("Row")
@@ -78,14 +85,17 @@ struct ContinueWatchingSettingsView: View {
                     Text("Next Up From Furthest Episode")
                     Text("After an episode ends, offers the one after the furthest episode you've watched. Turn off for rewatches to follow the episode you just finished.")
                 }
+                .settingsRow("Next Up From Furthest Episode")
                 Toggle(isOn: settings.binding(\.display.showsUnairedNextUp)) {
                     Text("Show Unaired Next Up Episodes")
                     Text("Keeps a show in the row when its next episode hasn't aired yet.")
                 }
+                .settingsRow("Show Unaired Next Up Episodes")
                 Toggle(isOn: settings.binding(\.display.blursNextUp)) {
                     Text("Blur Unwatched in Continue Watching")
                     Text("Blurs next-up episode stills so they don't spoil the episode.")
                 }
+                .settingsRow("Blur Unwatched in Continue Watching")
                 .disabled(!settings.preferences.display.continueWatchingEpisodeThumbnails
                     || settings.preferences.display.continueWatchingStyle == .poster)
             } header: {
@@ -97,6 +107,7 @@ struct ContinueWatchingSettingsView: View {
                     Text("Resume Prompt on Launch")
                     Text("When Omnia was closed during playback, offers to continue where you left off the next time it opens.")
                 }
+                .settingsRow("Resume Prompt on Launch")
             } header: {
                 Text("On Launch")
             }
@@ -114,6 +125,7 @@ struct ContinueWatchingSettingsView: View {
                     default: "\(value)"
                     }
                 }
+                .settingsRow("Finished At")
             } header: {
                 Text("Behavior")
             } footer: {

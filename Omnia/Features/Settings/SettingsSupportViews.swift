@@ -117,8 +117,11 @@ struct OmniaSettingsForm<Content: View>: View {
             pageCards
         }
         #else
-        Form {
-            content
+        ScrollViewReader { proxy in
+            Form {
+                content
+            }
+            .modifier(SettingsFocusScroller(proxy: proxy))
         }
         .modifier(AmoledFormBackground(isActive: usesAmoledBackground))
         .tint(resolvedTint)
@@ -186,8 +189,10 @@ struct OmniaSettingsForm<Content: View>: View {
     /// Sub-pages: the root's cards, with Form-style rows for switches,
     /// values and pickers, at the root's width and margins.
     private var pageCards: some View {
+        ScrollViewReader { proxy in
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 20) {
+            // Not lazy, so search can scroll to a row that's still off screen.
+            VStack(alignment: .leading, spacing: 20) {
                 Group(sections: content) { sections in
                     ForEach(sections) { section in
                         VStack(alignment: .leading, spacing: 8) {
@@ -233,6 +238,8 @@ struct OmniaSettingsForm<Content: View>: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(MacSettingsLayout.minimumOuterMargin)
+        }
+        .modifier(SettingsFocusScroller(proxy: proxy))
         }
         .scrollIndicators(.automatic)
         .toggleStyle(MacSettingsRowToggleStyle())
@@ -531,5 +538,67 @@ struct SettingsDeferredSlider: View {
 
     private var valueText: String {
         "\(Int(((draft ?? value) * 100).rounded()))%"
+    }
+}
+
+private struct SettingsFocusRowKey: EnvironmentKey {
+    static let defaultValue: String? = nil
+}
+
+extension EnvironmentValues {
+    /// The row a search result is opening its page to.
+    var settingsFocusRow: String? {
+        get { self[SettingsFocusRowKey.self] }
+        set { self[SettingsFocusRowKey.self] = newValue }
+    }
+}
+
+/// Lets search scroll to this row, and marks it for a moment when it does.
+private struct SettingsRowAnchor: ViewModifier {
+    let title: String
+    @Environment(\.settingsFocusRow) private var focus
+    @Environment(\.displayPreferences) private var display
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHighlighted = false
+
+    func body(content: Content) -> some View {
+        content
+            .id(title)
+            .background {
+                if isHighlighted {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(display.accentColor.opacity(0.28))
+                        .padding(-6)
+                        .transition(.opacity)
+                }
+            }
+            .task(id: focus == title) {
+                guard focus == title else { return }
+                try? await Task.sleep(for: .milliseconds(450))
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { isHighlighted = true }
+                try? await Task.sleep(for: .seconds(1.5))
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.5)) { isHighlighted = false }
+            }
+    }
+}
+
+extension View {
+    func settingsRow(_ title: String) -> some View {
+        modifier(SettingsRowAnchor(title: title))
+    }
+}
+
+/// Takes a page to the row search asked for.
+private struct SettingsFocusScroller: ViewModifier {
+    let proxy: ScrollViewProxy
+    @Environment(\.settingsFocusRow) private var focus
+
+    func body(content: Content) -> some View {
+        content.task(id: focus) {
+            guard let focus else { return }
+            // The page is still being pushed, and may open a hidden section.
+            try? await Task.sleep(for: .milliseconds(350))
+            withAnimation { proxy.scrollTo(focus, anchor: .center) }
+        }
     }
 }

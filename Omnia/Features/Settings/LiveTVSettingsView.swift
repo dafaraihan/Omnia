@@ -37,6 +37,7 @@ struct LiveTVSettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                .settingsRow("Show Live TV in Navigation")
                 .toggleStyle(.switch)
             } header: {
                 Text("Navigation")
@@ -119,6 +120,7 @@ struct LiveTVSettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                .settingsRow("Auto-Detect Guides")
                 .toggleStyle(.switch)
                 ForEach(live.configuration.guides) { source in
                     guideRow(source)

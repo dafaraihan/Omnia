@@ -37,6 +37,7 @@ struct StreamSortingSections: View {
                     Text("Ready Debrid Links First")
                     Text("Sources your debrid service already has (⚡, [RD+]) before ones it would still have to download (⏳).")
                 }
+                .settingsRow("Ready Debrid Links First")
             } header: {
                 Text("Sorting")
             } footer: {
@@ -49,21 +50,25 @@ struct StreamSortingSections: View {
                     selection: settings.binding(\.playbackBehavior.streamSorting.minimumResolution),
                     options: StreamSortPreferences.minimumResolutionOptions
                 ) { value in value == 0 ? "Any" : "\(value)p" }
+                .settingsRow("Minimum Resolution")
                 SettingsDropdown(
                     "HDR",
                     selection: settings.binding(\.playbackBehavior.streamSorting.hdr),
                     options: StreamFeatureFilter.allCases
                 ) { $0.title }
+                .settingsRow("HDR")
                 SettingsDropdown(
                     "Dolby Vision",
                     selection: settings.binding(\.playbackBehavior.streamSorting.dolbyVision),
                     options: StreamFeatureFilter.allCases
                 ) { $0.title }
+                .settingsRow("Dolby Vision")
                 SettingsDropdown(
                     "Video Codec",
                     selection: settings.binding(\.playbackBehavior.streamSorting.codec),
                     options: StreamCodecFilter.allCases
                 ) { $0.title }
+                .settingsRow("Video Codec")
             } header: {
                 Text("Filters")
             } footer: {

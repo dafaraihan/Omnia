@@ -180,6 +180,7 @@ struct TMDBEnrichmentSettingsView: View {
                     Text("Enable TMDB Enrichment")
                     Text("Replace enabled fields with available TMDB information.")
                 }
+                .settingsRow("Enable TMDB Enrichment")
             } header: {
                 Text("TMDB Enrichment")
             } footer: {
@@ -225,6 +226,7 @@ struct TVDBEnrichmentSettingsView: View {
         OmniaSettingsForm {
             Section {
                 Toggle("Enable TVDB Enrichment", isOn: settings.binding(\.integrations.tvdb.enabled))
+                .settingsRow("Enable TVDB Enrichment")
             } footer: {
                 Text("Replace enabled fields with available TVDB information using your own API key. Missing sections preserve existing information. Metadata Sources sets the priority; if TVDB isn't listed there, it comes last. Anime titles follow the Anime order only.")
             }
@@ -268,6 +270,7 @@ struct AnimeEnrichmentSettingsView: View {
                     Text("Enable Anime Enrichment")
                     Text("Use anime databases to fill in what your add-ons and TMDB leave out.")
                 }
+                .settingsRow("Enable Anime Enrichment")
             } header: {
                 Text("Anime Enrichment")
             } footer: {

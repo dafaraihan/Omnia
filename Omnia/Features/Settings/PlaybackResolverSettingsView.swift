@@ -23,11 +23,13 @@ struct PlaybackResolverSettingsView: View {
                     Button("Revoke Peer Access", role: .destructive) {
                         confirmation.request(.revokeConsent)
                     }
+                    .settingsRow("Revoke Peer Access")
                 } else {
                     Button("Allow Local Peer Playback") {
                         localSettings.acceptConsent()
                         statusMessage = "Local peer playback was enabled on this \(OmniaDevice.name)."
                     }
+                    .settingsRow("Allow Local Peer Playback")
                 }
             } header: {
                 Text("Local Resolver")
@@ -41,7 +43,9 @@ struct PlaybackResolverSettingsView: View {
                     selection: cacheQuotaBinding,
                     options: Array(ResolverCacheQuota.allCases)
                 ) { quota in quota.title }
+                .settingsRow("Maximum cache")
                 Toggle("Keep incomplete downloads", isOn: retainsIncompleteJobsBinding)
+                .settingsRow("Keep incomplete downloads")
             } header: {
                 Text("Storage")
             } footer: {
@@ -70,6 +74,7 @@ struct PlaybackResolverSettingsView: View {
                     Button("Remove Legacy Resolver Token", role: .destructive) {
                         confirmation.request(.removeLegacyToken)
                     }
+                    .settingsRow("Remove Legacy Resolver Token")
                 } header: {
                     Text("Legacy Remote Resolver")
                 } footer: {

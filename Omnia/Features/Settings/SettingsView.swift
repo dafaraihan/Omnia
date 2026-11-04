@@ -55,6 +55,42 @@ struct SettingsView: View {
     private var rootSettingsContent: some View {
         settingsContent {
             OmniaSettingsForm(isRoot: true) {
+                if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Section {
+                        NavigationLink {
+                            SettingsDestinationView(route: .account)
+                        } label: {
+                            SettingsProfileCard()
+                        }
+                        #if os(macOS)
+                        .buttonStyle(MacSettingsNavigationButtonStyle(isHovered: hoveredRoute == .account))
+                        .focusEffectDisabled()
+                        .onHover { isHovered in
+                            hoveredRoute = isHovered ? .account : (hoveredRoute == .account ? nil : hoveredRoute)
+                        }
+                        #endif
+                    }
+                }
+                let matchingRows = SettingsSearchIndex.matches(searchText)
+                if !matchingRows.isEmpty {
+                    Section("Options") {
+                        ForEach(matchingRows.prefix(40)) { row in
+                            NavigationLink {
+                                SettingsDestinationView(route: row.route)
+                                    .environment(\.settingsFocusRow, row.title)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(row.title)
+                                        .foregroundStyle(.primary)
+                                    Text(row.route.title)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .settingsLinkRow()
+                        }
+                    }
+                }
                 ForEach(SettingsRoute.filteredRootGroups(query: searchText)) { group in
                     Section(group.section.title) {
                         ForEach(group.routes, id: \.self) { route in
@@ -93,56 +129,78 @@ struct SettingsView: View {
     }
 
     private func summary(for route: SettingsRoute) -> String? {
+        let display = settings.preferences.display
         switch route {
-        case .account:
-            let count = profiles.profiles.count
-            let people = count == 1 ? "1 profile" : "\(count) profiles"
-            return account.user == nil ? "\(people), not signed in" : "\(people), synced to your account"
-        case .contentDiscovery:
-            return "Add-ons, media servers, Live TV, and plugins"
-        case .addons:
-            if store.installedAddonsAreLoading {
-                return "Loading…"
-            }
-            let count = store.installedAddons.filter(\.isEnabled).count
-            return count == 0 ? "No sources enabled" : "\(count) enabled"
-        case .mediaServers:
-            let count = MediaServerStore.shared.connections.count
-            return count == 0 ? "No servers" : count == 1 ? "1 server" : "\(count) servers"
-        case .liveTV:
-            return LiveTVStore.shared.hasSources ? "Set up" : "Not set up"
-        case .plugins:
-            if plugins.repositories.isEmpty { return "No repositories" }
-            guard plugins.pluginsEnabled else { return "Turned off" }
-            let count = plugins.enabledScraperCount
-            return count == 1 ? "1 plugin on" : "\(count) plugins on"
+        case .appearance:
+            return store.appearance.title
+        case .navigation:
+            return settings.preferences.navigationStyle == .topBar ? display.topBarStyle.title : "Sidebar"
         case .home:
             let catalogs = AddonCatalogStore.catalogs(in: store)
             guard !catalogs.isEmpty else { return "Built-in rows" }
             let visible = catalogs.filter { store.isCatalogEnabled(for: $0.addon, catalog: $0.catalog) }.count
-            return "\(visible) of \(catalogs.count) catalogs visible"
-        case .catalogs:
-            return "Built-in and add-on catalogs"
-        case .collections:
-            return "Folders of catalogs on Home"
-        case .metadata:
-            return "API keys, TMDB enrichment, MDBList ratings and metadata sources"
+            return "\(visible) of \(catalogs.count) catalogs"
+        case .posterCards:
+            return display.posterWidth.title
+        case .detailPage:
+            return display.detailBackground.title
+        case .videoPlayer:
+            return settings.preferences.autoplayNextEpisode ? "Autoplay on" : "Autoplay off"
+        case .streams:
+            return settings.preferences.playbackBehavior.autoSelectionMode.title
+        case .playerControls:
+            return display.playerSize == PlayerSizePreferences() ? "Default size" : "Custom size"
+        case .subtitle:
+            return settings.preferences.subtitlesEnabled ? "On" : "Off"
+        case .addons:
+            if store.installedAddonsAreLoading { return "Loading…" }
+            let count = store.installedAddons.filter(\.isEnabled).count
+            return count == 0 ? "None enabled" : "\(count) enabled"
+        case .plugins:
+            if plugins.repositories.isEmpty { return "None" }
+            guard plugins.pluginsEnabled else { return "Off" }
+            return "\(plugins.enabledScraperCount) on"
+        case .mediaServers:
+            let count = MediaServerStore.shared.connections.count
+            return count == 0 ? "None" : count == 1 ? "1 server" : "\(count) servers"
+        case .liveTV:
+            return LiveTVStore.shared.hasSources ? "Set up" : "Not set up"
+        case .notifications:
+            return display.episodeNotifications ? "On" : "Off"
+        case .privacy:
+            let locked = DeviceLock.shared.locksSettings || DeviceLock.shared.locksProfiles
+            return locked ? "App Lock on" : "App Lock off"
+        case .battery:
+            return display.lowPowerMode.title
         case .progress:
             return account.storageSummary
-        case .upcoming:
-            return settings.preferences.showUpcoming ? "Shown on Home" : "Hidden from Home"
-        case .videoPlayer:
-            return "Player, subtitles, and auto-play"
-        case .subtitle:
-            return "Controls, menus and subtitles"
-        case .appearance:
-            return "Home, collections, and detail pages"
-        case .about:
-            return "Resources, attributions, and licenses"
-        case .liquidGlass, .streamSelection, .playbackResolver, .playbackDiagnostics, .metadataProvider, .aboutSection, .posterCards, .streams, .continueWatching, .detailPage,
-             .tmdbEnrichment, .tvdbEnrichment, .animeEnrichment, .metadataSources, .tracking:
+        default:
             return nil
         }
+    }
+}
+
+/// The top of Settings: who this is, and whether they're synced.
+private struct SettingsProfileCard: View {
+    @Environment(OmniaAccount.self) private var account
+    @Environment(ProfileStore.self) private var profiles
+
+    var body: some View {
+        HStack(spacing: 14) {
+            if let profile = profiles.activeProfile {
+                ProfileAvatarView(profile: profile, size: 52)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(profiles.activeProfile?.name ?? "Profile")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.primary)
+                Text(account.user == nil ? "Not signed in" : "Synced to your account")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 4)
     }
 }
 
@@ -186,8 +244,6 @@ struct SettingsDestinationView: View {
                 UpcomingSettingsView()
             case .videoPlayer:
                 VideoPlayerSettingsView()
-            case .streamSelection:
-                StreamSelectionSettingsView()
             case .subtitle:
                 SubtitleAppearanceSettingsView()
             case .playbackDiagnostics:
@@ -196,6 +252,16 @@ struct SettingsDestinationView: View {
                 PlaybackResolverSettingsView()
             case .appearance:
                 AppearanceSettingsView()
+            case .navigation:
+                NavigationSettingsView()
+            case .playerControls:
+                PlayerControlsSettingsView()
+            case .notifications:
+                NotificationsSettingsView()
+            case .privacy:
+                PrivacySecuritySettingsView()
+            case .battery:
+                BatteryPerformanceSettingsView()
             case .liquidGlass:
                 LiquidGlassSettingsView()
             case .posterCards:

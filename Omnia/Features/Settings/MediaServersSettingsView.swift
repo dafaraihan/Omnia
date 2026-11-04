@@ -189,6 +189,7 @@ private struct MediaServerDetailView: View {
             Section {
                 Button("Sign In Again") { showsSignIn = true }
                 Button("Remove Server", role: .destructive) { showsRemoveConfirmation = true }
+                .settingsRow("Remove Server")
             }
         }
         .omniaNavigationTitle(connection.name)

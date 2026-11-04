@@ -6,6 +6,7 @@ import SwiftUI
 struct StreamsSettingsView: View {
     @Environment(SettingsPreferencesStore.self) private var settings
     @State private var badges = StreamBadgeStore.shared
+    @State private var confirmsForget = false
     @State private var badgeURL = ""
     @State private var isImporting = false
     @State private var importingID: String?
@@ -15,19 +16,23 @@ struct StreamsSettingsView: View {
 
     var body: some View {
         OmniaSettingsForm {
+            StreamSelectionSections(confirmsForget: $confirmsForget)
+
             Section {
                 Toggle(isOn: settings.binding(\.streams.showSizeBadges)) {
                     Text("Size Badges")
                     Text("Shows each stream's file size on its card.")
                 }
+                .settingsRow("Size Badges")
                 SettingsDropdown(
                     "Badge Position",
                     subtitle: "Where badges sit on a stream card.",
                     selection: settings.binding(\.streams.badgePlacement),
                     options: StreamPagePreferences.BadgePlacement.allCases
                 ) { $0.title }
+                .settingsRow("Badge Position")
             } header: {
-                Text("Fusion Style")
+                Text("Appearance: Badges")
             }
 
             Section {
@@ -60,28 +65,31 @@ struct StreamsSettingsView: View {
                         .foregroundStyle(.red)
                 }
             } header: {
-                Text("Fusion Badge URLs")
+                Text("Appearance: Badge URLs")
             } footer: {
                 Text("Import up to \(StreamBadgeStore.importLimit) Fusion badge lists. The active list adds a badge to every stream whose name or description matches one of its rules.")
             }
 
             Section {
                 SettingsDropdown(
-                    "Background",
+                    "Stream List Background",
                     subtitle: "Cinematic shows the title's backdrop behind the streams.",
                     selection: settings.binding(\.streams.background),
                     options: StreamPagePreferences.Background.allCases
                 ) { $0.title }
+                .settingsRow("Stream List Background")
                 Toggle(isOn: settings.binding(\.streams.showAddonLogo)) {
                     Text("Add-on Logo")
                     Text("Shows the add-on's logo and name on each stream card.")
                 }
+                .settingsRow("Add-on Logo")
                 Toggle(isOn: settings.binding(\.streams.showsSearchBar)) {
                     Text("Search Bar")
                     Text("Adds a field that filters streams by every word you type.")
                 }
+                .settingsRow("Search Bar")
             } header: {
-                Text("Display")
+                Text("Appearance: Stream List")
             }
 
             if !streams.pinnedSourceIDs.isEmpty {
@@ -90,12 +98,26 @@ struct StreamsSettingsView: View {
                     Button("Unpin All Sources", role: .destructive) {
                         settings.update { $0.streams.pinnedSourceIDs = [] }
                     }
+                    .settingsRow("Unpin All Sources")
                 } header: {
                     Text("Pinned")
                 } footer: {
                     Text("Right-click a stream or an add-on heading on the streams page to pin its add-on to the top.")
                 }
             }
+        }
+        .confirmationDialog(
+            "Forget saved links and releases?",
+            isPresented: $confirmsForget,
+            titleVisibility: .visible
+        ) {
+            Button("Forget", role: .destructive) {
+                StreamLinkCacheStore().removeAll()
+                BingeGroupCacheStore().removeAll()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Titles will look up their sources again the next time you play them.")
         }
         .omniaNavigationTitle("Streams")
     }

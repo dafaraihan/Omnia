@@ -5,6 +5,8 @@ import SwiftUI
 struct PosterCardSettingsView: View {
     @Environment(SettingsPreferencesStore.self) private var settings
     @State private var posterPatternDraft = ""
+    @State private var showsAdvanced = false
+    @Environment(\.settingsFocusRow) private var focusRow
 
     private var display: DisplayPreferences { settings.preferences.display }
 
@@ -26,19 +28,23 @@ struct PosterCardSettingsView: View {
                     selection: settings.binding(\.display.posterWidth),
                     options: Array(PosterWidthPreset.allCases)
                 ) { preset in "\(preset.title) (\(Int(preset.width)) pt)" }
+                .settingsRow("Size")
                 SettingsDropdown(
                     "Corners",
                     selection: settings.binding(\.display.posterCorner),
                     options: Array(PosterCornerPreset.allCases)
                 ) { preset in preset.title }
+                .settingsRow("Corners")
                 Toggle(isOn: settings.binding(\.display.landscapePosters)) {
                     Text("Landscape Posters")
                     Text("Show backdrops with the title logo instead of portrait posters.")
                 }
+                .settingsRow("Landscape Posters")
                 Toggle(isOn: settings.binding(\.showMediaCardLabels)) {
                     Text("Show Details Under Posters")
                     Text("Shows each title, release year, and primary genre below standard posters.")
                 }
+                .settingsRow("Show Details Under Posters")
             } header: {
                 Text("Poster Card Style")
             }
@@ -48,6 +54,7 @@ struct PosterCardSettingsView: View {
                     Text("Same Style on All Devices")
                     Text("Off, this \(OmniaDevice.name) keeps its own card styles, since a size that suits a Mac can be too big for an iPhone.")
                 }
+                .settingsRow("Same Style on All Devices")
                 Button("Apply to All Cards", systemImage: "square.on.square") {
                     settings.update { $0.display.applyPosterStyleToAllCards() }
                 }
@@ -61,7 +68,17 @@ struct PosterCardSettingsView: View {
             customPosterSourceSection
 
             Section {
+                DisclosureGroup("Advanced", isExpanded: $showsAdvanced) {
+                    EmptyView()
+                }
+            } footer: {
+                Text("Card Depth and Hover Glow.")
+            }
+
+            if showsAdvanced {
+            Section {
                 Toggle("Card Depth Effect", isOn: settings.binding(\.display.cardDepth.isEnabled))
+                .settingsRow("Card Depth Effect")
 
                 if display.cardDepth.isEnabled {
                     SettingsDropdown(
@@ -76,6 +93,7 @@ struct PosterCardSettingsView: View {
                         default: "\(value)"
                         }
                     }
+                    .settingsRow("Edge Glow")
                     SettingsDropdown(
                         "Top Sheen",
                         selection: settings.binding(\.display.cardDepth.sheenStrength),
@@ -88,6 +106,7 @@ struct PosterCardSettingsView: View {
                         default: "\(value)"
                         }
                     }
+                    .settingsRow("Top Sheen")
                     SettingsDropdown(
                         "Edge Coverage",
                         selection: settings.binding(\.display.cardDepth.edgeCoverage),
@@ -100,6 +119,7 @@ struct PosterCardSettingsView: View {
                         default: "\(value)"
                         }
                     }
+                    .settingsRow("Edge Coverage")
                 }
             } header: {
                 Text("Card Depth")
@@ -124,6 +144,7 @@ struct PosterCardSettingsView: View {
                     Text("Hover Glow")
                     Text("Lights a card's edge when the pointer rests on it, as on collection cards.")
                 }
+                .settingsRow("Hover Glow")
 
                 if display.cardHover.isEnabled {
                     SettingsDropdown(
@@ -131,19 +152,24 @@ struct PosterCardSettingsView: View {
                         selection: settings.binding(\.display.cardHover.colorSource),
                         options: Array(CardHoverPreferences.ColorSource.allCases)
                     ) { source in source.title }
+                    .settingsRow("Color")
                     if display.cardHover.colorSource == .custom {
                         ColorPicker("Custom Color", selection: hoverColorBinding, supportsOpacity: false)
+                        .settingsRow("Custom Color")
                     }
                     SettingsDropdown(
                         "Intensity",
                         selection: settings.binding(\.display.cardHover.intensity),
                         options: Array(CardHoverPreferences.Intensity.allCases)
                     ) { intensity in intensity.title }
+                    .settingsRow("Intensity")
                     Toggle(isOn: settings.binding(\.display.cardHover.outerGlow)) {
                         Text("Outer Glow")
                         Text("Adds a soft light around the card in the same color.")
                     }
+                    .settingsRow("Outer Glow")
                     Toggle("Lift on Hover", isOn: settings.binding(\.display.cardHover.lift))
+                    .settingsRow("Lift on Hover")
                 }
             } header: {
                 Text("Hover Glow")
@@ -164,6 +190,8 @@ struct PosterCardSettingsView: View {
             }
             }
 
+            }
+
             Section {
                 Button("Reset Poster Cards") {
                     settings.update {
@@ -175,9 +203,12 @@ struct PosterCardSettingsView: View {
                         $0.display.cardHover = defaults.cardHover
                     }
                 }
+                .settingsRow("Reset Poster Cards")
             }
         }
-        .omniaNavigationTitle("Poster Cards")
+        .omniaNavigationTitle("Cards")
+        // A search result may be one of the Advanced options.
+        .onAppear { if focusRow != nil { showsAdvanced = true } }
         .onAppear { posterPatternDraft = display.customPosterURLPattern }
     }
 

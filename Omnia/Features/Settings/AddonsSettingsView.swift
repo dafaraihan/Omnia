@@ -85,6 +85,7 @@ struct AddonsSettingsView: View {
                     selection: settings.binding(\.addonTimeout),
                     options: Array(AddonTimeout.allCases)
                 ) { timeout in "\(timeout.rawValue) seconds" }
+                .settingsRow("Request timeout")
             } footer: {
                 Text("Omnia cancels an add-on request when this limit is reached.")
             }
@@ -191,8 +192,10 @@ struct AddonsSettingsView: View {
 
             Section {
                 Button("Export Add-ons", systemImage: "square.and.arrow.up") { prepareExport() }
+                .settingsRow("Export Add-ons")
                     .disabled(store.installedAddons.isEmpty)
                 Button("Import Add-ons", systemImage: "square.and.arrow.down") { showsImporter = true }
+                .settingsRow("Import Add-ons")
                 if let importedDocument {
                     LabeledContent("Ready to import", value: "\(importedDocument.addons.count) add-ons")
                     Button("Install Reviewed Add-ons") { applyImport(importedDocument) }
