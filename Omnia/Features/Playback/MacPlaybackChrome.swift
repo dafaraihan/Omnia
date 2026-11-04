@@ -344,6 +344,8 @@ struct MacSubtitlePlaybackPreview: View {
 
     @Environment(\.displayPreferences) private var display
     var showsMenu = false
+    var controlsOpacity: Double = 1
+    var subtitleOpacity: Double = 1
     private let sampleSubtitle = "The quick brown fox jumps over the lazy dog"
 
     private var outlineColor: Color {
@@ -374,6 +376,7 @@ struct MacSubtitlePlaybackPreview: View {
                         .frame(width: max(geometry.size.width - 48 * previewScale, 0) * playerSize.timelineLength)
                 }
                 .padding(24 * previewScale)
+                .opacity(controlsOpacity)
 
                 if showsMenu {
                     previewMenu(scale: previewScale)
@@ -410,6 +413,7 @@ struct MacSubtitlePlaybackPreview: View {
                             - presentation.subtitleBottomInset(in: geometry.size.height)
                             - presentation.fontSize / 2
                     )
+                    .opacity(subtitleOpacity)
             }
             .foregroundStyle(.white)
         }

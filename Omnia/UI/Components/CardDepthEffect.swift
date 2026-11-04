@@ -26,13 +26,14 @@ private struct CardDepthModifier<S: InsettableShape>: ViewModifier {
     let shape: S
     let fallbackBorderOpacity: Double
     @Environment(\.displayPreferences) private var display
+    @Environment(\.settingsForcesCardHover) private var forcesHover
     @State private var isHovered = false
 
     func body(content: Content) -> some View {
         let depth = display.cardDepth
         let hover = display.cardHover
         let hovers = hover.isEnabled(for: surface)
-        let isLit = hovers && isHovered
+        let isLit = hovers && (isHovered || forcesHover)
         let color = hover.color(accent: display.accentColor)
         content
             .overlay {

@@ -100,6 +100,8 @@ struct OmniaSettingsForm<Content: View>: View {
     private let isRoot: Bool
     @Environment(SettingsPreferencesStore.self) private var settings: SettingsPreferencesStore?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.settingsPreviewModel) private var previewModel
+    @Environment(\.settingsPreviewInColumn) private var previewInColumn
     @Environment(\.displayPreferences) private var display
     @Environment(\.colorScheme) private var colorScheme
 
@@ -128,7 +130,24 @@ struct OmniaSettingsForm<Content: View>: View {
         #else
         ScrollViewReader { proxy in
             Form {
-                content
+                if previewInColumn {
+                    // Reads each section's preview, and dims or marks its rows.
+                    Group(sections: content) { sections in
+                        ForEach(sections) { section in
+                            Section {
+                                section.content
+                                    .modifier(SettingsSectionFocus(kind: section.containerValues.settingsPreviewSection))
+                                    .listRowBackground(rowBackground(for: section.containerValues.settingsPreviewSection))
+                            } header: {
+                                section.header
+                            } footer: {
+                                section.footer
+                            }
+                        }
+                    }
+                } else {
+                    content
+                }
             }
             .modifier(SettingsFocusScroller(proxy: proxy))
         }
@@ -138,6 +157,17 @@ struct OmniaSettingsForm<Content: View>: View {
     }
 
     private var resolvedTint: Color { tint ?? display.accentColor }
+
+    private func isActive(_ kind: SettingsPreviewKind?) -> Bool {
+        previewInColumn && kind != nil && previewModel?.activeSection == kind
+    }
+
+    #if os(iOS)
+    /// A grouped Form can't outline a section, so its rows take the accent.
+    private func rowBackground(for kind: SettingsPreviewKind?) -> Color? {
+        isActive(kind) ? resolvedTint.opacity(0.18) : nil
+    }
+    #endif
 
     private var usesAmoledBackground: Bool {
         display.amoledBlack && colorScheme == .dark
@@ -234,6 +264,12 @@ struct OmniaSettingsForm<Content: View>: View {
                                             .fill(Color.primary.opacity(0.065))
                                     }
                                     .clipShape(.rect(cornerRadius: 12, style: .continuous))
+                                    .overlay {
+                                        if isActive(section.containerValues.settingsPreviewSection) {
+                                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                                .strokeBorder(resolvedTint, lineWidth: 2)
+                                        }
+                                    }
                                 }
                             }
 
@@ -242,6 +278,7 @@ struct OmniaSettingsForm<Content: View>: View {
                                 .foregroundStyle(.secondary)
                                 .padding(.horizontal, 12)
                         }
+                        .modifier(SettingsSectionFocus(kind: section.containerValues.settingsPreviewSection))
                     }
                 }
             }
@@ -510,6 +547,8 @@ struct SettingsDeferredSlider: View {
     var previewKeyPath: WritableKeyPath<DisplayPreferences, Double>?
 
     @Environment(\.settingsPreviewModel) private var previewModel
+    @Environment(\.settingsPreviewInColumn) private var inColumn
+    @Environment(\.settingsSectionKind) private var sectionKind
 
     @State private var draft: Double?
 
@@ -534,6 +573,7 @@ struct SettingsDeferredSlider: View {
                             draft = newValue
                             onDraft(newValue)
                             if let previewKeyPath { previewModel?.setDraft(previewKeyPath, newValue) }
+                            if inColumn { previewModel?.activate(sectionKind) }
                         }
                     ),
                     in: range

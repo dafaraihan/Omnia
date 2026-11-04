@@ -24,11 +24,16 @@ struct LegacyAppearanceSettingsView: View {
                     ),
                     options: AppAppearance.allCases
                 ) { $0.title }
+                Toggle(isOn: settings.binding(\.display.amoledBlack)) {
+                    Text("AMOLED Black")
+                    Text("Use true black behind pages in Dark appearance.")
+                }
             } header: {
                 Text("Theme")
             } footer: {
                 Text("Match System follows the appearance selected for this device.")
             }
+            .settingsPreviewSection(.theme)
 
             Section {
                 AccentSwatchGrid(selection: settings.binding(\.display.accentTheme))
@@ -69,6 +74,7 @@ struct LegacyAppearanceSettingsView: View {
             } footer: {
                 Text(accentFooter)
             }
+            .settingsPreviewSection(.theme)
 
             Section {
                 SettingsRouteLink(route: .liquidGlass, summary: liquidGlassSummary)
@@ -78,10 +84,21 @@ struct LegacyAppearanceSettingsView: View {
                     selection: settings.binding(\.display.lowPowerMode),
                     options: LowPowerMode.allCases
                 ) { $0.title }
-                Toggle(isOn: settings.binding(\.display.amoledBlack)) {
-                    Text("AMOLED Black")
-                    Text("Use true black behind pages in Dark appearance.")
+                #if os(macOS)
+                Toggle("Hover Preview", isOn: settings.binding(\.display.hoverPreviewEnabled))
+                if settings.preferences.display.hoverPreviewEnabled {
+                    SettingsDropdown(
+                        "Hover Preview Delay",
+                        selection: settings.binding(\.display.hoverPreviewDelay),
+                        options: HoverPreviewDelay.allCases
+                    ) { $0.title }
                 }
+                #endif
+            } header: {
+                Text("Display")
+            }
+
+            Section {
                 Toggle(isOn: Binding(
                     get: { homeLayout.preferences.dynamicBackground },
                     set: { enabled in homeLayout.update { $0.dynamicBackground = enabled } }
@@ -101,6 +118,12 @@ struct LegacyAppearanceSettingsView: View {
                     }
                     .disabled(settings.preferences.display.heroBlend == HeroBlendPreferences())
                 }
+            } header: {
+                Text("Hero Gradient")
+            }
+            .settingsPreviewSection(.heroGradient)
+
+            Section {
                 if showsNavigationStyle {
                     SettingsDropdown(
                         "Navigation Style",
@@ -133,18 +156,8 @@ struct LegacyAppearanceSettingsView: View {
                     }
                 }
 
-                #if os(macOS)
-                Toggle("Hover Preview", isOn: settings.binding(\.display.hoverPreviewEnabled))
-                if settings.preferences.display.hoverPreviewEnabled {
-                    SettingsDropdown(
-                        "Hover Preview Delay",
-                        selection: settings.binding(\.display.hoverPreviewDelay),
-                        options: HoverPreviewDelay.allCases
-                    ) { $0.title }
-                }
-                #endif
             } header: {
-                Text("Display")
+                Text("Top Bar")
             } footer: {
                 #if os(macOS)
                 Text("Choose a sidebar or a top tab bar, whether Search opens as a page or floats over the current one, and whether resting the pointer on a poster previews it.")
@@ -156,6 +169,7 @@ struct LegacyAppearanceSettingsView: View {
                 }
                 #endif
             }
+            .settingsPreviewSection(.topBar)
 
             Section {
                 SettingsRouteLink(route: .home, summary: homeLayoutSummary)

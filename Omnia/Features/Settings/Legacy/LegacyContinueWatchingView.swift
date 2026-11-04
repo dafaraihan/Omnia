@@ -12,6 +12,7 @@ import SwiftUI
 /// every value here.
 struct LegacyContinueWatchingSettingsView: View {
     @Environment(SettingsPreferencesStore.self) private var settings
+    @Environment(\.settingsPreviewInColumn) private var previewInColumn
     @Environment(OmniaAccount.self) private var account
     @AppStorage(HomeView.continueWatchingVisibilityKey) private var showsContinueWatching = true
     /// Read by OmniaStore when it decides a title is finished.
@@ -28,9 +29,11 @@ struct LegacyContinueWatchingSettingsView: View {
                 ) { style in
                     ContinueWatchingStylePreview(style: style)
                 }
-                ContinueWatchingLivePreview(style: settings.preferences.display.continueWatchingStyle)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
+                if !previewInColumn {
+                    ContinueWatchingLivePreview(style: settings.preferences.display.continueWatchingStyle)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                }
                 if settings.preferences.display.continueWatchingStyle != .card {
                     Toggle(isOn: settings.binding(\.display.continueWatchingShowsLabels)) {
                         Text("Show Labels")
@@ -50,6 +53,7 @@ struct LegacyContinueWatchingSettingsView: View {
             } header: {
                 Text("Card Style")
             }
+            .settingsPreviewSection(.continueWatching)
 
             Section {
                 Toggle("Show on Home", isOn: $showsContinueWatching)
@@ -73,6 +77,7 @@ struct LegacyContinueWatchingSettingsView: View {
             } footer: {
                 Text("Paused Scene shows the frame where you stopped, saved when you close the player; titles you haven't played since use their artwork. Style Default keeps each layout’s original size and corners. Poster Card Style can apply its own to these with one button.")
             }
+            .settingsPreviewSection(.continueWatching)
 
             Section {
                 Toggle(isOn: settings.binding(\.display.nextUpFromFurthestEpisode)) {

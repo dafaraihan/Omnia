@@ -69,6 +69,7 @@ struct LegacySubtitleAppearanceSettingsView: View {
             } header: {
                 Text("Controls and Menus")
             }
+            .settingsPreviewSection(.playerControls)
 
             Section("Language") {
                 Toggle("Subtitles Enabled", isOn: settings.binding(\.subtitlesEnabled))
@@ -89,6 +90,7 @@ struct LegacySubtitleAppearanceSettingsView: View {
                     }
                 ))
             }
+            .settingsPreviewSection(.subtitles)
 
             Section("Font") {
                 DisclosureGroup(previewFontTitle) {
@@ -120,6 +122,7 @@ struct LegacySubtitleAppearanceSettingsView: View {
                     .frame(height: 190)
                 }
             }
+            .settingsPreviewSection(.subtitles)
 
             Section("Style") {
                 SettingsDropdown(
@@ -165,6 +168,7 @@ struct LegacySubtitleAppearanceSettingsView: View {
                     )
                 }
             }
+            .settingsPreviewSection(.subtitles)
 
             Section("Text") {
                 ColorPicker("Text Color", selection: hexColorBinding(\.textColorHex), supportsOpacity: false)
@@ -181,6 +185,7 @@ struct LegacySubtitleAppearanceSettingsView: View {
                     )
                 }
             }
+            .settingsPreviewSection(.subtitles)
 
             Section {
                 Toggle(isOn: settings.binding(\.playbackBehavior.stripSDHSubtitles)) {
@@ -222,6 +227,7 @@ struct LegacySubtitleAppearanceSettingsView: View {
             } footer: {
                 Text("Subtitles from add-ons such as OpenSubtitles are added to the player's list as they arrive. The delay applies to every video; a delay set in the player's Sync panel is kept for that title only, and a positive delay shows subtitles later.")
             }
+            .settingsPreviewSection(.subtitles)
 
             Section {
                 Button("Reset to Defaults", role: .destructive) { showsResetConfirmation = true }

@@ -330,8 +330,13 @@ struct SettingsDestinationView: View {
 
     var body: some View {
         page
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if let previewModel, route.previewKind != nil, let shown = previewModel.shown {
+                    SettingsPinnedPreviewPanel(kind: shown, model: previewModel)
+                }
+            }
             .onAppear {
-                if let previewModel { previewModel.kind = route.previewKind }
+                previewModel?.openPage(route.previewKind)
             }
     }
 

@@ -1,8 +1,26 @@
 import SwiftUI
 
-/// What the preview column shows. Set by the page on screen in the middle.
+/// What the preview column shows. The page on screen sets the default, and
+/// the section being edited replaces it.
 enum SettingsPreviewKind: Equatable {
     case home, cards, player, glass
+    case topBar, heroGradient, collections, continueWatching, theme, playerControls, subtitles
+
+    var title: String {
+        switch self {
+        case .home: "Home"
+        case .cards: "Poster Cards"
+        case .player: "Player"
+        case .glass: "Liquid Glass"
+        case .topBar: "Top Bar"
+        case .heroGradient: "Hero Gradient"
+        case .collections: "Collections"
+        case .continueWatching: "Continue Watching"
+        case .theme: "Theme & Accent"
+        case .playerControls: "Controls and Menus"
+        case .subtitles: "Subtitles"
+        }
+    }
 }
 
 extension SettingsRoute {
@@ -12,8 +30,21 @@ extension SettingsRoute {
         case .posterCards: .cards
         case .subtitle: .player
         case .liquidGlass: .glass
+        case .collections: .collections
+        case .continueWatching: .continueWatching
         default: nil
         }
+    }
+}
+
+extension ContainerValues {
+    @Entry var settingsPreviewSection: SettingsPreviewKind? = nil
+}
+
+extension View {
+    /// Which preview this Settings section drives, beside its page.
+    func settingsPreviewSection(_ kind: SettingsPreviewKind) -> some View {
+        containerValue(\.settingsPreviewSection, kind)
     }
 }
 
@@ -21,8 +52,26 @@ extension SettingsRoute {
 @MainActor
 @Observable
 final class SettingsPreviewModel {
-    var kind: SettingsPreviewKind?
+    /// The page's own preview. Nil hides the column.
+    private(set) var kind: SettingsPreviewKind?
+    /// The section being edited, which the others dim around.
+    private(set) var activeSection: SettingsPreviewKind?
+    /// What's shown: a section with nothing visual keeps the last preview.
+    private(set) var shown: SettingsPreviewKind?
     var showsPlayerMenu = true
+
+    func openPage(_ kind: SettingsPreviewKind?) {
+        self.kind = kind
+        shown = kind
+        activeSection = nil
+    }
+
+    func activate(_ section: SettingsPreviewKind?) {
+        guard kind != nil else { return }
+        activeSection = section
+        if let section { shown = section }
+    }
+
     /// A slider's value while it's being dragged, before it's saved.
     private var drafts: [WritableKeyPath<DisplayPreferences, Double>: Double] = [:]
 
@@ -65,11 +114,10 @@ enum HomeFeaturedMemory {
     static var item: MediaItem?
 }
 
-/// Settings on iPad and Mac: categories, the page, and a live preview. Narrow
-/// windows lose the preview first, then go back to the plain drill-down.
+/// Settings on iPad and Mac: categories beside the page. Narrow windows go
+/// back to the plain drill-down.
 struct SettingsThreeColumnView: View {
     private static let categoriesWidth: CGFloat = 220
-    private static let previewWidth: CGFloat = 340
     private static let middleMinimum: CGFloat = 460
 
     var body: some View {
@@ -81,11 +129,7 @@ struct SettingsThreeColumnView: View {
                         .omniaPageDestinations()
                 }
             } else {
-                SettingsColumns(
-                    categoriesWidth: Self.categoriesWidth,
-                    previewWidth: width >= Self.categoriesWidth + Self.middleMinimum + Self.previewWidth
-                        ? Self.previewWidth : nil
-                )
+                SettingsColumns(categoriesWidth: Self.categoriesWidth)
             }
         }
     }
@@ -93,7 +137,6 @@ struct SettingsThreeColumnView: View {
 
 private struct SettingsColumns: View {
     let categoriesWidth: CGFloat
-    let previewWidth: CGFloat?
 
     @State private var selection: SettingsRoute = .appearance
     @State private var searchText = ""
@@ -112,15 +155,10 @@ private struct SettingsColumns: View {
                 .id(selection)
                 .frame(maxWidth: .infinity)
                 .environment(\.settingsPreviewModel, model)
-                .environment(\.settingsPreviewInColumn, previewWidth != nil)
-                if let previewWidth, let kind = model.kind {
-                    Divider().ignoresSafeArea()
-                    SettingsPreviewColumn(kind: kind, model: model)
-                        .frame(width: previewWidth)
-                        .transition(.move(edge: .trailing).combined(with: .opacity))
-                }
+                .environment(\.settingsPreviewInColumn, true)
             }
             .animation(.smooth(duration: 0.25), value: model.kind)
+            .animation(.smooth(duration: 0.2), value: model.activeSection)
         }
     }
 
@@ -188,33 +226,82 @@ private struct SettingsColumnRoot: View {
     }
 }
 
-private struct SettingsPreviewColumn: View {
+/// Stays at the top of a page while its options scroll underneath.
+struct SettingsPinnedPreviewPanel: View {
     let kind: SettingsPreviewKind
     @Bindable var model: SettingsPreviewModel
     @Environment(SettingsPreferencesStore.self) private var settings
 
     var body: some View {
         let display = model.applyingDrafts(to: settings.preferences.display)
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Live Preview")
-                    .font(.caption.weight(.semibold))
-                    .textCase(.uppercase)
-                    .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Text("Live Preview")
+                        .font(.caption.weight(.semibold))
+                        .textCase(.uppercase)
+                        .foregroundStyle(.secondary)
+                    if let section = model.activeSection {
+                        Text(section.title)
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(display.accentColor)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(display.accentColor.opacity(0.2), in: Capsule())
+                            .transition(.opacity)
+                    }
+                    Spacer(minLength: 8)
+                    if let caption = caption(display: display) {
+                        Text(caption)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    if kind == .player || kind == .playerControls {
+                        Toggle("Show a Menu", isOn: $model.showsPlayerMenu)
+                            .font(.caption)
+                            .fixedSize()
+                            .tint(display.accentColor)
+                    }
+                }
                 preview(display: display)
                     .environment(\.displayPreferences, display)
                     .tint(display.accentColor)
                     .allowsHitTesting(false)
                     .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("Preview of these settings")
-                if kind == .player {
-                    Toggle("Show a Menu", isOn: $model.showsPlayerMenu)
-                        .tint(display.accentColor)
-                }
-            }
-            .padding(16)
+                    .accessibilityLabel("Preview of \(kind.title)")
+                    .frame(height: 230)
+                    .frame(maxWidth: .infinity)
+                    .id(kind)
+                    .transition(.opacity)
         }
-        .settingsClearsTopBar()
+        .animation(.smooth(duration: 0.2), value: kind)
+        .frame(maxWidth: 560)
+        .padding(.horizontal, 24)
+        .padding(.bottom, 10)
+        .frame(maxWidth: .infinity)
+        .background {
+            #if os(iOS)
+            Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
+            #else
+            OmniaPageBackground().ignoresSafeArea()
+            #endif
+        }
+    }
+
+    private func caption(display: DisplayPreferences) -> String? {
+        func percent(_ value: Double) -> String { "\(Int((value * 100).rounded()))%" }
+        switch kind {
+        case .topBar:
+            return "\(percent(display.topBarSize.size)) · \(display.topBarStyle.title) · Glow \(display.topBarGlow ? "on" : "off")"
+        case .heroGradient:
+            return display.heroBlend.isEnabled
+                ? "Strength \(percent(display.heroBlend.strength)) · Height \(percent(display.heroBlend.height))"
+                : "Gradient Overlay is off"
+        case .cards: return "One card at rest and one hovered."
+        case .theme: return display.amoledBlack ? "AMOLED black background" : "Your page background"
+        case .glass: return "Parts turned off draw with a solid fill."
+        default: return nil
+        }
     }
 
     @ViewBuilder
@@ -224,21 +311,145 @@ private struct SettingsPreviewColumn: View {
             SettingsScaledPreview(size: CGSize(width: 620, height: 600)) {
                 SettingsMiniHome(display: display)
             }
+        case .heroGradient:
+            SettingsScaledPreview(size: CGSize(width: 620, height: 400)) {
+                SettingsMiniHome(display: display, showsTopBar: false)
+                    .offset(y: -110)
+            }
+        case .topBar:
+            SettingsScaledPreview(size: CGSize(width: 620, height: 300)) {
+                SettingsTopBarPreview(display: display)
+            }
         case .cards:
-            LegacyPosterCardPreview(display: display)
-                .frame(maxWidth: .infinity)
-        case .player:
+            SettingsCardsPreview(display: display)
+        case .collections:
+            CollectionCardPreview(folders: Array(collections.collections.flatMap(\.folders).prefix(4)))
+        case .continueWatching:
+            ContinueWatchingLivePreview(style: display.continueWatchingStyle)
+        case .theme:
+            SettingsThemePreview(display: display)
+        case .player, .playerControls, .subtitles:
             SettingsScaledPreview(size: CGSize(width: 900, height: 520)) {
                 MacSubtitlePlaybackPreview(
                     style: settings.preferences.playbackSubtitleStyle,
                     height: 520,
-                    showsMenu: model.showsPlayerMenu
+                    showsMenu: model.showsPlayerMenu && kind != .subtitles,
+                    controlsOpacity: kind == .subtitles ? 0.2 : 1,
+                    subtitleOpacity: kind == .playerControls ? 0.25 : 1
                 )
             }
         case .glass:
             LegacyLiquidGlassPreview()
                 .clipShape(.rect(cornerRadius: 14, style: .continuous))
         }
+    }
+
+    @Environment(CollectionsStore.self) private var collections
+}
+
+/// The real top bar at its current settings, and as it looks after scrolling.
+private struct SettingsTopBarPreview: View {
+    let display: DisplayPreferences
+
+    var body: some View {
+        ZStack {
+            LinearGradient(colors: [.indigo, .teal, .black], startPoint: .topLeading, endPoint: .bottomTrailing)
+            VStack(spacing: 34) {
+                bar(style: display.topBarStyle == .compact ? .expanded : display.topBarStyle)
+                    .shadow(color: display.topBarGlow ? display.accentColor.opacity(0.6) : .clear, radius: 18)
+                VStack(spacing: 8) {
+                    bar(style: .compact)
+                    Text("Compact, after scrolling down")
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.8))
+                }
+            }
+        }
+        .environment(\.colorScheme, .dark)
+    }
+
+    private func bar(style: TopBarStyle) -> some View {
+        NuvioTopBar(
+            destinations: [.home, .library, .discover, .settings],
+            selection: .home,
+            style: style,
+            showsGlow: false,
+            scroll: TopBarScrollReport(),
+            maximumWidth: 600,
+            select: { _ in }
+        )
+    }
+}
+
+/// One card at rest and one hovered, at the current size, corners and depth.
+private struct SettingsCardsPreview: View {
+    let display: DisplayPreferences
+
+    private var size: CGSize {
+        display.landscapePosters
+            ? CGSize(width: display.landscapePosterCardWidth, height: display.landscapePosterCardWidth)
+            : CGSize(width: display.posterCardWidth, height: display.posterCardHeight)
+    }
+
+    var body: some View {
+        // Two cards and their captions, whichever size they are.
+        SettingsScaledPreview(size: CGSize(
+            width: max(size.width * 2 + 72, 300),
+            height: max(size.height + 72, 200)
+        )) {
+            HStack(spacing: 8) {
+                card("At rest", hovered: false)
+                card("Hovered", hovered: true)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(.primary.opacity(0.06))
+        }
+    }
+
+    private func card(_ title: String, hovered: Bool) -> some View {
+        VStack(spacing: 2) {
+            LegacyPosterCardPreview(display: display)
+                .environment(\.settingsForcesCardHover, hovered)
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// A tab, a switch and a button in the accent, on the chosen background.
+private struct SettingsThemePreview: View {
+    let display: DisplayPreferences
+
+    var body: some View {
+        ZStack {
+            OmniaPageBackground()
+            VStack(spacing: 16) {
+                Text("Home")
+                    .font(.subheadline.weight(.semibold))
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 7)
+                    .background(display.accentColor.opacity(0.25), in: Capsule())
+                HStack {
+                    Text("A switch")
+                    Spacer()
+                    Toggle("A switch", isOn: .constant(true))
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
+                .padding(12)
+                .background(.primary.opacity(0.08), in: .rect(cornerRadius: 10, style: .continuous))
+                Button("Play") {}
+                    .buttonStyle(.borderedProminent)
+            }
+            .padding(20)
+        }
+        .aspectRatio(1.1, contentMode: .fit)
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(.primary.opacity(0.15))
+        }
+        .clipShape(.rect(cornerRadius: 12, style: .continuous))
     }
 }
 
@@ -265,6 +476,7 @@ private struct SettingsScaledPreview<Content: View>: View {
 /// same settings: background, gradient, AMOLED, accent, glass and top bar.
 private struct SettingsMiniHome: View {
     let display: DisplayPreferences
+    var showsTopBar = true
     @Environment(HomeLayoutStore.self) private var homeLayout
     @Environment(OmniaStore.self) private var store
     @Environment(\.colorScheme) private var colorScheme
@@ -303,6 +515,7 @@ private struct SettingsMiniHome: View {
                 .padding(.horizontal, 24)
                 Spacer(minLength: 0)
             }
+            if showsTopBar {
             NuvioTopBar(
                 destinations: [.home, .library, .discover, .settings],
                 selection: .home,
@@ -313,6 +526,7 @@ private struct SettingsMiniHome: View {
                 select: { _ in }
             )
             .padding(.top, 14)
+            }
         }
         .environment(\.colorScheme, dynamic ? .dark : colorScheme)
     }
@@ -362,5 +576,54 @@ private struct SettingsClearsTopBar: ViewModifier {
 extension View {
     fileprivate func settingsClearsTopBar() -> some View {
         modifier(SettingsClearsTopBar())
+    }
+}
+
+
+/// How a Settings section behaves beside the preview: hovering or tapping it
+/// makes it the one being edited, and the others dim around it.
+struct SettingsSectionFocus: ViewModifier {
+    let kind: SettingsPreviewKind?
+    @Environment(\.settingsPreviewModel) private var model
+    @Environment(\.settingsPreviewInColumn) private var inColumn
+
+    private var isDimmed: Bool {
+        guard inColumn, let active = model?.activeSection else { return false }
+        return active != kind
+    }
+
+    func body(content: Content) -> some View {
+        if inColumn {
+            content
+                .opacity(isDimmed ? 0.45 : 1)
+                .onHover { hovering in
+                    if hovering { model?.activate(kind) }
+                }
+                .simultaneousGesture(TapGesture().onEnded { model?.activate(kind) })
+                .environment(\.settingsSectionKind, kind)
+        } else {
+            content
+        }
+    }
+}
+
+private struct SettingsSectionKindKey: EnvironmentKey {
+    static let defaultValue: SettingsPreviewKind? = nil
+}
+
+private struct SettingsForcesCardHoverKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var settingsSectionKind: SettingsPreviewKind? {
+        get { self[SettingsSectionKindKey.self] }
+        set { self[SettingsSectionKindKey.self] = newValue }
+    }
+
+    /// Draws a card as if the pointer were on it, for a preview.
+    var settingsForcesCardHover: Bool {
+        get { self[SettingsForcesCardHoverKey.self] }
+        set { self[SettingsForcesCardHoverKey.self] = newValue }
     }
 }

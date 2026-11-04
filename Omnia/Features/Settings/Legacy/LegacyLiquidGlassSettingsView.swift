@@ -55,6 +55,7 @@ struct LegacyLiquidGlassSettingsView: View {
                     ? "The middle of the slider is the designed look."
                     : "Buttons and panels use solid fills instead of glass.")
             }
+            .settingsPreviewSection(.glass)
 
             if glass.isEnabled {
                 Section {
@@ -81,6 +82,7 @@ struct LegacyLiquidGlassSettingsView: View {
                 } footer: {
                     Text(systemBarsFooter)
                 }
+            .settingsPreviewSection(.glass)
             }
         }
         .omniaNavigationTitle("Liquid Glass")

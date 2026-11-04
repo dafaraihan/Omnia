@@ -11,6 +11,7 @@ import UniformTypeIdentifiers
 /// Folder sources are checked against the installed add-ons so a missing
 /// add-on is visible here.
 struct CollectionsSettingsView: View {
+    @Environment(\.settingsPreviewInColumn) private var previewInColumn
     @Environment(OmniaStore.self) private var store
     @Environment(CollectionsStore.self) private var collections
     @Environment(SettingsPreferencesStore.self) private var settings
@@ -54,9 +55,11 @@ struct CollectionsSettingsView: View {
             }
 
             Section {
+                if !previewInColumn {
                 CollectionCardPreview(folders: Array(collections.collections.flatMap(\.folders).prefix(3)))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
+                }
                 SettingsDropdown(
                     "Shape",
                     selection: settings.binding(\.display.collectionCard.shape),
@@ -88,6 +91,7 @@ struct CollectionsSettingsView: View {
             } footer: {
                 Text("Applies to every collection row on Home. As Imported keeps each collection's own tile shape and shows the titles inside as portrait posters, and Automatic shows a folder's name only when the folder asks for it or has no cover. Poster Card Style can apply its own look to all of these with one button. Depth and hover glow follow Poster Card Style.")
             }
+            .settingsPreviewSection(.collections)
 
             if collections.collections.isEmpty {
                 Section {
@@ -302,7 +306,7 @@ struct CollectionsSettingsView: View {
 
 /// A few of your folders drawn as they'll look on Home, or a sample tile
 /// before any collection exists. It updates as each option changes.
-private struct CollectionCardPreview: View {
+struct CollectionCardPreview: View {
     let folders: [HomeCollectionFolder]
     @Environment(\.displayPreferences) private var display
     @Environment(\.accessibilityReduceMotion) private var reduceMotion

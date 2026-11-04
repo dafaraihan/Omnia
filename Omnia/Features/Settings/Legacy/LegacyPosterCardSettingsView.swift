@@ -46,6 +46,7 @@ struct LegacyPosterCardSettingsView: View {
             } header: {
                 Text("Poster Card Style")
             }
+            .settingsPreviewSection(.cards)
 
             Section {
                 Toggle(isOn: settings.binding(\.display.sharesCardStyles)) {
@@ -110,6 +111,7 @@ struct LegacyPosterCardSettingsView: View {
             } footer: {
                 Text("Adds a light edge and a soft sheen so cards look lifted off the page.")
             }
+            .settingsPreviewSection(.cards)
 
             if display.cardDepth.isEnabled {
                 Section {
@@ -119,6 +121,7 @@ struct LegacyPosterCardSettingsView: View {
                 } header: {
                     Text("Apply Card Depth To")
                 }
+            .settingsPreviewSection(.cards)
             }
 
             // iPhone has no pointer to hover with; iPad can have one.
@@ -156,6 +159,7 @@ struct LegacyPosterCardSettingsView: View {
                     Text("Hover over the preview above to try it.")
                 }
             }
+            .settingsPreviewSection(.cards)
 
             if display.cardHover.isEnabled {
                 Section {
@@ -165,6 +169,7 @@ struct LegacyPosterCardSettingsView: View {
                 } header: {
                     Text("Apply Hover Glow To")
                 }
+            .settingsPreviewSection(.cards)
             }
             }
 
