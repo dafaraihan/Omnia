@@ -255,49 +255,6 @@ struct SettingsLockGate<Content: View>: View {
     }
 }
 
-/// A page's coloured icon.
-struct SettingsIconTile: View {
-    let route: SettingsRoute
-
-    var body: some View {
-        Image(systemName: route.systemImage)
-            .font(.system(size: 14, weight: .medium))
-            .symbolVariant(.fill)
-            .foregroundStyle(.white)
-            .frame(width: 28, height: 28)
-            .background(route.tileColor, in: .rect(cornerRadius: 7, style: .continuous))
-            .accessibilityHidden(true)
-    }
-}
-
-extension SettingsRoute {
-    var tileColor: Color {
-        switch self {
-        case .account: .blue
-        case .appearance, .liquidGlass: .indigo
-        case .navigation: .blue
-        case .home, .catalogs, .collections, .continueWatching, .upcoming: .orange
-        case .posterCards: .pink
-        case .detailPage: .purple
-        case .videoPlayer: .red
-        case .streams: .teal
-        case .playerControls: .mint
-        case .subtitle: .cyan
-        case .addons, .plugins: .green
-        case .mediaServers, .liveTV: .brown
-        case .metadata, .metadataProvider, .metadataSources, .tmdbEnrichment, .tvdbEnrichment, .animeEnrichment: .gray
-        case .contentDiscovery: .blue
-        case .tracking: .red
-        case .notifications: .red
-        case .privacy: .blue
-        case .battery: .green
-        case .progress: .gray
-        case .about, .aboutSection: .gray
-        case .playbackResolver, .playbackDiagnostics, .streamSelection: .gray
-        }
-    }
-}
-
 /// The top of Settings: who this is, and whether they're synced.
 struct SettingsProfileCard: View {
     var avatarSize: CGFloat = 52
@@ -334,6 +291,15 @@ struct SettingsDestinationView: View {
                 if let previewModel, route.previewKind != nil, let shown = previewModel.shown {
                     SettingsPinnedPreviewPanel(kind: shown, model: previewModel)
                 }
+            }
+            .toolbar {
+                #if os(macOS)
+                if previewModel != nil {
+                    ToolbarItem(placement: .navigation) {
+                        SettingsSidebarButton()
+                    }
+                }
+                #endif
             }
             .onAppear {
                 previewModel?.openPage(route.previewKind)
@@ -460,14 +426,10 @@ struct SettingsRouteLink: View {
                         Text(summary)
                     }
                 } label: {
-                    if OmniaDevice.isPhone {
-                        Label {
-                            Text(route.title)
-                        } icon: {
-                            SettingsIconTile(route: route)
-                        }
-                    } else {
-                        Label(route.title, systemImage: route.systemImage)
+                    Label {
+                        Text(route.title)
+                    } icon: {
+                        SettingsRouteIcon(route: route)
                     }
                 }
             }
@@ -486,6 +448,28 @@ struct SettingsRouteLink: View {
     }
 }
 
+private struct SettingsRouteIcon: View {
+    let route: SettingsRoute
+
+    var body: some View {
+        #if os(macOS)
+        MacSettingsSymbolImage(systemName: route.systemImage)
+        #else
+        if OmniaDevice.isPhone {
+            // The style of the iPad and Mac sidebar, which a Form row would
+            // otherwise tint and enlarge.
+            Image(systemName: route.systemImage)
+                .symbolRenderingMode(.monochrome)
+                .imageScale(.medium)
+                .font(.body)
+                .foregroundStyle(.primary)
+        } else {
+            Image(systemName: route.systemImage)
+        }
+        #endif
+    }
+}
+
 private struct SettingsRouteLabel: View {
     let route: SettingsRoute
     /// Nil shows what the page is set to.
@@ -497,15 +481,7 @@ private struct SettingsRouteLabel: View {
                 Text(route.title)
                     .foregroundStyle(.primary)
             } icon: {
-                if OmniaDevice.isPhone {
-                    SettingsIconTile(route: route)
-                } else {
-                    #if os(macOS)
-                    MacSettingsSymbolImage(systemName: route.systemImage)
-                    #else
-                    Image(systemName: route.systemImage)
-                    #endif
-                }
+                SettingsRouteIcon(route: route)
             }
             Spacer(minLength: 12)
             if let explicitSummary {

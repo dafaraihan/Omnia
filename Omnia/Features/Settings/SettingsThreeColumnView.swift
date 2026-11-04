@@ -138,6 +138,7 @@ struct SettingsThreeColumnView: View {
 private struct SettingsColumns: View {
     let categoriesWidth: CGFloat
 
+    @AppStorage(SettingsSidebarButton.storageKey) private var showsCategories = true
     @State private var selection: SettingsRoute = .appearance
     @State private var searchText = ""
     @State private var model = SettingsPreviewModel()
@@ -145,18 +146,35 @@ private struct SettingsColumns: View {
     var body: some View {
         SettingsLockGate {
             HStack(spacing: 0) {
-                categories
-                    .frame(width: categoriesWidth)
-                Divider().ignoresSafeArea()
+                if showsCategories {
+                    categories
+                        .frame(width: categoriesWidth)
+                        .transition(.move(edge: .leading).combined(with: .opacity))
+                    Divider().ignoresSafeArea()
+                }
                 NavigationStack {
                     SettingsColumnRoot(route: selection)
                         .omniaPageDestinations()
                 }
                 .id(selection)
+                #if os(iOS)
+                // Keeps Back and the sidebar button clear of the floating bar,
+                // which reaches over this column in a narrow window.
+                .padding(.top, 44)
+                #endif
                 .frame(maxWidth: .infinity)
                 .environment(\.settingsPreviewModel, model)
                 .environment(\.settingsPreviewInColumn, true)
             }
+            #if os(iOS)
+            // iPad's page toolbar folds this into its "…" menu. Here it stays
+            // in the band above the page, clear of the bar and of Back.
+            .overlay(alignment: .topLeading) {
+                SettingsSidebarButton()
+                    .padding(.leading, 16)
+                    .padding(.top, 2)
+            }
+            #endif
             .animation(.smooth(duration: 0.25), value: model.kind)
             .animation(.smooth(duration: 0.2), value: model.activeSection)
         }
@@ -201,6 +219,29 @@ private struct SettingsColumns: View {
     }
 
     @Environment(\.displayPreferences) private var display
+}
+
+/// Shows or hides the categories beside the page. The choice is remembered.
+struct SettingsSidebarButton: View {
+    static let storageKey = "settings-sidebar-visible"
+
+    @AppStorage(Self.storageKey) private var showsCategories = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Button {
+            withAnimation(reduceMotion ? nil : .smooth(duration: 0.25)) {
+                showsCategories.toggle()
+            }
+        } label: {
+            Image(systemName: "sidebar.left")
+                .frame(width: 36, height: 36)
+                .contentShape(Rectangle())
+        }
+        .keyboardShortcut("s", modifiers: [.command, .control])
+        .accessibilityLabel(showsCategories ? "Hide Sidebar" : "Show Sidebar")
+        .help(showsCategories ? "Hide Sidebar" : "Show Sidebar")
+    }
 }
 
 /// The first page in the middle: its big title, then the page.
@@ -275,7 +316,6 @@ struct SettingsPinnedPreviewPanel: View {
                     .transition(.opacity)
         }
         .animation(.smooth(duration: 0.2), value: kind)
-        .frame(maxWidth: 560)
         .padding(.horizontal, 24)
         .padding(.bottom, 10)
         .frame(maxWidth: .infinity)
@@ -601,13 +641,49 @@ struct SettingsSectionFocus: ViewModifier {
                 .onHover { hovering in
                     if hovering { model?.activate(kind) }
                 }
+                #if os(iOS)
+                .gesture(SettingsPassiveTap { model?.activate(kind) })
+                #else
                 .simultaneousGesture(TapGesture().onEnded { model?.activate(kind) })
+                #endif
                 .environment(\.settingsSectionKind, kind)
         } else {
             content
         }
     }
 }
+
+#if os(iOS)
+/// Notices a tap without claiming it. A SwiftUI tap gesture on a Form row stops
+/// the row's own NavigationLink from opening.
+private struct SettingsPassiveTap: UIGestureRecognizerRepresentable {
+    let action: () -> Void
+
+    func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator {
+        Coordinator()
+    }
+
+    func makeUIGestureRecognizer(context: Context) -> UITapGestureRecognizer {
+        let recognizer = UITapGestureRecognizer()
+        recognizer.cancelsTouchesInView = false
+        recognizer.delegate = context.coordinator
+        return recognizer
+    }
+
+    func handleUIGestureRecognizerAction(_ recognizer: UITapGestureRecognizer, context: Context) {
+        if recognizer.state == .ended { action() }
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
+        ) -> Bool {
+            true
+        }
+    }
+}
+#endif
 
 private struct SettingsSectionKindKey: EnvironmentKey {
     static let defaultValue: SettingsPreviewKind? = nil
