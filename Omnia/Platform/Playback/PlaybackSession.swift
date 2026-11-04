@@ -549,6 +549,9 @@ final class PlaybackSession {
         if handoff != nil {
             hasRenderedVideoFrame = true
             positionSeconds = player.currentTime().seconds
+            if let duration = player.currentItem?.duration.seconds, duration.isFinite {
+                durationSeconds = duration
+            }
         }
         var transaction = Transaction()
         transaction.disablesAnimations = handoff != nil
