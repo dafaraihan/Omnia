@@ -533,4 +533,3 @@ struct SettingsDeferredSlider: View {
         "\(Int(((draft ?? value) * 100).rounded()))%"
     }
 }
-}
