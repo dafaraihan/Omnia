@@ -1648,6 +1648,9 @@ static void OMMpvSoftwareUpdate(void *context) {
     atomic_store(&_softwareHeight, ((int)(height * scale)) & ~1);
 }
 
+/// Opens the floating window on a copy of the current frame.
+static const BOOL OMMpvCapturesPictureInPictureStartFrame = NO;
+
 /// mpv's raw frames leave the alpha byte unset.
 static void OMMpvFillAlpha(uint8_t *pixels, int width, int height, size_t stride) {
     vImage_Buffer buffer = { pixels, (vImagePixelCount)height, (vImagePixelCount)width, stride };
@@ -1655,8 +1658,10 @@ static void OMMpvFillAlpha(uint8_t *pixels, int width, int height, size_t stride
 }
 
 - (void)captureCurrentFrame:(void (^)(CVPixelBufferRef))frameHandler {
+    // The Simulator's Metal driver aborts on the buffer this readback needs,
+    // so it has never run. Off until it has been tried on a real device.
+    if (!OMMpvCapturesPictureInPictureStartFrame) return;
     #if TARGET_OS_SIMULATOR
-    // The Simulator's Metal driver aborts on the buffer this readback needs.
     return;
     #endif
     if (!_mpv || _stopped) return;
