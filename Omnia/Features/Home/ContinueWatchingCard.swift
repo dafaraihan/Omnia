@@ -76,7 +76,7 @@ struct ContinueWatchingCard: View {
                 : "Opens title details"
         )
         #if os(macOS)
-        .accessibilityAction(named: "Remove Watch Progress") {
+        .accessibilityAction(named: "Remove from Watchlist") {
             store.removeFromContinueWatching(item)
         }
         #endif

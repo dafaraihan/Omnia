@@ -16,14 +16,7 @@ enum MediaContextPlacement: Equatable, Sendable {
 enum MediaContextCommand: Equatable, Sendable {
     case goToMovie
     case goToShow
-    case separator
     case markWatched
-    case markUnwatched
-    case seasonWatched
-    case seasonUnwatched
-    case revertToPreviousEpisode
-    case episodesThroughHereWatched
-    case episodesThroughHereUnwatched
     case removeWatchProgress
     case addToWatchlist
     case removeFromWatchlist
@@ -50,25 +43,9 @@ enum MediaContextMenuPresentation {
         let watchlist: MediaContextCommand = isSaved ? .removeFromWatchlist : .addToWatchlist
         switch (kind, placement) {
         case (.movie, .continueWatching):
-            return [
-                .goToMovie,
-                .separator,
-                .markWatched,
-                .markUnwatched,
-                .removeWatchProgress,
-            ]
+            return [.goToMovie, .removeWatchProgress, .markWatched]
         case (.series, .continueWatching), (.episode, .continueWatching):
-            return [
-                .goToShow,
-                .separator,
-                .markWatched,
-                .markUnwatched,
-                .seasonWatched,
-                .seasonUnwatched,
-                .revertToPreviousEpisode,
-                .episodesThroughHereWatched,
-                .episodesThroughHereUnwatched,
-            ]
+            return [.goToShow, .removeWatchProgress, .markWatched]
         case (.movie, .browse):
             return [.goToMovie, watchlist]
         case (.series, .browse), (.episode, .browse):
@@ -194,30 +171,20 @@ private struct MediaContextMenuItems: View {
     private func menuItem(for command: MediaContextCommand) -> some View {
         switch command {
         case .goToMovie:
-            detailItem("Go to Movie")
+            detailItem("Go to Movie", systemImage: "film")
         case .goToShow:
-            detailItem("Go to Show")
-        case .separator:
-            Divider()
+            detailItem("Go to Show", systemImage: "tv")
         case .markWatched:
-            actionButton("Mark as Watched", systemImage: "checkmark.rectangle", command: command)
-        case .markUnwatched:
-            actionButton("Mark as Unwatched", systemImage: "rectangle", command: command)
-        case .seasonWatched:
-            actionButton("Season Watched", systemImage: "checkmark.rectangle.stack", command: command)
-        case .seasonUnwatched:
-            actionButton("Season Unwatched", systemImage: "rectangle.stack", command: command)
-        case .revertToPreviousEpisode:
-            actionButton("Revert to Previous Episode", systemImage: "backward.end", command: command)
-        case .episodesThroughHereWatched:
-            actionButton("All Episodes up to Here Watched", systemImage: "checkmark.circle", command: command)
-        case .episodesThroughHereUnwatched:
-            actionButton("All Episodes up to Here Unwatched", systemImage: "circle", command: command)
+            Button {
+                Task { await markWatched() }
+            } label: {
+                menuLabel("Mark as Watched", systemImage: "checkmark.circle")
+            }
         case .removeWatchProgress:
             Button(role: .destructive) {
                 store.removeFromContinueWatching(item)
             } label: {
-                menuLabel("Remove Watch Progress", systemImage: "minus.circle")
+                menuLabel("Remove from Watchlist", systemImage: "minus.circle")
             }
         case .addToWatchlist:
             Button {
@@ -235,27 +202,15 @@ private struct MediaContextMenuItems: View {
     }
 
     @ViewBuilder
-    private func detailItem(_ title: String) -> some View {
+    private func detailItem(_ title: String, systemImage: String) -> some View {
         if let openDetail {
             Button(action: openDetail) {
-                menuLabel(title, systemImage: "info.circle")
+                menuLabel(title, systemImage: systemImage)
             }
         } else {
             MediaDetailLink(item: item) {
-                menuLabel(title, systemImage: "info.circle")
+                menuLabel(title, systemImage: systemImage)
             }
-        }
-    }
-
-    private func actionButton(
-        _ title: String,
-        systemImage: String,
-        command: MediaContextCommand
-    ) -> some View {
-        Button {
-            Task { await perform(command) }
-        } label: {
-            menuLabel(title, systemImage: systemImage)
         }
     }
 
@@ -265,47 +220,17 @@ private struct MediaContextMenuItems: View {
         Label(title, systemImage: systemImage)
     }
 
-    private func perform(_ command: MediaContextCommand) async {
+    private func markWatched() async {
         if item.kind == .movie {
-            switch command {
-            case .markWatched:
-                store.applyWatchCommand(.markMovie(watched: true), to: item, episodes: [])
-            case .markUnwatched:
-                store.applyWatchCommand(.markMovie(watched: false), to: item, episodes: [])
-            default:
-                break
-            }
+            store.applyWatchCommand(.markMovie(watched: true), to: item, episodes: [])
             return
         }
-
         let enrichedItem = await metadata.details(for: item)
         let episodes = enrichedItem.details?.seasons.flatMap(\.episodes)
             ?? item.details?.seasons.flatMap(\.episodes)
             ?? []
         guard let current = currentEpisode(in: episodes) else { return }
-
-        let watchCommand: LocalMediaWatchCommand?
-        switch command {
-        case .markWatched:
-            watchCommand = .markEpisode(current, watched: true)
-        case .markUnwatched:
-            watchCommand = .markEpisode(current, watched: false)
-        case .seasonWatched:
-            watchCommand = .markSeason(containing: current, watched: true)
-        case .seasonUnwatched:
-            watchCommand = .markSeason(containing: current, watched: false)
-        case .revertToPreviousEpisode:
-            watchCommand = .revertToPrevious(current)
-        case .episodesThroughHereWatched:
-            watchCommand = .markThrough(current, watched: true)
-        case .episodesThroughHereUnwatched:
-            watchCommand = .markThrough(current, watched: false)
-        default:
-            watchCommand = nil
-        }
-        if let watchCommand {
-            store.applyWatchCommand(watchCommand, to: enrichedItem, episodes: episodes)
-        }
+        store.applyWatchCommand(.markEpisode(current, watched: true), to: enrichedItem, episodes: episodes)
     }
 
     private func currentEpisode(in episodes: [MediaEpisode]) -> MediaEpisode? {
