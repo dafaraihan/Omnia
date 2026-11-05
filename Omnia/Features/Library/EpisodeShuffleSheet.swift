@@ -178,6 +178,7 @@ struct EpisodeShuffleSheet: View {
         }
         .controlSize(.large)
         .buttonStyle(.borderedProminent)
+        .omniaAccentForeground()
 
         if shuffle.candidates(episodes: episodes, watchState: watchState, includeWatched: includeWatched).count > 1 {
             Button {

@@ -326,6 +326,7 @@ private struct LiveTVChannelRow: View {
                 }
             }
             .buttonStyle(.borderedProminent)
+            .omniaAccentForeground()
             .buttonBorderShape(.circle)
             .help("Play")
         }
@@ -440,6 +441,7 @@ private struct LastWatchedChannelCard: View {
             .frame(maxWidth: fullWidth ? .infinity : nil)
         }
         .buttonStyle(.borderedProminent)
+        .omniaAccentForeground()
         .controlSize(.large)
     }
 }

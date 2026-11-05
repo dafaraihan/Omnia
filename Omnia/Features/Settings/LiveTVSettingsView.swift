@@ -38,7 +38,7 @@ struct LiveTVSettingsView: View {
                     }
                 }
                 .settingsRow("Show Live TV in Navigation")
-                .toggleStyle(.switch)
+                .toggleStyle(OmniaSwitchToggleStyle())
             } header: {
                 Text("Navigation")
             }
@@ -121,7 +121,7 @@ struct LiveTVSettingsView: View {
                     }
                 }
                 .settingsRow("Auto-Detect Guides")
-                .toggleStyle(.switch)
+                .toggleStyle(OmniaSwitchToggleStyle())
                 ForEach(live.configuration.guides) { source in
                     guideRow(source)
                 }
@@ -216,7 +216,7 @@ struct LiveTVSettingsView: View {
                     }
                 }
             }
-            .toggleStyle(.switch)
+            .toggleStyle(OmniaSwitchToggleStyle())
             Menu {
                 Button("Edit", systemImage: "pencil") { editingPlaylist = playlist }
                 Button("Remove", systemImage: "trash", role: .destructive) { live.removePlaylist(playlist.id) }
@@ -243,7 +243,7 @@ struct LiveTVSettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .toggleStyle(.switch)
+            .toggleStyle(OmniaSwitchToggleStyle())
             Button(role: .destructive) {
                 live.removeGuide(source.id)
             } label: {

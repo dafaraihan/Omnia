@@ -166,7 +166,7 @@ private struct TrackerAccountCard: View {
             Text("Scrobble Playback")
         }
         .settingsRow("Scrobble Playback")
-        .toggleStyle(.switch)
+        .toggleStyle(OmniaSwitchToggleStyle())
         if let error = trackers.lastScrobbleError[kind] {
             Label("Last scrobble failed: \(error)", systemImage: "exclamationmark.triangle.fill")
                 .font(.caption)

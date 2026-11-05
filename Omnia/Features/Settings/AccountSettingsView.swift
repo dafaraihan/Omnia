@@ -42,7 +42,7 @@ struct AccountSettingsView: View {
                 trackingCard
                 accountCard
             }
-            .frame(maxWidth: 640)
+            .frame(maxWidth: .infinity)
             .padding(.horizontal, isCompact ? 16 : 32)
             .padding(.vertical, 28)
             .frame(maxWidth: .infinity)
@@ -256,7 +256,7 @@ struct AccountSettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .toggleStyle(.switch)
+            .toggleStyle(OmniaSwitchToggleStyle())
             if let active = profiles.activeProfile, !profiles.isMain(active.id) {
                 Text(sharingSummary(active))
                     .font(.caption)

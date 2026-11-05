@@ -162,7 +162,7 @@ private struct MediaServerDetailView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
-                    .toggleStyle(.switch)
+                    .toggleStyle(OmniaSwitchToggleStyle())
                 }
                 Button {
                     isRefreshing = true
@@ -221,7 +221,7 @@ private struct MediaServerDetailView: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .toggleStyle(.switch)
+        .toggleStyle(OmniaSwitchToggleStyle())
     }
 }
 

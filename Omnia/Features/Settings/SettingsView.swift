@@ -179,6 +179,7 @@ struct SettingsLockGate<Content: View>: View {
                         Task { await DeviceLock.shared.unlockSettings() }
                     }
                     .buttonStyle(.borderedProminent)
+                    .omniaAccentForeground()
                 }
                 .task { await DeviceLock.shared.unlockSettings() }
             } else {

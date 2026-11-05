@@ -143,9 +143,9 @@ private struct OmniaSystemGlassButton: ViewModifier {
 
     func body(content: Content) -> some View {
         switch (display.liquidGlass.applies(to: element), prominent) {
-        case (true, true): content.buttonStyle(.glassProminent)
+        case (true, true): content.buttonStyle(.glassProminent).foregroundStyle(display.accentForeground)
         case (true, false): content.buttonStyle(.glass)
-        case (false, true): content.buttonStyle(.borderedProminent)
+        case (false, true): content.buttonStyle(.borderedProminent).foregroundStyle(display.accentForeground)
         case (false, false): content.buttonStyle(.bordered)
         }
     }

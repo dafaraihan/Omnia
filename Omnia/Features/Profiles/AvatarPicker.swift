@@ -176,7 +176,7 @@ private struct AvatarChoice: View {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: size * 0.28, weight: .bold))
                         .symbolRenderingMode(.palette)
-                        .foregroundStyle(.white, display.accentColor)
+                        .foregroundStyle(display.accentForeground, display.accentColor)
                         .background(Circle().fill(.background).padding(2))
                         .transition(.scale.combined(with: .opacity))
                 }

@@ -20,7 +20,7 @@ struct ContentDiscoverySettingsView: View {
                     }
                 }
                 .settingsRow("Recent Searches")
-                .toggleStyle(.switch)
+                .toggleStyle(OmniaSwitchToggleStyle())
                 if history.isEnabled, !history.recentSearches.isEmpty {
                     Button("Clear Recent Searches", role: .destructive) { history.clear() }
                     .settingsRow("Clear Recent Searches")

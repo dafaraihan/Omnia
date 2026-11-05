@@ -255,21 +255,11 @@ private struct DropdownRow: View {
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
+    @Environment(\.displayPreferences) private var hoverDisplay
+
     private var foreground: Color {
-        if isHovered { return accent.prefersDarkForeground ? .black : .white }
+        if isHovered { return hoverDisplay.accentForeground }
         return isSelected ? accent : .primary
     }
 }
 #endif
-
-extension Color {
-    /// True for light colors (white, gold), where white text would be hard
-    /// to read.
-    var prefersDarkForeground: Bool {
-        let resolved = resolve(in: EnvironmentValues())
-        let luminance = 0.2126 * Double(resolved.linearRed)
-            + 0.7152 * Double(resolved.linearGreen)
-            + 0.0722 * Double(resolved.linearBlue)
-        return luminance > 0.5
-    }
-}

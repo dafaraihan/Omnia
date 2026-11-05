@@ -40,6 +40,18 @@ Group {
                             supportsOpacity: false
                         )
                         .settingsRow("Custom Color")
+                        switch settings.preferences.display.customAccentBrightness {
+                        case .pale:
+                            Label("This color is very pale. Light appearance shows near-black instead, and switches use green.", systemImage: "exclamationmark.triangle")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        case .veryDark:
+                            Label("This color is very dark. Dark appearance shows near-white instead.", systemImage: "exclamationmark.triangle")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        case .normal:
+                            EmptyView()
+                        }
                     case .gradient:
                         ForEach(0..<3, id: \.self) { index in
                             ColorPicker(
@@ -164,6 +176,8 @@ private struct AccentSwatchGrid: View {
         switch theme {
         case .blue:
             AnyShapeStyle(Color.blue)
+        case .white:
+            AnyShapeStyle(Color.omniaMono)
         case .custom:
             AnyShapeStyle(AngularGradient(colors: [.red, .yellow, .green, .cyan, .blue, .purple, .red], center: .center))
         default:
@@ -176,13 +190,11 @@ private struct AccentSwatchGrid: View {
         }
     }
 
-    /// Dark on light swatches (White, Gold), white on the rest.
+    /// Dark on light swatches, such as Gold, and white on the rest.
     private func checkmarkColor(for theme: AccentTheme) -> Color {
-        guard theme != .custom else { return .white }
-        let color = theme.gradientHexes?.first.flatMap(Color.init(omniaHex:))
-            ?? theme.hex.flatMap(Color.init(omniaHex:))
-            ?? .blue
-        return color.prefersDarkForeground ? .black : .white
+        guard theme != .custom, theme != .blue else { return .white }
+        if theme == .white { return .omniaDynamic(light: .white, dark: .black) }
+        return AccentLuminance.prefersBlackText(hex: theme.gradientHexes?.first ?? theme.hex ?? "") ? .black : .white
     }
 
     private func swatch(for theme: AccentTheme) -> some View {

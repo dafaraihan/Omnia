@@ -1,6 +1,8 @@
 import SwiftUI
 #if os(iOS)
 import UIKit
+#else
+import AppKit
 #endif
 
 /// Nuvio's accent palette. Blue keeps Omnia's original system tint.
@@ -9,10 +11,8 @@ nonisolated enum AccentTheme: String, Codable, CaseIterable, Identifiable, Senda
     case gold
     case jade
     case roseGold
-    case arcticBlue
     case graphite
     case crimson
-    case ocean
     case violet
     case emerald
     case amber
@@ -28,15 +28,13 @@ nonisolated enum AccentTheme: String, Codable, CaseIterable, Identifiable, Senda
         case .gold: "Gold"
         case .jade: "Jade"
         case .roseGold: "Rose Gold"
-        case .arcticBlue: "Arctic Blue"
         case .graphite: "Graphite"
         case .crimson: "Crimson"
-        case .ocean: "Ocean"
         case .violet: "Violet"
         case .emerald: "Emerald"
         case .amber: "Amber"
         case .rose: "Rose"
-        case .white: "White"
+        case .white: "Mono"
         case .custom: "Custom"
         }
     }
@@ -48,15 +46,13 @@ nonisolated enum AccentTheme: String, Codable, CaseIterable, Identifiable, Senda
         case .gold: "E8A91C"
         case .jade: "22D37C"
         case .roseGold: "EC70A9"
-        case .arcticBlue: "3185F5"
         case .graphite: "AAB2BE"
         case .crimson: "E53935"
-        case .ocean: "1E88E5"
         case .violet: "8E24AA"
         case .emerald: "43A047"
         case .amber: "FB8C00"
         case .rose: "D81B60"
-        case .white: "F5F5F5"
+        case .white: nil
         case .custom: nil
         }
     }
@@ -68,10 +64,50 @@ nonisolated enum AccentTheme: String, Codable, CaseIterable, Identifiable, Senda
         case .gold: ["8A5700", "E8A91C", "FFF1A8", "FFD45C", "9A6200"]
         case .jade: ["7BF08D", "22D37C", "0BBF9A"]
         case .roseGold: ["B75AFF", "EC70A9", "FFB37A"]
-        case .arcticBlue: ["4DE3FF", "3185F5", "4D55E8"]
         case .graphite: ["F3F5F7", "AAB2BE", "687381"]
         default: nil
         }
+    }
+}
+
+/// WCAG relative luminance, from 0 for black to 1 for white.
+nonisolated enum AccentLuminance {
+    /// White text falls under 3:1 above this.
+    static let blackTextAbove = 0.3
+    static let paleAbove = 0.85
+    static let veryDarkBelow = 0.015
+
+    static func of(hex: String) -> Double? {
+        let digits = hex.trimmingCharacters(in: CharacterSet(charactersIn: "# "))
+        guard digits.count == 6, let value = UInt32(digits, radix: 16) else { return nil }
+        func linear(_ channel: UInt32) -> Double {
+            let srgb = Double(channel & 0xFF) / 255
+            return srgb <= 0.04045 ? srgb / 12.92 : pow((srgb + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * linear(value >> 16) + 0.7152 * linear(value >> 8) + 0.0722 * linear(value)
+    }
+
+    static func prefersBlackText(hex: String) -> Bool {
+        (of(hex: hex) ?? 0) > blackTextAbove
+    }
+}
+
+extension Color {
+    static let omniaMonoLight = Color(red: 0.11, green: 0.11, blue: 0.12)
+    static let omniaMonoDark = Color(red: 0.96, green: 0.96, blue: 0.96)
+    /// The Mono accent: near-black on a light page, near-white on a dark one.
+    static let omniaMono = omniaDynamic(light: omniaMonoLight, dark: omniaMonoDark)
+
+    static func omniaDynamic(light: Color, dark: Color) -> Color {
+        #if os(macOS)
+        Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? NSColor(dark) : NSColor(light)
+        })
+        #else
+        Color(uiColor: UIColor { traits in
+            traits.userInterfaceStyle == .dark ? UIColor(dark) : UIColor(light)
+        })
+        #endif
     }
 }
 
@@ -1039,12 +1075,64 @@ nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
     var accentColor: Color {
         switch accentTheme {
         case .blue: .blue
+        case .white: .omniaMono
         case .custom:
             customAccentMode == .gradient
                 ? customGradientColors[1]
-                : Color(omniaHex: customAccentHex) ?? .blue
+                : customSingleAccent
         default: accentTheme.hex.flatMap(Color.init(omniaHex:)) ?? .blue
         }
+    }
+
+    /// A pale custom color can't show on a light page, or a very dark one on a
+    /// dark page. There it takes Mono's color for that appearance.
+    private var customSingleAccent: Color {
+        guard let color = Color(omniaHex: customAccentHex) else { return .blue }
+        switch customAccentBrightness {
+        case .pale: return .omniaDynamic(light: .omniaMonoLight, dark: color)
+        case .veryDark: return .omniaDynamic(light: color, dark: .omniaMonoDark)
+        case .normal: return color
+        }
+    }
+
+    enum AccentBrightness { case pale, normal, veryDark }
+
+    /// Settings › Appearance warns about this for a custom color.
+    var customAccentBrightness: AccentBrightness {
+        guard let luminance = AccentLuminance.of(hex: customAccentHex) else { return .normal }
+        if luminance > AccentLuminance.paleAbove { return .pale }
+        return luminance < AccentLuminance.veryDarkBelow ? .veryDark : .normal
+    }
+
+    /// Text and symbols on anything filled with the accent: black on a light
+    /// accent, white on a dark one.
+    var accentForeground: Color {
+        switch accentTheme {
+        case .blue: return .white
+        case .white: return .omniaDynamic(light: .white, dark: .black)
+        case .custom where customAccentMode == .single:
+            let onColor: Color = AccentLuminance.prefersBlackText(hex: customAccentHex) ? .black : .white
+            switch customAccentBrightness {
+            case .pale: return .omniaDynamic(light: .white, dark: onColor)
+            case .veryDark: return .omniaDynamic(light: onColor, dark: .black)
+            case .normal: return onColor
+            }
+        case .custom:
+            let middle = customGradientHexes.count == 3 ? customGradientHexes[1] : ""
+            return AccentLuminance.prefersBlackText(hex: middle) ? .black : .white
+        default:
+            return AccentLuminance.prefersBlackText(hex: accentTheme.hex ?? "") ? .black : .white
+        }
+    }
+
+    /// A white knob disappears on a very pale track, so switches go green.
+    var switchTint: Color {
+        let isPale = switch accentTheme {
+        case .white: true
+        case .custom: customAccentMode == .single && customAccentBrightness == .pale
+        default: false
+        }
+        return isPale ? .green : accentColor
     }
 
     private var customGradientColors: [Color] {

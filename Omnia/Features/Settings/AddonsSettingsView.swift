@@ -399,7 +399,7 @@ private struct AddonSettingsRow: View {
             // An explicit switch, so the Settings row style doesn't draw the
             // label as text beside it.
             Toggle(isOn: $isEnabled) { EmptyView() }
-                .toggleStyle(.switch)
+                .toggleStyle(OmniaSwitchToggleStyle())
                 .labelsHidden()
                 .accessibilityLabel("Enabled")
         }

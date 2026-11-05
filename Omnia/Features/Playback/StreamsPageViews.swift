@@ -177,6 +177,7 @@ private struct StreamsPageBackdrop: View {
 }
 
 private struct StreamsInfoPanel: View {
+    @Environment(\.displayPreferences) private var display
     let item: MediaItem
     let episode: MediaEpisode?
     let resumeAt: Double?
@@ -200,7 +201,7 @@ private struct StreamsInfoPanel: View {
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)
                         .background(.tint, in: .capsule)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(display.accentForeground)
                     if !episode.title.isEmpty {
                         Text(episode.title)
                             .font(.title3.weight(.semibold))
@@ -250,6 +251,7 @@ private struct StreamsInfoPanel: View {
 
 /// Nuvio's provider filter chip, with the add-on's logo when it has one.
 struct StreamFilterChip: View {
+    @Environment(\.displayPreferences) private var display
     let title: String
     let count: Int?
     var logoURL: URL? = nil
@@ -287,7 +289,7 @@ struct StreamFilterChip: View {
                 }
             }
             .font(.subheadline.weight(isSelected ? .semibold : .medium))
-            .foregroundStyle(isSelected ? .white : .primary)
+            .foregroundStyle(isSelected ? display.accentForeground : .primary)
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
             .background {
@@ -349,6 +351,7 @@ struct StreamSectionHeader: View {
 /// One stream, drawn like Nuvio's stream card: badges, a bold name, the
 /// add-on's description, and optionally the add-on's logo on the right.
 struct StreamCardView: View {
+    @Environment(\.displayPreferences) private var display
     let candidate: AddonStreamCandidate
     let badges: [StreamBadge]
     let preferences: StreamPagePreferences
@@ -366,7 +369,7 @@ struct StreamCardView: View {
         HStack(alignment: .center, spacing: 14) {
             Image(systemName: symbol)
                 .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(isHovered && isEnabled ? AnyShapeStyle(.white) : AnyShapeStyle(.tint))
+                .foregroundStyle(isHovered && isEnabled ? AnyShapeStyle(display.accentForeground) : AnyShapeStyle(.tint))
                 .frame(width: 32, height: 32)
                 .background {
                     Circle().fill(isHovered && isEnabled ? AnyShapeStyle(.tint) : AnyShapeStyle(.white.opacity(0.08)))

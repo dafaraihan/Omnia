@@ -90,7 +90,7 @@ struct OmniaSettingsForm<Content: View>: View {
             Form {
                 content
             }
-            .settingsReadableWidth()
+            .toggleStyle(OmniaSwitchToggleStyle())
             .modifier(SettingsFocusScroller(proxy: proxy))
         }
         .modifier(AmoledFormBackground(isActive: usesAmoledBackground))
@@ -147,9 +147,8 @@ struct OmniaSettingsForm<Content: View>: View {
                     }
                 }
             }
-            .frame(maxWidth: SettingsLayout.readableWidth, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(MacSettingsLayout.minimumOuterMargin)
-            .frame(maxWidth: .infinity)
         }
         .scrollIndicators(.automatic)
         .modifier(TopBarScrollReporting(destination: .settings))
@@ -207,9 +206,8 @@ struct OmniaSettingsForm<Content: View>: View {
                     }
                 }
             }
-            .frame(maxWidth: SettingsLayout.readableWidth, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(MacSettingsLayout.minimumOuterMargin)
-            .frame(maxWidth: .infinity)
         }
         .modifier(SettingsFocusScroller(proxy: proxy))
         }
@@ -222,34 +220,6 @@ struct OmniaSettingsForm<Content: View>: View {
     }
     #endif
 }
-
-enum SettingsLayout {
-    /// Keeps rows readable on a wide iPad or Mac window.
-    static let readableWidth: CGFloat = 680
-}
-
-#if os(iOS)
-private struct SettingsReadableWidth: ViewModifier {
-    /// Nil keeps a Form's own inset, which a zero margin would remove.
-    @State private var margin: CGFloat?
-
-    func body(content: Content) -> some View {
-        content
-            .contentMargins(.horizontal, margin, for: .scrollContent)
-            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
-                margin = width > SettingsLayout.readableWidth
-                    ? (width - SettingsLayout.readableWidth) / 2
-                    : nil
-            }
-    }
-}
-
-private extension View {
-    func settingsReadableWidth() -> some View {
-        modifier(SettingsReadableWidth())
-    }
-}
-#endif
 
 /// AMOLED Black draws Settings pages on true black in Dark appearance.
 private struct AmoledFormBackground: ViewModifier {
@@ -269,6 +239,41 @@ private struct AmoledFormBackground: ViewModifier {
 /// A Form row whose switch shares the row with other controls, such as a
 /// drag handle and a menu: the label fills the row and the switch sits at its
 /// trailing edge, as a plain Toggle in a grouped Form does.
+private struct AccentForegroundModifier: ViewModifier {
+    @Environment(\.displayPreferences) private var display
+
+    func body(content: Content) -> some View {
+        content.foregroundStyle(display.accentForeground)
+    }
+}
+
+extension View {
+    /// For labels on anything filled with the accent.
+    func omniaAccentForeground() -> some View {
+        modifier(AccentForegroundModifier())
+    }
+}
+
+/// A system switch that stays readable with a pale accent.
+struct OmniaSwitchToggleStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        OmniaSwitch(configuration: configuration)
+    }
+
+    private struct OmniaSwitch: View {
+        let configuration: Configuration
+        @Environment(\.displayPreferences) private var display
+
+        var body: some View {
+            Toggle(isOn: configuration.$isOn) {
+                configuration.label
+            }
+            .toggleStyle(.switch)
+            .tint(display.switchTint)
+        }
+    }
+}
+
 struct TrailingSwitchToggleStyle: ToggleStyle {
     func makeBody(configuration: Configuration) -> some View {
         HStack(spacing: 12) {
@@ -277,7 +282,7 @@ struct TrailingSwitchToggleStyle: ToggleStyle {
             Toggle(isOn: configuration.$isOn) {
                 configuration.label
             }
-            .toggleStyle(.switch)
+            .toggleStyle(OmniaSwitchToggleStyle())
             .labelsHidden()
         }
     }
@@ -396,7 +401,7 @@ struct MacSettingsRowToggleStyle: ToggleStyle {
             Toggle(isOn: configuration.$isOn) {
                 configuration.label
             }
-            .toggleStyle(.switch)
+            .toggleStyle(OmniaSwitchToggleStyle())
             .labelsHidden()
         }
     }
@@ -673,7 +678,6 @@ private struct SettingsPinnedPreview<Preview: View>: ViewModifier {
                 preview()
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
-                    .frame(maxWidth: SettingsLayout.readableWidth)
                     .frame(maxWidth: .infinity)
                     .background { OmniaPageBackground().ignoresSafeArea() }
             }
