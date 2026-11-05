@@ -147,19 +147,6 @@ struct AddonStreamCandidate: Identifiable, Hashable, Sendable {
         return values.isEmpty ? nil : values.joined(separator: " · ")
     }
 
-    /// Preserve the add-on's torrent index metadata without forcing it into a
-    /// one-line label. The selector renders this as selectable, wrapping text
-    /// so a long source identifier never gets clipped.
-    var sourceIndexDetail: String? {
-        guard case let .localTorrent(descriptor) = delivery else { return nil }
-        let infoHash = descriptor.infoHash
-        let fileIndex = descriptor.fileIndex
-        if let fileIndex {
-            return "Info hash: \(infoHash) · File \(fileIndex + 1)"
-        }
-        return "Info hash: \(infoHash)"
-    }
-
     var deduplicationKey: String {
         switch delivery {
         case let .nativeHTTPS(url): "url:\(url.absoluteString)"
@@ -391,10 +378,6 @@ struct PlaybackSourceResolution: Sendable {
 
     var failedAddonResults: [AddonSourceResolution] {
         addonResults.filter { $0.state == .failed }
-    }
-
-    var emptyAddonResults: [AddonSourceResolution] {
-        addonResults.filter { $0.state == .empty }
     }
 
     func replacingAddonResult(_ replacement: AddonSourceResolution) -> Self {

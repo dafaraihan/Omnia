@@ -901,10 +901,6 @@ struct MediaDetailView: View {
         MediaBrowseMetrics.posterItemSpan(display)
     }
 
-    private var pageBackground: some View {
-        OmniaPageBackground()
-    }
-
     @ViewBuilder
     private var screenBackground: some View {
         #if os(macOS)
@@ -919,6 +915,10 @@ struct MediaDetailView: View {
             pageBackground
         }
         #endif
+    }
+
+    private var pageBackground: some View {
+        OmniaPageBackground()
     }
 
     private var isLandscapePhone: Bool {
@@ -945,13 +945,6 @@ struct MediaDetailView: View {
         #endif
     }
 
-    private var titleFontSize: CGFloat {
-        #if os(iOS)
-        30
-        #else
-        38
-        #endif
-    }
 }
 
 /// The MDBList ratings row, on the title page and the Home hero.

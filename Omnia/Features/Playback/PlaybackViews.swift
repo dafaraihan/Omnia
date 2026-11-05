@@ -1973,7 +1973,6 @@ struct PlaybackExperienceView: View {
         }
     }
 
-
     /// Episodes for a show started from Continue Watching, which keeps no
     /// season list: from the add-on that lists it in add-on mode, else from
     /// the metadata service, as the title's page loads them.
@@ -2089,18 +2088,6 @@ struct PlaybackExperienceView: View {
         playback.seek(to: PlaybackAutomationController.skipTarget(for: visibleSkipSegment, in: segments))
         self.visibleSkipSegment = nil
         presentDeferredUpNext()
-    }
-
-    private var upNextTitle: String? {
-        guard showsUpNext, let nextEpisode = playback.nextEpisode else { return nil }
-        let number = "S\(nextEpisode.seasonNumber) E\(nextEpisode.episodeNumber)"
-        if let autoPlay = nextEpisodeAutoPlay {
-            if let candidate = autoPlay.candidate {
-                return "Playing \(number) via \(candidate.addonName) in \(autoPlay.secondsLeft)"
-            }
-            return "Finding a source for \(number)…"
-        }
-        return "Up Next: \(number)"
     }
 
     private func configureAutomation() {

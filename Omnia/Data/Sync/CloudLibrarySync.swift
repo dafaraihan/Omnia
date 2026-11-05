@@ -70,31 +70,11 @@ actor CloudLibrarySync {
         )
     }
 
-    func fetchLibrary(for userID: UUID) async throws -> [LibraryEntry] {
-        try await client
-            .from("library_entries")
-            .select()
-            .eq("user_id", value: userID.uuidString)
-            .order("updated_at", ascending: false)
-            .execute()
-            .value
-    }
-
     func upsert(_ entry: LibraryEntry) async throws {
         try await client
             .from("library_entries")
             .upsert(entry, onConflict: "user_id,metadata_record_id", returning: .minimal)
             .execute()
-    }
-
-    func fetchProgress(for userID: UUID) async throws -> [PlaybackProgress] {
-        try await client
-            .from("playback_progress")
-            .select()
-            .eq("user_id", value: userID.uuidString)
-            .order("last_played_at", ascending: false)
-            .execute()
-            .value
     }
 
     func upsert(_ progress: PlaybackProgress) async throws {

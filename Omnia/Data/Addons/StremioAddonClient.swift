@@ -302,19 +302,6 @@ enum StremioAddonClient {
         }
     }
 
-    static func fetchAddonCatalog(
-        from addon: InstalledAddon,
-        catalog: AddonCatalog
-    ) async throws -> [AddonCatalogAddon] {
-        guard addon.isEnabled,
-              addon.manifest.supportsAddonCatalogs,
-              addon.manifest.addonCatalogs?.contains(catalog) == true
-        else { return [] }
-        let endpoint = resourceURL(addon: addon, resource: "addon_catalog", type: catalog.type, id: catalog.id)
-        let response: AddonCatalogAddonsResponse = try await fetch(endpoint)
-        return response.addons
-    }
-
     private static func fetch<Response: Decodable & Sendable>(_ url: URL, timeout: TimeInterval = 60) async throws -> Response {
         guard let origin = NormalizedOrigin(url: url) else {
             throw AddonClientError.invalidResponse
@@ -488,10 +475,6 @@ nonisolated struct AddonSubtitlesResponse: Decodable, Sendable {
     let subtitles: [AddonSubtitle]
 }
 
-nonisolated struct AddonCatalogAddonsResponse: Decodable, Sendable {
-    let addons: [AddonCatalogAddon]
-}
-
 nonisolated struct AddonCatalogAddon: Decodable, Identifiable, Sendable {
     let transportURL: URL?
     let manifest: StremioAddonManifest?
@@ -573,8 +556,6 @@ nonisolated struct AddonStreamBehaviorHints: Decodable, Sendable {
         videoSize = container.decodeLossy(Int64.self, forKey: .videoSize)
         proxyHeaders = container.decodeLossy(AddonProxyHeaders.self, forKey: .proxyHeaders)
     }
-
-    var requiresProxyHeaders: Bool { proxyHeaders != nil }
 
     /// Stremio add-ons may declare request headers that accompany a direct
     /// media URL. Omnia preserves them as transport metadata, but only the

@@ -152,11 +152,6 @@ Group {
         .omniaNavigationTitle("Playback")
     }
 
-    private var streamSelectionSummary: String {
-        if behavior.reuseLastLink && behavior.autoSelectionMode == .manual { return "Reuse Last Link" }
-        return behavior.autoSelectionMode.title
-    }
-
     private var resolverSummary: String {
         localResolverSettings.preferences.hasCurrentConsent ? "Ready on this \(OmniaDevice.name)" : "Consent required"
     }

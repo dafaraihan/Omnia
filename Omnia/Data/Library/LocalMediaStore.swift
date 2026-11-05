@@ -55,12 +55,6 @@ actor LocalMediaStore: LocalMediaStoring {
         ProfileStore.defaultDirectory?.appending(path: "\(profileID.uuidString).store")
     }
 
-    static func inMemory() throws -> LocalMediaStore {
-        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
-        let container = try ModelContainer(for: LocalMediaRecord.self, configurations: configuration)
-        return LocalMediaStore(modelContainer: container)
-    }
-
     func snapshot() throws -> [LocalMediaSnapshot] {
         try records()
             .map(makeSnapshot)

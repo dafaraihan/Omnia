@@ -10,11 +10,6 @@ import Observation
 import SwiftUI
 #endif
 
-enum AppPlatform: Equatable, Sendable {
-    case mobile
-    case mac
-}
-
 enum MacSidebarSelectionTint: Equatable, Sendable {
     case neutralGray
 }
@@ -65,12 +60,6 @@ enum AppDestination: Hashable {
     case liveTV
     case search
     case settings
-
-    /// Search is part of Discover (Dafa, 2026-10-22), so it has no tab.
-    static func visibleDestinations(for platform: AppPlatform, showsLiveTV: Bool = false) -> [AppDestination] {
-        let browsing: [AppDestination] = [.home, .library, .discover] + (showsLiveTV ? [.liveTV] : [])
-        return browsing + [.settings]
-    }
 
     /// Live TV sits between Discover and Settings once a source is set up.
     static func macTopBarDestinations(showsLiveTV: Bool) -> [AppDestination] {
@@ -134,7 +123,6 @@ final class MacPrimaryNavigationState {
     /// Each destination's navigation stack, so titles opened from the search
     /// popover can be pushed onto the main window's current page.
     var paths: [AppDestination: NavigationPath] = [:]
-    var stackIdentity: AppDestination { selection }
     private var previousContentSelection: AppDestination
 
     init(selection: AppDestination = .home) {

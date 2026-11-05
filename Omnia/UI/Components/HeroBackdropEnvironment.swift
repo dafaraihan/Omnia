@@ -550,15 +550,6 @@ enum WindowHeroBackdropLayout {
         )
     }
 
-    static func accentFrame(windowSize: CGSize, measuredHeroFrame: CGRect, backdropGlobalFrame: CGRect) -> CGRect {
-        let originY = measuredHeroFrame.maxY - backdropGlobalFrame.minY
-        return CGRect(
-            x: 0,
-            y: originY,
-            width: windowSize.width,
-            height: max(0, windowSize.height - originY)
-        )
-    }
 }
 
 /// Only the artwork changing redraws it; scrolling just moves it.

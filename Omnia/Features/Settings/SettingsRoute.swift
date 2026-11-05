@@ -129,13 +129,6 @@ enum SettingsRoute: Hashable, Sendable {
         }
     }
 
-    static var allVerificationRoutes: [SettingsRoute] {
-        [.account] + rootGroups.flatMap(\.routes)
-        + rootGroups.flatMap(\.routes).flatMap(\.children)
-        + MetadataProvider.supported.filter { $0.id != "mdblist" && $0.id != "anilist" }.map { .metadataProvider($0.id) }
-        + AboutSection.allCases.map { .aboutSection($0) }
-    }
-
     static func filteredRootGroups(query: String) -> [SettingsRouteGroup] {
         rootGroups.compactMap { group in
             let candidates = query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty

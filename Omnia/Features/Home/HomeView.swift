@@ -889,10 +889,6 @@ struct HomeView: View {
         return cardWidth + 16
     }
 
-    private var pageBackground: some View {
-        OmniaPageBackground()
-    }
-
     @ViewBuilder
     private var screenBackground: some View {
         #if os(macOS)

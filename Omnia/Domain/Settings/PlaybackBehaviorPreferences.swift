@@ -305,17 +305,6 @@ nonisolated struct PlaybackBehaviorPreferences: Codable, Equatable, Sendable {
         return try? NSRegularExpression(pattern: trimmed, options: [.caseInsensitive])
     }
 
-    /// Whether anything can start a stream without the user picking one.
-    var isAutoPlayEffectivelyEnabled: Bool {
-        if reuseLastLink { return true }
-        if preferBingeGroup && reuseBingeGroup { return true }
-        switch autoSelectionMode {
-        case .manual: return false
-        case .firstSource: return true
-        case .regexMatch: return compiledRegex != nil
-        }
-    }
-
     /// Selection rules for opening a title from the library. Returns nil
     /// when the list should simply show.
     func selectionRequest(rememberedBingeGroup: String?) -> StreamAutoPlayRequest? {

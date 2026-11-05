@@ -105,12 +105,6 @@ final class CollectionsStore {
         save()
     }
 
-    func setPinned(_ isPinned: Bool, for collection: HomeCollection) {
-        guard let index = collections.firstIndex(where: { $0.id == collection.id }) else { return }
-        collections[index].pinToTop = isPinned
-        save()
-    }
-
     func setVisible(_ isVisible: Bool, for collection: HomeCollection) {
         if isVisible {
             hiddenIDs.remove(collection.id)

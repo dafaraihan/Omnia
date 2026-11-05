@@ -96,12 +96,6 @@ nonisolated struct ResumeProgressPresentation: Equatable {
         return remainingText
     }
 
-    var continueWatchingMetadataText: String {
-        [episodeIdentifier, remainingText]
-            .compactMap { $0 }
-            .joined(separator: "  •  ")
-    }
-
     func matches(_ episode: MediaEpisode) -> Bool {
         if let resumeEpisodeID, resumeEpisodeID == episode.id {
             return true

@@ -15,10 +15,6 @@ enum PlaybackResolverCredentialStore {
         try KeychainStore.value(account: keychainAccount)
     }
 
-    static func saveAuthorizationToken(_ value: String) throws {
-        try KeychainStore.save(value, account: keychainAccount)
-    }
-
     static func deleteAuthorizationToken() throws {
         try KeychainStore.delete(account: keychainAccount)
     }

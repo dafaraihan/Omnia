@@ -54,10 +54,6 @@ final class ProfileStore {
         return profiles.min { $0.createdAt < $1.createdAt }?.id
     }
 
-    var mainProfile: ViewerProfile? {
-        profiles.first { $0.id == mainProfileID }
-    }
-
     func isMain(_ id: UUID) -> Bool { id == mainProfileID }
 
     init(directory: URL? = ProfileStore.defaultDirectory) {

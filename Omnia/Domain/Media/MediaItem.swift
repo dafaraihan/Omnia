@@ -170,12 +170,6 @@ nonisolated struct MediaItem: Identifiable, Hashable, Sendable {
         }
     }
 
-    var hasIMDbIdentifier: Bool {
-        ["imdb", "imdb_id"].contains { key in
-            externalIDs[key]?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-        }
-    }
-
     /// Most add-ons call anime a series, but anime-focused manifests expose a
     /// separate `anime` type. Ask both when the title has an anime identity.
     var streamMediaTypes: [String] {
@@ -240,50 +234,6 @@ nonisolated struct MediaItem: Identifiable, Hashable, Sendable {
         let isUnreliable = current.host?.lowercased().hasSuffix("metahub.space") == true
             || current.scheme?.lowercased() == "http"
         return isUnreliable ? (counterpart ?? current) : current
-    }
-
-    /// Fills what a TVDB, AniList or add-on record can't supply on its own
-    /// (seasons, cast, recommendations, full-size artwork) from the matching
-    /// TMDB title. TVDB only provides a small `thumbnail` as its backdrop, so a
-    /// TVDB backdrop gives way to TMDB's.
-    func mergingTMDBCounterpart(_ tmdbItem: MediaItem) -> MediaItem {
-        let tmdbHasSeasons = tmdbItem.details?.seasons.isEmpty == false
-        let useTMDBDetails = details == nil
-            || (kind == .series && details?.seasons.isEmpty == true && tmdbHasSeasons)
-        let preferTMDBBackdrop = metadataProvider == .tvdb || backdropURL == nil
-        let hasOverview = !overview.isEmpty && overview != "No overview is available yet."
-
-        return MediaItem(
-            id: id,
-            title: title,
-            year: year,
-            kind: kind,
-            overview: hasOverview ? overview : tmdbItem.overview,
-            genres: genres.isEmpty ? tmdbItem.genres : genres,
-            symbol: symbol,
-            artworkColors: artworkColors,
-            artworkURL: artworkURL ?? tmdbItem.artworkURL,
-            backdropURL: preferTMDBBackdrop ? (tmdbItem.backdropURL ?? backdropURL) : backdropURL,
-            logoURL: Self.preferredLogo(logoURL, counterpart: tmdbItem.logoURL),
-            metadataProvider: metadataProvider ?? tmdbItem.metadataProvider,
-            metadataProviderID: metadataProviderID ?? tmdbItem.metadataProviderID,
-            metadataRecordID: metadataRecordID ?? tmdbItem.metadataRecordID,
-            externalIDs: externalIDs.merging(tmdbItem.externalIDs) { current, _ in current },
-            // An add-on's own details still win field by field, but TMDB
-            // fills what they leave out (cast photos, production, similar
-            // titles, budget), so the title page isn't limited to the add-on.
-            details: useTMDBDetails
-                ? (tmdbItem.details ?? details)
-                : MediaTitleDetails.filling(details, from: tmdbItem.details),
-            progress: progress,
-            positionSeconds: positionSeconds,
-            durationSeconds: durationSeconds,
-            resumeEpisodeID: resumeEpisodeID,
-            resumeSeasonNumber: resumeSeasonNumber,
-            resumeEpisodeNumber: resumeEpisodeNumber,
-            resumeEpisodeTitle: resumeEpisodeTitle,
-            resumeEpisodeStillURL: resumeEpisodeStillURL
-        )
     }
 
     private static let remainingTimeFormatter: DateComponentsFormatter = {

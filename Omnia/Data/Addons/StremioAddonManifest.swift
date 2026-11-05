@@ -28,7 +28,6 @@ nonisolated struct StremioAddonManifest: Codable, Hashable, Sendable {
     var supportsStreams: Bool { resources.contains { $0.name == "stream" } }
     var supportsMeta: Bool { resources.contains { $0.name == "meta" } }
     var supportsSubtitles: Bool { resources.contains { $0.name == "subtitles" } }
-    var supportsAddonCatalogs: Bool { resources.contains { $0.name == "addon_catalog" } }
 
     /// Add-on manifests are untrusted. A malformed or insecure optional logo
     /// must not prevent the add-on from working or trigger a cleartext load.

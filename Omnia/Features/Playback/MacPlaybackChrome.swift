@@ -587,13 +587,6 @@ private extension View {
         omniaCircularGlassButton(element: .playerControls)
     }
 
-    func playbackRoundedGlassButton(cornerRadius: CGFloat = 14) -> some View {
-        omniaRoundedGlassButton(cornerRadius: cornerRadius, element: .playerControls)
-    }
-
-    func playbackCapsuleGlassButton() -> some View {
-        omniaCapsuleGlassButton(element: .playerControls)
-    }
 }
 
 struct MacPlaybackChrome: View {

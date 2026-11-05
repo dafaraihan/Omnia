@@ -114,10 +114,6 @@ struct MediaGridLayout: Equatable {
         )
     }
 
-    var usedWidth: CGFloat {
-        itemWidth * CGFloat(columnCount) + spacing * CGFloat(max(0, columnCount - 1))
-    }
-
     static func fitting(
         containerWidth: CGFloat,
         horizontalInset: CGFloat,

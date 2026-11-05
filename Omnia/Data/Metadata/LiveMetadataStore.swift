@@ -447,29 +447,6 @@ final class LiveMetadataStore {
         return fallbackItem
     }
 
-    func genreCatalog(for genre: MetadataGenre, type: MediaType) async -> [MediaItem] {
-        let key = "\(type.rawValue):\(genre.id)"
-        if let cached = genreCatalogs[key] {
-            return cached
-        }
-
-        guard let client else { return [] }
-        do {
-            async let firstPage = client.catalog(type: type, category: .popular, genreID: genre.id, page: 1, routing: route(for: type))
-            async let secondPage = client.catalog(type: type, category: .popular, genreID: genre.id, page: 2, routing: route(for: type))
-            async let thirdPage = client.catalog(type: type, category: .popular, genreID: genre.id, page: 3, routing: route(for: type))
-            let responses = try await (firstPage, secondPage, thirdPage)
-            let items = Self.items(
-                from: responses.0.results + responses.1.results + responses.2.results,
-                preferredProvider: route(for: type).primary
-            )
-            genreCatalogs[key] = items
-            return items
-        } catch {
-            return []
-        }
-    }
-
     /// The catalog destination owns its own page state. This keeps Home and
     /// Discover light, while a user can keep scrolling without a small,
     /// hard-coded client-side title ceiling.

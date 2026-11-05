@@ -150,13 +150,6 @@ nonisolated struct PlaybackTrackSelectionGate: Equatable {
 }
 
 #if os(macOS)
-nonisolated struct PlaybackTimelinePreviewResultKey: Equatable {
-    let sourceID: String
-
-    func matches(sourceID: String?) -> Bool {
-        self.sourceID == sourceID
-    }
-}
 
 @MainActor
 final class PlaybackTimelinePreviewRequestScheduler {
@@ -242,9 +235,6 @@ enum PlaybackAspectRatioMode: String, CaseIterable, Sendable {
         case .fill: .original
         }
     }
-
-    var preservesAspectRatio: Bool { true }
-    var panScan: Double { self == .fill ? 1 : 0 }
 
     var title: String {
         switch self {
@@ -815,33 +805,6 @@ final class PlaybackSession {
         #endif
         #if !os(macOS)
         avPlayer?.seek(to: CMTime(seconds: max(seconds, 0), preferredTimescale: 600))
-        #endif
-    }
-
-    func requestTimelinePreview(at timestamp: Double) {
-        #if os(macOS)
-        guard let source, let durationSeconds, durationSeconds > 0 else { return }
-        let clamped = min(max(timestamp, 0), durationSeconds)
-        timelinePreviewTimestamp = clamped
-        if timelinePreviewService == nil {
-            timelinePreviewService = PlaybackTimelinePreviewService(
-                source: source,
-                configuration: .init(
-                    isLowPowerModeEnabled: ProcessInfo.processInfo.isLowPowerModeEnabled
-                )
-            )
-        }
-        let resultKey = PlaybackTimelinePreviewResultKey(sourceID: source.id)
-        let configuration = PlaybackTimelinePreviewConfiguration(
-            isLowPowerModeEnabled: ProcessInfo.processInfo.isLowPowerModeEnabled
-        )
-        let service = timelinePreviewService
-        timelinePreviewScheduler.schedule(after: configuration.debounce) { [weak self] in
-            guard let frame = await service?.frame(at: clamped),
-                  !Task.isCancelled,
-                  resultKey.matches(sourceID: self?.source?.id) else { return }
-            self?.timelinePreviewImage = frame.image
-        }
         #endif
     }
 

@@ -20,10 +20,6 @@ enum OmniaLiquidGlassSurfaceRole {
         self == .control || self == .menuRow
     }
 
-    var isContinuousSurface: Bool {
-        self == .modal
-    }
-
     var baseDarkeningOpacity: Double {
         self == .modal ? 0.34 : 0
     }
@@ -244,32 +240,6 @@ struct OmniaMenuRowButtonStyle<S: Shape>: ButtonStyle {
     }
 }
 
-private struct OmniaInteractiveLiquidGlass<S: Shape>: ViewModifier {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.isEnabled) private var isEnabled
-    @State private var isHovering = false
-
-    let shape: S
-
-    func body(content: Content) -> some View {
-        let transform = OmniaLiquidGlassPresentation.transform(
-            isHovering: isEnabled && isHovering
-        )
-        let opacity = OmniaLiquidGlassPresentation.darkeningOpacity(
-            isHovering: isEnabled && isHovering,
-            isPressed: false
-        )
-        content
-            .contentShape(shape)
-            .background(shape.fill(.black.opacity(opacity)))
-            .omniaGlass(.playerControls, base: .clear, interactive: true, in: shape)
-            .scaleEffect(transform.scale)
-            .offset(y: transform.verticalOffset)
-            .animation(reduceMotion ? nil : .smooth(duration: 0.16), value: isHovering)
-            .onHover { isHovering = $0 }
-    }
-}
-
 extension View {
     /// Static clear Liquid Glass for non-button surfaces such as the timeline.
     func omniaLiquidGlass<S: Shape>(
@@ -314,10 +284,6 @@ extension View {
     func omniaCircularMenuRowButton() -> some View {
         buttonStyle(OmniaMenuRowButtonStyle(shape: Circle()))
             .contentShape(Circle())
-    }
-
-    func omniaInteractiveLiquidGlass<S: Shape>(in shape: S) -> some View {
-        modifier(OmniaInteractiveLiquidGlass(shape: shape))
     }
 
     func omniaModalGlass<S: Shape>(in shape: S) -> some View {

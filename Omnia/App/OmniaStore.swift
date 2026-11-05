@@ -255,12 +255,6 @@ final class OmniaStore {
         saveDisabledCatalogIDs()
     }
 
-    var enabledAddonCatalogCount: Int {
-        installedAddons.reduce(into: 0) { count, addon in
-            count += addon.manifest.catalogs.filter { isCatalogEnabled(for: addon, catalog: $0) }.count
-        }
-    }
-
     func isSaved(_ item: MediaItem) -> Bool {
         savedSnapshot(matching: item)?.isInWatchlist
             ?? library.contains { $0.isSameTitle(as: item) }
