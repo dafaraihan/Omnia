@@ -91,7 +91,7 @@ struct LibraryView: View {
                     } else {
                         LazyVGrid(columns: layout.columns, alignment: .leading, spacing: 18) {
                             ForEach(items) { item in
-                                MediaPoster(item: item, fillsAvailableWidth: true, showsInfoOnArtwork: true)
+                                MediaPoster(item: item, fillsAvailableWidth: true, showsTitleOnly: true)
                             }
                         }
                         .padding(.horizontal, MediaBrowseMetrics.pageInset)

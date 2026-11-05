@@ -14,8 +14,9 @@ struct MediaPoster: View {
     let item: MediaItem
     var style: Style = .poster
     var fillsAvailableWidth = false
-    /// Library: genre and year on the art, and only the title under it.
-    var showsInfoOnArtwork = false
+    /// Library: only the title under the art. Custom posters such as
+    /// Xperience's carry their own details, so Omnia draws nothing over them.
+    var showsTitleOnly = false
     @Environment(\.showsMediaCardLabels) private var showsMediaCardLabels
     @Environment(\.displayPreferences) private var display
 
@@ -60,21 +61,6 @@ struct MediaPoster: View {
                         }
                     }
                     .overlay(alignment: .bottom) {
-                        if showsInfoOnArtwork, !isLandscape, let artworkInfo {
-                            ZStack(alignment: .bottom) {
-                                LinearGradient(colors: [.clear, .black.opacity(0.7)], startPoint: .center, endPoint: .bottom)
-                                Text(artworkInfo)
-                                    .font(.caption2.weight(.semibold))
-                                    .foregroundStyle(.white.opacity(0.85))
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.8)
-                                    .padding(.horizontal, 8)
-                                    .padding(.bottom, item.progress == nil ? 10 : 18)
-                            }
-                            .clipShape(.rect(cornerRadius: cornerRadius, style: .continuous))
-                        }
-                    }
-                    .overlay(alignment: .bottom) {
                         if let progress = item.progress {
                             ProgressView(value: progress)
                                 .controlSize(.mini)
@@ -88,14 +74,16 @@ struct MediaPoster: View {
                     .mediaHoverPreview(item)
                     .posterTransitionSource(item, prefersBackdrop: usesBackdropCard, cornerRadius: cornerRadius)
 
-                if showsInfoOnArtwork {
-                    Text(item.title)
-                        .font(.subheadline)
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity)
-                } else if showsMediaCardLabels {
-                    MediaPosterLabel(item: item)
+                if showsMediaCardLabels {
+                    if showsTitleOnly {
+                        Text(item.title)
+                            .font(.subheadline)
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity)
+                    } else {
+                        MediaPosterLabel(item: item)
+                    }
                 }
             }
             .frame(width: fillsAvailableWidth ? nil : cardWidth, alignment: .leading)
@@ -108,12 +96,6 @@ struct MediaPoster: View {
 
     private var cardWidth: CGFloat {
         isLandscape ? display.landscapePosterCardWidth : display.posterCardWidth
-    }
-
-    private var artworkInfo: String? {
-        let year = item.year.trimmingCharacters(in: .whitespacesAndNewlines)
-        let values = [item.genres.first, year == "—" ? nil : year].compactMap { $0 }.filter { !$0.isEmpty }
-        return values.isEmpty ? nil : values.joined(separator: " · ")
     }
 }
 
