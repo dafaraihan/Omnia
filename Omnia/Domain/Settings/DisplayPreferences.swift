@@ -974,7 +974,7 @@ nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
     var detailSectionOrder: [DetailSection] = DetailSection.allCases
     /// Nuvio's Poster Transition: the poster expands and blurs into the
     /// title page when it opens.
-    var posterTransition = false
+    var posterTransition = true
     /// Nuvio's Shuffle: offers random episodes on a show's page. Turning it
     /// off pauses shuffle for every show.
     var episodeShuffleAvailable = false
