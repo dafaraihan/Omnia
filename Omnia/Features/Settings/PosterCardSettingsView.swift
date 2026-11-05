@@ -300,7 +300,7 @@ private struct PosterCardPreview: View {
 
     private var size: CGSize {
         display.landscapePosters
-            ? CGSize(width: display.landscapePosterCardWidth, height: display.landscapePosterCardWidth / 1.72)
+            ? CGSize(width: display.landscapePosterCardWidth, height: display.landscapeCardHeight)
             : CGSize(width: display.posterCardWidth, height: display.posterCardHeight)
     }
 

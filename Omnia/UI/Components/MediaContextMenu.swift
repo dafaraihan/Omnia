@@ -43,9 +43,9 @@ enum MediaContextMenuPresentation {
         let watchlist: MediaContextCommand = isSaved ? .removeFromWatchlist : .addToWatchlist
         switch (kind, placement) {
         case (.movie, .continueWatching):
-            return [.goToMovie, .removeWatchProgress, .markWatched]
+            return [.goToMovie, .markWatched, .removeWatchProgress]
         case (.series, .continueWatching), (.episode, .continueWatching):
-            return [.goToShow, .removeWatchProgress, .markWatched]
+            return [.goToShow, .markWatched, .removeWatchProgress]
         case (.movie, .browse):
             return [.goToMovie, watchlist]
         case (.series, .browse), (.episode, .browse):
@@ -193,6 +193,8 @@ private struct MediaContextMenuItems: View {
         ) { _, command in
             menuItem(for: command)
         }
+        // iOS otherwise draws a menu's symbols in the accent color.
+        .tint(.primary)
     }
 
     @ViewBuilder
@@ -209,7 +211,7 @@ private struct MediaContextMenuItems: View {
                 menuLabel("Mark as Watched", systemImage: "checkmark.circle")
             }
         case .removeWatchProgress:
-            Button(role: .destructive) {
+            Button {
                 store.removeFromContinueWatching(item)
             } label: {
                 menuLabel("Remove from Watchlist", systemImage: "minus.circle")
@@ -243,9 +245,11 @@ private struct MediaContextMenuItems: View {
     }
 
     private func menuLabel(_ title: String, systemImage: String) -> some View {
-        // Template symbols let NSMenu color icons for light and dark menus and
-        // for the highlighted row. Forced white icons vanished in light mode.
+        // Template symbols let the system color them for each appearance and
+        // the highlighted row. A Mac menu shows icons only when it's asked to.
         Label(title, systemImage: systemImage)
+            .labelStyle(.titleAndIcon)
+            .symbolRenderingMode(.monochrome)
     }
 
     private func markWatched() async {

@@ -248,6 +248,7 @@ Group {
 }
 
 struct SubtitleDoubleSlider: View {
+    @Environment(\.displayPreferences) private var display
     let title: String
     @Binding var value: Double
     let range: ClosedRange<Double>
@@ -264,6 +265,7 @@ struct SubtitleDoubleSlider: View {
                 }
             }
             Slider(value: $value, in: range)
+                .tint(display.accentColor)
                 .accessibilityValue(valueLabel(value))
         }
     }

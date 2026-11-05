@@ -1186,14 +1186,12 @@ nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
 
     var posterCardWidth: CGFloat { posterWidth.width }
 
+    /// Every card shown landscape uses this size: Continue Watching, collection
+    /// tiles and backdrop posters.
     var landscapePosterCardWidth: CGFloat {
-        #if os(iOS)
-        let baseline: CGFloat = 248
-        #else
-        let baseline: CGFloat = 304
-        #endif
-        return baseline * continueWatchingCard.size.posterWidth(for: self) / PosterWidthPreset.standard.width
+        (continueWatchingCard.size.posterWidth(for: self) * 180 / 110 * 1.2).rounded()
     }
+    var landscapeCardHeight: CGFloat { (landscapePosterCardWidth * 9 / 16).rounded() }
     var posterCardHeight: CGFloat { posterWidth.width * 1.5 }
     var posterCornerRadius: CGFloat { posterCorner.radius }
     /// Landscape cards keep a slightly larger radius than posters, as before.

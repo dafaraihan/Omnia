@@ -97,19 +97,25 @@ struct DiscoverView: View {
         // toolbar item. While searching it holds Search's filters.
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
+                OmniaToolbarSymbol {
                 filterMenu
+                }
             }
             ToolbarSpacer(.fixed, placement: .primaryAction)
             ToolbarItem(placement: .primaryAction) {
+                OmniaToolbarSymbol {
                 MacSettingsSearchField(text: $query, prompt: "Titles, people, or genres")
                     .frame(width: 320)
+                }
             }
         }
         #else
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Titles, people, or genres")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
+                OmniaToolbarSymbol {
                 filterMenu
+                }
             }
         }
         #endif

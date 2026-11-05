@@ -86,12 +86,14 @@ struct AddonCatalogBrowseView: View {
         .toolbar {
             if !filterExtras.isEmpty || supportsSearch {
                 ToolbarItem(placement: .primaryAction) {
+                    OmniaToolbarSymbol {
                     HStack(spacing: 8) {
                         if !filterExtras.isEmpty { filterMenu }
                         if supportsSearch {
                             MacSettingsSearchField(text: $search, prompt: "Search \(title)")
                                 .frame(width: 260)
                         }
+                    }
                     }
                 }
             }
@@ -101,7 +103,9 @@ struct AddonCatalogBrowseView: View {
         .toolbar {
             if !filterExtras.isEmpty {
                 ToolbarItem(placement: .primaryAction) {
+                    OmniaToolbarSymbol {
                     filterMenu
+                    }
                 }
             }
         }

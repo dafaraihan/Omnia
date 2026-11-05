@@ -154,7 +154,7 @@ struct EpisodeShuffleSheet: View {
             .foregroundStyle(.secondary)
         Text("Your episode")
             .font(.subheadline.weight(.semibold))
-            .foregroundStyle(display.accentColor)
+            .foregroundStyle(.secondary)
         Text("S\(episode.seasonNumber) E\(episode.episodeNumber)")
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(.secondary)

@@ -147,7 +147,9 @@ struct GenreBrowseView: View {
         .omniaNavigationTitle(topic.title)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
+                OmniaToolbarSymbol {
                 filterMenu(plan)
+                }
             }
         }
         // Sorting only reorders what has loaded; kind and catalogs reload.

@@ -127,3 +127,13 @@ private struct MacPushedToolbarTitleModifier: ViewModifier {
     }
 }
 #endif
+
+/// A toolbar's symbols in the label color, not the accent.
+struct OmniaToolbarSymbol<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        content()
+            .tint(.primary)
+    }
+}

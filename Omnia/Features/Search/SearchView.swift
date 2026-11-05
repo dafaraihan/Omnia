@@ -201,12 +201,16 @@ struct SearchView: View {
                 .omniaNavigationTitle("Search", screen: .search)
                 .toolbar {
                     ToolbarItem(placement: .primaryAction) {
+                        OmniaToolbarSymbol {
                         SearchFilterMenu()
+                        }
                     }
                     ToolbarSpacer(.fixed, placement: .primaryAction)
                     ToolbarItem(placement: .primaryAction) {
+                        OmniaToolbarSymbol {
                         MacSettingsSearchField(text: queryBinding, prompt: "Titles, people, or genres")
                             .frame(width: 340)
+                        }
                     }
                 }
             #else
@@ -220,7 +224,9 @@ struct SearchView: View {
                 }
                 .toolbar {
                     ToolbarItem(placement: .primaryAction) {
+                        OmniaToolbarSymbol {
                         SearchFilterMenu()
+                        }
                     }
                 }
             #endif

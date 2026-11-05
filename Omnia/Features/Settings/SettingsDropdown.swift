@@ -89,10 +89,11 @@ struct SettingsDropdown<Value: Hashable>: View {
                 HStack(spacing: 4) {
                     Text(label(selection))
                         .lineLimit(1)
+                        .foregroundStyle(.secondary)
                     Image(systemName: "chevron.up.chevron.down")
                         .font(.footnote.weight(.medium))
+                        .foregroundStyle(.secondary)
                 }
-                .foregroundStyle(.tint)
             }
             .fixedSize()
         }
@@ -259,7 +260,7 @@ private struct DropdownRow: View {
 
     private var foreground: Color {
         if isHovered { return hoverDisplay.accentForeground }
-        return isSelected ? accent : .primary
+        return .primary
     }
 }
 #endif

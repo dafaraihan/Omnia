@@ -105,10 +105,12 @@ struct PluginsSettingsView: View {
         .omniaNavigationTitle("Plugins")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
+                OmniaToolbarSymbol {
                 Button("Refresh All", systemImage: "arrow.clockwise") {
                     Task { await plugins.refreshAll() }
                 }
                 .disabled(plugins.repositories.isEmpty || !plugins.refreshing.isEmpty)
+                }
             }
         }
         .confirmationDialog(

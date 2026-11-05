@@ -27,19 +27,25 @@ struct LiveTVView: View {
             // toolbar item, as on Search (Dafa, 2026-10-22).
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
+                    OmniaToolbarSymbol {
                     filterMenu
+                    }
                 }
                 ToolbarSpacer(.fixed, placement: .primaryAction)
                 ToolbarItem(placement: .primaryAction) {
+                    OmniaToolbarSymbol {
                     MacSettingsSearchField(text: $searchText, prompt: "Search channels")
                         .frame(width: 260)
+                    }
                 }
             }
             #else
             .searchable(text: $searchText, prompt: "Search channels")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
+                    OmniaToolbarSymbol {
                     filterMenu
+                    }
                 }
             }
             #endif
@@ -363,7 +369,7 @@ private struct LiveTVNowNext: View {
                         HStack(spacing: 8) {
                             Text("Now")
                                 .font(.caption.weight(.semibold))
-                                .foregroundStyle(Color.accentColor)
+                                .foregroundStyle(.secondary)
                             Text(now.title)
                                 .font(.caption)
                                 .lineLimit(1)
@@ -576,11 +582,11 @@ private struct LiveTVGuideSheet: View {
                         HStack {
                             Text(timeRange(program))
                                 .font(.caption.monospacedDigit())
-                                .foregroundStyle(isAiring ? Color.accentColor : Color.secondary)
+                                .foregroundStyle(isAiring ? Color.primary : Color.secondary)
                             if isAiring {
                                 Text("Now")
                                     .font(.caption.weight(.semibold))
-                                    .foregroundStyle(Color.accentColor)
+                                    .foregroundStyle(.primary)
                             }
                         }
                         Text(program.title)

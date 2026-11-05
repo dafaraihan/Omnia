@@ -19,12 +19,11 @@ struct ContinueWatchingCard: View {
     }
 
     static func width(for display: DisplayPreferences) -> CGFloat {
-        let posterWidth = display.continueWatchingCard.size.posterWidth(for: display)
-        return (posterWidth * 180 / 110 * 1.2).rounded()
+        display.landscapePosterCardWidth
     }
 
     private var cornerRadius: CGFloat {
-        display.continueWatchingCard.corners.radius(for: display)
+        display.landscapeCornerRadius
     }
 
     /// The next episode, offered after the previous one ended, before any
@@ -263,6 +262,6 @@ struct ContinueWatchingCard: View {
     }
 
     private var cardHeight: CGFloat {
-        (cardWidth / 1.77).rounded()
+        (cardWidth * 9 / 16).rounded()
     }
 }

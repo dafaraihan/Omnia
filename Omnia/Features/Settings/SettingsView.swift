@@ -21,7 +21,9 @@ struct SettingsView: View {
         #if os(macOS)
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
+                    OmniaToolbarSymbol {
                     MacSettingsToolbarSearch(text: $searchText)
+                    }
                 }
             }
         #else

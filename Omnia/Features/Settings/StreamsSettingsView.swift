@@ -130,7 +130,7 @@ struct StreamsSettingsView: View {
             } label: {
                 Image(systemName: isActive ? "checkmark.circle.fill" : "circle")
                     .font(.title3)
-                    .foregroundStyle(isActive ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                    .foregroundStyle(isActive ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
             }
             .buttonStyle(.plain)
             .accessibilityLabel(isActive ? "Active" : "Use \(entry.displayHost)")

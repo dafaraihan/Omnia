@@ -92,6 +92,7 @@ struct PersonDetailView: View {
         .toolbar {
             if let page, !page.cast.isEmpty, !page.crew.isEmpty {
                 ToolbarItem(placement: .primaryAction) {
+                    OmniaToolbarSymbol {
                     Menu {
                         Picker(selection: $showsCrew) {
                             Text("Acting").tag(false)
@@ -104,6 +105,7 @@ struct PersonDetailView: View {
                         Label("Filter and Sort", systemImage: "line.3.horizontal.decrease.circle")
                     }
                     .help("Filter and Sort")
+                    }
                 }
             }
         }
@@ -200,6 +202,7 @@ struct EntityTitlesView: View {
             // Networks only list series.
             if kind == .company {
                 ToolbarItem(placement: .primaryAction) {
+                    OmniaToolbarSymbol {
                     Menu {
                         Picker(selection: typeBinding) {
                             Text("Movies").tag(MediaType.movie)
@@ -212,6 +215,7 @@ struct EntityTitlesView: View {
                         Label("Filter and Sort", systemImage: "line.3.horizontal.decrease.circle")
                     }
                     .help("Filter and Sort")
+                    }
                 }
             }
         }

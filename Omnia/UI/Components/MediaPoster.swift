@@ -36,12 +36,12 @@ struct MediaPoster: View {
         MediaDetailLink(item: item) {
             VStack(alignment: .leading, spacing: 8) {
                 ArtworkView(item: item, prefersBackdrop: usesBackdropCard)
-                    .aspectRatio(isLandscape ? 1.72 : 2 / 3, contentMode: .fit)
+                    .aspectRatio(isLandscape ? 16 / 9 : 2 / 3, contentMode: .fit)
                     .frame(maxWidth: fillsAvailableWidth ? .infinity : nil)
                     // A set height too, or a two-line title shrinks the art in a shelf.
                     .frame(
                         width: fillsAvailableWidth ? nil : cardWidth,
-                        height: fillsAvailableWidth ? nil : cardWidth / (isLandscape ? 1.72 : 2 / 3)
+                        height: fillsAvailableWidth ? nil : cardWidth / (isLandscape ? 16 / 9 : 2 / 3)
                     )
                     .clipShape(.rect(cornerRadius: cornerRadius, style: .continuous))
                     .overlay {
@@ -139,7 +139,7 @@ struct RankedMediaPoster: View {
     }
 
     private var cardHeight: CGFloat {
-        display.landscapePosters ? display.landscapePosterCardWidth / 1.72 : display.posterCardHeight
+        display.landscapePosters ? display.landscapeCardHeight : display.posterCardHeight
     }
 }
 

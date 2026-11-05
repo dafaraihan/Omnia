@@ -329,7 +329,7 @@ struct StreamSectionHeader: View {
             if isPinned {
                 Image(systemName: "pin.fill")
                     .font(.caption2)
-                    .foregroundStyle(.tint)
+                    .foregroundStyle(.primary)
                     .accessibilityLabel("Pinned")
             }
             Text("\(count)")
@@ -369,7 +369,7 @@ struct StreamCardView: View {
         HStack(alignment: .center, spacing: 14) {
             Image(systemName: symbol)
                 .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(isHovered && isEnabled ? AnyShapeStyle(display.accentForeground) : AnyShapeStyle(.tint))
+                .foregroundStyle(isHovered && isEnabled ? AnyShapeStyle(display.accentForeground) : AnyShapeStyle(.primary))
                 .frame(width: 32, height: 32)
                 .background {
                     Circle().fill(isHovered && isEnabled ? AnyShapeStyle(.tint) : AnyShapeStyle(.white.opacity(0.08)))
@@ -388,7 +388,7 @@ struct StreamCardView: View {
                     if isPinned {
                         Image(systemName: "pin.fill")
                             .font(.caption2)
-                            .foregroundStyle(.tint)
+                            .foregroundStyle(.primary)
                     }
                 }
 

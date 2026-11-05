@@ -65,7 +65,10 @@ struct CollectionFolderTile: View {
     }
 
     static func height(for folderShape: HomeCollectionFolder.TileShape, display: DisplayPreferences) -> CGFloat {
-        width(for: folderShape, display: display) / CGFloat(folderShape.aspectRatio)
+        switch folderShape {
+        case .landscape, .wide: display.landscapeCardHeight
+        case .poster, .square: width(for: folderShape, display: display) / CGFloat(folderShape.aspectRatio)
+        }
     }
 
     #if os(iOS)
@@ -278,7 +281,9 @@ struct CollectionFolderView: View {
         .omniaNavigationTitle(folder.title)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
+                OmniaToolbarSymbol {
                 filterMenu
+                }
             }
         }
         .task(id: loadKey) { await load() }

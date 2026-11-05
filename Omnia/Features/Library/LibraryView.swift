@@ -109,7 +109,9 @@ struct LibraryView: View {
         #endif
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
+                OmniaToolbarSymbol {
                 libraryFilterMenu
+                }
             }
         }
         .navigationDestination(for: MediaItem.self) { MediaDetailView(item: $0) }

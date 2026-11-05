@@ -56,17 +56,13 @@ extension SettingsPreferencesStore {
 /// Form throughout.
 struct OmniaSettingsForm<Content: View>: View {
     private let content: Content
-    private let tint: Color?
     private let isRoot: Bool
     @Environment(SettingsPreferencesStore.self) private var settings: SettingsPreferencesStore?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.displayPreferences) private var display
     @Environment(\.colorScheme) private var colorScheme
 
-    /// Forms follow the accent chosen in Settings › Appearance unless a
-    /// page passes its own tint.
-    init(tint: Color? = nil, isRoot: Bool = false, @ViewBuilder content: () -> Content) {
-        self.tint = tint
+    init(isRoot: Bool = false, @ViewBuilder content: () -> Content) {
         self.isRoot = isRoot
         self.content = content()
     }
@@ -91,6 +87,7 @@ struct OmniaSettingsForm<Content: View>: View {
                 content
             }
             .toggleStyle(OmniaSwitchToggleStyle())
+            .labelStyle(OmniaMonochromeLabelStyle())
             .modifier(SettingsFocusScroller(proxy: proxy))
         }
         .modifier(AmoledFormBackground(isActive: usesAmoledBackground))
@@ -98,7 +95,9 @@ struct OmniaSettingsForm<Content: View>: View {
         #endif
     }
 
-    private var resolvedTint: Color { tint ?? display.accentColor }
+    /// Row text and symbols stay in the label colors. Switches and sliders set
+    /// the accent themselves.
+    private var resolvedTint: Color { .primary }
 
     private var usesAmoledBackground: Bool {
         display.amoledBlack && colorScheme == .dark
@@ -214,6 +213,7 @@ struct OmniaSettingsForm<Content: View>: View {
         .scrollIndicators(.automatic)
         .toggleStyle(MacSettingsRowToggleStyle())
         .labeledContentStyle(MacSettingsRowLabeledContentStyle())
+        .labelStyle(OmniaMonochromeLabelStyle())
         .background(usesAmoledBackground ? Color.black : Color.clear)
         .tint(resolvedTint)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -251,6 +251,20 @@ extension View {
     /// For labels on anything filled with the accent.
     func omniaAccentForeground() -> some View {
         modifier(AccentForegroundModifier())
+    }
+}
+
+/// Symbols in the label colors, not the accent, whatever a Form or button would use.
+struct OmniaMonochromeLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Label {
+            configuration.title
+        } icon: {
+            configuration.icon
+                .symbolRenderingMode(.monochrome)
+                .foregroundStyle(.primary)
+        }
+        .labelStyle(.automatic)
     }
 }
 
@@ -470,6 +484,7 @@ struct SettingsDeferredSlider: View {
     var onDraft: (Double?) -> Void = { _ in }
 
     @State private var draft: Double?
+    @Environment(\.displayPreferences) private var sliderDisplay
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -504,6 +519,7 @@ struct SettingsDeferredSlider: View {
                 }
                 // The title and value are above; macOS would repeat the title here.
                 .labelsHidden()
+                .tint(sliderDisplay.accentColor)
                 .accessibilityValue(valueText)
                 if let maximumLabel { Text(maximumLabel).font(.caption) }
             }

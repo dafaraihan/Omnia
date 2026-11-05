@@ -38,7 +38,7 @@ struct SettingsStyleTilePicker<Option: Hashable & Identifiable, Preview: View>: 
                 }
                 Text(title(option))
                     .font(.callout.weight(.semibold))
-                    .foregroundStyle(isSelected ? display.accentColor : .primary)
+                    .foregroundStyle(.primary)
                 Text(detail(option))
                     .font(.caption)
                     .foregroundStyle(.secondary)

@@ -194,7 +194,7 @@ struct AccountSettingsView: View {
         VStack(spacing: 6) {
             Image(systemName: symbol)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(display.accentColor)
+                .foregroundStyle(.secondary)
             Text(value)
                 .font(.system(size: isCompact ? 20 : 26, weight: .bold, design: .rounded).monospacedDigit())
                 .contentTransition(.numericText())
