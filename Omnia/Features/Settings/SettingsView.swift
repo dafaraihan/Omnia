@@ -257,8 +257,6 @@ struct SettingsDestinationView: View {
                 MetadataSourcesSettingsView()
             case .progress:
                 ProgressSettingsView()
-            case .upcoming:
-                UpcomingSettingsView()
             case .videoPlayer:
                 VideoPlayerSettingsView()
             case .subtitle:

@@ -219,7 +219,7 @@ nonisolated struct AddonMeta: Decodable, Hashable, Sendable {
                 overview: video.overview?.nonBlank ?? "No episode synopsis is available yet.",
                 runtimeMinutes: nil,
                 stillURL: video.thumbnail,
-                // Episode cards and Upcoming expect `yyyy-MM-dd`; Stremio
+                // Episode cards and reminders expect `yyyy-MM-dd`; Stremio
                 // sends ISO 8601 date-times.
                 airDate: video.released.flatMap(AddonDateParser.dayString(from:))
             )

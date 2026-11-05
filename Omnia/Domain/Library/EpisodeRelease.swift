@@ -1,6 +1,6 @@
 import Foundation
 
-struct UpcomingEpisode: Identifiable, Hashable, Sendable {
+struct EpisodeRelease: Identifiable, Hashable, Sendable {
     let series: MediaItem
     let episode: MediaEpisode
     let airDate: Date
@@ -10,8 +10,8 @@ struct UpcomingEpisode: Identifiable, Hashable, Sendable {
     }
 }
 
-struct UpcomingResult: Equatable, Sendable {
-    let items: [UpcomingEpisode]
+struct EpisodeReleaseResult: Equatable, Sendable {
+    let items: [EpisodeRelease]
     let failures: [String]
     let isStale: Bool
     let lastUpdated: Date

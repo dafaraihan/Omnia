@@ -942,7 +942,7 @@ nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
     var liquidGlass = LiquidGlassPreferences()
     /// Settings › Layout › Low Power Mode.
     var lowPowerMode = LowPowerMode.automatic
-    /// Settings › Layout › Upcoming › New Episode Reminders.
+    /// Settings › Notifications › New Episode Reminders.
     var episodeNotifications = false
     /// Settings › Layout › Top Bar Size, on iPad and Mac.
     var topBarSize = TopBarSizePreferences()

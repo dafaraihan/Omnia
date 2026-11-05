@@ -60,7 +60,6 @@ struct HomeSettingsView: View {
                 SettingsRouteLink(route: .catalogs, summary: visibleCatalogSummary)
                 SettingsRouteLink(route: .collections, summary: collectionsSummary)
                 SettingsRouteLink(route: .continueWatching, summary: continueWatchingSummary)
-                SettingsRouteLink(route: .upcoming, summary: settings.preferences.showUpcoming ? "On Home" : "Hidden")
             } header: {
                 Text("On Home")
             }

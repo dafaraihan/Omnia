@@ -24,7 +24,7 @@ enum EpisodeNotifications {
     }
 
     /// Air dates have no time, so the reminder comes at 9:00 on the day.
-    static func schedule(_ episodes: [UpcomingEpisode], now: Date = .now, calendar: Calendar = .current) async {
+    static func schedule(_ episodes: [EpisodeRelease], now: Date = .now, calendar: Calendar = .current) async {
         await cancelAll()
         guard await isAuthorized() else { return }
         let center = UNUserNotificationCenter.current()

@@ -1,11 +1,11 @@
 import Foundation
 
-enum UpcomingServiceError: Error, Equatable {
+enum EpisodeReleaseServiceError: Error, Equatable {
     case metadataUnavailable
 }
 
 @MainActor
-struct UpcomingService {
+struct EpisodeReleaseService {
     typealias Resolver = @MainActor (MediaItem) async throws -> MediaItem
 
     private let now: () -> Date
@@ -26,12 +26,12 @@ struct UpcomingService {
         savedItems: [MediaItem],
         lookAheadDays: Int,
         itemLimit: Int?
-    ) async -> UpcomingResult {
+    ) async -> EpisodeReleaseResult {
         let loadedAt = now()
         let start = calendar.startOfDay(for: loadedAt)
         let boundedDays = min(max(lookAheadDays, 1), 365)
         let end = calendar.date(byAdding: .day, value: boundedDays, to: start) ?? start
-        var values: [UpcomingEpisode] = []
+        var values: [EpisodeRelease] = []
         var failures: [String] = []
 
         for saved in savedItems where saved.kind == .series {
@@ -60,7 +60,7 @@ struct UpcomingService {
                       let airDate = parseAirDate(airDateText),
                       airDate >= start,
                       airDate <= end else { continue }
-                values.append(UpcomingEpisode(series: enriched, episode: episode, airDate: airDate))
+                values.append(EpisodeRelease(series: enriched, episode: episode, airDate: airDate))
             }
         }
 
@@ -76,7 +76,7 @@ struct UpcomingService {
         let boundedLimit = itemLimit.map { min(max($0, 0), 500) }
         let items = boundedLimit.map { Array(ordered.prefix($0)) } ?? ordered
 
-        return UpcomingResult(
+        return EpisodeReleaseResult(
             items: items,
             failures: failures.sorted(),
             isStale: !failures.isEmpty && !items.isEmpty,

@@ -83,7 +83,6 @@ enum SettingsRoute: Hashable, Sendable {
     case animeEnrichment
     case metadataSources
     case progress
-    case upcoming
     case videoPlayer
     case subtitle
     case playbackResolver
@@ -121,7 +120,7 @@ enum SettingsRoute: Hashable, Sendable {
     /// The pages a root page opens, so search finds them from the root.
     var children: [SettingsRoute] {
         return switch self {
-        case .home: [.catalogs, .collections, .continueWatching, .upcoming]
+        case .home: [.catalogs, .collections, .continueWatching]
         case .appearance: [.liquidGlass]
         case .videoPlayer: [.playbackResolver, .playbackDiagnostics]
         case .metadata: [.metadataProvider("tmdb"), .metadataProvider("tvdb"), .metadataProvider("fanart"),
@@ -164,7 +163,6 @@ enum SettingsRoute: Hashable, Sendable {
         case .animeEnrichment: "Anime Enrichment"
         case .metadataSources: "Metadata Sources"
         case .progress: "Data & Backup"
-        case .upcoming: "Upcoming"
         case .videoPlayer: "Playback"
         case .subtitle: "Subtitles"
         case .playbackResolver: "Playback Resolver"
@@ -209,7 +207,6 @@ enum SettingsRoute: Hashable, Sendable {
         case .animeEnrichment: "sparkles.tv"
         case .tracking: "checkmark.circle"
         case .progress: "clock.arrow.circlepath"
-        case .upcoming: "calendar"
         case .videoPlayer: "play.rectangle"
         case .subtitle: "captions.bubble"
         case .playbackResolver: "externaldrive.connected.to.line.below"
@@ -248,7 +245,6 @@ enum SettingsRoute: Hashable, Sendable {
         case .animeEnrichment: ["anime", "enrichment", "AniList", "Kitsu", "MyAnimeList", "MAL", "synopsis", "artwork", "genres"]
         case .metadataSources: ["metadata", "TMDB", "TVDB", "AniList", "Kitsu", "MyAnimeList", "MAL", "Jikan", "fallback", "anime", "primary source"]
         case .progress: ["local progress", "continue watching", "watchlist", "backup"]
-        case .upcoming: ["episodes", "look ahead", "Home"]
         case .videoPlayer: ["video player", "player", "skip intro", "auto skip", "recap", "credits", "up next", "next episode", "threshold", "decoder", "hardware", "Metal", "rendering", "gpu-next", "OpenGL", "overlay", "audio", "subtitles", "SDH", "forced", "source selection", "auto play"]
         case .subtitle: ["player appearance", "subtitles", "captions", "SDH", "appearance"]
         case .playbackResolver: ["endpoint", "bearer token", "approved add-ons", "approved HTTPS hosts"]

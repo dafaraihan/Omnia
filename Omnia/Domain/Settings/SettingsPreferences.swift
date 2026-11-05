@@ -26,14 +26,6 @@ enum BoundedItemLimit: String, Codable, CaseIterable, Sendable {
     }
 }
 
-enum UpcomingLookAhead: Int, Codable, CaseIterable, Sendable {
-    case days7 = 7
-    case days14 = 14
-    case days30 = 30
-    case days60 = 60
-    case days90 = 90
-}
-
 enum WatchlistMode: String, Codable, CaseIterable, Sendable {
     case local
 }
@@ -177,9 +169,6 @@ struct SettingsPreferences: Codable, Equatable, Sendable {
     var addonTimeout: AddonTimeout
     var continueWatchingLimit: BoundedItemLimit
     var watchlistMode: WatchlistMode
-    var showUpcoming: Bool
-    var upcomingLookAhead: UpcomingLookAhead
-    var upcomingItemLimit: BoundedItemLimit
     var showSkipIntro: Bool
     var autoplayNextEpisode: Bool
     var directContinueWatchingPlayback: Bool
@@ -206,8 +195,8 @@ struct SettingsPreferences: Codable, Equatable, Sendable {
     var searchFilters: SearchFilterPreferences = .default
 
     private enum CodingKeys: String, CodingKey {
-        case addonTimeout, continueWatchingLimit, watchlistMode, showUpcoming
-        case upcomingLookAhead, upcomingItemLimit, showSkipIntro
+        case addonTimeout, continueWatchingLimit, watchlistMode
+        case showSkipIntro
         case autoplayNextEpisode
         case directContinueWatchingPlayback, compatibleFormatsOnly
         case preferredAudioLanguage, audioFallbackLanguage
@@ -228,9 +217,6 @@ struct SettingsPreferences: Codable, Equatable, Sendable {
         addonTimeout: AddonTimeout,
         continueWatchingLimit: BoundedItemLimit,
         watchlistMode: WatchlistMode,
-        showUpcoming: Bool,
-        upcomingLookAhead: UpcomingLookAhead,
-        upcomingItemLimit: BoundedItemLimit,
         showSkipIntro: Bool,
         autoplayNextEpisode: Bool,
         directContinueWatchingPlayback: Bool,
@@ -255,9 +241,6 @@ struct SettingsPreferences: Codable, Equatable, Sendable {
         self.addonTimeout = addonTimeout
         self.continueWatchingLimit = continueWatchingLimit
         self.watchlistMode = watchlistMode
-        self.showUpcoming = showUpcoming
-        self.upcomingLookAhead = upcomingLookAhead
-        self.upcomingItemLimit = upcomingItemLimit
         self.showSkipIntro = showSkipIntro
         self.autoplayNextEpisode = autoplayNextEpisode
         self.directContinueWatchingPlayback = directContinueWatchingPlayback
@@ -285,9 +268,6 @@ struct SettingsPreferences: Codable, Equatable, Sendable {
         addonTimeout = try container.decode(AddonTimeout.self, forKey: .addonTimeout)
         continueWatchingLimit = try container.decode(BoundedItemLimit.self, forKey: .continueWatchingLimit)
         watchlistMode = try container.decode(WatchlistMode.self, forKey: .watchlistMode)
-        showUpcoming = try container.decode(Bool.self, forKey: .showUpcoming)
-        upcomingLookAhead = try container.decode(UpcomingLookAhead.self, forKey: .upcomingLookAhead)
-        upcomingItemLimit = try container.decode(BoundedItemLimit.self, forKey: .upcomingItemLimit)
         showSkipIntro = try container.decode(Bool.self, forKey: .showSkipIntro)
         autoplayNextEpisode = try container.decode(Bool.self, forKey: .autoplayNextEpisode)
         directContinueWatchingPlayback = try container.decode(Bool.self, forKey: .directContinueWatchingPlayback)
@@ -366,9 +346,6 @@ struct SettingsPreferences: Codable, Equatable, Sendable {
         addonTimeout: .seconds20,
         continueWatchingLimit: .unlimited,
         watchlistMode: .local,
-        showUpcoming: true,
-        upcomingLookAhead: .days60,
-        upcomingItemLimit: .unlimited,
         showSkipIntro: true,
         autoplayNextEpisode: false,
         directContinueWatchingPlayback: false,

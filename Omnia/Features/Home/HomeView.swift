@@ -26,8 +26,6 @@ struct HomeView: View {
     @State private var viewportSize: CGSize = .zero
     @State private var resolvedFeatured: MediaItem?
     @State private var resolvedHeroSource = ""
-    @State private var upcomingResult: UpcomingResult?
-    @State private var isLoadingUpcoming = false
     @State private var heroIndex = 0
     /// How much of the page's leading edge the iPad sidebar covers.
     @State private var sidebarInset: CGFloat = 0
@@ -208,15 +206,6 @@ struct HomeView: View {
                     // switch back.
                     if showsContinueWatching, !isOnboardingPreview, !continuing.isEmpty || continueWatchingSource != .local {
                         continueWatchingShelf(continuing)
-                    }
-
-                    if settings.preferences.showUpcoming {
-                        if let upcomingResult, !upcomingResult.items.isEmpty {
-                            upcomingShelf(upcomingResult)
-                        } else if isLoadingUpcoming {
-                            OmniaLoadingRow("Checking upcoming episodes…")
-                                .frame(maxWidth: .infinity, minHeight: 100)
-                        }
                     }
 
                     if isAddonMode {
@@ -415,10 +404,6 @@ struct HomeView: View {
                 // A selection or catalog update cancels the old timer. The
                 // replacement task begins immediately with a fresh interval.
             }
-        }
-        .task(id: upcomingTaskKey) {
-            guard !isOnboardingPreview else { return }
-            await loadUpcoming()
         }
         .task(id: episodeReminderKey) {
             guard !isOnboardingPreview, settings.preferences.display.episodeNotifications else { return }
@@ -843,25 +828,6 @@ struct HomeView: View {
         return [item.title, remaining].compactMap { $0 }.joined(separator: " · ")
     }
 
-    private func upcomingShelf(_ result: UpcomingResult) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SectionHeader(title: "Upcoming")
-            ShelfScrollView(
-                items: result.items,
-                itemSpan: upcomingCardSpan,
-                accessibilityLabel: "Upcoming episodes"
-            ) { item in
-                UpcomingEpisodeCard(item: item)
-            }
-        }
-    }
-
-    private var upcomingTaskKey: String {
-        let preferences = settings.preferences
-        let savedIDs = store.localMediaSnapshots.filter(\.isInWatchlist).map(\.mediaID).joined(separator: "|")
-        return "\(preferences.showUpcoming)-\(preferences.upcomingLookAhead.rawValue)-\(preferences.upcomingItemLimit.rawValue)-\(savedIDs)"
-    }
-
     private var showsSourcePicker: Binding<Bool> {
         Binding(
             get: { sourcePlaybackItem != nil },
@@ -883,12 +849,11 @@ struct HomeView: View {
         return "\(settings.preferences.display.episodeNotifications)-\(day)-\(ids)"
     }
 
-    /// Looks further ahead than the Home shelf, whose range is its own setting.
     private func scheduleEpisodeReminders() async {
-        let service = UpcomingService(now: { .now }, calendar: .current) { item in
+        let service = EpisodeReleaseService(now: { .now }, calendar: .current) { item in
             let enriched = await metadata.details(for: item)
             guard enriched.details?.seasons.contains(where: { !$0.episodes.isEmpty }) == true else {
-                throw UpcomingServiceError.metadataUnavailable
+                throw EpisodeReleaseServiceError.metadataUnavailable
             }
             return enriched
         }
@@ -897,40 +862,8 @@ struct HomeView: View {
         await EpisodeNotifications.schedule(result.items)
     }
 
-    private func loadUpcoming() async {
-        guard settings.preferences.showUpcoming else {
-            upcomingResult = nil
-            return
-        }
-        isLoadingUpcoming = true
-        defer { isLoadingUpcoming = false }
-        let savedSeries = store.localMediaSnapshots
-            .filter { $0.isInWatchlist && $0.item.kind == .series }
-            .map(\.item)
-        let service = UpcomingService(now: { .now }, calendar: .current) { item in
-            let enriched = await metadata.details(for: item)
-            guard enriched.details?.seasons.contains(where: { !$0.episodes.isEmpty }) == true else {
-                throw UpcomingServiceError.metadataUnavailable
-            }
-            return enriched
-        }
-        upcomingResult = await service.load(
-            savedItems: savedSeries,
-            lookAheadDays: settings.preferences.upcomingLookAhead.rawValue,
-            itemLimit: settings.preferences.upcomingItemLimit.value
-        )
-    }
-
     private var continueWatchingCardSpan: CGFloat {
         ContinueWatchingCard.itemSpan(for: display)
-    }
-
-    private var upcomingCardSpan: CGFloat {
-        #if os(iOS)
-        264
-        #else
-        320
-        #endif
     }
 
     private var horizontalInset: CGFloat {
@@ -1272,58 +1205,6 @@ struct HomeView: View {
         HeroNavigationButton(symbol: symbol, label: label, action: action)
     }
 
-}
-
-enum UpcomingEpisodeCardPresentation {
-    static func metadataText(for episode: MediaEpisode) -> String {
-        "S\(episode.seasonNumber) E\(episode.episodeNumber) · \(episode.title)"
-    }
-}
-
-private struct UpcomingEpisodeCard: View {
-    let item: UpcomingEpisode
-
-    var body: some View {
-        NavigationLink(value: item.series) {
-            VStack(alignment: .leading, spacing: 8) {
-                ZStack(alignment: .bottomLeading) {
-                    MediaItem.placeholderArtworkColor
-                    CachedArtworkImage(
-                        url: item.episode.stillURL ?? item.series.backdropURL ?? item.series.artworkURL,
-                        size: CGSize(width: 304, height: 171)
-                    ) { phase in
-                        if let image = phase.image {
-                            image.resizable().scaledToFill()
-                        } else {
-                            Image(systemName: item.series.symbol)
-                                .font(.largeTitle)
-                                .foregroundStyle(.white.opacity(0.7))
-                        }
-                    }
-                    LinearGradient(colors: [.clear, .black.opacity(0.75)], startPoint: .center, endPoint: .bottom)
-                    Text(item.airDate.formatted(date: .abbreviated, time: .omitted))
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .padding(12)
-                }
-                .frame(width: 304, height: 171)
-                .clipShape(.rect(cornerRadius: 16, style: .continuous))
-
-                Text(item.series.title)
-                    .font(.headline)
-                    .lineLimit(1)
-                Text(UpcomingEpisodeCardPresentation.metadataText(for: item.episode))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            .frame(width: 304, alignment: .leading)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("\(item.series.title), season \(item.episode.seasonNumber), episode \(item.episode.episodeNumber), \(item.episode.title)")
-        .accessibilityValue(item.airDate.formatted(date: .long, time: .omitted))
-        .mediaContextMenu(for: item.series, placement: .browse)
-    }
 }
 
 /// A resume card deliberately uses backdrop/still artwork rather than a title
