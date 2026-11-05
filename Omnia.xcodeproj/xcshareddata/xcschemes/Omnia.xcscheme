@@ -6,6 +6,24 @@
       parallelizeBuildables = "YES"
       buildImplicitDependencies = "YES"
       buildArchitectures = "Automatic">
+      <PostActions>
+         <ExecutionAction
+            ActionType = "Xcode.IDEStandardExecutionActionsCore.ExecutionActionType.ShellScriptAction">
+            <ActionContent
+               title = "Keep the build out of Launchpad"
+               scriptText = "# Xcode registers every Mac build with Launch Services, which puts it in&#10;# Launchpad beside the installed app. Running it from Xcode still works.&#10;[ &quot;$PLATFORM_NAME&quot; = macosx ] || exit 0&#10;/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -u &quot;$TARGET_BUILD_DIR/$FULL_PRODUCT_NAME&quot; || true&#10;">
+               <EnvironmentBuildable>
+                  <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "9D577E403018EA5D0066A3C3"
+               BuildableName = "Omnia.app"
+               BlueprintName = "Omnia"
+               ReferencedContainer = "container:Omnia.xcodeproj">
+            </BuildableReference>
+               </EnvironmentBuildable>
+            </ActionContent>
+         </ExecutionAction>
+      </PostActions>
       <BuildActionEntries>
          <BuildActionEntry
             buildForTesting = "NO"
