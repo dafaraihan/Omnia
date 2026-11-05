@@ -27,46 +27,6 @@ struct VideoPlayerSettingsModel: Equatable, Sendable {
     }
 }
 
-struct SubtitleAppearanceSettingsModel: Equatable, Sendable {
-    var mode: SubtitleAppearanceMode
-    var custom: SubtitleAppearance
-    private var resetConfirmation: UUID?
-
-    init(mode: SubtitleAppearanceMode, custom: SubtitleAppearance) {
-        self.mode = mode
-        self.custom = custom.normalized
-    }
-
-    var usesCustomControls: Bool { mode == .custom }
-
-    var resolvedAppearance: SubtitleAppearance {
-        var preferences = SettingsPreferences.default
-        preferences.subtitleAppearance = mode
-        preferences.customSubtitleAppearance = custom
-        return preferences.resolvedSubtitleAppearance
-    }
-
-    mutating func updateCustom(_ update: (inout SubtitleAppearance) -> Void) {
-        update(&custom)
-        custom = custom.normalized
-        mode = .custom
-    }
-
-    mutating func makeResetConfirmation() -> UUID {
-        let confirmation = UUID()
-        resetConfirmation = confirmation
-        return confirmation
-    }
-
-    mutating func reset(confirmation: UUID) -> Bool {
-        guard confirmation == resetConfirmation else { return false }
-        mode = .followSystem
-        custom = .default
-        resetConfirmation = nil
-        return true
-    }
-}
-
 extension Binding where Value == SettingsPreferences {
     func member<T>(_ keyPath: WritableKeyPath<SettingsPreferences, T>) -> Binding<T> {
         Binding<T>(
@@ -100,8 +60,6 @@ struct OmniaSettingsForm<Content: View>: View {
     private let isRoot: Bool
     @Environment(SettingsPreferencesStore.self) private var settings: SettingsPreferencesStore?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.settingsPreviewModel) private var previewModel
-    @Environment(\.settingsPreviewInColumn) private var previewInColumn
     @Environment(\.displayPreferences) private var display
     @Environment(\.colorScheme) private var colorScheme
 
@@ -116,7 +74,7 @@ struct OmniaSettingsForm<Content: View>: View {
     var body: some View {
         form
             // Rows that depend on a switch slide in with it.
-            .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: OmniaDevice.isPhone ? settings?.preferences : nil)
+            .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: settings?.preferences)
     }
 
     @ViewBuilder
@@ -130,25 +88,9 @@ struct OmniaSettingsForm<Content: View>: View {
         #else
         ScrollViewReader { proxy in
             Form {
-                if previewInColumn {
-                    // Reads each section's preview, and dims or marks its rows.
-                    Group(sections: content) { sections in
-                        ForEach(sections) { section in
-                            Section {
-                                section.content
-                                    .modifier(SettingsSectionFocus(kind: section.containerValues.settingsPreviewSection))
-                                    .listRowBackground(rowBackground(for: section.containerValues.settingsPreviewSection))
-                            } header: {
-                                section.header
-                            } footer: {
-                                section.footer
-                            }
-                        }
-                    }
-                } else {
-                    content
-                }
+                content
             }
+            .settingsReadableWidth()
             .modifier(SettingsFocusScroller(proxy: proxy))
         }
         .modifier(AmoledFormBackground(isActive: usesAmoledBackground))
@@ -157,17 +99,6 @@ struct OmniaSettingsForm<Content: View>: View {
     }
 
     private var resolvedTint: Color { tint ?? display.accentColor }
-
-    private func isActive(_ kind: SettingsPreviewKind?) -> Bool {
-        previewInColumn && kind != nil && previewModel?.activeSection == kind
-    }
-
-    #if os(iOS)
-    /// A grouped Form can't outline a section, so its rows take the accent.
-    private func rowBackground(for kind: SettingsPreviewKind?) -> Color? {
-        isActive(kind) ? resolvedTint.opacity(0.18) : nil
-    }
-    #endif
 
     private var usesAmoledBackground: Bool {
         display.amoledBlack && colorScheme == .dark
@@ -216,8 +147,9 @@ struct OmniaSettingsForm<Content: View>: View {
                     }
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.bottom, MacSettingsLayout.minimumOuterMargin)
+            .frame(maxWidth: SettingsLayout.readableWidth, alignment: .leading)
+            .padding(MacSettingsLayout.minimumOuterMargin)
+            .frame(maxWidth: .infinity)
         }
         .scrollIndicators(.automatic)
         .modifier(TopBarScrollReporting(destination: .settings))
@@ -264,12 +196,6 @@ struct OmniaSettingsForm<Content: View>: View {
                                             .fill(Color.primary.opacity(0.065))
                                     }
                                     .clipShape(.rect(cornerRadius: 12, style: .continuous))
-                                    .overlay {
-                                        if isActive(section.containerValues.settingsPreviewSection) {
-                                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                                .strokeBorder(resolvedTint, lineWidth: 2)
-                                        }
-                                    }
                                 }
                             }
 
@@ -278,12 +204,12 @@ struct OmniaSettingsForm<Content: View>: View {
                                 .foregroundStyle(.secondary)
                                 .padding(.horizontal, 12)
                         }
-                        .modifier(SettingsSectionFocus(kind: section.containerValues.settingsPreviewSection))
                     }
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: SettingsLayout.readableWidth, alignment: .leading)
             .padding(MacSettingsLayout.minimumOuterMargin)
+            .frame(maxWidth: .infinity)
         }
         .modifier(SettingsFocusScroller(proxy: proxy))
         }
@@ -296,6 +222,34 @@ struct OmniaSettingsForm<Content: View>: View {
     }
     #endif
 }
+
+enum SettingsLayout {
+    /// Keeps rows readable on a wide iPad or Mac window.
+    static let readableWidth: CGFloat = 680
+}
+
+#if os(iOS)
+private struct SettingsReadableWidth: ViewModifier {
+    /// Nil keeps a Form's own inset, which a zero margin would remove.
+    @State private var margin: CGFloat?
+
+    func body(content: Content) -> some View {
+        content
+            .contentMargins(.horizontal, margin, for: .scrollContent)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
+                margin = width > SettingsLayout.readableWidth
+                    ? (width - SettingsLayout.readableWidth) / 2
+                    : nil
+            }
+    }
+}
+
+private extension View {
+    func settingsReadableWidth() -> some View {
+        modifier(SettingsReadableWidth())
+    }
+}
+#endif
 
 /// AMOLED Black draws Settings pages on true black in Dark appearance.
 private struct AmoledFormBackground: ViewModifier {
@@ -495,42 +449,7 @@ private struct MacSettingsLabelStyle: LabelStyle {
 }
 
 enum MacSettingsLayout {
-    struct Presentation: Equatable {
-        let leadingOffset: CGFloat
-        let contentWidth: CGFloat
-        let rowWidth: CGFloat
-    }
-
     static let minimumOuterMargin: CGFloat = 24
-    static let leadingOffset: CGFloat = minimumOuterMargin
-
-    static func presentation(for availableWidth: CGFloat) -> Presentation {
-        let width = max(0, availableWidth - (minimumOuterMargin * 2))
-        return Presentation(
-            leadingOffset: leadingOffset,
-            contentWidth: width,
-            rowWidth: width
-        )
-    }
-}
-
-struct MacSettingsContentContainer<Content: View>: View {
-    private let content: Content
-
-    init(@ViewBuilder content: () -> Content) {
-        self.content = content()
-    }
-
-    var body: some View {
-        GeometryReader { geometry in
-            let presentation = MacSettingsLayout.presentation(for: geometry.size.width)
-            content
-                .frame(width: presentation.contentWidth)
-                .padding(.horizontal, MacSettingsLayout.minimumOuterMargin)
-                .padding(.top, MacSettingsLayout.minimumOuterMargin)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        }
-    }
 }
 #endif
 
@@ -543,12 +462,6 @@ struct SettingsDeferredSlider: View {
     @Binding var value: Double
     let range: ClosedRange<Double>
     var onDraft: (Double?) -> Void = { _ in }
-    /// Shows the drag in the preview column.
-    var previewKeyPath: WritableKeyPath<DisplayPreferences, Double>?
-
-    @Environment(\.settingsPreviewModel) private var previewModel
-    @Environment(\.settingsPreviewInColumn) private var inColumn
-    @Environment(\.settingsSectionKind) private var sectionKind
 
     @State private var draft: Double?
 
@@ -572,8 +485,6 @@ struct SettingsDeferredSlider: View {
                         set: { newValue in
                             draft = newValue
                             onDraft(newValue)
-                            if let previewKeyPath { previewModel?.setDraft(previewKeyPath, newValue) }
-                            if inColumn { previewModel?.activate(sectionKind) }
                         }
                     ),
                     in: range
@@ -584,7 +495,6 @@ struct SettingsDeferredSlider: View {
                     value = draft
                     self.draft = nil
                     onDraft(nil)
-                    if let previewKeyPath { previewModel?.setDraft(previewKeyPath, nil) }
                 }
                 // The title and value are above; macOS would repeat the title here.
                 .labelsHidden()
@@ -672,13 +582,7 @@ struct SettingsValueChip: View {
     @FocusState private var isFocused: Bool
 
     var body: some View {
-        if OmniaDevice.isPhone {
-            chip
-        } else {
-            Text(text)
-                .font(.subheadline.monospacedDigit())
-                .foregroundStyle(.secondary)
-        }
+        chip
     }
 
     private var chip: some View {
@@ -769,6 +673,7 @@ private struct SettingsPinnedPreview<Preview: View>: ViewModifier {
                 preview()
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
+                    .frame(maxWidth: SettingsLayout.readableWidth)
                     .frame(maxWidth: .infinity)
                     .background { OmniaPageBackground().ignoresSafeArea() }
             }

@@ -19,8 +19,6 @@ struct AppearanceSettingsView: View {
                 .settingsRow("Appearance")
             } header: {
                 Text("Theme")
-            } footer: {
-                Text("Match System follows the appearance selected for this device.")
             }
 
             Section {

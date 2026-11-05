@@ -11,7 +11,6 @@ import UniformTypeIdentifiers
 /// Folder sources are checked against the installed add-ons so a missing
 /// add-on is visible here.
 struct CollectionsSettingsView: View {
-    @Environment(\.settingsPreviewInColumn) private var previewInColumn
     @Environment(OmniaStore.self) private var store
     @Environment(CollectionsStore.self) private var collections
     @Environment(SettingsPreferencesStore.self) private var settings
@@ -51,15 +50,13 @@ struct CollectionsSettingsView: View {
             } header: {
                 Text("Collections")
             } footer: {
-                Text("Make a collection here, or import the collections.json that Xperience or Nuvio exports. Importing an updated file replaces the collections it already contains.")
+                Text("Make a collection here, or import a collections.json from Xperience or Nuvio. Importing replaces the collections in that file.")
             }
 
             Section {
-                if !previewInColumn {
                 CollectionCardPreview(folders: Array(collections.collections.flatMap(\.folders).prefix(3)))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
-                }
                 SettingsDropdown(
                     "Shape",
                     selection: settings.binding(\.display.collectionCard.shape),
@@ -89,9 +86,8 @@ struct CollectionsSettingsView: View {
             } header: {
                 Text("Card Style")
             } footer: {
-                Text("Applies to every collection row on Home. As Imported keeps each collection's own tile shape and shows the titles inside as portrait posters, and Automatic shows a folder's name only when the folder asks for it or has no cover. Poster Card Style can apply its own look to all of these with one button. Depth and hover glow follow Poster Card Style.")
+                Text("Applies to every collection row on Home. Depth and hover glow follow Poster Card Style.")
             }
-            .settingsPreviewSection(.collections)
 
             if collections.collections.isEmpty {
                 Section {

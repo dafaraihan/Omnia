@@ -106,6 +106,9 @@ struct OmniaRootView: View {
         )) {
             PhonePlaybackPresentation(content: AnyView(PlaybackExperienceView()))
                 .ignoresSafeArea()
+                // On iPad the status bar otherwise stays over the video.
+                .statusBarHidden(true)
+                .persistentSystemOverlays(.hidden)
         }
         #elseif os(macOS)
         // macOS does not provide SwiftUI's fullScreenCover. Rendering the
@@ -359,12 +362,7 @@ struct OmniaRootView: View {
             }
 
             Tab(value: AppDestination.settings) {
-                if isCompactWidth {
-                    tabStack { SettingsView() }
-                } else {
-                    SettingsThreeColumnView()
-                        .toolbar(usesNuvioBar ? .hidden : .automatic, for: .tabBar)
-                }
+                tabStack { SettingsView() }
             } label: {
                 Label {
                     Text(AppDestination.settings.title(for: profiles.activeProfile))
@@ -566,16 +564,8 @@ struct OmniaRootView: View {
         .scrollContentBackground(.hidden)
     }
 
-    @ViewBuilder
     private func macNavigationStack(for destination: AppDestination) -> some View {
-        if destination == .settings {
-            SettingsThreeColumnView()
-                .id(destination)
-                .environment(\.isActiveDestination, destination == navigation.selection)
-                .tint(accentColor)
-        } else {
-            macPagesStack(for: destination)
-        }
+        macPagesStack(for: destination)
     }
 
     private func macPagesStack(for destination: AppDestination) -> some View {

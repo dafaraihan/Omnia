@@ -38,9 +38,3 @@ nonisolated struct SkipSegment: Codable, Equatable, Sendable {
     let endSeconds: Double
     let confidence: Double?
 }
-
-nonisolated struct IntroSegmentKey: Codable, Hashable, Sendable {
-    let imdbID: String
-    let season: Int
-    let episode: Int
-}

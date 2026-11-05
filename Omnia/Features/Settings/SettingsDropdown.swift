@@ -42,16 +42,7 @@ struct SettingsDropdown<Value: Hashable>: View {
         self.systemImage = systemImage
     }
 
-    @Environment(\.settingsPreviewModel) private var previewModel
-    @Environment(\.settingsPreviewInColumn) private var inColumn
-    @Environment(\.settingsSectionKind) private var sectionKind
-
-    var body: some View {
-        // The menu takes the tap, so choosing from it marks the section.
-        dropdown.onChange(of: selection) {
-            if inColumn { previewModel?.activate(sectionKind) }
-        }
-    }
+    var body: some View { dropdown }
 
     @ViewBuilder
     private var dropdown: some View {

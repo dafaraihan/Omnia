@@ -41,13 +41,6 @@ nonisolated struct PlaybackTimelinePreviewConfiguration: Equatable, Sendable {
     }
 }
 
-nonisolated enum PlaybackTimelinePreviewPosition {
-    static func timestamp(x: Double, width: Double, duration: Double) -> Double? {
-        guard width.isFinite, width > 0, duration.isFinite, duration > 0 else { return nil }
-        return min(max(x / width, 0), 1) * duration
-    }
-}
-
 nonisolated struct PlaybackTimelinePreviewCache<Key: Hashable, Value> {
     private struct Entry {
         let value: Value

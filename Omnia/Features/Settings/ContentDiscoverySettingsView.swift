@@ -25,8 +25,6 @@ struct ContentDiscoverySettingsView: View {
                     Button("Clear Recent Searches", role: .destructive) { history.clear() }
                     .settingsRow("Clear Recent Searches")
                 }
-            } header: {
-                Text("Search")
             }
 
             Section {
@@ -57,7 +55,7 @@ struct ContentDiscoverySettingsView: View {
                 }
                 .settingsRow("Genre")
             } header: {
-                Text("Search Filters")
+                Text("Filters")
             } footer: {
                 Text("The Search page's Filter menu changes these too.")
             }

@@ -439,11 +439,3 @@ nonisolated private enum MetadataRequest: Encodable, Sendable {
         }
     }
 }
-
-nonisolated private struct MetadataErrorEnvelope: Decodable {
-    struct Payload: Decodable {
-        let message: String
-    }
-
-    let error: Payload
-}

@@ -246,35 +246,6 @@ struct PlaybackSource: Identifiable, Hashable, Sendable {
         self.requestHeaders = requestHeaders
         timelinePreviewDescriptor = nil
     }
-
-    #if DEBUG
-    init(
-        previewID: String,
-        url: URL,
-        requestHeaders: [String: String] = [:],
-        timelinePreviewDescriptor: PlaybackTimelinePreviewDescriptor? = nil
-    ) {
-        id = previewID
-        addonID = "omnia.tests"
-        addonName = "Omnia Tests"
-        title = "Test Source"
-        detail = nil
-        streamIdentifier = previewID
-        self.url = url
-        self.requestHeaders = requestHeaders
-        self.timelinePreviewDescriptor = timelinePreviewDescriptor
-    }
-
-    /// Apple's public HLS sample is available exclusively in debug builds for
-    /// exercising native player integration. It isn't presented as title media.
-    static let integrationSample = PlaybackSource(
-        candidate: AddonStreamCandidate(
-            previewName: "Apple HLS Sample",
-            previewDetail: "Integration test only — not media for this title"
-        ),
-        url: URL(string: "https://devstreaming-cdn.apple.com/videos/streaming/examples/bipbop_16x9/bipbop_16x9_variant.m3u8")!
-    )
-    #endif
 }
 
 nonisolated struct AddonSourceResolution: Identifiable, Equatable, Sendable {

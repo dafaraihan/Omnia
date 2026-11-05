@@ -38,7 +38,7 @@ struct ProgressSettingsView: View {
             } header: {
                 Text("Storage")
             } footer: {
-                Text("Where Continue Watching and the Library read from is chosen in Account › Tracking, with the tracker accounts. Omnia keeps its own progress either way.")
+                Text("Omnia keeps its own progress either way.")
             }
 
             Section {

@@ -40,7 +40,6 @@ struct AccountSettingsView: View {
                 }
                 profilesCard
                 trackingCard
-                if !OmniaDevice.isPhone { appLockCard }
                 accountCard
             }
             .frame(maxWidth: 640)
@@ -291,36 +290,6 @@ struct AccountSettingsView: View {
     // MARK: Account
 
     /// Stays on this device; it isn't part of the account's sync.
-    private var appLockCard: some View {
-        let lock = DeviceLock.shared
-        return VStack(alignment: .leading, spacing: 14) {
-            Text("App Lock")
-                .font(.headline)
-            Toggle(isOn: Binding(
-                get: { lock.locksSettings },
-                set: { enabled in Task { await lock.setLocksSettings(enabled) } }
-            )) {
-                Text("Lock Settings")
-                Text("Ask for \(lock.methodName) before opening Settings.")
-            }
-            Toggle(isOn: Binding(
-                get: { lock.locksProfiles },
-                set: { enabled in Task { await lock.setLocksProfiles(enabled) } }
-            )) {
-                Text("Lock Profile Switching")
-                Text("Ask for \(lock.methodName) before changing profile.")
-            }
-            if !lock.isAvailable {
-                Text("Set up a device passcode to use App Lock.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .disabled(!lock.isAvailable)
-        .padding(20)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .omniaGlass(.panels, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-    }
 
     private var accountCard: some View {
         card(title: "Omnia Account", detail: nil) {

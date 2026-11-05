@@ -48,6 +48,7 @@ final class WindowChromeView: NSView {
     private var titlebarHitLayerWasHidden = false
     private weak var suppressedTitlebarWindow: NSWindow?
     private var titlebarWindowIgnoredMouseEvents = false
+    private var optionsBeforeHidingMenuBar: NSApplication.PresentationOptions?
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         if newWindow !== window {
@@ -95,6 +96,26 @@ final class WindowChromeView: NSView {
         window.titlebarAppearsTransparent = true
         window.styleMask.insert(.fullSizeContentView)
         updateTitlebarHitLayer(in: window)
+        updateMenuBarVisibility(in: window)
+    }
+
+    /// A full-screen Space follows the system's menu bar setting, which can
+    /// leave the bar on screen. Playback hides it and the Dock outright; every
+    /// keyboard shortcut still works. Whole Screen keeps its own options.
+    private func updateMenuBarVisibility(in window: NSWindow) {
+        let isSpace = window.styleMask.contains(.fullScreen)
+        if isPlaybackPresented, isExclusiveFullScreen, isSpace {
+            guard optionsBeforeHidingMenuBar == nil else { return }
+            let current = NSApp.presentationOptions
+            optionsBeforeHidingMenuBar = current
+            // Auto-hiding the toolbar is only valid with an auto-hiding menu
+            // bar, and AppKit raises on an invalid set, so it isn't carried over.
+            NSApp.presentationOptions = current.intersection(.fullScreen).union([.hideDock, .hideMenuBar])
+        } else if let saved = optionsBeforeHidingMenuBar {
+            optionsBeforeHidingMenuBar = nil
+            // Out of the Space, the saved full-screen options no longer apply.
+            NSApp.presentationOptions = isSpace ? saved : []
+        }
     }
 
     private func updateTitlebarHitLayer(in window: NSWindow) {
