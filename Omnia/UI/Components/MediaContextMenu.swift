@@ -118,7 +118,6 @@ private struct MediaContextMenuModifier: ViewModifier {
     }
 }
 
-#if os(iOS)
 private struct OpenMediaDetailFromMenuKey: EnvironmentKey {
     static let defaultValue: (@MainActor (MediaItem) -> Void)? = nil
 }
@@ -140,7 +139,36 @@ struct MediaDetailMenuDestination: ViewModifier {
             .navigationDestination(item: $item) { MediaDetailView(item: $0) }
     }
 }
-#endif
+
+/// The three dots on a card: the same menu as a right-click or a long press.
+struct MediaContextMenuButton: View {
+    let item: MediaItem
+    let placement: MediaContextPlacement
+    @Environment(\.openMediaDetailFromMenu) private var openFromMenu
+
+    var body: some View {
+        Menu {
+            MediaContextMenuItems(item: item, placement: placement, openDetail: openFromMenu.map { open in { open(item) } })
+        } label: {
+            MediaContextMenuDots()
+        }
+        .menuStyle(.button)
+        .menuIndicator(.hidden)
+        .buttonStyle(.plain)
+        .accessibilityLabel("More for \(item.title)")
+    }
+}
+
+struct MediaContextMenuDots: View {
+    var body: some View {
+        Image(systemName: "ellipsis")
+            .font(.subheadline.weight(.bold))
+            .foregroundStyle(.white)
+            .shadow(color: .black.opacity(0.5), radius: 2)
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
+    }
+}
 
 /// The menu's items, in their own view. `isSaved` scans the library and
 /// watch history, and a menu's items are built with the card; here that

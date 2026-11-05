@@ -119,10 +119,6 @@ extension View {
     /// that page rather than going back to the stack's root first.
     @ViewBuilder
     func omniaMediaDetailMenuDestination() -> some View {
-        #if os(iOS)
         modifier(MediaDetailMenuDestination())
-        #else
-        self
-        #endif
     }
 }

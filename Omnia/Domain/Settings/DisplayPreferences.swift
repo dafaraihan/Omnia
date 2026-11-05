@@ -403,7 +403,7 @@ nonisolated struct ContinueWatchingCardPreferences: Codable, Equatable, Sendable
         var id: Self { self }
         var title: String {
             switch self {
-            case .styleDefault: "Style Default"
+            case .styleDefault: "Default"
             case .compact: "Compact"
             case .small: "Small"
             case .standard: "Standard"
@@ -428,7 +428,7 @@ nonisolated struct ContinueWatchingCardPreferences: Codable, Equatable, Sendable
         var id: Self { self }
         var title: String {
             switch self {
-            case .styleDefault: "Style Default"
+            case .styleDefault: "Default"
             case .square: "Square"
             case .subtle: "Subtle"
             case .rounded: "Rounded"
@@ -437,7 +437,7 @@ nonisolated struct ContinueWatchingCardPreferences: Codable, Equatable, Sendable
         }
         func radius(for display: DisplayPreferences) -> CGFloat {
             switch self {
-            case .styleDefault: display.continueWatchingStyle == .wide ? 16 : display.posterCornerRadius
+            case .styleDefault: display.posterCorner == .square ? 0 : display.posterCornerRadius + 2
             case .square: PosterCornerPreset.square.radius
             case .subtle: PosterCornerPreset.subtle.radius
             case .rounded: PosterCornerPreset.rounded.radius
@@ -1122,24 +1122,6 @@ nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
         rememberCardStyle()
     }
 
-    /// Poster Card Style › Apply to All Cards: one copy of the poster look into
-    /// Collections, folders and Continue Watching, which stay independent after.
-    mutating func applyPosterStyleToAllCards() {
-        collectionCard.shape = landscapePosters ? .landscape : .poster
-        collectionCard.size = CollectionCardPreferences.Size(rawValue: posterWidth.rawValue) ?? .standard
-        collectionCard.corners = CollectionCardPreferences.Corners(rawValue: posterCorner.rawValue) ?? .rounded
-        collectionCard.folderCards = landscapePosters ? .landscape : .asImported
-        continueWatchingCard.size = ContinueWatchingCardPreferences.Size(rawValue: posterWidth.rawValue) ?? .standard
-        continueWatchingCard.corners = ContinueWatchingCardPreferences.Corners(rawValue: posterCorner.rawValue) ?? .rounded
-    }
-
-    /// Whether Apply to All Cards has nothing left to do.
-    var allCardsMatchPosterStyle: Bool {
-        var applied = self
-        applied.applyPosterStyleToAllCards()
-        return applied.collectionCard == collectionCard && applied.continueWatchingCard == continueWatchingCard
-    }
-
     var posterCardWidth: CGFloat { posterWidth.width }
 
     var landscapePosterCardWidth: CGFloat {
@@ -1148,12 +1130,13 @@ nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
         #else
         let baseline: CGFloat = 304
         #endif
-        return baseline * posterCardWidth / PosterWidthPreset.standard.width
+        return baseline * continueWatchingCard.size.posterWidth(for: self) / PosterWidthPreset.standard.width
     }
     var posterCardHeight: CGFloat { posterWidth.width * 1.5 }
     var posterCornerRadius: CGFloat { posterCorner.radius }
     /// Landscape cards keep a slightly larger radius than posters, as before.
-    var landscapeCornerRadius: CGFloat { posterCorner == .square ? 0 : posterCorner.radius + 2 }
+    /// Any card shown landscape takes its size and corners from Landscape Card Style.
+    var landscapeCornerRadius: CGFloat { continueWatchingCard.corners.radius(for: self) }
 
     func shows(_ section: DetailSection) -> Bool {
         !hiddenDetailSections.contains(section)

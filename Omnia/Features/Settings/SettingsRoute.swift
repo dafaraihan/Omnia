@@ -96,6 +96,7 @@ enum SettingsRoute: Hashable, Sendable {
     case battery
     case liquidGlass
     case posterCards
+    case landscapeCards
     case streams
     case continueWatching
     case detailPage
@@ -109,8 +110,8 @@ enum SettingsRoute: Hashable, Sendable {
     static var rootGroups: [SettingsRouteGroup] {
         return [
             .init(section: .look, routes: OmniaDevice.isPhone
-                ? [.appearance, .home, .posterCards, .detailPage]
-                : [.appearance, .navigation, .home, .posterCards, .detailPage]),
+                ? [.appearance, .home, .posterCards, .landscapeCards, .detailPage]
+                : [.appearance, .navigation, .home, .posterCards, .landscapeCards, .detailPage]),
             .init(section: .watch, routes: [.videoPlayer, .streams, .playerControls, .subtitle]),
             .init(section: .sources, routes: [.addons, .plugins, .mediaServers, .liveTV, .metadata, .contentDiscovery]),
             .init(section: .you, routes: [.tracking, .notifications, .privacy, .battery, .progress, .about])
@@ -175,7 +176,8 @@ enum SettingsRoute: Hashable, Sendable {
         case .privacy: "Privacy & Security"
         case .battery: "Battery & Performance"
         case .liquidGlass: "Liquid Glass"
-        case .posterCards: "Cards"
+        case .posterCards: "Poster Card Style"
+        case .landscapeCards: "Landscape Card Style"
         case .streams: "Streams"
         case .continueWatching: "Continue Watching"
         case .detailPage: "Title Page"
@@ -220,6 +222,7 @@ enum SettingsRoute: Hashable, Sendable {
         case .battery: "battery.75percent"
         case .liquidGlass: "drop.halffull"
         case .posterCards: "rectangle.portrait.on.rectangle.portrait"
+        case .landscapeCards: "rectangle.on.rectangle"
         case .streams: "play.square.stack"
         case .continueWatching: "play.circle"
         case .detailPage: "doc.richtext"
@@ -259,6 +262,7 @@ enum SettingsRoute: Hashable, Sendable {
         case .liquidGlass: ["liquid glass", "glass", "transparency", "frosted", "blur", "intensity"]
         case .streams: ["streams", "sources", "badges", "Fusion", "size", "add-on logo", "background", "cinematic", "search bar", "pin"]
         case .posterCards: ["poster", "card", "width", "size", "corner", "radius", "landscape", "depth", "glow", "sheen", "edge", "custom poster", "poster source", "RPDB", "rating posters"]
+        case .landscapeCards: ["landscape", "card", "size", "corners", "continue watching", "collections", "folder names", "wide"]
         case .continueWatching: ["continue watching", "resume", "style", "sort", "thumbnails", "finished"]
         case .detailPage: ["detail", "title page", "background", "episodes", "blur", "spoiler", "sections", "cast", "trailers"]
         case .about: ["resources", "TMDB", "TVDB", "libmpv", "Supabase", "licenses", "privacy"]

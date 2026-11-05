@@ -27,7 +27,6 @@ struct LibraryView: View {
     @Environment(\.displayPreferences) private var display
     @Environment(OmniaStore.self) private var store
     @State private var selectedKind: MediaItem.Kind?
-    @State private var sourcePlaybackItem: MediaItem?
     @AppStorage("library-sort") private var savedSortOrder = LibrarySortOrder.recentAdded.rawValue
     /// Library from a tracker's watchlist and progress instead of Omnia's,
     /// like Nuvio's library source switch.
@@ -63,94 +62,91 @@ struct LibraryView: View {
         LibrarySortOrder(rawValue: savedSortOrder) ?? .recentAdded
     }
 
+    /// One grid: what's in progress, saved or watched, each title once.
+    private var items: [MediaItem] {
+        var seen = Set<String>()
+        return sections.flatMap(\.items).filter { seen.insert($0.id).inserted }
+    }
+
     var body: some View {
-        ScrollView {
-            if let tracker {
-                TrackerSyncStatusLine(kind: tracker)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, MediaBrowseMetrics.pageInset)
-                    .padding(.top, 12)
-            }
-            if sections.allSatisfy(\.items.isEmpty), let tracker, trackerLibrary.state(tracker) == .syncing {
-                OmniaLoadingRow("Reading \(tracker.shortTitle)…")
-                    .frame(maxWidth: .infinity, minHeight: 360)
-            } else if sections.allSatisfy(\.items.isEmpty), let tracker {
-                ContentUnavailableView(
-                    "Nothing on \(tracker.shortTitle)",
-                    systemImage: "rectangle.stack",
-                    description: Text("Titles on your \(tracker.title) watchlist or in progress there show here.")
-                )
-                .frame(maxWidth: .infinity, minHeight: 360)
-            } else if sections.allSatisfy(\.items.isEmpty) {
-                ContentUnavailableView(
-                    "Your Library Is Empty",
-                    systemImage: "rectangle.stack",
-                    description: Text("Add a title, start watching, or mark something as watched to see it here.")
-                )
-                .frame(maxWidth: .infinity, minHeight: 360)
-            } else {
-                LazyVStack(alignment: .leading, spacing: 34) {
-                    ForEach(sections) { section in
-                        if !section.items.isEmpty {
-                            libraryShelf(section)
+        GeometryReader { proxy in
+            let layout = MediaBrowseMetrics.posterGridLayout(containerWidth: proxy.size.width, display: display)
+            ScrollView {
+                VStack(spacing: 18) {
+                    #if os(macOS)
+                    Text("My Library")
+                        .font(.largeTitle.bold())
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, MediaBrowseMetrics.pageInset)
+                    #endif
+                    kindPicker
+                    if let tracker {
+                        TrackerSyncStatusLine(kind: tracker)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, MediaBrowseMetrics.pageInset)
+                    }
+                    if items.isEmpty {
+                        emptyState
+                            .frame(maxWidth: .infinity, minHeight: 360)
+                    } else {
+                        LazyVGrid(columns: layout.columns, alignment: .leading, spacing: 18) {
+                            ForEach(items) { item in
+                                MediaPoster(item: item, fillsAvailableWidth: true, showsInfoOnArtwork: true)
+                            }
                         }
+                        .padding(.horizontal, MediaBrowseMetrics.pageInset)
                     }
                 }
-                .padding(.horizontal, MediaBrowseMetrics.pageInset)
-                .padding(.vertical, 24)
+                .padding(.vertical, 12)
             }
+            .modifier(TopBarScrollReporting(destination: .library))
         }
-        .modifier(TopBarScrollReporting(destination: .library))
-        .omniaNavigationTitle("Library", screen: .library)
+        #if os(macOS)
+        .omniaNavigationTitle("", screen: .library)
+        #else
+        .omniaNavigationTitle("My Library", screen: .library)
+        #endif
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 libraryFilterMenu
             }
         }
         .navigationDestination(for: MediaItem.self) { MediaDetailView(item: $0) }
-        .omniaStreamsPage(isPresented: showsSourcePicker) {
-            if let sourcePlaybackItem {
-                PlaybackSourceSheet(
-                    item: sourcePlaybackItem,
-                    episode: sourcePlaybackItem.resumeEpisode,
-                    resumeAt: sourcePlaybackItem.positionSeconds,
-                    onClose: { self.sourcePlaybackItem = nil }
-                )
-            }
-        }
         .task(id: tracker) {
             guard let tracker else { return }
             trackerLibrary.syncIfNeeded(tracker, addons: store.installedAddons)
         }
     }
 
-    @ViewBuilder
-    private func libraryShelf(_ section: LibrarySection) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SectionHeaderLink(title: section.kind.title) {
-                LibrarySectionGridView(kind: section.kind, items: section.items)
-            }
+    private var kindPicker: some View {
+        Picker("Show", selection: $selectedKind) {
+            Text("All").tag(MediaItem.Kind?.none)
+            Text("Movies").tag(MediaItem.Kind?.some(.movie))
+            Text("Series").tag(MediaItem.Kind?.some(.series))
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .frame(maxWidth: 420)
+        .padding(.horizontal, MediaBrowseMetrics.pageInset)
+        .frame(maxWidth: .infinity)
+    }
 
-            switch section.kind {
-            case .continueWatching:
-                ShelfScrollView(
-                    items: section.items,
-                    itemSpan: ContinueWatchingCard.itemSpan(for: display),
-                    accessibilityLabel: section.kind.title
-                ) { item in
-                    ContinueWatchingCard(item: item) {
-                        sourcePlaybackItem = item
-                    }
-                }
-            case .myList, .rewatch:
-                ShelfScrollView(
-                    items: section.items,
-                    itemSpan: MediaBrowseMetrics.posterItemSpan(display),
-                    accessibilityLabel: section.kind.title
-                ) { item in
-                    MediaPoster(item: item)
-                }
-            }
+    @ViewBuilder
+    private var emptyState: some View {
+        if let tracker, trackerLibrary.state(tracker) == .syncing {
+            OmniaLoadingRow("Reading \(tracker.shortTitle)…")
+        } else if let tracker {
+            ContentUnavailableView(
+                "Nothing on \(tracker.shortTitle)",
+                systemImage: "rectangle.stack",
+                description: Text("Titles on your \(tracker.title) watchlist or in progress there show here.")
+            )
+        } else {
+            ContentUnavailableView(
+                "Your Library Is Empty",
+                systemImage: "rectangle.stack",
+                description: Text("Add a title, start watching, or mark something as watched to see it here.")
+            )
         }
     }
 
@@ -171,13 +167,6 @@ struct LibraryView: View {
                 Divider()
             }
 
-            Picker("Kind", selection: $selectedKind) {
-                Text("All Media").tag(MediaItem.Kind?.none)
-                ForEach(MediaItem.Kind.allCases, id: \.self) { kind in
-                    Text(kind.rawValue).tag(Optional(kind))
-                }
-            }
-
             Picker("Sort", selection: $savedSortOrder) {
                 ForEach(LibrarySortOrder.allCases) { order in
                     Text(order.title).tag(order.rawValue)
@@ -186,72 +175,7 @@ struct LibraryView: View {
         } label: {
             Label("Filter and Sort", systemImage: "line.3.horizontal.decrease.circle")
         }
-        .help("Choose the Library's source, and filter and sort every shelf")
-    }
-
-    private var showsSourcePicker: Binding<Bool> {
-        Binding(
-            get: { sourcePlaybackItem != nil },
-            set: { if !$0 { sourcePlaybackItem = nil } }
-        )
-    }
-}
-
-private struct LibrarySectionGridView: View {
-    @Environment(\.displayPreferences) private var display
-    let kind: LibrarySectionKind
-    let items: [MediaItem]
-    @State private var sourcePlaybackItem: MediaItem?
-
-    var body: some View {
-        GeometryReader { proxy in
-            let cardWidth = ContinueWatchingCard.width(for: display)
-            let layout = kind == .continueWatching
-                ? MediaGridLayout.fitting(
-                    containerWidth: proxy.size.width,
-                    horizontalInset: MediaBrowseMetrics.pageInset,
-                    minimumItemWidth: cardWidth,
-                    maximumItemWidth: cardWidth,
-                    spacing: MediaBrowseMetrics.gridSpacing
-                )
-                : MediaBrowseMetrics.posterGridLayout(containerWidth: proxy.size.width, display: display)
-            ScrollView {
-                LazyVGrid(columns: layout.columns, alignment: .leading, spacing: 18) {
-                    ForEach(items) { item in
-                        if kind == .continueWatching {
-                            ContinueWatchingCard(
-                                item: item,
-                                requestPlayback: { sourcePlaybackItem = item },
-                                maximumWidth: layout.itemWidth
-                            )
-                        } else {
-                            MediaPoster(item: item, fillsAvailableWidth: true)
-                        }
-                    }
-                }
-                .padding(.horizontal, MediaBrowseMetrics.pageInset)
-                .padding(.vertical, 24)
-            }
-        }
-        .omniaNavigationTitle(kind.title)
-        .navigationDestination(for: MediaItem.self) { MediaDetailView(item: $0) }
-        .omniaStreamsPage(isPresented: showsSourcePicker) {
-            if let sourcePlaybackItem {
-                PlaybackSourceSheet(
-                    item: sourcePlaybackItem,
-                    episode: sourcePlaybackItem.resumeEpisode,
-                    resumeAt: sourcePlaybackItem.positionSeconds,
-                    onClose: { self.sourcePlaybackItem = nil }
-                )
-            }
-        }
-    }
-
-    private var showsSourcePicker: Binding<Bool> {
-        Binding(
-            get: { sourcePlaybackItem != nil },
-            set: { if !$0 { sourcePlaybackItem = nil } }
-        )
+        .help("Choose the Library's source and how it's sorted")
     }
 }
 

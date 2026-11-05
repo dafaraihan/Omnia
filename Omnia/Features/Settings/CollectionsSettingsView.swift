@@ -54,39 +54,12 @@ struct CollectionsSettingsView: View {
             }
 
             Section {
-                CollectionCardPreview(folders: Array(collections.collections.flatMap(\.folders).prefix(3)))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                SettingsDropdown(
-                    "Shape",
-                    selection: settings.binding(\.display.collectionCard.shape),
-                    options: Array(CollectionCardPreferences.Shape.allCases)
-                ) { shape in shape.title }
-                SettingsDropdown(
-                    "Size",
-                    selection: settings.binding(\.display.collectionCard.size),
-                    options: Array(CollectionCardPreferences.Size.allCases)
-                ) { size in size.title }
-                SettingsDropdown(
-                    "Corners",
-                    selection: settings.binding(\.display.collectionCard.corners),
-                    options: Array(CollectionCardPreferences.Corners.allCases)
-                ) { corners in corners.title }
-                SettingsDropdown(
-                    "Folder Names",
-                    selection: settings.binding(\.display.collectionCard.titles),
-                    options: Array(CollectionCardPreferences.Titles.allCases)
-                ) { titles in titles.title }
-                SettingsDropdown(
-                    "Cards in Folders",
-                    subtitle: "The titles shown when a folder is open.",
-                    selection: settings.binding(\.display.collectionCard.folderCards),
-                    options: Array(CollectionCardPreferences.FolderCards.allCases)
-                ) { cards in cards.title }
+                SettingsRouteLink(route: .landscapeCards, summary: nil)
+                SettingsRouteLink(route: .posterCards, summary: nil)
             } header: {
                 Text("Card Style")
             } footer: {
-                Text("Applies to every collection row on Home. Depth and hover glow follow Poster Card Style.")
+                Text("Landscape collections follow Landscape Card Style, and portrait ones follow Poster Card Style.")
             }
 
             if collections.collections.isEmpty {
@@ -304,6 +277,7 @@ struct CollectionsSettingsView: View {
 /// before any collection exists. It updates as each option changes.
 struct CollectionCardPreview: View {
     let folders: [HomeCollectionFolder]
+    var sampleShape: HomeCollectionFolder.TileShape = .landscape
     @Environment(\.displayPreferences) private var display
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -327,8 +301,8 @@ struct CollectionCardPreview: View {
     }
 
     private var sampleTile: some View {
-        let shape = display.collectionCard.shape.resolved(.poster)
-        let radius = display.collectionCard.corners.radius
+        let shape = sampleShape
+        let radius = display.landscapeCornerRadius
         return ZStack(alignment: .bottomLeading) {
             LinearGradient(
                 colors: [display.accentColor.opacity(0.85), .black],

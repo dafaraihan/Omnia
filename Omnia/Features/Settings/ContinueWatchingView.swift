@@ -19,36 +19,10 @@ struct ContinueWatchingSettingsView: View {
     var body: some View {
         OmniaSettingsForm {
             Section {
-                SettingsStyleTilePicker(
-                    options: ContinueWatchingStyle.allCases,
-                    selection: settings.binding(\.display.continueWatchingStyle),
-                    title: \.title,
-                    detail: \.detail
-                ) { style in
-                    ContinueWatchingStylePreview(style: style)
-                }
-                ContinueWatchingLivePreview(style: settings.preferences.display.continueWatchingStyle)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                if settings.preferences.display.continueWatchingStyle != .card {
-                    Toggle(isOn: settings.binding(\.display.continueWatchingShowsLabels)) {
-                        Text("Show Labels")
-                        Text("The title and details under each card.")
-                    }
-                    .settingsRow("Show Labels")
-                }
-                SettingsDropdown(
-                    "Size",
-                    selection: settings.binding(\.display.continueWatchingCard.size),
-                    options: Array(ContinueWatchingCardPreferences.Size.allCases)
-                ) { $0.title }
-                .settingsRow("Size")
-                SettingsDropdown(
-                    "Corners",
-                    selection: settings.binding(\.display.continueWatchingCard.corners),
-                    options: Array(ContinueWatchingCardPreferences.Corners.allCases)
-                ) { $0.title }
-                .settingsRow("Corners")
+                SettingsRouteLink(
+                    route: .landscapeCards,
+                    summary: settings.preferences.display.continueWatchingStyle.title
+                )
             } header: {
                 Text("Card Style")
             }

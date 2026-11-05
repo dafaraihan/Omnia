@@ -2699,6 +2699,7 @@ private struct PlaybackTouchGestures: View {
     @State private var feedbackTask: Task<Void, Never>?
     @State private var drag: DragMode?
     @State private var screen: UIScreen?
+    @State private var isPinching = false
 
     private enum DragMode {
         case brightness(start: Double)
@@ -2711,6 +2712,7 @@ private struct PlaybackTouchGestures: View {
         case brightness(Double)
         case volume(Double)
         case scrub(target: Double, delta: Double)
+        case aspect(String)
     }
 
     var body: some View {
@@ -2726,6 +2728,7 @@ private struct PlaybackTouchGestures: View {
                         .exclusively(before: TapGesture().onEnded { toggleChrome() })
                 )
                 .simultaneousGesture(dragGesture(in: geometry.size))
+                .simultaneousGesture(pinchGesture)
                 .overlay(alignment: .top) {
                     feedbackView.padding(.top, 64)
                 }
@@ -2749,10 +2752,26 @@ private struct PlaybackTouchGestures: View {
         show(.seek(total))
     }
 
+    /// Pinch out fills the screen, pinch in fits the whole picture.
+    private var pinchGesture: some Gesture {
+        MagnifyGesture()
+            .onChanged { _ in
+                isPinching = true
+                drag = nil
+            }
+            .onEnded { value in
+                isPinching = false
+                guard isEnabled, abs(value.magnification - 1) > 0.08 else { return }
+                let target: PlaybackAspectRatioMode = value.magnification > 1 ? .fill : .original
+                if playback.aspectRatioMode != target { playback.cycleAspectRatio() }
+                show(.aspect(target == .fill ? "Fill" : "Fit"))
+            }
+    }
+
     private func dragGesture(in size: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 16)
             .onChanged { value in
-                guard isEnabled else { return }
+                guard isEnabled, !isPinching else { return }
                 if drag == nil {
                     if abs(value.translation.width) > abs(value.translation.height) {
                         guard playback.durationSeconds != nil else { return }
@@ -2814,6 +2833,8 @@ private struct PlaybackTouchGestures: View {
                     meter(symbol: "sun.max.fill", value: level)
                 case let .volume(level):
                     meter(symbol: level == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill", value: level)
+                case let .aspect(title):
+                    Text(title)
                 case let .scrub(target, delta):
                     Text("\(Self.time(target))  (\(delta >= 0 ? "+" : "−")\(Self.time(abs(delta))))")
                         .monospacedDigit()

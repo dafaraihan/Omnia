@@ -68,39 +68,37 @@ struct ContinueWatchingStylePreview: View {
     var body: some View {
         switch style {
         case .card:
-            ZStack(alignment: .bottomLeading) {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(.primary.opacity(0.22))
-                VStack(alignment: .leading, spacing: 4) {
-                    bar(width: 0.35, height: 5, opacity: 0.30)
-                    bar(width: 0.6, height: 7, opacity: 0.38)
-                    progress(0.6, height: 3)
-                }
-                .padding(6)
-                Capsule()
-                    .fill(.primary.opacity(0.30))
-                    .frame(width: 24, height: 8)
+            VStack(alignment: .leading, spacing: 5) {
+                ZStack(alignment: .bottomLeading) {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(.primary.opacity(0.22))
+                    VStack(alignment: .leading, spacing: 3) {
+                        bar(width: 0.45, height: 6, opacity: 0.38)
+                        progress(0.6, height: 2)
+                    }
                     .padding(5)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                }
+                .frame(width: 88, height: 46)
+                bar(width: 0.7, height: 5, opacity: 0.18)
+                    .frame(width: 88)
             }
             .frame(width: 104, height: 60)
         case .wide:
-            HStack(spacing: 0) {
-                Rectangle()
+            ZStack(alignment: .bottomLeading) {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(.primary.opacity(0.22))
-                    .frame(width: 40)
-                VStack(alignment: .leading, spacing: 0) {
-                    bar(width: 0.7, height: 8, opacity: 0.20)
-                    Spacer(minLength: 4)
-                    bar(width: 0.5, height: 6, opacity: 0.14)
-                    Spacer(minLength: 4)
-                    progress(0.6, height: 4)
+                HStack(spacing: 4) {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 7))
+                        .foregroundStyle(.primary.opacity(0.6))
+                    progress(0.6, height: 3)
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 7, weight: .bold))
+                        .foregroundStyle(.primary.opacity(0.6))
                 }
-                .padding(5)
+                .padding(6)
             }
             .frame(width: 104, height: 60)
-            .background(.primary.opacity(0.10))
-            .clipShape(.rect(cornerRadius: 6, style: .continuous))
         case .poster:
             VStack(alignment: .leading, spacing: 6) {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -272,8 +270,8 @@ extension ContinueWatchingStyle {
     /// Nuvio's line under each style.
     var detail: String {
         switch self {
-        case .card: "TV-style landscape card"
-        case .wide: "Info-dense horizontal card"
+        case .card: "Logo on the art, episode below"
+        case .wide: "Progress and time on the art"
         case .poster: "Artwork-first poster card"
         }
     }

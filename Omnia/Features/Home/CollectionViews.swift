@@ -54,23 +54,18 @@ struct CollectionFolderTile: View {
     let folder: HomeCollectionFolder
     @State private var isHovered = false
 
-    /// The folder's shape and size after Settings › Layout › Collections ›
-    /// Card Style.
+    /// The folder's own shape, at the size of the card style for that shape.
     static func width(for folderShape: HomeCollectionFolder.TileShape, display: DisplayPreferences) -> CGFloat {
-        let card = display.collectionCard
-        let shape = card.shape.resolved(folderShape)
-        let portrait = PosterWidthPreset.standard.width
-        let base: CGFloat = switch shape {
-        case .poster: portrait
-        case .square: portrait * 1.25
-        case .landscape, .wide: MediaBrowseMetrics.landscapeCardWidth
+        // Collections keep their imported shape. Shape decides whose size applies.
+        switch folderShape {
+        case .poster: display.posterCardWidth
+        case .square: (display.posterCardWidth * 1.25).rounded()
+        case .landscape, .wide: display.landscapePosterCardWidth.rounded()
         }
-        return (base * card.size.scale).rounded()
     }
 
     static func height(for folderShape: HomeCollectionFolder.TileShape, display: DisplayPreferences) -> CGFloat {
-        let shape = display.collectionCard.shape.resolved(folderShape)
-        return width(for: folderShape, display: display) / CGFloat(shape.aspectRatio)
+        width(for: folderShape, display: display) / CGFloat(folderShape.aspectRatio)
     }
 
     #if os(iOS)
@@ -81,7 +76,12 @@ struct CollectionFolderTile: View {
     @Environment(PlaybackSession.self) private var playback
     #endif
 
-    private var cornerRadius: CGFloat { display.collectionCard.corners.radius }
+    private var cornerRadius: CGFloat {
+        switch folder.tileShape {
+        case .landscape, .wide: display.landscapeCornerRadius
+        case .poster, .square: display.posterCornerRadius
+        }
+    }
 
     private var showsTitle: Bool {
         switch display.collectionCard.titles {
@@ -232,11 +232,10 @@ struct CollectionFolderView: View {
         let title: String
     }
 
-    /// Settings › Layout › Collections › Cards in Folders. By default titles
-    /// keep the imported portrait posters, whatever shape the folder's tile is.
+    /// Titles in a folder stay as imported: portrait posters.
     private var cardDisplay: DisplayPreferences {
         var cardDisplay = display
-        cardDisplay.landscapePosters = display.collectionCard.folderCards == .landscape
+        cardDisplay.landscapePosters = false
         return cardDisplay
     }
 

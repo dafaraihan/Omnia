@@ -502,9 +502,7 @@ struct MacSubtitlePlaybackPreview: View {
             }
             .font(.system(size: 11 * scale, weight: .semibold, design: .monospaced))
             .foregroundStyle(.white.opacity(0.78))
-            .padding(.horizontal, 12 * scale)
-            .frame(height: 38 * scale)
-            .omniaLiquidGlass(in: Capsule(), role: .playbackTimeline)
+            .frame(height: 24 * scale)
         }
     }
 
@@ -863,6 +861,8 @@ struct MacPlaybackChrome: View {
 
             GlassEffectContainer(spacing: 10) {
                 HStack(spacing: 10) {
+                    // On iPhone and iPad, pinching the picture does this.
+                    #if os(macOS)
                     Button {
                         playback.cycleAspectRatio()
                     } label: {
@@ -875,6 +875,8 @@ struct MacPlaybackChrome: View {
                     .accessibilityValue(playback.aspectRatioMode.title)
                     .accessibilityHint("Toggles between Original and Fill")
                     .help("Aspect Ratio: \(playback.aspectRatioMode.title)")
+
+                    #endif
 
                     HStack(spacing: 12) {
                         Image(systemName: playback.volume == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill")
@@ -1019,12 +1021,12 @@ struct MacPlaybackChrome: View {
             Text(timeline.elapsedText)
                 .frame(minWidth: 46, alignment: .leading)
 
-            Slider(
+            PlaybackThinTimeline(
                 value: Binding(
                     get: { duration > 0 ? (scrubValue ?? position) : 0 },
                     set: { scrub(to: $0) }
                 ),
-                in: 0 ... max(duration, 0.001),
+                range: 0 ... max(duration, 0.001),
                 onEditingChanged: { isEditing in
                     isScrubbingTimeline = isEditing
                     if !isEditing, let scrubValue {
@@ -1035,10 +1037,9 @@ struct MacPlaybackChrome: View {
                         isEditingControl: isEditing,
                         hasPresentedPanel: activePanel != nil
                     )
-                }
+                },
+                skip: { playback.seek(by: $0) }
             )
-            .tint(display.accentColor)
-            .accessibilityLabel("Playback position")
             .disabled(duration <= 0)
 
             Text(timeline.remainingText)
@@ -1046,9 +1047,7 @@ struct MacPlaybackChrome: View {
         }
         .font(.caption.monospacedDigit().weight(.semibold))
         .foregroundStyle(.white.opacity(0.74))
-        .padding(.horizontal, 14)
-        .frame(height: 44)
-        .omniaLiquidGlass(in: Capsule(), role: .playbackTimeline)
+        .shadow(color: .black.opacity(0.45), radius: 6, y: 1)
     }
 
     /// The live bar in the timeline's place: what's on now, how far into it
@@ -2272,6 +2271,65 @@ private struct MacSubtitleSyncTools: View {
 }
 
 #endif
+
+/// A thin bar with no thumb that thickens while it's dragged, as in Apple TV.
+private struct PlaybackThinTimeline: View {
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let onEditingChanged: (Bool) -> Void
+    let skip: (Double) -> Void
+
+    @State private var isDragging = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var fraction: Double {
+        let span = range.upperBound - range.lowerBound
+        guard span > 0 else { return 0 }
+        return min(max((value - range.lowerBound) / span, 0), 1)
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            Capsule()
+                .fill(.white.opacity(0.3))
+                .overlay(alignment: .leading) {
+                    Capsule()
+                        .fill(.white)
+                        .frame(width: geometry.size.width * fraction)
+                }
+                .frame(height: isDragging ? 12 : 6)
+                .frame(maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { drag in
+                            if !isDragging {
+                                isDragging = true
+                                onEditingChanged(true)
+                            }
+                            let ratio = min(max(drag.location.x / max(geometry.size.width, 1), 0), 1)
+                            value = range.lowerBound + (range.upperBound - range.lowerBound) * ratio
+                        }
+                        .onEnded { _ in
+                            isDragging = false
+                            onEditingChanged(false)
+                        }
+                )
+                .animation(reduceMotion ? nil : .smooth(duration: 0.15), value: isDragging)
+        }
+        .frame(height: 30)
+        .accessibilityElement()
+        .accessibilityLabel("Playback position")
+        .accessibilityValue("\(Int(fraction * 100)) percent")
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment: skip(10)
+            case .decrement: skip(-10)
+            @unknown default: break
+            }
+        }
+    }
+}
 
 private struct AspectRatioSymbol: View {
     let mode: PlaybackAspectRatioMode

@@ -59,14 +59,8 @@ struct PosterCardSettingsView: View {
                     Text("Off, this \(OmniaDevice.name) keeps its own card styles, since a size that suits a Mac can be too big for an iPhone.")
                 }
                 .settingsRow("Same Style on All Devices")
-                Button("Apply to All Cards", systemImage: "square.on.square") {
-                    settings.update { $0.display.applyPosterStyleToAllCards() }
-                }
-                .disabled(display.allCardsMatchPosterStyle)
             } footer: {
-                Text(display.allCardsMatchPosterStyle
-                    ? "Collections, their folders and Continue Watching already use this style."
-                    : "Copies this size, corner and layout to Collections, their folders and Continue Watching. You can still change each one on its own page afterwards.")
+                Text("Every card shown in portrait uses this page. Landscape cards take their size and corners from Landscape Card Style.")
             }
 
             customPosterSourceSection
@@ -133,7 +127,7 @@ struct PosterCardSettingsView: View {
 
             if display.cardDepth.isEnabled {
                 Section {
-                    ForEach(CardDepthPreferences.Surface.allCases) { surface in
+                    ForEach(CardDepthPreferences.Surface.allCases.filter { $0 != .continueWatching && $0 != .collections }) { surface in
                         Toggle(surface.title, isOn: surfaceBinding(surface))
                     }
                 } header: {
@@ -185,7 +179,7 @@ struct PosterCardSettingsView: View {
 
             if display.cardHover.isEnabled {
                 Section {
-                    ForEach(CardDepthPreferences.Surface.allCases) { surface in
+                    ForEach(CardDepthPreferences.Surface.allCases.filter { $0 != .continueWatching && $0 != .collections }) { surface in
                         Toggle(surface.title, isOn: hoverSurfaceBinding(surface))
                     }
                 } header: {

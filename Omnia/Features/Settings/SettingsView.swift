@@ -124,6 +124,8 @@ struct SettingsRouteSummary: View {
             return "\(visible) of \(catalogs.count) catalogs"
         case .posterCards:
             return display.posterWidth.title
+        case .landscapeCards:
+            return display.continueWatchingStyle.title
         case .detailPage:
             return display.detailBackground.title
         case .videoPlayer:
@@ -280,6 +282,8 @@ struct SettingsDestinationView: View {
                 LiquidGlassSettingsView()
             case .posterCards:
                 PosterCardSettingsView()
+            case .landscapeCards:
+                LandscapeCardSettingsView()
             case .streams:
                 StreamsSettingsView()
             case .continueWatching:

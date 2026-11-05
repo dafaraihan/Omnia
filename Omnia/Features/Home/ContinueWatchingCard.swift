@@ -80,6 +80,7 @@ struct ContinueWatchingCard: View {
             store.removeFromContinueWatching(item)
         }
         #endif
+        .overlay(alignment: .topLeading) { menuDots }
     }
 
     private var cardLabel: some View {
@@ -89,11 +90,26 @@ struct ContinueWatchingCard: View {
 
     @ViewBuilder
     private var previewContent: some View {
-        if style == .card {
-            landscapeCard
-        } else {
-            classicCard
+        switch style {
+        case .wide: wideCard
+        case .card: upNextCard
+        case .poster: classicCard
         }
+    }
+
+    /// The three dots sit over the card, not in its link, so a tap on them
+    /// opens the menu and not the title.
+    @ViewBuilder
+    private var menuDots: some View {
+        Group {
+            if isPreview {
+                MediaContextMenuDots()
+            } else {
+                MediaContextMenuButton(item: item, placement: .continueWatching)
+            }
+        }
+        .offset(y: 6)
+        .frame(width: cardWidth, height: cardHeight, alignment: .bottomTrailing)
     }
 
     private var classicCard: some View {
@@ -116,7 +132,8 @@ struct ContinueWatchingCard: View {
                     }
                     .font(isPoster ? .caption.weight(.semibold) : .subheadline.weight(.semibold))
                     .foregroundStyle(.white)
-                    .padding(.horizontal, isPoster ? 10 : 14)
+                    .padding(.leading, 10)
+                    .padding(.trailing, 34)
                     .padding(.bottom, 10)
                 } else if isNextUp {
                     Text(nextUpText)
@@ -124,7 +141,8 @@ struct ContinueWatchingCard: View {
                         .foregroundStyle(.white)
                         .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .trailing)
-                        .padding(.horizontal, isPoster ? 10 : 14)
+                        .padding(.leading, 10)
+                        .padding(.trailing, 34)
                         .padding(.bottom, 10)
                 }
             }
@@ -147,71 +165,161 @@ struct ContinueWatchingCard: View {
         }
     }
 
-    /// Landscape presentation follows the poster-size setting; typography uses
-    /// native text styles so the system remains responsible for text scaling.
-    private var landscapeCard: some View {
-        ZStack(alignment: .bottomLeading) {
-            resumeArtwork
-            LinearGradient(
-                stops: [
-                    .init(color: .clear, location: 0.45),
-                    .init(color: cardBackground.opacity(0.70), location: 0.78),
-                    .init(color: cardBackground.opacity(0.95), location: 1)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-
-            VStack(alignment: .leading, spacing: cardMetrics.gap) {
-                if let code = episodeCode {
-                    Text(code)
-                        .font(cardMetrics.metadataFont.weight(.semibold))
+    /// Artwork with the play symbol, a long progress bar and what's left.
+    private var wideCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ZStack(alignment: .bottomLeading) {
+                resumeArtwork
+                LinearGradient(
+                    stops: [
+                        .init(color: .clear, location: 0.55),
+                        .init(color: .black.opacity(0.72), location: 1)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                HStack(spacing: 8) {
+                    Image(systemName: "play.fill")
+                        .font(.caption)
+                    if cardProgress > 0 {
+                        progressLine
+                    }
+                    Text(wideMetadata)
+                        .lineLimit(1)
+                        .fixedSize()
+                    if cardProgress <= 0 {
+                        Spacer(minLength: 0)
+                    }
                 }
-                Text(item.title)
-                    .font(cardMetrics.titleFont.weight(.semibold))
-                if let subtitle = episodeTitle ?? upcomingAirDateText {
-                    Text(subtitle)
-                        .font(cardMetrics.metadataFont.weight(.medium))
-                        .foregroundStyle(.primary.opacity(contrast == .increased ? 1 : 0.72))
-                }
-            }
-            .foregroundStyle(.primary)
-            .lineLimit(1)
-            .padding(cardMetrics.contentPadding)
-
-            Text(badgeText)
-                .font(cardMetrics.badgeFont.weight(.semibold))
+                .font(.footnote.weight(.semibold))
                 .foregroundStyle(.white)
-                .lineLimit(1)
-                .padding(.horizontal, cardMetrics.badgeHorizontalPadding)
-                .padding(.vertical, cardMetrics.badgeVerticalPadding)
-                .background(.black.opacity(0.80), in: RoundedRectangle(cornerRadius: 4))
-                .padding(cardMetrics.badgeInset)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                .padding(.leading, 12)
+                .padding(.trailing, 40)
+                .padding(.bottom, 12)
+            }
+            .frame(width: cardWidth, height: cardHeight)
+            .clipShape(.rect(cornerRadius: cornerRadius, style: .continuous))
+            .cardDepth(.continueWatching, cornerRadius: cornerRadius, fallbackBorderOpacity: 0.24)
 
-            if cardProgress > 0 {
-                GeometryReader { geometry in
-                    Capsule()
-                        .fill(.black.opacity(0.30))
-                        .overlay(alignment: .leading) {
-                            Capsule()
-                                .fill(display.accentStyle)
-                                .frame(width: geometry.size.width * cardProgress)
-                        }
-                }
-                .frame(height: 3)
-                .padding(.horizontal, cardMetrics.progressInset)
-                .padding(.bottom, cardMetrics.progressBottomPadding)
+            if display.continueWatchingShowsLabels {
+                Text(item.title)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .frame(width: cardWidth, alignment: .leading)
             }
         }
-        .frame(width: cardWidth, height: cardHeight)
-        .clipShape(.rect(cornerRadius: cornerRadius, style: .continuous))
-        .cardDepth(.continueWatching, cornerRadius: cornerRadius, fallbackBorderOpacity: 0.24)
-        .accessibilityElement(children: .ignore)
+    }
+
+    /// Apple TV's Up Next: the show's logo on the episode's still, a thin line
+    /// inside the image, then the episode underneath. Next Up has no line.
+    private var upNextCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ZStack(alignment: .bottomLeading) {
+                resumeArtwork
+                LinearGradient(
+                    stops: [
+                        .init(color: .clear, location: 0.45),
+                        .init(color: .black.opacity(0.7), location: 1)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                VStack(alignment: .leading, spacing: 8) {
+                    if let logoURL = item.logoURL {
+                        TitleLogoView(
+                            url: logoURL,
+                            title: item.title,
+                            maximumWidth: cardWidth * 0.55,
+                            maximumHeight: cardHeight * 0.32,
+                            alignment: .bottomLeading
+                        )
+                    } else {
+                        Text(item.title)
+                            .font(.headline.weight(.bold))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                    }
+                    if cardProgress > 0 {
+                        progressLine
+                    }
+                }
+                .padding(.leading, 12)
+                .padding(.trailing, 40)
+                .padding(.bottom, 12)
+            }
+            .frame(width: cardWidth, height: cardHeight)
+            .clipShape(.rect(cornerRadius: cornerRadius, style: .continuous))
+            .cardDepth(.continueWatching, cornerRadius: cornerRadius, fallbackBorderOpacity: 0.24)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(upNextMetadata)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(episodeTitle ?? item.title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+            }
+            .lineLimit(1)
+            .frame(width: cardWidth, alignment: .leading)
+        }
+    }
+
+    private var progressLine: some View {
+        Capsule()
+            .fill(.white.opacity(0.32))
+            .frame(height: 3)
+            .overlay {
+                GeometryReader { geometry in
+                    Capsule()
+                        .fill(.white)
+                        .frame(width: geometry.size.width * cardProgress)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .accessibilityHidden(true)
+    }
+
+    /// "42m" or "1h 12m", from what's left to watch.
+    private var remainingShort: String? {
+        guard cardProgress > 0, let duration = item.durationSeconds, duration.isFinite, duration > 0,
+              let position = item.positionSeconds, position.isFinite, position >= 0 else { return nil }
+        let minutes = max(Int(((duration - position) / 60).rounded(.up)), 1)
+        return minutes >= 60 ? "\(minutes / 60)h \(minutes % 60)m" : "\(minutes)m"
+    }
+
+    private var episodeShort: String? {
+        guard item.kind == .series, let season = item.resumeSeasonNumber, let episode = item.resumeEpisodeNumber else {
+            return nil
+        }
+        return "S\(season), E\(episode)"
+    }
+
+    private var wideMetadata: String {
+        if let remainingShort {
+            return [episodeShort, remainingShort].compactMap { $0 }.joined(separator: " · ")
+        }
+        if cardProgress > 0 {
+            return episodeShort ?? "\(Int((cardProgress * 100).rounded()))%"
+        }
+        if let upcomingAirDateText { return upcomingAirDateText }
+        return episodeShort ?? nextUpText
+    }
+
+    private var upNextMetadata: String {
+        let label = episodeShort ?? (item.kind == .movie ? "Movie" : nil)
+        if let remainingShort {
+            return [label, "\(remainingShort) left"].compactMap { $0 }.joined(separator: " · ")
+        }
+        if let upcomingAirDateText {
+            return [label, upcomingAirDateText].compactMap { $0 }.joined(separator: " · ")
+        }
+        if isNextUp, let episodeShort { return "Next · \(episodeShort)" }
+        return label ?? nextUpText
     }
 
     private var accessibilityValue: String {
-        let status: String? = style == .card ? badgeText : (isNextUp ? "Up next" : resumePresentation?.remainingText)
+        let status: String? = isNextUp ? "Up next" : resumePresentation?.remainingText
         return [cardPresentation.accessibilityValue, status]
             .compactMap { $0 }
             .joined(separator: ", ")
@@ -235,56 +343,6 @@ struct ContinueWatchingCard: View {
 
     private var upcomingAirDateText: String? {
         upcomingAirDate.map { $0.formatted(date: .abbreviated, time: .omitted) }
-    }
-
-    private var badgeText: String {
-        if cardProgress > 0 {
-            if let duration = item.durationSeconds, duration.isFinite, duration > 0,
-               let position = item.positionSeconds, position.isFinite, position >= 0,
-               let remaining = item.progressText {
-                return remaining
-            }
-            return "\(Int((cardProgress * 100).rounded()))% watched"
-        }
-        // A release date is evidence of an upcoming episode. The persisted
-        // model has no release-alert kind, so never infer New Episode/Season.
-        return upcomingAirDateText ?? nextUpText
-    }
-
-    private var cardMetrics: CardMetrics {
-        if display.continueWatchingCard.size.posterWidth(for: display) <= 108 { return .small }
-        if display.continueWatchingCard.size.posterWidth(for: display) <= 120 { return .medium }
-        return .large
-    }
-
-    private struct CardMetrics {
-        let contentPadding: CGFloat
-        let gap: CGFloat
-        let badgeInset: CGFloat
-        let badgeHorizontalPadding: CGFloat
-        let badgeVerticalPadding: CGFloat
-        let progressInset: CGFloat
-        let progressBottomPadding: CGFloat
-        let titleFont: Font
-        let metadataFont: Font
-        let badgeFont: Font
-
-        static let small = CardMetrics(contentPadding: 8, gap: 1, badgeInset: 6,
-            badgeHorizontalPadding: 6, badgeVerticalPadding: 2, progressInset: 8,
-            progressBottomPadding: 3, titleFont: .caption, metadataFont: .caption2, badgeFont: .caption2)
-        static let medium = CardMetrics(contentPadding: 9, gap: 1, badgeInset: 6,
-            badgeHorizontalPadding: 7, badgeVerticalPadding: 3, progressInset: 8,
-            progressBottomPadding: 3, titleFont: .subheadline, metadataFont: .caption, badgeFont: .caption2)
-        static let large = CardMetrics(contentPadding: 10, gap: 2, badgeInset: 7,
-            badgeHorizontalPadding: 7, badgeVerticalPadding: 3, progressInset: 9,
-            progressBottomPadding: 4, titleFont: .headline, metadataFont: .caption, badgeFont: .caption)
-    }
-
-    private var episodeCode: String? {
-        guard item.kind == .series, let season = item.resumeSeasonNumber, let episode = item.resumeEpisodeNumber else {
-            return nil
-        }
-        return "S\(season) E\(episode)"
     }
 
     private var episodeTitle: String? {
