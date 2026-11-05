@@ -62,7 +62,7 @@ enum SettingsSearchIndex {
         Row(title: "Overlay Height", terms: "", route: .home),
         Row(title: "Reset Overlay", terms: "", route: .home),
         Row(title: "Page Background", terms: "", route: .detailPage),
-        Row(title: "Poster Transition", terms: "Expand and blur posters when opening details.", route: .detailPage),
+        Row(title: "Poster Transition", terms: "Animate from a poster into its title page.", route: .detailPage),
         Row(title: "Blur Unwatched Episodes", terms: "Hide the stills of episodes you haven't watched or started, to avoid spoilers.", route: .detailPage),
         Row(title: "Shuffle", terms: "Shuffle episodes from any series. Turning this off pauses shuffle.", route: .detailPage),
         Row(title: "Show Labels", terms: "The title under each card.", route: .landscapeCards),

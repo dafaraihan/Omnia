@@ -70,6 +70,7 @@ struct MediaDetailView: View {
         }
         // Under the home indicator too, so the page doesn't end in a band.
         .background { screenBackground.ignoresSafeArea() }
+        #if os(macOS)
         .overlay {
             if let posterTransition {
                 PosterTransitionOverlay(anchor: posterTransition) {
@@ -86,6 +87,9 @@ struct MediaDetailView: View {
                 posterTransition = PosterTransitionCenter.shared.consume(itemID: item.id)
             }
         }
+        #else
+        .modifier(PosterZoomDestination(itemID: item.id))
+        #endif
         // Match Home: the scroll container, not merely its first child,
         // owns the top safe area. The detail hero can therefore meet the
         // stable transparent toolbar (or iPad's tab bar) instead of leaving

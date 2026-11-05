@@ -270,6 +270,7 @@ struct OmniaSwitchToggleStyle: ToggleStyle {
             }
             .toggleStyle(.switch)
             .tint(display.switchTint)
+            .sensoryFeedback(.selection, trigger: configuration.isOn)
         }
     }
 }
@@ -613,6 +614,7 @@ struct SettingsValueChip: View {
                     isEditing = true
                 } label: {
                     Text(text)
+                        .contentTransition(.numericText())
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)

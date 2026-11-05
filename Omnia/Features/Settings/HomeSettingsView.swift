@@ -263,7 +263,7 @@ struct DetailPageSettingsView: View {
                 .settingsRow("Page Background")
                 Toggle(isOn: settings.binding(\.display.posterTransition)) {
                     Text("Poster Transition")
-                    Text("Expand and blur posters when opening details.")
+                    Text("Animate from a poster into its title page.")
                 }
                 .settingsRow("Poster Transition")
             } header: {

@@ -92,6 +92,7 @@ struct LibraryView: View {
                         LazyVGrid(columns: layout.columns, alignment: .leading, spacing: 18) {
                             ForEach(items) { item in
                                 MediaPoster(item: item, fillsAvailableWidth: true, showsTitleOnly: true)
+                                    .modifier(OmniaScrollEdgeEffect(axis: .vertical))
                             }
                         }
                         .padding(.horizontal, MediaBrowseMetrics.pageInset)

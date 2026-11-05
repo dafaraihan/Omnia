@@ -426,6 +426,9 @@ struct OmniaRootView: View {
                 .omniaPageDestinations()
                 .toolbar(usesNuvioBar ? .hidden : .automatic, for: .tabBar)
         }
+        #if os(iOS)
+        .modifier(PosterZoomScope())
+        #endif
     }
 
     private var nuvioBar: some View {
@@ -588,6 +591,9 @@ struct OmniaRootView: View {
             }
             .omniaPageDestinations()
         }
+        #if os(iOS)
+        .modifier(PosterZoomScope())
+        #endif
         .id(destination)
         .environment(\.isActiveDestination, destination == navigation.selection)
         // Sidebar row colors are local to the leading column. Destination

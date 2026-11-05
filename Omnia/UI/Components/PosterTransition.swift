@@ -69,11 +69,22 @@ private struct PosterTransitionSourceModifier: ViewModifier {
 
     private var frame: CGRect { frameBox.frame }
 
+    #if os(iOS)
+    @Environment(\.posterZoomNamespace) private var zoomNamespace
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        if display.posterTransition, !reduceMotion, let zoomNamespace {
+            content.matchedTransitionSource(id: item.id, in: zoomNamespace)
+        } else {
+            content
+        }
+    }
+    #else
     func body(content: Content) -> some View {
         if display.posterTransition {
             content
                 .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frameBox.frame = $0 }
-                #if os(macOS)
                 // A click on the Mac always follows the pointer entering the
                 // poster, so the hovered poster is the one that opens.
                 .onHover { isHovering in
@@ -83,13 +94,11 @@ private struct PosterTransitionSourceModifier: ViewModifier {
                         PosterTransitionCenter.shared.clear(itemID: item.id)
                     }
                 }
-                #else
-                .simultaneousGesture(TapGesture().onEnded { prepare() })
-                #endif
         } else {
             content
         }
     }
+    #endif
 
     private func prepare() {
         guard frame.width > 0, frame.height > 0 else { return }
@@ -137,3 +146,41 @@ struct PosterTransitionOverlay: View {
         }
     }
 }
+
+#if os(iOS)
+private struct PosterZoomNamespaceKey: EnvironmentKey {
+    static let defaultValue: Namespace.ID? = nil
+}
+
+extension EnvironmentValues {
+    var posterZoomNamespace: Namespace.ID? {
+        get { self[PosterZoomNamespaceKey.self] }
+        set { self[PosterZoomNamespaceKey.self] = newValue }
+    }
+}
+
+/// Goes around a NavigationStack, so its posters and pushed title pages share one zoom.
+struct PosterZoomScope: ViewModifier {
+    @Namespace private var namespace
+
+    func body(content: Content) -> some View {
+        content.environment(\.posterZoomNamespace, namespace)
+    }
+}
+
+/// The system's zoom from a poster into its title page.
+struct PosterZoomDestination: ViewModifier {
+    let itemID: String
+    @Environment(\.posterZoomNamespace) private var namespace
+    @Environment(\.displayPreferences) private var display
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        if display.posterTransition, !reduceMotion, let namespace {
+            content.navigationTransition(.zoom(sourceID: itemID, in: namespace))
+        } else {
+            content
+        }
+    }
+}
+#endif

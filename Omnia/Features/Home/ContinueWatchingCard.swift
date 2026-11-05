@@ -185,6 +185,7 @@ struct ContinueWatchingCard: View {
                         progressLine
                     }
                     Text(wideMetadata)
+                        .contentTransition(.numericText())
                         .lineLimit(1)
                         .fixedSize()
                     if cardProgress <= 0 {
@@ -254,6 +255,7 @@ struct ContinueWatchingCard: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(upNextMetadata)
+                    .contentTransition(.numericText())
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Text(episodeTitle ?? item.title)

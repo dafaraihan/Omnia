@@ -880,6 +880,7 @@ struct MacPlaybackChrome: View {
 
                     HStack(spacing: 12) {
                         Image(systemName: playback.volume == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                            .contentTransition(.symbolEffect(.replace))
                             .font(.body.weight(.semibold))
                             .frame(width: 22)
                             .accessibilityHidden(true)
@@ -938,6 +939,7 @@ struct MacPlaybackChrome: View {
                     playback.togglePause()
                 } label: {
                     Image(systemName: playback.isPaused ? "play.fill" : "pause.fill")
+                        .contentTransition(.symbolEffect(.replace))
                         .font(.system(size: 38, weight: .semibold))
                         .frame(width: isPhone ? 60 : 86, height: isPhone ? 60 : 86)
                         .contentShape(Circle())
@@ -1694,6 +1696,7 @@ struct MacPlaybackChrome: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
+                .contentTransition(.symbolEffect(.replace))
                 .font(.title3.weight(.semibold))
                 .frame(width: isPhone ? 44 : 42, height: isPhone ? 44 : 42)
                 .contentShape(Circle())
@@ -1732,6 +1735,7 @@ struct MacPlaybackChrome: View {
             }
         } label: {
             Image(systemName: symbol)
+                .contentTransition(.symbolEffect(.replace))
                 .font(.title3.weight(.semibold))
                 .frame(width: isPhone ? 44 : 42, height: isPhone ? 44 : 42)
                 .contentShape(Circle())

@@ -41,6 +41,7 @@ struct ShelfScrollView<Item: Identifiable, Content: View>: View {
                     LazyHStack(alignment: .top, spacing: spacing) {
                         ForEach(items) { item in
                             content(item)
+                                .modifier(OmniaScrollEdgeEffect(axis: .horizontal))
                                 .id(item.id)
                         }
                     }
@@ -116,7 +117,7 @@ struct ShelfScrollView<Item: Identifiable, Content: View>: View {
                     // Pointer exit is intentional, unlike the end of a
                     // trackpad scroll. Hide immediately to keep the shelf
                     // visually quiet once it is no longer being inspected.
-                    withAnimation(.easeOut(duration: 0.12)) {
+                    withAnimation(.smooth(duration: 0.12)) {
                         controlsVisible = false
                     }
                 }
@@ -155,7 +156,7 @@ struct ShelfScrollView<Item: Identifiable, Content: View>: View {
     private func showControls() {
         concealTask?.cancel()
         if !controlsVisible {
-            withAnimation(.easeInOut(duration: 0.16)) { controlsVisible = true }
+            withAnimation(.smooth(duration: 0.16)) { controlsVisible = true }
         }
     }
 
@@ -165,7 +166,28 @@ struct ShelfScrollView<Item: Identifiable, Content: View>: View {
             try? await Task.sleep(for: .seconds(1.35))
             guard !Task.isCancelled else { return }
             await MainActor.run {
-                withAnimation(.easeInOut(duration: 0.2)) { controlsVisible = false }
+                withAnimation(.smooth(duration: 0.2)) { controlsVisible = false }
+            }
+        }
+    }
+}
+
+/// A slight fade and scale as a card reaches the edge of its scroll view. Off
+/// with Reduce Motion and Low Power Mode. It only moves when a card crosses
+/// the edge, not on every scrolled frame.
+struct OmniaScrollEdgeEffect: ViewModifier {
+    let axis: Axis
+    @Environment(\.displayPreferences) private var display
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        if reduceMotion || LowPowerMonitor.shared.isActive(display.lowPowerMode) {
+            content
+        } else {
+            content.scrollTransition(.animated(.smooth(duration: 0.2)), axis: axis) { view, phase in
+                view
+                    .opacity(phase.isIdentity ? 1 : 0.88)
+                    .scaleEffect(phase.isIdentity ? 1 : 0.98)
             }
         }
     }

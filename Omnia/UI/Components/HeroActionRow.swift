@@ -26,6 +26,7 @@ struct HeroWatchAction {
 /// into subtly different button sizes or spacing.
 struct HeroActionRow<Primary: View>: View {
     @Environment(\.controlSize) private var controlSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let width: CGFloat
     let isSaved: Bool
     let libraryAction: () -> Void
@@ -84,23 +85,29 @@ struct HeroActionRow<Primary: View>: View {
     private func watchButton(action: HeroWatchAction) -> some View {
         Button(action: action.perform) {
             Image(systemName: action.systemImage)
+                .contentTransition(.symbolEffect(.replace))
+                .symbolEffect(.bounce, value: reduceMotion ? "" : action.systemImage)
                 .font(.body.weight(.semibold))
                 .frame(width: controlSize == .small ? 44 : 46, height: controlSize == .small ? 44 : 46)
                 .contentShape(Circle())
         }
         .omniaCircularGlassButton()
         .disabled(!action.isEnabled)
+        .sensoryFeedback(.success, trigger: action.systemImage)
         .accessibilityLabel(action.accessibilityLabel)
     }
 
     private var libraryButton: some View {
         Button(action: libraryAction) {
             Image(systemName: isSaved ? "checkmark" : "plus")
+                .contentTransition(.symbolEffect(.replace))
+                .symbolEffect(.bounce, value: reduceMotion ? false : isSaved)
                 .font(.body.weight(.semibold))
                 .frame(width: controlSize == .small ? 44 : 46, height: controlSize == .small ? 44 : 46)
                 .contentShape(Circle())
         }
         .omniaCircularGlassButton()
+        .sensoryFeedback(.success, trigger: isSaved)
         .accessibilityLabel(isSaved ? "In My List" : "Add to My List")
     }
 }

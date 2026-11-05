@@ -2376,13 +2376,13 @@ struct PlaybackExperienceView: View {
     private func concealChrome() {
         guard !isScrubbing else { return }
         chromeHideTask?.cancel()
-        withAnimation(.easeInOut(duration: 0.2)) { showsChrome = false }
+        withAnimation(.smooth(duration: 0.2)) { showsChrome = false }
     }
 
     private func dismissChromeForContextualAction() {
         guard !isScrubbing else { return }
         chromeHideTask?.cancel()
-        withAnimation(.easeInOut(duration: 0.2)) { showsChrome = false }
+        withAnimation(.smooth(duration: 0.2)) { showsChrome = false }
     }
 
     private func hideChrome(after delay: TimeInterval) {
@@ -2392,7 +2392,7 @@ struct PlaybackExperienceView: View {
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 guard !isScrubbing else { return }
-                withAnimation(.easeInOut(duration: 0.2)) { showsChrome = false }
+                withAnimation(.smooth(duration: 0.2)) { showsChrome = false }
             }
         }
     }
@@ -2729,6 +2729,7 @@ private struct PlaybackTouchGestures: View {
                 )
                 .simultaneousGesture(dragGesture(in: geometry.size))
                 .simultaneousGesture(pinchGesture)
+                .sensoryFeedback(.selection, trigger: playback.aspectRatioMode)
                 .overlay(alignment: .top) {
                     feedbackView.padding(.top, 64)
                 }
