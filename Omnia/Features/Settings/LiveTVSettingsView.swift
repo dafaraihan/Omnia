@@ -22,8 +22,34 @@ struct LiveTVSettingsView: View {
     @State private var isReloadingChannels = false
     @State private var isReloadingGuide = false
 
+    let showsAdvanced: Bool
+
+    init(showsAdvanced: Bool = false) {
+        self.showsAdvanced = showsAdvanced
+    }
+
     var body: some View {
-        OmniaSettingsForm {
+        Group {
+            if showsAdvanced {
+                OmniaSettingsForm {
+            Section {
+                Toggle(isOn: Binding(
+                    get: { live.configuration.autoDetectsGuides },
+                    set: { live.setAutoDetectsGuides($0) }
+                )) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Auto-Detect Guides")
+                        Text("Use the guides your playlists and providers name.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .settingsRow("Auto-Detect Guides")
+                .toggleStyle(OmniaSwitchToggleStyle())
+            }
+                }
+            } else {
+                OmniaSettingsForm {
             AccountBackupNotice()
             Section {
                 Toggle(isOn: Binding(
@@ -109,19 +135,7 @@ struct LiveTVSettingsView: View {
             }
 
             Section {
-                Toggle(isOn: Binding(
-                    get: { live.configuration.autoDetectsGuides },
-                    set: { live.setAutoDetectsGuides($0) }
-                )) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Auto-Detect Guides")
-                        Text("Use the guides your playlists and providers name.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .settingsRow("Auto-Detect Guides")
-                .toggleStyle(OmniaSwitchToggleStyle())
+
                 ForEach(live.configuration.guides) { source in
                     guideRow(source)
                 }
@@ -144,8 +158,14 @@ struct LiveTVSettingsView: View {
             } footer: {
                 Text(live.guideStatus)
             }
+        
+            Section {
+                SettingsRouteLink(route: .advanced(.liveTV), summary: nil)
+            }
+                }
+            }
         }
-        .omniaNavigationTitle("Live TV")
+        .omniaNavigationTitle(showsAdvanced ? "Advanced" : "Live TV")
         .fileImporter(
             isPresented: $importsFile,
             allowedContentTypes: Self.playlistTypes

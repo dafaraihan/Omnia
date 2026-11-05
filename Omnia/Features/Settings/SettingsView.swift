@@ -70,7 +70,7 @@ struct SettingsView: View {
                 }
             }
             ForEach(SettingsRoute.filteredRootGroups(query: searchText)) { group in
-                Section(group.section.title) {
+                Section {
                     ForEach(group.routes, id: \.self) { route in
                         NavigationLink {
                             SettingsDestinationView(route: route)
@@ -210,7 +210,7 @@ struct SettingsProfileCard: View {
                     .font(avatarSize < 52 ? .headline : .title3.weight(.semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
-                Text(account.user == nil ? "Not signed in" : "Synced to your account")
+                Text("Account, profiles and sync")
                     .font(avatarSize < 52 ? .caption : .subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -228,27 +228,37 @@ struct SettingsDestinationView: View {
 
     private var page: some View {
         settingsContent {
+            if case let .advanced(parent) = route {
+                content(for: parent, advanced: true)
+            } else {
+                content(for: route, advanced: false)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func content(for route: SettingsRoute, advanced: Bool) -> some View {
             switch route {
             case .account:
                 AccountSettingsView()
             case .contentDiscovery:
-                ContentDiscoverySettingsView()
+                ContentDiscoverySettingsView(showsAdvanced: advanced)
             case .addons:
-                AddonsSettingsView()
+                AddonsSettingsView(showsAdvanced: advanced)
             case .mediaServers:
                 MediaServersSettingsView()
             case .liveTV:
-                LiveTVSettingsView()
+                LiveTVSettingsView(showsAdvanced: advanced)
             case .plugins:
-                PluginsSettingsView()
+                PluginsSettingsView(showsAdvanced: advanced)
             case .home:
-                HomeSettingsView()
+                HomeSettingsView(showsAdvanced: advanced)
             case .catalogs:
                 CatalogsSettingsView()
             case .collections:
                 CollectionsSettingsView()
             case .metadata:
-                MetadataSettingsView()
+                MetadataSettingsView(showsAdvanced: advanced)
             case .tvdbEnrichment:
                 TVDBEnrichmentSettingsView()
             case .tmdbEnrichment:
@@ -258,11 +268,11 @@ struct SettingsDestinationView: View {
             case .metadataSources:
                 MetadataSourcesSettingsView()
             case .progress:
-                ProgressSettingsView()
+                ProgressSettingsView(showsAdvanced: advanced)
             case .videoPlayer:
-                VideoPlayerSettingsView()
+                VideoPlayerSettingsView(showsAdvanced: advanced)
             case .subtitle:
-                SubtitleAppearanceSettingsView()
+                SubtitleAppearanceSettingsView(showsAdvanced: advanced)
             case .playbackDiagnostics:
                 PlaybackDiagnosticsSettingsView()
             case .playbackResolver:
@@ -270,27 +280,27 @@ struct SettingsDestinationView: View {
             case .appearance:
                 AppearanceSettingsView()
             case .navigation:
-                NavigationSettingsView()
+                NavigationSettingsView(showsAdvanced: advanced)
             case .playerControls:
-                PlayerControlsSettingsView()
+                PlayerControlsSettingsView(showsAdvanced: advanced)
             case .notifications:
                 NotificationsSettingsView()
             case .privacy:
                 PrivacySecuritySettingsView()
             case .battery:
-                BatteryPerformanceSettingsView()
+                BatteryPerformanceSettingsView(showsAdvanced: advanced)
             case .liquidGlass:
-                LiquidGlassSettingsView()
+                LiquidGlassSettingsView(showsAdvanced: advanced)
             case .posterCards:
-                PosterCardSettingsView()
+                PosterCardSettingsView(showsAdvanced: advanced)
             case .landscapeCards:
-                LandscapeCardSettingsView()
+                LandscapeCardSettingsView(showsAdvanced: advanced)
             case .streams:
-                StreamsSettingsView()
+                StreamsSettingsView(showsAdvanced: advanced)
             case .continueWatching:
-                ContinueWatchingSettingsView()
+                ContinueWatchingSettingsView(showsAdvanced: advanced)
             case .detailPage:
-                DetailPageSettingsView()
+                DetailPageSettingsView(showsAdvanced: advanced)
             case .about:
                 AboutSettingsView()
             case let .metadataProvider(id):
@@ -304,11 +314,12 @@ struct SettingsDestinationView: View {
                     )
                 }
             case .tracking:
-                TrackingSettingsView()
+                TrackingSettingsView(showsAdvanced: advanced)
             case let .aboutSection(section):
                 AboutSectionSettingsView(section: section)
+            case .advanced:
+                EmptyView()
             }
-        }
     }
 
     /// Sub-pages are native grouped Forms, which bring their own scrolling,
@@ -345,7 +356,7 @@ struct SettingsRouteLink: View {
                     }
                 } label: {
                     Label {
-                        Text(route.title)
+                        Text(route.linkTitle)
                     } icon: {
                         SettingsRouteIcon(route: route)
                     }
@@ -391,7 +402,7 @@ private struct SettingsRouteLabel: View {
     var body: some View {
         HStack {
             Label {
-                Text(route.title)
+                Text(route.linkTitle)
                     .foregroundStyle(.primary)
             } icon: {
                 SettingsRouteIcon(route: route)

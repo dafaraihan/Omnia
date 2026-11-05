@@ -8,25 +8,16 @@ struct ContentDiscoverySettingsView: View {
     @State private var history = SearchHistoryStore.shared
     @State private var servers = MediaServerStore.shared
 
-    var body: some View {
-        OmniaSettingsForm {
-            Section {
-                Toggle(isOn: $history.isEnabled) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Recent Searches")
-                        Text("Save recent searches and show them when the search field is empty.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .settingsRow("Recent Searches")
-                .toggleStyle(OmniaSwitchToggleStyle())
-                if history.isEnabled, !history.recentSearches.isEmpty {
-                    Button("Clear Recent Searches", role: .destructive) { history.clear() }
-                    .settingsRow("Clear Recent Searches")
-                }
-            }
+    let showsAdvanced: Bool
 
+    init(showsAdvanced: Bool = false) {
+        self.showsAdvanced = showsAdvanced
+    }
+
+    var body: some View {
+        Group {
+            if showsAdvanced {
+                OmniaSettingsForm {
             Section {
                 SettingsDropdown(
                     "Source",
@@ -55,13 +46,39 @@ struct ContentDiscoverySettingsView: View {
                 }
                 .settingsRow("Genre")
             } header: {
-                Text("Filters")
+                Text("Discover Defaults")
             } footer: {
                 Text("The Search page's Filter menu changes these too.")
             }
 
+        
+                }
+            } else {
+                OmniaSettingsForm {
+            Section {
+                Toggle(isOn: $history.isEnabled) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Recent Searches")
+                        Text("Save recent searches and show them when the search field is empty.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .settingsRow("Recent Searches")
+                .toggleStyle(OmniaSwitchToggleStyle())
+                if history.isEnabled, !history.recentSearches.isEmpty {
+                    Button("Clear Recent Searches", role: .destructive) { history.clear() }
+                    .settingsRow("Clear Recent Searches")
+                }
+            }
+
+            Section {
+                SettingsRouteLink(route: .advanced(.contentDiscovery), summary: nil)
+            }
+                }
+            }
         }
-        .omniaNavigationTitle("Search")
+        .omniaNavigationTitle(showsAdvanced ? "Advanced" : "Search & Discover")
     }
 
     /// Every source, the metadata service and media servers, then each

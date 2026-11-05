@@ -84,9 +84,15 @@ Group {
                     Text("True black behind pages in Dark appearance.")
                 }
                 .settingsRow("AMOLED Black")
+            }
+
+            Section {
                 SettingsRouteLink(route: .liquidGlass, summary: liquidGlassSummary)
-            } header: {
-                Text("Display")
+                if !OmniaDevice.isPhone {
+                    SettingsRouteLink(route: .navigation, summary: nil)
+                }
+                SettingsRouteLink(route: .posterCards, summary: settings.preferences.display.posterWidth.title)
+                SettingsRouteLink(route: .landscapeCards, summary: settings.preferences.display.continueWatchingCard.size.title)
             }
         }
         .omniaNavigationTitle("Appearance")

@@ -1,19 +1,12 @@
 enum SettingsSection: Int, CaseIterable, Identifiable, Sendable {
     case look
-    case watch
+    case player
     case sources
-    case you
+    case discovery
+    case device
+    case about
 
     var id: Int { rawValue }
-
-    var title: String {
-        switch self {
-        case .look: "Look"
-        case .watch: "Watch"
-        case .sources: "Sources"
-        case .you: "You"
-        }
-    }
 }
 
 import Foundation
@@ -55,7 +48,7 @@ enum AboutSection: String, CaseIterable, Identifiable, Hashable, Sendable {
         case .openSourceSoftware: "chevron.left.forwardslash.chevron.right"
         case .attributions: "text.quote"
         case .licenses: "doc.text"
-        case .privacy: "hand.raised"
+        case .privacy: "lock.shield"
         }
     }
 }
@@ -103,17 +96,19 @@ enum SettingsRoute: Hashable, Sendable {
     case metadataProvider(String)
     case tracking
     case aboutSection(AboutSection)
+    /// The less common options of a page, one level below it.
+    indirect case advanced(SettingsRoute)
 
     /// The Settings tree. Account & Profiles is the profile card above these.
     /// Navigation only has options where there is a sidebar or top bar.
     static var rootGroups: [SettingsRouteGroup] {
         return [
-            .init(section: .look, routes: OmniaDevice.isPhone
-                ? [.appearance, .home, .posterCards, .landscapeCards, .detailPage]
-                : [.appearance, .navigation, .home, .posterCards, .landscapeCards, .detailPage]),
-            .init(section: .watch, routes: [.videoPlayer, .streams, .playerControls, .subtitle]),
-            .init(section: .sources, routes: [.addons, .plugins, .mediaServers, .liveTV, .metadata, .contentDiscovery]),
-            .init(section: .you, routes: [.tracking, .notifications, .privacy, .battery, .progress, .about])
+            .init(section: .look, routes: [.appearance, .home, .detailPage]),
+            .init(section: .player, routes: [.videoPlayer]),
+            .init(section: .sources, routes: [.addons, .plugins, .mediaServers, .liveTV, .metadata]),
+            .init(section: .discovery, routes: [.contentDiscovery, .tracking, .notifications]),
+            .init(section: .device, routes: [.privacy, .battery, .progress]),
+            .init(section: .about, routes: [.about])
         ]
     }
 
@@ -121,8 +116,8 @@ enum SettingsRoute: Hashable, Sendable {
     var children: [SettingsRoute] {
         return switch self {
         case .home: [.catalogs, .collections, .continueWatching]
-        case .appearance: [.liquidGlass]
-        case .videoPlayer: [.playbackResolver, .playbackDiagnostics]
+        case .appearance: OmniaDevice.isPhone ? [.liquidGlass, .posterCards, .landscapeCards] : [.liquidGlass, .navigation, .posterCards, .landscapeCards]
+        case .videoPlayer: [.playerControls, .subtitle, .streams, .playbackResolver, .playbackDiagnostics]
         case .metadata: [.metadataProvider("tmdb"), .metadataProvider("tvdb"), .metadataProvider("fanart"),
                          .tmdbEnrichment, .tvdbEnrichment, .animeEnrichment, .metadataProvider("mdblist"), .metadataSources]
         default: []
@@ -139,40 +134,47 @@ enum SettingsRoute: Hashable, Sendable {
         }
     }
 
+    /// What a row that opens this page says. Search shows the full title.
+    var linkTitle: String {
+        if case .advanced = self { return "Advanced" }
+        return title
+    }
+
     var title: String {
         switch self {
+        case let .advanced(route): "\(route.title) › Advanced"
         case .account: "Account & Profiles"
-        case .contentDiscovery: "Search"
-        case .addons: "Add-ons"
-        case .plugins: "Plugins"
-        case .mediaServers: "Media Servers"
-        case .liveTV: "Live TV"
-        case .home: "Home"
+        case .contentDiscovery: "magnifyingglass"
+        case .addons: "puzzlepiece.extension"
+        case .plugins: "shippingbox"
+        case .mediaServers: "server.rack"
+        case .liveTV: "play.tv"
+        case .home: "house"
         case .catalogs: "Catalogs"
         case .collections: "Collections"
-        case .metadata: "Integrations"
+        case .metadata: "rectangle.3.group"
         case .tmdbEnrichment: "TMDB Enrichment"
         case .tvdbEnrichment: "TVDB Enrichment"
         case .animeEnrichment: "Anime Enrichment"
         case .metadataSources: "Metadata Sources"
-        case .progress: "Data & Backup"
-        case .videoPlayer: "Playback"
-        case .subtitle: "Subtitles"
-        case .playbackResolver: "Playback Resolver"
-        case .playbackDiagnostics: "Playback Diagnostics"
-        case .appearance: "Appearance"
-        case .navigation: "Navigation"
-        case .playerControls: "Player Controls"
-        case .notifications: "Notifications"
+        case .progress: "clock.arrow.circlepath"
+        case .videoPlayer: "play.rectangle"
+        case .subtitle: "captions.bubble"
+        case .playbackResolver: "Cache and Sharing"
+        case .playbackDiagnostics: "Diagnostics"
+        case .appearance: "circle.lefthalf.filled"
+        case .navigation: "sidebar.left"
+        case .playerControls: "slider.horizontal.below.rectangle"
+        case .notifications: "bell.badge"
         case .privacy: "Privacy & Security"
-        case .battery: "Battery & Performance"
-        case .liquidGlass: "Liquid Glass"
-        case .posterCards: "Poster Card Style"
-        case .landscapeCards: "Landscape Card Style"
-        case .streams: "Streams"
+        case .battery: "battery.75percent"
+        case .liquidGlass: "drop.halffull"
+        case .posterCards: "rectangle.portrait.on.rectangle.portrait"
+        case .landscapeCards: "rectangle.on.rectangle"
+        case .streams: "play.square.stack"
         case .continueWatching: "Continue Watching"
-        case .detailPage: "Title Page"
-        case .about: "About"
+        case .detailPage: "doc.richtext"
+        case .about: "info.circle"
         case .metadataProvider("mdblist"): "MDBList Ratings"
         case let .metadataProvider(id):
             MetadataProvider.supported.first { $0.id == id }?.name ?? "Metadata Provider"
@@ -185,6 +187,7 @@ enum SettingsRoute: Hashable, Sendable {
 
     var systemImage: String {
         switch self {
+        case .advanced: "slider.horizontal.3"
         case .account: "person.crop.circle"
         case .contentDiscovery: "magnifyingglass"
         case .addons: "puzzlepiece.extension"
@@ -223,6 +226,7 @@ enum SettingsRoute: Hashable, Sendable {
 
     var searchTerms: [String] {
         switch self {
+        case .advanced: []
         case .account: ["profile", "profiles", "avatar", "PIN", "watch time", "sync", "email", "Apple", "Google", "sign in", "sign out"]
         case .contentDiscovery: ["add-ons", "addons", "plugins", "sources", "discovery", "recent searches", "search history", "media servers", "live TV", "IPTV"]
         case .addons: ["sources", "manifest", "timeout", "import", "export"]

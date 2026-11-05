@@ -19,8 +19,31 @@ struct PluginsSettingsView: View {
     @State private var testResults: [String: String] = [:]
     @State private var settingsScraper: PluginScraper?
 
+    let showsAdvanced: Bool
+
+    init(showsAdvanced: Bool = false) {
+        self.showsAdvanced = showsAdvanced
+    }
+
     var body: some View {
-        OmniaSettingsForm {
+        Group {
+            if showsAdvanced {
+                OmniaSettingsForm {
+            Section {
+                Toggle(isOn: Binding(get: { plugins.groupsByRepository }, set: { plugins.setGroupsByRepository($0) })) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Group Plugin Providers by Repository")
+                        Text("In Streams, show one provider per repository instead of one per plugin.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .settingsRow("Group Plugin Providers by Repository")
+                .disabled(!plugins.pluginsEnabled)
+            }
+                }
+            } else {
+                OmniaSettingsForm {
             Section {
                 Toggle(isOn: Binding(get: { plugins.pluginsEnabled }, set: { plugins.setPluginsEnabled($0) })) {
                     VStack(alignment: .leading, spacing: 2) {
@@ -32,16 +55,7 @@ struct PluginsSettingsView: View {
                 }
                 .settingsRow("Use Plugins")
 
-                Toggle(isOn: Binding(get: { plugins.groupsByRepository }, set: { plugins.setGroupsByRepository($0) })) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Group Plugin Providers by Repository")
-                        Text("In Streams, show one provider per repository instead of one per plugin.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .settingsRow("Group Plugin Providers by Repository")
-                .disabled(!plugins.pluginsEnabled)
+
             }
 
             Section {
@@ -101,8 +115,14 @@ struct PluginsSettingsView: View {
             } footer: {
                 Text("Many plugins look titles up on TMDB. Some include their own key; others need yours. It's kept in your Keychain and only given to plugins.")
             }
+        
+            Section {
+                SettingsRouteLink(route: .advanced(.plugins), summary: nil)
+            }
+                }
+            }
         }
-        .omniaNavigationTitle("Plugins")
+        .omniaNavigationTitle(showsAdvanced ? "Advanced" : "Plugins")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 OmniaToolbarSymbol {

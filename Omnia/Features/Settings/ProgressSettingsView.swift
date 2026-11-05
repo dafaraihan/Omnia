@@ -19,8 +19,37 @@ struct ProgressSettingsView: View {
         case replace
     }
 
+    let showsAdvanced: Bool
+
+    init(showsAdvanced: Bool = false) {
+        self.showsAdvanced = showsAdvanced
+    }
+
     var body: some View {
-        OmniaSettingsForm {
+        Group {
+            if showsAdvanced {
+                OmniaSettingsForm {
+            Section {
+                SettingsDropdown(
+                    "Continue Watching items",
+                    selection: settings.binding(\.continueWatchingLimit),
+                    options: Array(BoundedItemLimit.allCases)
+                ) { limit in limit.title }
+                .settingsRow("Continue Watching items")
+            } footer: {
+                Text("Fewer items reduce the amount of Home content loaded at once.")
+            }
+
+            Section("Remove Local Data") {
+                Button("Clear Progress", role: .destructive) { destructiveAction = .clearProgress }
+                .settingsRow("Clear Progress")
+                Button("Clear Watchlist", role: .destructive) { destructiveAction = .clearWatchlist }
+                .settingsRow("Clear Watchlist")
+            }
+
+                }
+            } else {
+                OmniaSettingsForm {
             Section {
                 NavigationLink {
                     SettingsDestinationView(route: .tracking)
@@ -39,17 +68,6 @@ struct ProgressSettingsView: View {
                 Text("Storage")
             } footer: {
                 Text("Omnia keeps its own progress either way.")
-            }
-
-            Section {
-                SettingsDropdown(
-                    "Continue Watching items",
-                    selection: settings.binding(\.continueWatchingLimit),
-                    options: Array(BoundedItemLimit.allCases)
-                ) { limit in limit.title }
-                .settingsRow("Continue Watching items")
-            } footer: {
-                Text("Fewer items reduce the amount of Home content loaded at once.")
             }
 
             Section {
@@ -72,21 +90,20 @@ struct ProgressSettingsView: View {
                 Text("Backups contain local media identifiers, display metadata, watchlist membership, and resume state. They never include stream addresses or credentials.")
             }
 
-            Section("Remove Local Data") {
-                Button("Clear Progress", role: .destructive) { destructiveAction = .clearProgress }
-                .settingsRow("Clear Progress")
-                Button("Clear Watchlist", role: .destructive) { destructiveAction = .clearWatchlist }
-                .settingsRow("Clear Watchlist")
-            }
-
             if isWorking { OmniaLoadingRow("Updating local data…") }
             if store.localMediaPersistenceFailed {
                 Label("Local storage is unavailable. Try again after checking available disk space.", systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.red)
             }
             if let statusMessage { Text(statusMessage).foregroundStyle(.secondary) }
+        
+            Section {
+                SettingsRouteLink(route: .advanced(.progress), summary: nil)
+            }
+                }
+            }
         }
-        .omniaNavigationTitle(SettingsRoute.progress.title)
+        .omniaNavigationTitle(showsAdvanced ? "Advanced" : "Data & Backup")
         .confirmationDialog(
             destructiveAction?.title ?? "Remove local data?",
             isPresented: Binding(get: { destructiveAction != nil }, set: { if !$0 { destructiveAction = nil } }),

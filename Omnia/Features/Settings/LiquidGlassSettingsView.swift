@@ -15,8 +15,50 @@ struct LiquidGlassSettingsView: View {
         return display
     }
 
+    let showsAdvanced: Bool
+
+    init(showsAdvanced: Bool = false) {
+        self.showsAdvanced = showsAdvanced
+    }
+
     var body: some View {
-        OmniaSettingsForm {
+        Group {
+            if showsAdvanced {
+                OmniaSettingsForm {
+            if glass.isEnabled {
+                Section {
+                    Toggle(isOn: settings.binding(\.display.liquidGlass.actionButtons)) {
+                        Text("Action Buttons")
+                        Text("Play, View Details, watched and My List on heroes.")
+                    }
+                    .settingsRow("Action Buttons")
+                    Toggle(isOn: settings.binding(\.display.liquidGlass.playerControls)) {
+                        Text("Player Controls")
+                        Text("Buttons, timeline and menus in the player.")
+                    }
+                    .settingsRow("Player Controls")
+                    Toggle(isOn: settings.binding(\.display.liquidGlass.panels)) {
+                        Text("Menus and Panels")
+                        Text("Stream picker, sheets, shelf arrows, and account and profile buttons.")
+                    }
+                    .settingsRow("Menus and Panels")
+                    Toggle(isOn: settings.binding(\.display.liquidGlass.navigationBar)) {
+                        Text("Floating Navigation Bar")
+                        Text(OmniaDevice.isPhone
+                            ? "The bar at the bottom of the screen. Off, Omnia draws it with a solid fill."
+                            : "The bar at the top of the window.")
+                    }
+                    .settingsRow("Floating Navigation Bar")
+                } header: {
+                    Text("Use Glass On")
+                } footer: {
+                    Text(systemBarsFooter)
+                }
+            }
+        
+                }
+            } else {
+                OmniaSettingsForm {
             Section {
                 Toggle("Liquid Glass", isOn: settings.binding(\.display.liquidGlass.isEnabled))
                 .settingsRow("Liquid Glass")
@@ -49,43 +91,18 @@ Group {
                     : "Buttons and panels use solid fills instead of glass.")
             }
 
-            if glass.isEnabled {
-                Section {
-                    Toggle(isOn: settings.binding(\.display.liquidGlass.actionButtons)) {
-                        Text("Action Buttons")
-                        Text("Play, View Details, watched and My List on heroes.")
-                    }
-                    .settingsRow("Action Buttons")
-                    Toggle(isOn: settings.binding(\.display.liquidGlass.playerControls)) {
-                        Text("Player Controls")
-                        Text("Buttons, timeline and menus in the player.")
-                    }
-                    .settingsRow("Player Controls")
-                    Toggle(isOn: settings.binding(\.display.liquidGlass.panels)) {
-                        Text("Menus and Panels")
-                        Text("Stream picker, sheets, shelf arrows, and account and profile buttons.")
-                    }
-                    .settingsRow("Menus and Panels")
-                    Toggle(isOn: settings.binding(\.display.liquidGlass.navigationBar)) {
-                        Text("Floating Navigation Bar")
-                        Text(OmniaDevice.isPhone
-                            ? "The bar at the bottom of the screen. Off, Omnia draws it with a solid fill."
-                            : "The bar at the top of the window.")
-                    }
-                    .settingsRow("Floating Navigation Bar")
-                } header: {
-                    Text("Use Glass On")
-                } footer: {
-                    Text(systemBarsFooter)
-                }
+            Section {
+                SettingsRouteLink(route: .advanced(.liquidGlass), summary: nil)
             }
-        }
+                }
         .settingsPinnedPreview {
             LiquidGlassPreview()
                 .environment(\.displayPreferences, previewDisplay)
                 .clipShape(.rect(cornerRadius: 14, style: .continuous))
         }
-        .omniaNavigationTitle("Liquid Glass")
+            }
+        }
+        .omniaNavigationTitle(showsAdvanced ? "Advanced" : "Liquid Glass")
     }
 
     private var styleDetail: String {

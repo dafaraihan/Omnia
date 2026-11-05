@@ -14,19 +14,16 @@ struct TrackingSettingsView: View {
     @Environment(OmniaAccount.self) private var account
     @State private var library = TrackerLibraryStore.shared
 
-    var body: some View {
-        OmniaSettingsForm {
-            AccountBackupNotice()
-            ForEach(Array(TrackerKind.allCases.enumerated()), id: \.element) { index, kind in
-                Section {
-                    TrackerAccountCard(kind: kind)
-                        .padding(.horizontal, -12)
-                        .padding(.vertical, -9)
-                } header: {
-                    if index == 0 { Text("Accounts") }
-                }
-            }
+    let showsAdvanced: Bool
 
+    init(showsAdvanced: Bool = false) {
+        self.showsAdvanced = showsAdvanced
+    }
+
+    var body: some View {
+        Group {
+            if showsAdvanced {
+                OmniaSettingsForm {
             Section {
                 SettingsDropdown(
                     "Library Source",
@@ -50,16 +47,6 @@ struct TrackingSettingsView: View {
                 ) { $0.title }
                 .settingsRow("More Like This Source")
                 .disabled(TraktExtrasClient.clientID == nil && library.moreLikeThisSource == .tmdb)
-                ForEach(TrackerKind.allCases) { kind in
-                    TrackerSyncStatusLine(kind: kind)
-                }
-            } header: {
-                Text("Sources")
-            } footer: {
-                Text("A tracker's lists are read from your account there, and what you play is scrobbled back to it. Omnia keeps its own progress \(account.user != nil ? "in your Omnia account" : "on this device") either way.")
-            }
-
-            Section {
                 SettingsDropdown(
                     "Continue Watching Window",
                     subtitle: library.effectiveSource(library.continueWatchingSource).tracker == .trakt
@@ -70,17 +57,44 @@ struct TrackingSettingsView: View {
                 ) { $0 == 0 ? "All" : "\($0) days" }
                 .settingsRow("Continue Watching Window")
                 .disabled(library.effectiveSource(library.continueWatchingSource).tracker != .trakt)
+                ForEach(TrackerKind.allCases) { kind in
+                    TrackerSyncStatusLine(kind: kind)
+                }
+            } header: {
+                Text("Where Omnia Reads From")
+            } footer: {
+                Text("A tracker's lists are read from your account there, and what you play is scrobbled back to it. Omnia keeps its own progress \(account.user != nil ? "in your Omnia account" : "on this device") either way.")
+            }
+
+            Section {
                 Toggle(isOn: $library.showsTraktComments) {
                     Text("Comments")
                     Text("Show Trakt reviews on title pages")
                 }
                 .settingsRow("Comments")
                 .disabled(TraktExtrasClient.clientID == nil)
-            } header: {
-                Text("Trakt Features")
+            }
+                }
+            } else {
+                OmniaSettingsForm {
+            AccountBackupNotice()
+            ForEach(Array(TrackerKind.allCases.enumerated()), id: \.element) { index, kind in
+                Section {
+                    TrackerAccountCard(kind: kind)
+                        .padding(.horizontal, -12)
+                        .padding(.vertical, -9)
+                } header: {
+                    if index == 0 { Text("Accounts") }
+                }
+            }
+
+            Section {
+                SettingsRouteLink(route: .advanced(.tracking), summary: nil)
+            }
+                }
             }
         }
-        .omniaNavigationTitle("Tracking")
+        .omniaNavigationTitle(showsAdvanced ? "Advanced" : "Tracking")
         .task {
             for kind in TrackerKind.allCases where TrackerAccountStore.shared.isConnected(kind) {
                 TrackerAccountStore.shared.refreshUsername(kind)

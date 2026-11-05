@@ -37,10 +37,18 @@ struct HomeSettingsView: View {
         heroSourceKeys.count >= HomeLayoutPreferences.heroSourceLimit
     }
 
-    var body: some View {
-        OmniaSettingsForm {
-            heroSection
+    let showsAdvanced: Bool
 
+    init(showsAdvanced: Bool = false) {
+        self.showsAdvanced = showsAdvanced
+    }
+
+    var body: some View {
+        Group {
+            if showsAdvanced {
+                OmniaSettingsForm {
+            heroAdvancedSection
+            backgroundSection
             if !catalogs.isEmpty {
                 Section {
                     Toggle(isOn: preferenceBinding(\.showsCatalogType)) {
@@ -56,15 +64,23 @@ struct HomeSettingsView: View {
                 }
             }
 
+                }
+            } else {
+                OmniaSettingsForm {
+            heroMainSection
             Section {
                 SettingsRouteLink(route: .catalogs, summary: visibleCatalogSummary)
                 SettingsRouteLink(route: .collections, summary: collectionsSummary)
                 SettingsRouteLink(route: .continueWatching, summary: continueWatchingSummary)
-            } header: {
-                Text("On Home")
+            }
+        
+            Section {
+                SettingsRouteLink(route: .advanced(.home), summary: nil)
+            }
+                }
             }
         }
-        .omniaNavigationTitle("Home")
+        .omniaNavigationTitle(showsAdvanced ? "Advanced" : "Home")
     }
 
     private var visibleCatalogSummary: String {
@@ -82,14 +98,30 @@ struct HomeSettingsView: View {
         showsContinueWatching ? "On Home" : "Hidden"
     }
 
-    /// Everything about the hero, in one section.
-    private var heroSection: some View {
+    /// Hero rows that most people change.
+    private var heroMainSection: some View {
         Section {
             if !catalogs.isEmpty {
                 Toggle(isOn: preferenceBinding(\.showsHero)) {
                     settingLabel("Show Hero", detail: "Display the featured carousel at the top of Home.")
                 }
                 .settingsRow("Show Hero")
+            }
+            Toggle(isOn: settings.binding(\.heroTrailer.autoplay)) {
+                settingLabel(
+                    "Hero Trailer Playback",
+                    detail: "Autoplay trailers in the hero. While one plays, the hero stays on its title."
+                )
+            }
+            .settingsRow("Hero Trailer Playback")
+        } footer: {
+            Text("The hero shows up to \(HomeLayoutPreferences.heroItemLimit) titles from its catalogs.")
+        }
+    }
+
+    private var heroAdvancedSection: some View {
+        Section {
+            if !catalogs.isEmpty {
                 SettingsDropdown(
                     "Hero Style",
                     subtitle: homeLayout.preferences.heroStyle.detail,
@@ -126,8 +158,7 @@ struct HomeSettingsView: View {
                 )
             }
             .settingsRow("Auto-Advance")
-            if settings.preferences.heroTrailer.autoAdvance {
-Group {
+                if settings.preferences.heroTrailer.autoAdvance {
                 SettingsDropdown(
                     "Title Duration",
                     subtitle: "How long a title stays in the hero when no trailer is playing.",
@@ -135,18 +166,10 @@ Group {
                     options: Array(HeroTrailerPreferences.intervalRange)
                 ) { "\($0) s" }
                 .settingsRow("Title Duration")
-            }
-.settingsDependentRows()
-}
-            Toggle(isOn: settings.binding(\.heroTrailer.autoplay)) {
-                settingLabel(
-                    "Hero Trailer Playback",
-                    detail: "Autoplay trailers in the hero. While one plays, the hero stays on its title."
-                )
-            }
-            .settingsRow("Hero Trailer Playback")
-            if settings.preferences.heroTrailer.autoplay {
-Group {
+                        .settingsDependentRows()
+                }
+                if settings.preferences.heroTrailer.autoplay {
+                    Group {
                 Toggle(isOn: settings.binding(\.heroTrailer.startsWithSound)) {
                     settingLabel(
                         "Start with Sound",
@@ -168,11 +191,18 @@ Group {
                     options: HeroTrailerEndAction.allCases
                 ) { $0.title }
                 .settingsRow("After Trailer")
-            }
-.settingsDependentRows()
-}
+                    }
+                    .settingsDependentRows()
+                }
             }
             .disabled(!homeLayout.preferences.showsHero)
+        } header: {
+            Text("Hero")
+        }
+    }
+
+    private var backgroundSection: some View {
+        Section {
             Toggle(isOn: Binding(
                 get: { homeLayout.preferences.dynamicBackground },
                 set: { enabled in homeLayout.update { $0.dynamicBackground = enabled } }
@@ -185,21 +215,21 @@ Group {
             }
             .settingsRow("Gradient Overlay")
             if settings.preferences.display.heroBlend.isEnabled {
-Group {
+                Group {
                 SettingsDeferredSlider(title: "Overlay Strength", value: settings.binding(\.display.heroBlend.strength), range: 0.2 ... 1)
                 .settingsRow("Overlay Strength")
                 SettingsDeferredSlider(title: "Overlay Height", value: settings.binding(\.display.heroBlend.height), range: 0.2 ... 1)
                 .settingsRow("Overlay Height")
-            }
-.settingsDependentRows()
-}
-        } header: {
-            SettingsSectionHeader("Hero", resetTitle: "Reset Overlay", canReset: !(settings.preferences.display.heroBlend == HeroBlendPreferences())) {
+                }
+                .settingsDependentRows()
+                Button("Reset Overlay") {
                     settings.update { $0.display.heroBlend = HeroBlendPreferences() }
-
+                }
+                .settingsRow("Reset Overlay")
+                .disabled(settings.preferences.display.heroBlend == HeroBlendPreferences())
             }
-        } footer: {
-            Text("The hero shows up to \(HomeLayoutPreferences.heroItemLimit) titles from its catalogs.")
+        } header: {
+            Text("Background")
         }
     }
 
@@ -251,26 +281,28 @@ struct DetailPageSettingsView: View {
     @Environment(SettingsPreferencesStore.self) private var settings
     @State private var draggedSection: DetailSection?
 
+    let showsAdvanced: Bool
+
+    init(showsAdvanced: Bool = false) {
+        self.showsAdvanced = showsAdvanced
+    }
+
     var body: some View {
-        OmniaSettingsForm {
+        Group {
+            if showsAdvanced {
+                OmniaSettingsForm {
             Section {
-                SettingsDropdown(
-                    "Page Background",
-                    selection: settings.binding(\.display.detailBackground),
-                    options: Array(DetailBackgroundMode.allCases)
-                ) { mode in mode.title }
-                .settingsRow("Page Background")
                 Toggle(isOn: settings.binding(\.display.posterTransition)) {
                     Text("Poster Transition")
                     Text("Animate from a poster into its title page.")
                 }
                 .settingsRow("Poster Transition")
-            } header: {
-                Text("Page")
-            } footer: {
-                Text("Artwork Color tints the page with the title's artwork.")
+                Toggle(isOn: settings.binding(\.display.episodeShuffleAvailable)) {
+                    Text("Shuffle")
+                    Text("Shuffle episodes from any series. Turning this off pauses shuffle.")
+                }
+                .settingsRow("Shuffle")
             }
-
             Section {
                 SettingsStyleTilePicker(
                     options: EpisodeCardLayout.allCases,
@@ -280,22 +312,11 @@ struct DetailPageSettingsView: View {
                 ) { layout in
                     EpisodeCardLayoutPreview(layout: layout)
                 }
-                Toggle(isOn: settings.binding(\.display.blurUnwatchedEpisodes)) {
-                    Text("Blur Unwatched Episodes")
-                    Text("Hide the stills of episodes you haven't watched or started, to avoid spoilers.")
-                }
-                .settingsRow("Blur Unwatched Episodes")
-                Toggle(isOn: settings.binding(\.display.episodeShuffleAvailable)) {
-                    Text("Shuffle")
-                    Text("Shuffle episodes from any series. Turning this off pauses shuffle.")
-                }
-                .settingsRow("Shuffle")
             } header: {
                 Text("Episode Cards")
             } footer: {
                 Text("Choose how episodes are drawn on a show's page.")
             }
-
             Section {
                 ForEach(Array(sectionOrder.enumerated()), id: \.element) { index, section in
                     sectionRow(section, index: index)
@@ -305,8 +326,32 @@ struct DetailPageSettingsView: View {
             } footer: {
                 Text("Drag to reorder. Turned-off sections are left out.")
             }
+        
+                }
+            } else {
+                OmniaSettingsForm {
+            Section {
+                SettingsDropdown(
+                    "Page Background",
+                    selection: settings.binding(\.display.detailBackground),
+                    options: Array(DetailBackgroundMode.allCases)
+                ) { mode in mode.title }
+                .settingsRow("Page Background")
+                Toggle(isOn: settings.binding(\.display.blurUnwatchedEpisodes)) {
+                    Text("Blur Unwatched Episodes")
+                    Text("Hide the stills of episodes you haven't watched or started, to avoid spoilers.")
+                }
+                .settingsRow("Blur Unwatched Episodes")
+            } footer: {
+                Text("Artwork Color tints the page with the title's artwork.")
+            }
+            Section {
+                SettingsRouteLink(route: .advanced(.detailPage), summary: nil)
+            }
+                }
+            }
         }
-        .omniaNavigationTitle("Title Page")
+        .omniaNavigationTitle(showsAdvanced ? "Advanced" : "Title Page")
     }
 
     private var sectionOrder: [DetailSection] {

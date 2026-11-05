@@ -10,12 +10,14 @@ import SwiftUI
 /// 2026-10-27). The order set here is the order sources are listed, the
 /// first one auto-play picks, and the order failed sources are replaced in.
 struct StreamSortingSections: View {
+    let advanced: Bool
     @Environment(SettingsPreferencesStore.self) private var settings
 
     private var sorting: StreamSortPreferences { settings.preferences.playbackBehavior.streamSorting }
 
     var body: some View {
         Group {
+            if advanced {
             Section {
                 Picker(selection: settings.binding(\.playbackBehavior.streamSorting.profile)) {
                     ForEach(StreamSortProfile.allCases) { profile in
@@ -32,25 +34,12 @@ struct StreamSortingSections: View {
                 }
                 .pickerStyle(.inline)
                 .labelsHidden()
-
-                Toggle(isOn: settings.binding(\.playbackBehavior.streamSorting.cachedFirst)) {
-                    Text("Ready Debrid Links First")
-                    Text("Sources your debrid service already has (⚡, [RD+]) before ones it would still have to download (⏳).")
-                }
-                .settingsRow("Ready Debrid Links First")
             } header: {
-                Text("Sorting")
+                Text("Picking a Source")
             } footer: {
                 Text("Sorting reads each source's name, such as 2160p, REMUX, HDR, DV, Atmos, HEVC and its size. Equal sources keep their add-on's order.")
             }
-
             Section {
-                SettingsDropdown(
-                    "Minimum Resolution",
-                    selection: settings.binding(\.playbackBehavior.streamSorting.minimumResolution),
-                    options: StreamSortPreferences.minimumResolutionOptions
-                ) { value in value == 0 ? "Any" : "\(value)p" }
-                .settingsRow("Minimum Resolution")
                 SettingsDropdown(
                     "HDR",
                     selection: settings.binding(\.playbackBehavior.streamSorting.hdr),
@@ -81,6 +70,22 @@ struct StreamSortingSections: View {
                         settings.update { $0.playbackBehavior.streamSorting = StreamSortPreferences() }
                     }
                 }
+            }
+        
+            } else {
+            Section {
+                SettingsDropdown(
+                    "Minimum Resolution",
+                    selection: settings.binding(\.playbackBehavior.streamSorting.minimumResolution),
+                    options: StreamSortPreferences.minimumResolutionOptions
+                ) { value in value == 0 ? "Any" : "\(value)p" }
+                .settingsRow("Minimum Resolution")
+                Toggle(isOn: settings.binding(\.playbackBehavior.streamSorting.cachedFirst)) {
+                    Text("Ready Debrid Links First")
+                    Text("Sources your debrid service already has (⚡, [RD+]) before ones it would still have to download (⏳).")
+                }
+                .settingsRow("Ready Debrid Links First")
+            }
             }
         }
     }

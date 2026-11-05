@@ -75,10 +75,16 @@ struct AddonsSettingsView: View {
     @State private var detailAddonID: String?
     @State private var refreshingAddonIDs: Set<String> = []
 
-    var body: some View {
-        @Bindable var store = store
+    let showsAdvanced: Bool
 
-        OmniaSettingsForm {
+    init(showsAdvanced: Bool = false) {
+        self.showsAdvanced = showsAdvanced
+    }
+
+    var body: some View {
+        Group {
+            if showsAdvanced {
+                OmniaSettingsForm {
             Section {
                 SettingsDropdown(
                     "Request timeout",
@@ -90,6 +96,25 @@ struct AddonsSettingsView: View {
                 Text("Omnia cancels an add-on request when this limit is reached.")
             }
 
+            Section {
+                Button("Export Add-ons", systemImage: "square.and.arrow.up") { prepareExport() }
+                .settingsRow("Export Add-ons")
+                    .disabled(store.installedAddons.isEmpty)
+                Button("Import Add-ons", systemImage: "square.and.arrow.down") { showsImporter = true }
+                .settingsRow("Import Add-ons")
+                if let importedDocument {
+                    LabeledContent("Ready to import", value: "\(importedDocument.addons.count) add-ons")
+                    Button("Install Reviewed Add-ons") { applyImport(importedDocument) }
+                }
+            } header: {
+                Text("Backup")
+            } footer: {
+                Text("Private configured manifest addresses are excluded from exports. Imports are reviewed before installation.")
+            }
+
+                }
+            } else {
+                OmniaSettingsForm {
             AddAddonSection(timeout: settings.preferences.addonTimeout)
 
             if !store.installedAddonRestoreIssues.isEmpty {
@@ -190,27 +215,17 @@ struct AddonsSettingsView: View {
                 }
             }
 
-            Section {
-                Button("Export Add-ons", systemImage: "square.and.arrow.up") { prepareExport() }
-                .settingsRow("Export Add-ons")
-                    .disabled(store.installedAddons.isEmpty)
-                Button("Import Add-ons", systemImage: "square.and.arrow.down") { showsImporter = true }
-                .settingsRow("Import Add-ons")
-                if let importedDocument {
-                    LabeledContent("Ready to import", value: "\(importedDocument.addons.count) add-ons")
-                    Button("Install Reviewed Add-ons") { applyImport(importedDocument) }
-                }
-            } header: {
-                Text("Backup")
-            } footer: {
-                Text("Private configured manifest addresses are excluded from exports. Imports are reviewed before installation.")
-            }
-
             if let statusMessage {
                 Section { Text(statusMessage).foregroundStyle(.secondary) }
             }
+        
+            Section {
+                SettingsRouteLink(route: .advanced(.addons), summary: nil)
+            }
+                }
+            }
         }
-        .omniaNavigationTitle("Add-ons")
+        .omniaNavigationTitle(showsAdvanced ? "Advanced" : "Add-ons")
         .navigationDestination(item: $detailAddonID) { addonID in
             AddonDetailView(addonID: addonID)
         }

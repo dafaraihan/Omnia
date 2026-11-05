@@ -12,46 +12,17 @@ struct VideoPlayerSettingsView: View {
         settings.preferences.playbackBehavior
     }
 
-    var body: some View {
-        OmniaSettingsForm {
-            Section {
-                Toggle("Play Continue Watching Directly", isOn: settings.binding(\.directContinueWatchingPlayback))
-                .settingsRow("Play Continue Watching Directly")
-                Toggle(isOn: settings.binding(\.compatibleFormatsOnly)) {
-                    Text("Show Only Compatible Formats")
-                    Text("Hides web pages and sources Omnia can't play from the source list.")
-                }
-                .settingsRow("Show Only Compatible Formats")
-                NavigationLink {
-                    SettingsDestinationView(route: .playbackResolver)
-                } label: {
-                    LabeledContent("Local Playback Resolver", value: resolverSummary)
-                }
-                .settingsLinkRow()
-                NavigationLink {
-                    SettingsDestinationView(route: .playbackDiagnostics)
-                } label: {
-                    LabeledContent("Diagnostics", value: "Recent playback failures")
-                }
-                .settingsLinkRow()
-            } header: {
-                Text("Sources")
-            }
+    let showsAdvanced: Bool
 
+    init(showsAdvanced: Bool = false) {
+        self.showsAdvanced = showsAdvanced
+    }
+
+    var body: some View {
+        Group {
+            if showsAdvanced {
+                OmniaSettingsForm {
             Section {
-                Toggle("Autoplay Next Episode", isOn: settings.binding(\.autoplayNextEpisode))
-                .settingsRow("Autoplay Next Episode")
-                if settings.preferences.autoplayNextEpisode {
-Group {
-                    Toggle(isOn: settings.binding(\.playbackBehavior.nextEpisodeFallbackToAnySource)) {
-                        Text("Fall Back to Any Source")
-                        Text("When no source from the same release is found, play the first available one.")
-                    }
-                    .settingsRow("Fall Back to Any Source")
-                    .disabled(!behavior.preferBingeGroup)
-                }
-.settingsDependentRows()
-}
                 SettingsDropdown(
                     "Show Up Next",
                     selection: settings.binding(\.playbackBehavior.nextEpisodeThresholdMode),
@@ -79,18 +50,23 @@ Group {
                     Text("Looks up the next episode's sources shortly before Up Next appears.")
                 }
                 .settingsRow("Preload Next Episode Sources")
+                if settings.preferences.autoplayNextEpisode {
+Group {
+                    Toggle(isOn: settings.binding(\.playbackBehavior.nextEpisodeFallbackToAnySource)) {
+                        Text("Fall Back to Any Source")
+                        Text("When no source from the same release is found, play the first available one.")
+                    }
+                    .settingsRow("Fall Back to Any Source")
+                    .disabled(!behavior.preferBingeGroup)
+                }
+.settingsDependentRows()
+}
             } header: {
-                Text("Next Episode")
+                Text("Up Next")
             } footer: {
                 Text("The threshold is used when a title has no credits timestamp.")
             }
-
             Section {
-                Toggle(isOn: settings.binding(\.showSkipIntro)) {
-                    Text("Skip Intro, Recap and Credits")
-                    Text("Shows a Skip button using timestamps from IntroDB.")
-                }
-                .settingsRow("Skip Intro, Recap and Credits")
                 ForEach(PlaybackBehaviorPreferences.autoSkipKinds, id: \.self) { kind in
                     Toggle("Skip \(kind.settingsTitle) Automatically", isOn: autoSkipBinding(kind))
                 }
@@ -103,35 +79,8 @@ Group {
                 }
             } header: {
                 Text("Skip Segments")
-            } footer: {
-                Text("Omnia only reads timestamp data. It does not upload playback activity or edit IntroDB records.")
             }
-
             Section {
-                LabeledContent("Default player", value: "Omnia (in-app)")
-                #if OMNIA_MPV
-                LabeledContent("Playback engine", value: "libmpv")
-                #else
-                LabeledContent("Playback engine", value: "AVPlayer")
-                #endif
-                SettingsRouteLink(route: .battery, summary: "Decoder and rendering")
-            } header: {
-                Text("Engine")
-            }
-
-            #if os(macOS)
-            Section("Full Screen") {
-                Toggle(isOn: settings.binding(\.playbackBehavior.usesWholeScreen)) {
-                    Text("Use Whole Screen")
-                    Text("Video also covers the strip beside the camera notch. Full screen then stays in the current Space instead of opening its own. Applies from the next video.")
-                }
-                .settingsRow("Use Whole Screen")
-            }
-            #endif
-
-            Section("Audio") {
-                LanguagePicker("Preferred audio", selection: settings.binding(\.preferredAudioLanguage), includesNone: false)
-                .settingsRow("Preferred audio")
                 LanguagePicker("Audio fallback", selection: settings.binding(\.audioFallbackLanguage), includesNone: true)
                 .settingsRow("Audio fallback")
                 SettingsDropdown(
@@ -146,10 +95,77 @@ Group {
                     }
                 }
                 .settingsRow("Anime audio")
+            } header: {
+                Text("Audio")
             }
-
+            Section {
+                Toggle(isOn: settings.binding(\.compatibleFormatsOnly)) {
+                    Text("Show Only Compatible Formats")
+                    Text("Hides web pages and sources Omnia can't play from the source list.")
+                }
+                .settingsRow("Show Only Compatible Formats")
+                #if os(macOS)
+                Toggle(isOn: settings.binding(\.playbackBehavior.usesWholeScreen)) {
+                    Text("Use Whole Screen")
+                    Text("Video also covers the strip beside the camera notch. Full screen then stays in the current Space instead of opening its own. Applies from the next video.")
+                }
+                .settingsRow("Use Whole Screen")
+                #endif
+            } header: {
+                Text("Video")
+            }
+            Section {
+                NavigationLink {
+                    SettingsDestinationView(route: .playbackResolver)
+                } label: {
+                    LabeledContent("Cache and Sharing", value: resolverSummary)
+                }
+                .settingsLinkRow()
+                NavigationLink {
+                    SettingsDestinationView(route: .playbackDiagnostics)
+                } label: {
+                    LabeledContent("Diagnostics", value: "Recent playback failures")
+                }
+                .settingsLinkRow()
+                LabeledContent("Default player", value: "Omnia (in-app)")
+                #if OMNIA_MPV
+                LabeledContent("Playback engine", value: "libmpv")
+                #else
+                LabeledContent("Playback engine", value: "AVPlayer")
+                #endif
+            } header: {
+                Text("More")
+            }
+                }
+            } else {
+                OmniaSettingsForm {
+            Section {
+                Toggle("Autoplay Next Episode", isOn: settings.binding(\.autoplayNextEpisode))
+                .settingsRow("Autoplay Next Episode")
+                Toggle(isOn: settings.binding(\.showSkipIntro)) {
+                    Text("Skip Intro, Recap and Credits")
+                    Text("Shows a Skip button using timestamps from IntroDB.")
+                }
+                .settingsRow("Skip Intro, Recap and Credits")
+                LanguagePicker("Preferred audio", selection: settings.binding(\.preferredAudioLanguage), includesNone: false)
+                .settingsRow("Preferred audio")
+                Toggle("Play Continue Watching Directly", isOn: settings.binding(\.directContinueWatchingPlayback))
+                .settingsRow("Play Continue Watching Directly")
+            } footer: {
+                Text("Skip uses timestamps from IntroDB. Omnia only reads them.")
+            }
+            Section {
+                SettingsRouteLink(route: .playerControls, summary: nil)
+                SettingsRouteLink(route: .subtitle, summary: settings.preferences.subtitlesEnabled ? "On" : "Off")
+                SettingsRouteLink(route: .streams, summary: settings.preferences.playbackBehavior.autoSelectionMode.title)
+            }
+            Section {
+                SettingsRouteLink(route: .advanced(.videoPlayer), summary: nil)
+            }
+                }
+            }
         }
-        .omniaNavigationTitle("Playback")
+        .omniaNavigationTitle(showsAdvanced ? "Advanced" : "Player")
     }
 
     private var resolverSummary: String {
@@ -183,6 +199,7 @@ Group {
 /// groups.
 /// Streams › Selection: how Omnia picks a source.
 struct StreamSelectionSections: View {
+    let advanced: Bool
     @Binding var confirmsForget: Bool
     @Environment(SettingsPreferencesStore.self) private var settings
     @Environment(OmniaStore.self) private var store
@@ -202,8 +219,8 @@ struct StreamSelectionSections: View {
 
     var body: some View {
         Group {
-            StreamSortingSections()
-
+            if advanced {
+                StreamSortingSections(advanced: true)
             Section {
                 Toggle(isOn: settings.binding(\.playbackBehavior.reuseLastLink)) {
                     Text("Reuse Last Link")
@@ -221,59 +238,6 @@ struct StreamSelectionSections: View {
                 Text("Last Link")
             } footer: {
                 Text("Links that expire or fail to play are never reused.")
-            }
-
-            Section {
-                SettingsDropdown(
-                    "Auto-play",
-                    selection: settings.binding(\.playbackBehavior.autoSelectionMode),
-                    options: Array(AutoStreamSelectionMode.allCases)
-                ) { mode in mode.title }
-                .settingsRow("Auto-play")
-                if behavior.autoSelectionMode == .regexMatch {
-Group {
-                    TextField("Regex Pattern", text: settings.binding(\.playbackBehavior.autoSelectionRegex), prompt: Text("(2160p|4k|1080p)"))
-                        .font(.body.monospaced())
-                        .autocorrectionDisabled()
-                        #if os(iOS)
-                        .textInputAutocapitalization(.never)
-                        #endif
-                    Menu("Insert a Preset") {
-                        ForEach(StreamRegexPreset.all) { preset in
-                            Button(preset.title) {
-                                settings.update { $0.playbackBehavior.autoSelectionRegex = preset.pattern }
-                            }
-                        }
-                    }
-                    if let problem = regexProblem {
-                        Label(problem, systemImage: "exclamationmark.triangle")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
-                    }
-                }
-.settingsDependentRows()
-}
-                if behavior.autoSelectionMode != .manual {
-Group {
-                    SettingsDropdown(
-                        "Wait for Add-ons",
-                        selection: settings.binding(\.playbackBehavior.selectionTimeoutSeconds),
-                        options: Array(StreamSelectionTimeout.options)
-                    ) { seconds in StreamSelectionTimeout.title(seconds) }
-                    .settingsRow("Wait for Add-ons")
-                    SettingsDropdown(
-                        "Pick From",
-                        selection: settings.binding(\.playbackBehavior.selectionScope),
-                        options: Array(AutoStreamSelectionScope.allCases)
-                    ) { scope in scope.title }
-                    .settingsRow("Pick From")
-                }
-.settingsDependentRows()
-}
-            } header: {
-                Text("Auto Stream Selection")
-            } footer: {
-                Text(modeFooter)
             }
 
             if behavior.autoSelectionMode != .manual, behavior.selectionScope != .pluginsOnly, !streamAddons.isEmpty {
@@ -329,6 +293,63 @@ Group {
                     confirmsForget = true
                 }
                 .settingsRow("Forget Saved Links and Releases")
+            }
+        
+            } else {
+                StreamSortingSections(advanced: false)
+            Section {
+                SettingsDropdown(
+                    "Auto-play",
+                    selection: settings.binding(\.playbackBehavior.autoSelectionMode),
+                    options: Array(AutoStreamSelectionMode.allCases)
+                ) { mode in mode.title }
+                .settingsRow("Auto-play")
+                if behavior.autoSelectionMode == .regexMatch {
+Group {
+                    TextField("Regex Pattern", text: settings.binding(\.playbackBehavior.autoSelectionRegex), prompt: Text("(2160p|4k|1080p)"))
+                        .font(.body.monospaced())
+                        .autocorrectionDisabled()
+                        #if os(iOS)
+                        .textInputAutocapitalization(.never)
+                        #endif
+                    Menu("Insert a Preset") {
+                        ForEach(StreamRegexPreset.all) { preset in
+                            Button(preset.title) {
+                                settings.update { $0.playbackBehavior.autoSelectionRegex = preset.pattern }
+                            }
+                        }
+                    }
+                    if let problem = regexProblem {
+                        Label(problem, systemImage: "exclamationmark.triangle")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                }
+.settingsDependentRows()
+}
+                if behavior.autoSelectionMode != .manual {
+Group {
+                    SettingsDropdown(
+                        "Wait for Add-ons",
+                        selection: settings.binding(\.playbackBehavior.selectionTimeoutSeconds),
+                        options: Array(StreamSelectionTimeout.options)
+                    ) { seconds in StreamSelectionTimeout.title(seconds) }
+                    .settingsRow("Wait for Add-ons")
+                    SettingsDropdown(
+                        "Pick From",
+                        selection: settings.binding(\.playbackBehavior.selectionScope),
+                        options: Array(AutoStreamSelectionScope.allCases)
+                    ) { scope in scope.title }
+                    .settingsRow("Pick From")
+                }
+.settingsDependentRows()
+}
+            } header: {
+                Text("Auto Stream Selection")
+            } footer: {
+                Text(modeFooter)
+            }
+
             }
         }
     }

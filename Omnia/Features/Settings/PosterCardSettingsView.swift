@@ -5,8 +5,6 @@ import SwiftUI
 struct PosterCardSettingsView: View {
     @Environment(SettingsPreferencesStore.self) private var settings
     @State private var posterPatternDraft = ""
-    @State private var showsAdvanced = false
-    @Environment(\.settingsFocusRow) private var focusRow
 
     private var display: DisplayPreferences { settings.preferences.display }
 
@@ -14,33 +12,24 @@ struct PosterCardSettingsView: View {
         posterPatternDraft.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    let showsAdvanced: Bool
+
+    init(showsAdvanced: Bool = false) {
+        self.showsAdvanced = showsAdvanced
+    }
+
     var body: some View {
-        OmniaSettingsForm {
+        Group {
+            if showsAdvanced {
+                OmniaSettingsForm {
             Section {
-                SettingsDropdown(
-                    "Size",
-                    selection: settings.binding(\.display.posterWidth),
-                    options: Array(PosterWidthPreset.allCases)
-                ) { preset in "\(preset.title) (\(Int(preset.width)) pt)" }
-                .settingsRow("Size")
-                SettingsDropdown(
-                    "Corners",
-                    selection: settings.binding(\.display.posterCorner),
-                    options: Array(PosterCornerPreset.allCases)
-                ) { preset in preset.title }
-                .settingsRow("Corners")
-                Toggle(isOn: settings.binding(\.display.landscapePosters)) {
-                    Text("Landscape Posters")
-                    Text("Show backdrops with the title logo instead of portrait posters.")
+                Toggle(isOn: settings.binding(\.display.sharesCardStyles)) {
+                    Text("Same Style on All Devices")
+                    Text("Off, this \(OmniaDevice.name) keeps its own card styles, since a size that suits a Mac can be too big for an iPhone.")
                 }
-                .settingsRow("Landscape Posters")
-                Toggle(isOn: settings.binding(\.showMediaCardLabels)) {
-                    Text("Show Details Under Posters")
-                    Text("Shows each title, release year, and primary genre below standard posters.")
-                }
-                .settingsRow("Show Details Under Posters")
+                .settingsRow("Same Style on All Devices")
             } header: {
-                SettingsSectionHeader("Poster Card Style", resetTitle: "Reset Poster Cards", canReset: true) {
+                SettingsSectionHeader("Style", resetTitle: "Reset Poster Cards", canReset: true) {
                     settings.update {
                         let defaults = DisplayPreferences.default
                         $0.display.posterWidth = defaults.posterWidth
@@ -51,29 +40,12 @@ struct PosterCardSettingsView: View {
                     }
 
                 }
-            }
-
-            Section {
-                Toggle(isOn: settings.binding(\.display.sharesCardStyles)) {
-                    Text("Same Style on All Devices")
-                    Text("Off, this \(OmniaDevice.name) keeps its own card styles, since a size that suits a Mac can be too big for an iPhone.")
-                }
-                .settingsRow("Same Style on All Devices")
             } footer: {
                 Text("Every card shown in portrait uses this page. Landscape cards take their size and corners from Landscape Card Style.")
             }
 
             customPosterSourceSection
 
-            Section {
-                DisclosureGroup("Advanced", isExpanded: $showsAdvanced) {
-                    EmptyView()
-                }
-            } footer: {
-                Text("Card Depth and Hover Glow.")
-            }
-
-            if showsAdvanced {
             Section {
                 Toggle("Card Depth Effect", isOn: settings.binding(\.display.cardDepth.isEnabled))
                 .settingsRow("Card Depth Effect")
@@ -188,16 +160,46 @@ struct PosterCardSettingsView: View {
             }
             }
 
+            
+                }
+            } else {
+                OmniaSettingsForm {
+            Section {
+                SettingsDropdown(
+                    "Size",
+                    selection: settings.binding(\.display.posterWidth),
+                    options: Array(PosterWidthPreset.allCases)
+                ) { preset in "\(preset.title) (\(Int(preset.width)) pt)" }
+                .settingsRow("Size")
+                SettingsDropdown(
+                    "Corners",
+                    selection: settings.binding(\.display.posterCorner),
+                    options: Array(PosterCornerPreset.allCases)
+                ) { preset in preset.title }
+                .settingsRow("Corners")
+                Toggle(isOn: settings.binding(\.display.landscapePosters)) {
+                    Text("Landscape Posters")
+                    Text("Show backdrops with the title logo instead of portrait posters.")
+                }
+                .settingsRow("Landscape Posters")
+                Toggle(isOn: settings.binding(\.showMediaCardLabels)) {
+                    Text("Show Details Under Posters")
+                    Text("Shows each title, release year, and primary genre below standard posters.")
+                }
+                .settingsRow("Show Details Under Posters")
             }
 
-        }
+            Section {
+                SettingsRouteLink(route: .advanced(.posterCards), summary: nil)
+            }
+                }
         .settingsPinnedPreview {
             PosterCardPreview(display: display)
                 .frame(maxWidth: .infinity)
         }
-        .omniaNavigationTitle("Cards")
-        // A search result may be one of the Advanced options.
-        .onAppear { if focusRow != nil { showsAdvanced = true } }
+            }
+        }
+        .omniaNavigationTitle(showsAdvanced ? "Advanced" : "Poster Card Style")
         .onAppear { posterPatternDraft = display.customPosterURLPattern }
     }
 

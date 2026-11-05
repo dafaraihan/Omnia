@@ -11,31 +11,21 @@ import SwiftUI
 /// every value here.
 struct ContinueWatchingSettingsView: View {
     @Environment(SettingsPreferencesStore.self) private var settings
-    @Environment(OmniaAccount.self) private var account
     @AppStorage(HomeView.continueWatchingVisibilityKey) private var showsContinueWatching = true
     /// Read by OmniaStore when it decides a title is finished.
     @AppStorage("playback-completion-threshold") private var completionThreshold = 95
 
-    var body: some View {
-        OmniaSettingsForm {
-            Section {
-                SettingsRouteLink(
-                    route: .landscapeCards,
-                    summary: settings.preferences.display.continueWatchingCard.size.title
-                )
-            } header: {
-                Text("Card Style")
-            }
+    let showsAdvanced: Bool
 
+    init(showsAdvanced: Bool = false) {
+        self.showsAdvanced = showsAdvanced
+    }
+
+    var body: some View {
+        Group {
+            if showsAdvanced {
+                OmniaSettingsForm {
             Section {
-                Toggle("Show on Home", isOn: $showsContinueWatching)
-                .settingsRow("Show on Home")
-                SettingsDropdown(
-                    "Sort By",
-                    selection: settings.binding(\.display.continueWatchingSort),
-                    options: Array(ContinueWatchingSort.allCases)
-                ) { sort in sort.title }
-                .settingsRow("Sort By")
                 SettingsDropdown(
                     "Artwork",
                     selection: settings.binding(\.display.continueWatchingArtwork),
@@ -47,12 +37,17 @@ struct ContinueWatchingSettingsView: View {
                     Text("Cards for shows use the episode's still instead of the show's backdrop.")
                 }
                 .settingsRow("Episode Thumbnails")
+                Toggle(isOn: settings.binding(\.display.blursNextUp)) {
+                    Text("Blur Unwatched in Continue Watching")
+                    Text("Blurs next-up episode stills so they don't spoil the episode.")
+                }
+                .settingsRow("Blur Unwatched in Continue Watching")
+                .disabled(!settings.preferences.display.continueWatchingEpisodeThumbnails)
             } header: {
-                Text("Row")
+                Text("Cards")
             } footer: {
                 Text("Paused Scene shows the frame where you stopped.")
             }
-
             Section {
                 Toggle(isOn: settings.binding(\.display.nextUpFromFurthestEpisode)) {
                     Text("Next Up From Furthest Episode")
@@ -64,27 +59,6 @@ struct ContinueWatchingSettingsView: View {
                     Text("Keeps a show in the row when its next episode hasn't aired yet.")
                 }
                 .settingsRow("Show Unaired Next Up Episodes")
-                Toggle(isOn: settings.binding(\.display.blursNextUp)) {
-                    Text("Blur Unwatched in Continue Watching")
-                    Text("Blurs next-up episode stills so they don't spoil the episode.")
-                }
-                .settingsRow("Blur Unwatched in Continue Watching")
-                .disabled(!settings.preferences.display.continueWatchingEpisodeThumbnails)
-            } header: {
-                Text("Next Up Behavior")
-            }
-
-            Section {
-                Toggle(isOn: settings.binding(\.display.resumePromptOnLaunch)) {
-                    Text("Resume Prompt on Launch")
-                    Text("When Omnia was closed during playback, offers to continue where you left off the next time it opens.")
-                }
-                .settingsRow("Resume Prompt on Launch")
-            } header: {
-                Text("On Launch")
-            }
-
-            Section {
                 SettingsDropdown(
                     "Finished At",
                     selection: $completionThreshold,
@@ -99,19 +73,40 @@ struct ContinueWatchingSettingsView: View {
                 }
                 .settingsRow("Finished At")
             } header: {
-                Text("Behavior")
+                Text("Next Up")
             } footer: {
                 Text("A title leaves the row once you've watched past this point.")
             }
-
             Section {
-                SettingsRouteLink(route: .progress, summary: account.storageSummary)
-            } header: {
-                Text("Progress")
-            } footer: {
-                Text("How many items the row holds, backups of your progress and watchlist, and clearing them.")
+                Toggle(isOn: settings.binding(\.display.resumePromptOnLaunch)) {
+                    Text("Resume Prompt on Launch")
+                    Text("When Omnia was closed during playback, offers to continue where you left off the next time it opens.")
+                }
+                .settingsRow("Resume Prompt on Launch")
+            }
+                }
+            } else {
+                OmniaSettingsForm {
+            Section {
+                Toggle("Show on Home", isOn: $showsContinueWatching)
+                .settingsRow("Show on Home")
+                SettingsDropdown(
+                    "Sort By",
+                    selection: settings.binding(\.display.continueWatchingSort),
+                    options: Array(ContinueWatchingSort.allCases)
+                ) { sort in sort.title }
+                .settingsRow("Sort By")
+                SettingsRouteLink(
+                    route: .landscapeCards,
+                    summary: settings.preferences.display.continueWatchingCard.size.title
+                )
+            }
+            Section {
+                SettingsRouteLink(route: .advanced(.continueWatching), summary: nil)
+            }
+                }
             }
         }
-        .omniaNavigationTitle("Continue Watching")
+        .omniaNavigationTitle(showsAdvanced ? "Advanced" : "Continue Watching")
     }
 }

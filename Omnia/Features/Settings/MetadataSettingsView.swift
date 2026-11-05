@@ -9,26 +9,16 @@ struct MetadataSettingsView: View {
     /// Bumped when a key is saved or removed, so Saved / Not set follows.
     @State private var keyChanges = 0
 
-    var body: some View {
-        OmniaSettingsForm {
-            AccountBackupNotice()
-            // Every user adds their own keys; nothing TMDB or TVDB is built
-            // in. These open the same pages as Metadata Sources › Providers.
-            Section {
-                ForEach(["tmdb", "tvdb", "fanart"], id: \.self) { id in
-                    IntegrationLinkRow(
-                        route: .metadataProvider(id),
-                        providerID: id,
-                        title: "\(MetadataProvider.supported.first { $0.id == id }?.name ?? id) API Key",
-                        detail: keyStatus(id)
-                    )
-                }
-            } header: {
-                Text("API Keys")
-            } footer: {
-                Text("Your own free TMDB and TVDB keys unlock artwork, logos, details and search beyond your add-ons; fanart.tv adds textless posters for the iPhone's hero. Keys stay in this device's Keychain and, when you're signed in, in your account's encrypted vault.")
-            }
+    let showsAdvanced: Bool
 
+    init(showsAdvanced: Bool = false) {
+        self.showsAdvanced = showsAdvanced
+    }
+
+    var body: some View {
+        Group {
+            if showsAdvanced {
+                OmniaSettingsForm {
             Section {
                 IntegrationLinkRow(
                     route: .tmdbEnrichment,
@@ -55,7 +45,7 @@ struct MetadataSettingsView: View {
                     detail: mdblistSummary
                 )
             } header: {
-                Text("Integrations")
+                Text("Fill In Missing Details")
             }
 
             Section {
@@ -70,8 +60,35 @@ struct MetadataSettingsView: View {
             } footer: {
                 Text("Add-ons describe the titles they list. Metadata Sources choose TMDB, TVDB, AniList, Kitsu or MyAnimeList for Omnia's built-in rows and fill in titles no add-on describes.")
             }
+        
+                }
+            } else {
+                OmniaSettingsForm {
+            AccountBackupNotice()
+            // Every user adds their own keys; nothing TMDB or TVDB is built
+            // in. These open the same pages as Metadata Sources › Providers.
+            Section {
+                ForEach(["tmdb", "tvdb", "fanart"], id: \.self) { id in
+                    IntegrationLinkRow(
+                        route: .metadataProvider(id),
+                        providerID: id,
+                        title: "\(MetadataProvider.supported.first { $0.id == id }?.name ?? id) API Key",
+                        detail: keyStatus(id)
+                    )
+                }
+            } header: {
+                Text("API Keys")
+            } footer: {
+                Text("Your own free TMDB and TVDB keys unlock artwork, logos, details and search beyond your add-ons; fanart.tv adds textless posters for the iPhone's hero. Keys stay in this device's Keychain and, when you're signed in, in your account's encrypted vault.")
+            }
+
+            Section {
+                SettingsRouteLink(route: .advanced(.metadata), summary: nil)
+            }
+                }
+            }
         }
-        .omniaNavigationTitle("Integrations")
+        .omniaNavigationTitle(showsAdvanced ? "Advanced" : "Metadata")
         .onReceive(NotificationCenter.default.publisher(for: .providerCredentialDidChange)) { _ in
             keyChanges += 1
         }
