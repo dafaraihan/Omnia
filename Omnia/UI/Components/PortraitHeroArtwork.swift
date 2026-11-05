@@ -58,12 +58,14 @@ struct PortraitHeroArtwork: View {
         }
     }
 
+    @Environment(\.displayPreferences) private var gradientDisplay
+
     /// Keeps the status bar legible at the top and gives the logo, synopsis
     /// and buttons a dark floor at the bottom.
     private func fade(darkness: Double) -> some View {
         LinearGradient(
             stops: [
-                .init(color: .black.opacity(0.35), location: 0),
+                .init(color: .black.opacity(gradientDisplay.heroBlend.isEnabled ? 0.35 : 0), location: 0),
                 .init(color: .clear, location: 0.18),
                 .init(color: .clear, location: 0.42),
                 .init(color: .black.opacity(darkness * 0.7), location: 0.7),

@@ -21,7 +21,7 @@ struct ContinueWatchingSettingsView: View {
             Section {
                 SettingsRouteLink(
                     route: .landscapeCards,
-                    summary: settings.preferences.display.continueWatchingStyle.title
+                    summary: settings.preferences.display.continueWatchingCard.size.title
                 )
             } header: {
                 Text("Card Style")
@@ -44,10 +44,9 @@ struct ContinueWatchingSettingsView: View {
                 .settingsRow("Artwork")
                 Toggle(isOn: settings.binding(\.display.continueWatchingEpisodeThumbnails)) {
                     Text("Episode Thumbnails")
-                    Text("Wide cards for shows use the episode's still instead of the show's backdrop.")
+                    Text("Cards for shows use the episode's still instead of the show's backdrop.")
                 }
                 .settingsRow("Episode Thumbnails")
-                .disabled(settings.preferences.display.continueWatchingStyle == .poster)
             } header: {
                 Text("Row")
             } footer: {
@@ -70,8 +69,7 @@ struct ContinueWatchingSettingsView: View {
                     Text("Blurs next-up episode stills so they don't spoil the episode.")
                 }
                 .settingsRow("Blur Unwatched in Continue Watching")
-                .disabled(!settings.preferences.display.continueWatchingEpisodeThumbnails
-                    || settings.preferences.display.continueWatchingStyle == .poster)
+                .disabled(!settings.preferences.display.continueWatchingEpisodeThumbnails)
             } header: {
                 Text("Next Up Behavior")
             }

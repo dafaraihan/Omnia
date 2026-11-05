@@ -119,19 +119,24 @@ struct HeroPrimaryActionLabel: View {
     var resumeProgress: ResumeProgressPresentation?
 
     var body: some View {
-        HStack(spacing: 8) {
-            Label(title, systemImage: "play.fill")
-                .font(.body.weight(.semibold))
-                .fixedSize()
-
+        Group {
             if let resumeProgress {
-                VStack(alignment: .trailing, spacing: 4) {
+                HStack(spacing: 8) {
+                    Image(systemName: "play.fill")
+                        .font(.body.weight(.semibold))
+                    ResumeProgressBar(progress: resumeProgress.progress)
                     Text(resumeProgress.heroMetadataText)
                         .font(.caption.weight(.semibold))
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                    ResumeProgressBar(progress: resumeProgress.progress)
+                        .lineLimit(1)
+                        .fixedSize()
                 }
-                .frame(width: 56)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(title)
+                .accessibilityValue(resumeProgress.heroMetadataText)
+            } else {
+                Label(title, systemImage: "play.fill")
+                    .font(.body.weight(.semibold))
+                    .fixedSize()
             }
         }
             .padding(.horizontal, 14)

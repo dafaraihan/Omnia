@@ -390,25 +390,6 @@ nonisolated struct CardHoverPreferences: Codable, Equatable, Sendable {
     }
 }
 
-nonisolated enum ContinueWatchingStyle: String, Codable, CaseIterable, Identifiable, Sendable {
-    case card
-    case wide
-    case poster
-
-    var id: Self { self }
-
-    var title: String {
-        switch self {
-        case .card: "Card"
-        case .wide: "Wide"
-        case .poster: "Poster"
-        }
-    }
-
-    /// Card and Wide use landscape artwork; Poster uses the poster.
-    var isLandscape: Bool { self != .poster }
-}
-
 /// Independent Continue Watching geometry. Style Default preserves saved layouts.
 nonisolated struct ContinueWatchingCardPreferences: Codable, Equatable, Sendable {
     var size: Size = .styleDefault
@@ -766,7 +747,6 @@ nonisolated struct CardAppearance: Codable, Equatable, Sendable {
     var cardDepth: CardDepthPreferences
     var cardHover: CardHoverPreferences
     var continueWatchingCard: ContinueWatchingCardPreferences
-    var continueWatchingStyle: ContinueWatchingStyle
     var collectionCard: CollectionCardPreferences
 }
 
@@ -936,7 +916,6 @@ nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
     var hoverPreviewDelay: HoverPreviewDelay = .two
 
     var continueWatchingCard: ContinueWatchingCardPreferences = .default { didSet { rememberCardStyle() } }
-    var continueWatchingStyle: ContinueWatchingStyle = .wide { didSet { rememberCardStyle() } }
     var continueWatchingSort: ContinueWatchingSort = .recent
     /// Settings › Layout › Liquid Glass.
     var liquidGlass = LiquidGlassPreferences()
@@ -950,8 +929,6 @@ nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
     var playerSize = PlayerSizePreferences()
     /// Settings › Layout › Home Layout › Hero.
     var heroBlend = HeroBlendPreferences()
-    /// The title and details under Wide and Poster cards.
-    var continueWatchingShowsLabels = true
     var continueWatchingEpisodeThumbnails = true
     /// Each card's picture: the title's artwork, or the scene it stopped on.
     var continueWatchingArtwork: ContinueWatchingArtwork = .artwork
@@ -1009,14 +986,12 @@ nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
         } else {
             continueWatchingCard = d.continueWatchingCard
         }
-        continueWatchingStyle = (try? c.decodeIfPresent(ContinueWatchingStyle.self, forKey: .continueWatchingStyle)) ?? d.continueWatchingStyle
         lowPowerMode = (try? c.decodeIfPresent(LowPowerMode.self, forKey: .lowPowerMode)) ?? d.lowPowerMode
         episodeNotifications = (try? c.decodeIfPresent(Bool.self, forKey: .episodeNotifications)) ?? d.episodeNotifications
         topBarSize = (try? c.decodeIfPresent(TopBarSizePreferences.self, forKey: .topBarSize)) ?? d.topBarSize
         playerSize = (try? c.decodeIfPresent(PlayerSizePreferences.self, forKey: .playerSize)) ?? d.playerSize
         heroBlend = (try? c.decodeIfPresent(HeroBlendPreferences.self, forKey: .heroBlend)) ?? d.heroBlend
         liquidGlass = (try? c.decodeIfPresent(LiquidGlassPreferences.self, forKey: .liquidGlass)) ?? d.liquidGlass
-        continueWatchingShowsLabels = (try? c.decodeIfPresent(Bool.self, forKey: .continueWatchingShowsLabels)) ?? d.continueWatchingShowsLabels
         continueWatchingSort = (try? c.decodeIfPresent(ContinueWatchingSort.self, forKey: .continueWatchingSort)) ?? d.continueWatchingSort
         continueWatchingEpisodeThumbnails = (try? c.decodeIfPresent(Bool.self, forKey: .continueWatchingEpisodeThumbnails)) ?? d.continueWatchingEpisodeThumbnails
         continueWatchingArtwork = (try? c.decodeIfPresent(ContinueWatchingArtwork.self, forKey: .continueWatchingArtwork)) ?? d.continueWatchingArtwork
@@ -1172,7 +1147,7 @@ nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
         CardAppearance(
             posterWidth: posterWidth, posterCorner: posterCorner, landscapePosters: landscapePosters,
             cardDepth: cardDepth, cardHover: cardHover, continueWatchingCard: continueWatchingCard,
-            continueWatchingStyle: continueWatchingStyle, collectionCard: collectionCard
+            collectionCard: collectionCard
         )
     }
 
@@ -1196,7 +1171,6 @@ nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
             cardDepth = own.cardDepth
             cardHover = own.cardHover
             continueWatchingCard = own.continueWatchingCard
-            continueWatchingStyle = own.continueWatchingStyle
             collectionCard = own.collectionCard
             return
         }

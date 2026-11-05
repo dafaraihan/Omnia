@@ -2,6 +2,7 @@
 import AppKit
 #endif
 import SwiftUI
+import AVKit
 
 private enum MacPlaybackPanel: Hashable {
     case episodes
@@ -197,6 +198,27 @@ enum MacPlaybackAction: Hashable {
 
 /// The controls row. Skip and Up Next aren't in it: they're their own
 /// overlay (`PlaybackPromptOverlay`).
+extension MacPlaybackAction {
+    var isCapsuleOption: Bool {
+        switch self {
+        case .audio, .subtitles, .speed: true
+        case .sources, .episodes, .channels, .nextEpisode: false
+        }
+    }
+
+    var pillTitle: String {
+        switch self {
+        case .sources: "Sources"
+        case .episodes: "Episodes"
+        case .channels: "Channels"
+        case .nextEpisode: "Next Episode"
+        case .audio: "Audio"
+        case .subtitles: "Subtitles"
+        case .speed: "Speed"
+        }
+    }
+}
+
 struct MacPlaybackActionPresentation {
     static func actions(
         hasEpisodes: Bool = false,
@@ -449,22 +471,29 @@ struct MacSubtitlePlaybackPreview: View {
         HStack(alignment: .top) {
             HStack(spacing: 8 * scale) {
                 previewCircle("xmark", scale: scale)
-                previewCircle("pip.enter", scale: scale)
-                previewCircle("arrow.up.left.and.arrow.down.right", scale: scale)
+                HStack(spacing: 16 * scale) {
+                    Image(systemName: "pip.enter")
+                    #if os(macOS)
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    Image(systemName: "aspectratio")
+                    #endif
+                    Image(systemName: "airplayvideo")
+                }
+                .font(.system(size: 16 * scale, weight: .semibold))
+                .padding(.horizontal, 14 * scale)
+                .frame(height: 44 * scale)
+                .omniaGlass(.playerControls, base: .clear, in: Capsule())
             }
 
             Spacer(minLength: 16)
 
-            HStack(spacing: 8 * scale) {
-                previewCircle("aspectratio", scale: scale)
-                HStack(spacing: 10 * scale) {
-                    Image(systemName: "speaker.wave.2.fill")
-                    previewTrack(progress: 0.76, width: 150 * scale, scale: scale)
-                }
-                .padding(.horizontal, 14 * scale)
-                .frame(height: 44 * scale)
-                .omniaLiquidGlass(in: Capsule())
+            HStack(spacing: 10 * scale) {
+                previewTrack(progress: 0.76, width: 130 * scale, scale: scale)
+                Image(systemName: "speaker.wave.2.fill")
             }
+            .padding(.horizontal, 14 * scale)
+            .frame(height: 44 * scale)
+            .omniaGlass(.playerControls, base: .clear, in: Capsule())
         }
     }
 
@@ -487,12 +516,15 @@ struct MacSubtitlePlaybackPreview: View {
                         .font(.system(size: 22 * scale, weight: .semibold))
                 }
                 Spacer()
-                HStack(spacing: 8 * scale) {
-                    previewCircle("waveform", scale: scale)
-                    previewCircle("captions.bubble", scale: scale)
-                    previewCircle("speedometer", scale: scale)
-                    previewCircle("forward.end.fill", scale: scale)
+                HStack(spacing: 16 * scale) {
+                    Image(systemName: "speedometer")
+                    Image(systemName: "waveform")
+                    Image(systemName: "captions.bubble")
                 }
+                .font(.system(size: 16 * scale, weight: .semibold))
+                .padding(.horizontal, 14 * scale)
+                .frame(height: 44 * scale)
+                .omniaGlass(.playerControls, base: .clear, in: Capsule())
             }
 
             HStack(spacing: 10 * scale) {
@@ -503,6 +535,17 @@ struct MacSubtitlePlaybackPreview: View {
             .font(.system(size: 11 * scale, weight: .semibold, design: .monospaced))
             .foregroundStyle(.white.opacity(0.78))
             .frame(height: 24 * scale)
+
+            HStack(spacing: 8 * scale) {
+                ForEach(["Sources", "Episodes"], id: \.self) { title in
+                    Text(title)
+                        .font(.system(size: 12 * scale, weight: .semibold))
+                        .padding(.horizontal, 12 * scale)
+                        .frame(height: 30 * scale)
+                        .omniaGlass(.playerControls, base: .clear, in: Capsule())
+                }
+                Spacer()
+            }
         }
     }
 
@@ -550,56 +593,6 @@ private extension View {
 
     func playbackCapsuleGlassButton() -> some View {
         omniaCapsuleGlassButton(element: .playerControls)
-    }
-}
-
-private struct MacPlaybackExpandedSlider: View {
-    @Binding var value: Double
-    let range: ClosedRange<Double>
-    let width: CGFloat
-    let onEditingChanged: (Bool) -> Void
-
-    @State private var isPointerEditing = false
-
-    var body: some View {
-        GeometryReader { geometry in
-            Slider(value: $value, in: range)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .contentShape(.interaction, Rectangle())
-                .highPriorityGesture(
-                    DragGesture(minimumDistance: 0, coordinateSpace: .local)
-                        .onChanged { gesture in
-                            beginPointerEditingIfNeeded()
-                            updateValue(at: gesture.location.x, width: geometry.size.width)
-                        }
-                        .onEnded { gesture in
-                            updateValue(at: gesture.location.x, width: geometry.size.width)
-                            endPointerEditingIfNeeded()
-                        }
-                )
-        }
-        .frame(width: width, height: 54)
-        .onDisappear {
-            endPointerEditingIfNeeded()
-        }
-    }
-
-    private func beginPointerEditingIfNeeded() {
-        guard !isPointerEditing else { return }
-        isPointerEditing = true
-        onEditingChanged(true)
-    }
-
-    private func endPointerEditingIfNeeded() {
-        guard isPointerEditing else { return }
-        isPointerEditing = false
-        onEditingChanged(false)
-    }
-
-    private func updateValue(at horizontalLocation: CGFloat, width: CGFloat) {
-        guard width > 0 else { return }
-        let fraction = Double(min(max(horizontalLocation / width, 0), 1))
-        value = range.lowerBound + fraction * (range.upperBound - range.lowerBound)
     }
 }
 
@@ -733,7 +726,7 @@ struct MacPlaybackChrome: View {
                         )
                         .scaleEffect(display.playerSize.menuSize, anchor: .bottomTrailing)
                         .padding(.trailing, isPhone ? 0 : 30)
-                        .padding(.bottom, isShort ? 50 : 142)
+                        .padding(.bottom, isShort ? 96 : 160)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                         .transition(.scale(scale: 0.96, anchor: .bottomTrailing).combined(with: .opacity))
                 }
@@ -803,44 +796,49 @@ struct MacPlaybackChrome: View {
 
     private func topControls(compact: Bool) -> some View {
         HStack(alignment: .top) {
-            GlassEffectContainer(spacing: 10) {
-                HStack(spacing: 10) {
-                    circleButton(
-                        symbol: "xmark",
-                        label: "Close player",
-                        hint: "Stops playback and returns to Omnia",
-                        action: close
-                    )
+            HStack(spacing: 10) {
+                circleButton(
+                    symbol: "xmark",
+                    label: "Close player",
+                    hint: "Stops playback and returns to Omnia",
+                    action: close
+                )
 
-                    // The phone and tablet player is always full screen.
+                HStack(spacing: 2) {
                     #if os(macOS)
-                    HStack(spacing: 6) {
-                        circleButton(
-                            symbol: playback.isPictureInPictureActive ? "pip.exit" : "pip.enter",
-                            label: playback.isPictureInPictureActive
-                                ? "Exit Picture in Picture"
-                                : "Enter Picture in Picture",
-                            hint: "Moves playback between Omnia and its floating player",
-                            isEnabled: playback.isPictureInPictureActive || playback.isPictureInPictureAvailable
-                        ) {
-                            playback.togglePictureInPicture()
-                        }
+                    capsuleButton(
+                        symbol: playback.isPictureInPictureActive ? "pip.exit" : "pip.enter",
+                        label: playback.isPictureInPictureActive
+                            ? "Exit Picture in Picture"
+                            : "Enter Picture in Picture",
+                        hint: "Moves playback between Omnia and its floating player",
+                        isEnabled: playback.isPictureInPictureActive || playback.isPictureInPictureAvailable
+                    ) {
+                        playback.togglePictureInPicture()
+                    }
 
-                        circleButton(
-                            symbol: playback.isFullScreenActive
-                                ? "arrow.down.right.and.arrow.up.left"
-                                : "arrow.up.left.and.arrow.down.right",
-                            label: playback.isFullScreenActive
-                                ? "Exit full screen"
-                                : "Enter full screen",
-                            hint: "Moves Omnia out of or into its exclusive full-screen Space"
-                        ) {
-                            playback.setFullScreen(!playback.isFullScreenActive)
-                        }
+                    capsuleButton(
+                        symbol: playback.isFullScreenActive
+                            ? "arrow.down.right.and.arrow.up.left"
+                            : "arrow.up.left.and.arrow.down.right",
+                        label: playback.isFullScreenActive
+                            ? "Exit full screen"
+                            : "Enter full screen",
+                        hint: "Moves Omnia out of or into its exclusive full-screen Space"
+                    ) {
+                        playback.setFullScreen(!playback.isFullScreenActive)
+                    }
+
+                    capsuleButton(
+                        symbol: MacPlaybackAspectRatioSymbolPresentation.symbolName(for: playback.aspectRatioMode),
+                        label: "Aspect Ratio: \(playback.aspectRatioMode.title)",
+                        hint: "Toggles between Original and Fill"
+                    ) {
+                        playback.cycleAspectRatio()
                     }
                     #else
                     // Left tappable when unavailable, so it can say why.
-                    circleButton(
+                    capsuleButton(
                         symbol: playback.isPictureInPictureActive ? "pip.exit" : "pip.enter",
                         label: playback.isPictureInPictureActive ? "Exit Picture in Picture" : "Enter Picture in Picture",
                         hint: "Requires a source supported by Picture in Picture"
@@ -853,72 +851,83 @@ struct MacPlaybackChrome: View {
                     }
                     .opacity(playback.isPictureInPictureActive || playback.isPictureInPictureAvailable ? 1 : 0.5)
                     #endif
+
+                    PlaybackRoutePicker()
+                        .frame(width: 44, height: 44)
+                        .accessibilityLabel("AirPlay")
                 }
+                .padding(.horizontal, 6)
+                .frame(height: controlHeight)
+                .omniaGlass(.playerControls, base: .clear, in: Capsule())
             }
             .scaleEffect(display.playerSize.controls, anchor: .topLeading)
 
             Spacer(minLength: 20)
 
-            GlassEffectContainer(spacing: 10) {
-                HStack(spacing: 10) {
-                    // On iPhone and iPad, pinching the picture does this.
-                    #if os(macOS)
-                    Button {
-                        playback.cycleAspectRatio()
-                    } label: {
-                        AspectRatioSymbol(mode: playback.aspectRatioMode)
-                            .frame(width: isPhone ? 44 : 42, height: isPhone ? 44 : 42)
-                            .contentShape(Circle())
-                    }
-                    .playbackCircleGlassButton()
-                    .accessibilityLabel("Aspect ratio")
-                    .accessibilityValue(playback.aspectRatioMode.title)
-                    .accessibilityHint("Toggles between Original and Fill")
-                    .help("Aspect Ratio: \(playback.aspectRatioMode.title)")
-
-                    #endif
-
-                    HStack(spacing: 12) {
-                        Image(systemName: playback.volume == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                            .contentTransition(.symbolEffect(.replace))
-                            .font(.body.weight(.semibold))
-                            .frame(width: 22)
-                            .accessibilityHidden(true)
-
-                        MacPlaybackExpandedSlider(
-                            value: Binding(
-                                get: {
-                                    MacPlaybackVolumePresentation.displayedValue(
-                                        dragValue: volumeDragValue,
-                                        playerValue: playback.volume
-                                    )
-                                },
-                                set: { queueVolumeUpdate($0) }
-                            ),
-                            range: 0 ... 1,
-                            width: isPhone ? 150 : (compact ? 118 : 188),
-                            onEditingChanged: { isEditing in
-                                if isEditing {
-                                    volumeDragValue = playback.volume
-                                } else {
-                                    flushVolumeUpdate()
-                                }
-                                isInteracting = MacPlaybackInteractionPresentation.keepsChromeVisible(
-                                    isEditingControl: isEditing,
-                                    hasPresentedPanel: activePanel != nil
-                                )
-                            }
+            HStack(spacing: 12) {
+                PlaybackThinTimeline(
+                    value: Binding(
+                        get: {
+                            MacPlaybackVolumePresentation.displayedValue(
+                                dragValue: volumeDragValue,
+                                playerValue: playback.volume
+                            )
+                        },
+                        set: { queueVolumeUpdate($0) }
+                    ),
+                    range: 0 ... 1,
+                    label: "Volume",
+                    hitHeight: controlHeight,
+                    onEditingChanged: { isEditing in
+                        if isEditing {
+                            volumeDragValue = playback.volume
+                        } else {
+                            flushVolumeUpdate()
+                        }
+                        isInteracting = MacPlaybackInteractionPresentation.keepsChromeVisible(
+                            isEditingControl: isEditing,
+                            hasPresentedPanel: activePanel != nil
                         )
-                        .tint(display.accentColor)
-                        .accessibilityLabel("Volume")
-                    }
-                    .padding(.horizontal, 18)
-                    .frame(height: 54)
-                    .omniaInteractiveLiquidGlass(in: Capsule())
-                }
+                    },
+                    skip: { queueVolumeUpdate(min(max(playback.volume + $0 / 100, 0), 1)) }
+                )
+                .frame(width: isPhone ? 120 : (compact ? 118 : 170))
+
+                Image(systemName: playback.volume == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                    .contentTransition(.symbolEffect(.replace))
+                    .font(.body.weight(.semibold))
+                    .frame(width: 24)
+                    .accessibilityHidden(true)
             }
+            .padding(.horizontal, 18)
+            .frame(height: controlHeight)
+            .omniaGlass(.playerControls, base: .clear, in: Capsule())
             .scaleEffect(display.playerSize.controls, anchor: .topTrailing)
         }
+    }
+
+    private var controlHeight: CGFloat { isPhone ? 48 : 54 }
+
+    /// A symbol inside one of the glass capsules.
+    private func capsuleButton(
+        symbol: String,
+        label: String,
+        hint: String,
+        isEnabled: Bool = true,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .contentTransition(.symbolEffect(.replace))
+                .font(.title3.weight(.semibold))
+                .frame(width: 44, height: 44)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .accessibilityLabel(label)
+        .accessibilityHint(hint)
+        .help(label)
     }
 
     private var transportControls: some View {
@@ -967,55 +976,114 @@ struct MacPlaybackChrome: View {
     }
 
     private var regularBottomControls: some View {
-        VStack(spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .bottom, spacing: 24) {
                 playbackMetadata
                     .shadow(color: .black.opacity(0.55), radius: 12, y: 3)
-
                 Spacer(minLength: 20)
-
-                GlassEffectContainer(spacing: 10) {
-                    HStack(spacing: 10) {
-                        ForEach(playbackActions, id: \.self) { action in
-                            playbackAction(action)
-                        }
-                    }
-                }
+                optionsCapsule
             }
-
-            if isLive {
-                liveBar
-            } else {
-                timelineBar
-            }
+            if isLive { liveBar } else { timelineBar }
+            pillButtons
         }
     }
 
+    /// A phone on its side has no height for a row of its own under the timeline.
     private var phoneBottomControls: some View {
-        VStack(spacing: 12) {
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .bottom, spacing: 16) {
-                    if !isShort { playbackMetadata }
-                    Spacer(minLength: 8)
-                    actionButtons
-                }
-                VStack(alignment: .leading, spacing: 8) {
-                    if !isShort { playbackMetadata }
-                    ScrollView(.horizontal) { actionButtons }
-                        .scrollIndicators(.hidden)
-                }
+        VStack(alignment: .leading, spacing: 6) {
+            if !isShort {
+                playbackMetadata
             }
-
+            HStack(alignment: .bottom, spacing: 8) {
+                pillButtons
+                Spacer(minLength: 8)
+                optionsCapsule
+            }
             if isLive { liveBar } else { timelineBar }
         }
     }
 
-    private var actionButtons: some View {
-        GlassEffectContainer(spacing: 10) {
+    /// Speed, audio and subtitles, in one capsule. Their panels open above it.
+    @ViewBuilder
+    private var optionsCapsule: some View {
+        let actions = playbackActions.filter(\.isCapsuleOption)
+        if !actions.isEmpty {
+            HStack(spacing: 2) {
+                ForEach(actions, id: \.self) { action in
+                    capsuleOption(action)
+                }
+            }
+            .padding(.horizontal, 6)
+            .frame(height: controlHeight)
+            .omniaGlass(.playerControls, base: .clear, in: Capsule())
+        }
+    }
+
+    /// Everything else, named: sources, episodes, channels and the next episode.
+    @ViewBuilder
+    private var pillButtons: some View {
+        let actions = playbackActions.filter { !$0.isCapsuleOption }
+        if !actions.isEmpty {
             HStack(spacing: isPhone ? 6 : 10) {
-                ForEach(playbackActions, id: \.self) { action in playbackAction(action) }
+                ForEach(actions, id: \.self) { action in
+                    pillButton(action)
+                }
             }
         }
+    }
+
+    @ViewBuilder
+    private func capsuleOption(_ action: MacPlaybackAction) -> some View {
+        switch action {
+        case .audio:
+            panelCapsuleButton(.audio, symbol: "waveform", label: "Audio")
+        case .subtitles:
+            panelCapsuleButton(.subtitles, symbol: "captions.bubble", label: "Subtitles")
+        case .speed:
+            panelCapsuleButton(.speed, symbol: "speedometer", label: "Playback speed")
+        default:
+            EmptyView()
+        }
+    }
+
+    private func panelCapsuleButton(_ panel: MacPlaybackPanel, symbol: String, label: String) -> some View {
+        capsuleButton(
+            symbol: symbol,
+            label: label,
+            hint: "",
+            isEnabled: !playback.isPictureInPictureActive
+        ) {
+            togglePanel(panel)
+        }
+        .accessibilityValue(activePanel == panel ? "Expanded" : "Collapsed")
+    }
+
+    private func togglePanel(_ panel: MacPlaybackPanel) {
+        withAnimation(.smooth(duration: 0.18)) {
+            activePanel = activePanel == panel ? nil : panel
+        }
+    }
+
+    private func pillButton(_ action: MacPlaybackAction) -> some View {
+        Button {
+            switch action {
+            case .sources: showSources()
+            case .episodes: togglePanel(.episodes)
+            case .channels: togglePanel(.channels)
+            case .nextEpisode: showUpNext()
+            case .audio, .subtitles, .speed: break
+            }
+        } label: {
+            Text(action.pillTitle)
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+                .fixedSize()
+                .padding(.horizontal, isPhone ? 12 : 16)
+                .frame(height: isPhone ? 36 : 40)
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .omniaGlass(.playerControls, base: .clear, in: Capsule())
     }
 
     private var timelineBar: some View {
@@ -1029,6 +1097,8 @@ struct MacPlaybackChrome: View {
                     set: { scrub(to: $0) }
                 ),
                 range: 0 ... max(duration, 0.001),
+                label: "Playback position",
+                hitHeight: 44,
                 onEditingChanged: { isEditing in
                     isScrubbingTimeline = isEditing
                     if !isEditing, let scrubValue {
@@ -1148,30 +1218,26 @@ struct MacPlaybackChrome: View {
         }
     }
 
+    /// "S1, E2 · Episode name" over the show, as in Apple TV.
     private var titleMetadata: some View {
         VStack(alignment: .leading, spacing: 3) {
-            if playback.episode != nil {
-                Text(metadata.title)
-                    .font(isPhone ? .headline : .title.weight(.semibold))
-                    .lineLimit(1)
-                if !metadata.context.isEmpty {
-                    Text(metadata.context)
-                        .font(.headline.weight(.medium))
-                        .foregroundStyle(.white.opacity(0.78))
-                        .lineLimit(1)
-                }
-            } else {
-                if !metadata.context.isEmpty {
-                    Text(metadata.context)
-                        .font(.headline.weight(.medium))
-                        .foregroundStyle(.white.opacity(0.78))
-                        .lineLimit(1)
-                }
-                Text(metadata.title)
-                    .font(isPhone ? .headline : .title.weight(.semibold))
+            if !titleContext.isEmpty {
+                Text(titleContext)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.white.opacity(0.78))
                     .lineLimit(1)
             }
+            Text(metadata.title)
+                .font(isPhone ? .headline : .title.weight(.semibold))
+                .lineLimit(1)
         }
+    }
+
+    private var titleContext: String {
+        guard let episode = playback.episode else { return metadata.context }
+        let code = "S\(episode.seasonNumber), E\(episode.episodeNumber)"
+        let name = episode.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? code : "\(code) · \(name)"
     }
 
     @ViewBuilder
@@ -1724,59 +1790,6 @@ struct MacPlaybackChrome: View {
         .help(label)
     }
 
-    private func optionButton(
-        _ panel: MacPlaybackPanel,
-        symbol: String,
-        label: String
-    ) -> some View {
-        Button {
-            withAnimation(.easeInOut(duration: 0.18)) {
-                activePanel = activePanel == panel ? nil : panel
-            }
-        } label: {
-            Image(systemName: symbol)
-                .contentTransition(.symbolEffect(.replace))
-                .font(.title3.weight(.semibold))
-                .frame(width: isPhone ? 44 : 42, height: isPhone ? 44 : 42)
-                .contentShape(Circle())
-        }
-        .playbackCircleGlassButton()
-        .accessibilityLabel(label)
-        .disabled(playback.isPictureInPictureActive)
-        .accessibilityValue(activePanel == panel ? "Expanded" : "Collapsed")
-        .help(label)
-    }
-
-    @ViewBuilder
-    private func playbackAction(_ action: MacPlaybackAction) -> some View {
-        switch action {
-        case .sources:
-            circleButton(
-                symbol: "rectangle.stack.badge.play",
-                label: "Sources",
-                hint: "Choose another source for what's playing",
-                action: showSources
-            )
-        case .episodes:
-            optionButton(.episodes, symbol: "list.and.film", label: "Episodes")
-        case .channels:
-            optionButton(.channels, symbol: "play.tv", label: "Channels")
-        case .audio:
-            optionButton(.audio, symbol: "waveform", label: "Audio")
-        case .subtitles:
-            optionButton(.subtitles, symbol: "captions.bubble", label: "Subtitles")
-        case .speed:
-            optionButton(.speed, symbol: "speedometer", label: "Playback speed")
-        case .nextEpisode:
-            circleButton(
-                symbol: "forward.end.fill",
-                label: "Next episode",
-                hint: "Choose an in-app source for the next episode",
-                action: showUpNext
-            )
-        }
-    }
-
     private func panelTitle(
         _ title: String,
         detail: String,
@@ -2280,6 +2293,9 @@ private struct MacSubtitleSyncTools: View {
 private struct PlaybackThinTimeline: View {
     @Binding var value: Double
     let range: ClosedRange<Double>
+    let label: String
+    /// Taller than the bar, so it's easy to tap or drag.
+    let hitHeight: CGFloat
     let onEditingChanged: (Bool) -> Void
     let skip: (Double) -> Void
 
@@ -2321,9 +2337,9 @@ private struct PlaybackThinTimeline: View {
                 )
                 .animation(reduceMotion ? nil : .smooth(duration: 0.15), value: isDragging)
         }
-        .frame(height: 30)
+        .frame(height: hitHeight)
         .accessibilityElement()
-        .accessibilityLabel("Playback position")
+        .accessibilityLabel(label)
         .accessibilityValue("\(Int(fraction * 100)) percent")
         .accessibilityAdjustableAction { direction in
             switch direction {
@@ -2335,15 +2351,33 @@ private struct PlaybackThinTimeline: View {
     }
 }
 
-private struct AspectRatioSymbol: View {
-    let mode: PlaybackAspectRatioMode
-
-    var body: some View {
-        Image(systemName: MacPlaybackAspectRatioSymbolPresentation.symbolName(for: mode))
-            .foregroundStyle(.white)
-        .font(.title3.weight(.semibold))
+/// The system's AirPlay and audio route button.
+private struct PlaybackRoutePicker {
+    fileprivate func makePicker() -> AVRoutePickerView {
+        let picker = AVRoutePickerView()
+        #if os(iOS)
+        picker.tintColor = .white
+        picker.activeTintColor = .white
+        picker.prioritizesVideoDevices = true
+        #else
+        picker.isRoutePickerButtonBordered = false
+        picker.setRoutePickerButtonColor(.white, for: .normal)
+        #endif
+        return picker
     }
 }
+
+#if os(iOS)
+extension PlaybackRoutePicker: UIViewRepresentable {
+    func makeUIView(context: Context) -> AVRoutePickerView { makePicker() }
+    func updateUIView(_ view: AVRoutePickerView, context: Context) {}
+}
+#else
+extension PlaybackRoutePicker: NSViewRepresentable {
+    func makeNSView(context: Context) -> AVRoutePickerView { makePicker() }
+    func updateNSView(_ view: AVRoutePickerView, context: Context) {}
+}
+#endif
 
 private extension PlaybackSubtitleBackground {
     var title: String {

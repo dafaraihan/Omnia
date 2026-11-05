@@ -60,90 +60,9 @@ struct SettingsStyleTilePicker<Option: Hashable & Identifiable, Preview: View>: 
     }
 }
 
-/// Simple style illustrations remain independent of the interactive sample.
-struct ContinueWatchingStylePreview: View {
-    let style: ContinueWatchingStyle
-    @Environment(\.displayPreferences) private var display
-
-    var body: some View {
-        switch style {
-        case .card:
-            VStack(alignment: .leading, spacing: 5) {
-                ZStack(alignment: .bottomLeading) {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(.primary.opacity(0.22))
-                    VStack(alignment: .leading, spacing: 3) {
-                        bar(width: 0.45, height: 6, opacity: 0.38)
-                        progress(0.6, height: 2)
-                    }
-                    .padding(5)
-                }
-                .frame(width: 88, height: 46)
-                bar(width: 0.7, height: 5, opacity: 0.18)
-                    .frame(width: 88)
-            }
-            .frame(width: 104, height: 60)
-        case .wide:
-            ZStack(alignment: .bottomLeading) {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(.primary.opacity(0.22))
-                HStack(spacing: 4) {
-                    Image(systemName: "play.fill")
-                        .font(.system(size: 7))
-                        .foregroundStyle(.primary.opacity(0.6))
-                    progress(0.6, height: 3)
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 7, weight: .bold))
-                        .foregroundStyle(.primary.opacity(0.6))
-                }
-                .padding(6)
-            }
-            .frame(width: 104, height: 60)
-        case .poster:
-            VStack(alignment: .leading, spacing: 6) {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(.primary.opacity(0.22))
-                    .frame(width: 56, height: 72)
-                    .overlay(alignment: .bottom) {
-                        progress(0.45, height: 4)
-                            .frame(width: 36)
-                            .padding(4)
-                            .background(.background, in: Capsule())
-                            .padding(5)
-                    }
-                bar(width: 0.85, height: 6, opacity: 0.18)
-                    .frame(width: 56)
-            }
-        }
-    }
-
-    private func bar(width: CGFloat, height: CGFloat, opacity: Double) -> some View {
-        GeometryReader { geometry in
-            RoundedRectangle(cornerRadius: 2)
-                .fill(.primary.opacity(opacity))
-                .frame(width: geometry.size.width * width, height: height)
-        }
-        .frame(height: height)
-    }
-
-    private func progress(_ value: Double, height: CGFloat) -> some View {
-        GeometryReader { geometry in
-            Capsule()
-                .fill(.primary.opacity(0.16))
-                .overlay(alignment: .leading) {
-                    Capsule()
-                        .fill(display.accentStyle)
-                        .frame(width: geometry.size.width * value)
-                }
-        }
-        .frame(height: height)
-    }
-}
-
 /// The real card, drawing a title the viewer is watching, or else one from
 /// their catalogs, so the settings above show as they will on Home.
 struct ContinueWatchingLivePreview: View {
-    let style: ContinueWatchingStyle
     @Environment(\.displayPreferences) private var display
     @Environment(OmniaStore.self) private var store
     @Environment(LiveMetadataStore.self) private var metadata
@@ -187,7 +106,6 @@ struct ContinueWatchingLivePreview: View {
 
     private var previewDisplay: DisplayPreferences {
         var value = display
-        value.continueWatchingStyle = style
         // Only a title really being watched has a paused scene to show.
         if watching == nil { value.continueWatchingArtwork = .artwork }
         return value
@@ -204,7 +122,7 @@ struct ContinueWatchingLivePreview: View {
         .fixedSize(horizontal: false, vertical: true)
         .environment(\.displayPreferences, previewDisplay)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(style.title) live preview")
+        .accessibilityLabel("Continue Watching card live preview")
     }
 }
 
@@ -262,17 +180,6 @@ struct EpisodeCardLayoutPreview: View {
             .frame(width: 132, height: 78)
             .background(.primary.opacity(0.10))
             .clipShape(.rect(cornerRadius: 8, style: .continuous))
-        }
-    }
-}
-
-extension ContinueWatchingStyle {
-    /// Nuvio's line under each style.
-    var detail: String {
-        switch self {
-        case .card: "Logo on the art, episode below"
-        case .wide: "Progress and time on the art"
-        case .poster: "Artwork-first poster card"
         }
     }
 }

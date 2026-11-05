@@ -64,7 +64,7 @@ struct MediaPoster: View {
                         if let progress = item.progress {
                             ProgressView(value: progress)
                                 .controlSize(.mini)
-                                .tint(display.accentColor)
+                                .tint(.white)
                                 .scaleEffect(y: 0.65)
                                 .padding(.horizontal, 8)
                                 .padding(.bottom, 8)

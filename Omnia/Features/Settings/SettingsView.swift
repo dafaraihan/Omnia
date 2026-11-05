@@ -125,7 +125,7 @@ struct SettingsRouteSummary: View {
         case .posterCards:
             return display.posterWidth.title
         case .landscapeCards:
-            return display.continueWatchingStyle.title
+            return display.continueWatchingCard.size.title
         case .detailPage:
             return display.detailBackground.title
         case .videoPlayer:

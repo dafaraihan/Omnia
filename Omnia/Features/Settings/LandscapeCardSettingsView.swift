@@ -34,26 +34,6 @@ struct LandscapeCardSettingsView: View {
             }
 
             Section {
-                SettingsStyleTilePicker(
-                    options: ContinueWatchingStyle.allCases,
-                    selection: settings.binding(\.display.continueWatchingStyle),
-                    title: \.title,
-                    detail: \.detail
-                ) { style in
-                    ContinueWatchingStylePreview(style: style)
-                }
-                if display.continueWatchingStyle != .card {
-                    Toggle(isOn: settings.binding(\.display.continueWatchingShowsLabels)) {
-                        Text("Show Labels")
-                        Text("The title under each card.")
-                    }
-                    .settingsRow("Show Labels")
-                }
-            } header: {
-                Text("Continue Watching")
-            }
-
-            Section {
                 SettingsDropdown(
                     "Folder Names",
                     selection: settings.binding(\.display.collectionCard.titles),
@@ -108,7 +88,7 @@ private struct LandscapeCardsLivePreview: View {
     var body: some View {
         ScrollView(.horizontal) {
             HStack(alignment: .top, spacing: 14) {
-                ContinueWatchingLivePreview(style: display.continueWatchingStyle)
+                ContinueWatchingLivePreview()
                     .fixedSize()
                 CollectionCardPreview(folders: folders, sampleShape: .landscape)
                     .fixedSize()

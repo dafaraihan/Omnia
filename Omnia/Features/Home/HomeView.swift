@@ -581,7 +581,7 @@ struct HomeView: View {
                 HeroTrailerBottomFade(item: featured, usesWash: usesDynamicBackground)
                     .transition(.opacity)
             }
-            if heroTrailer.isVisible, !isCardHero {
+            if heroTrailer.isVisible, !isCardHero, settings.preferences.display.heroBlend.isEnabled {
                 HeroTrailerTopFade(item: featured, usesWash: usesDynamicBackground)
                     .transition(.opacity)
             }

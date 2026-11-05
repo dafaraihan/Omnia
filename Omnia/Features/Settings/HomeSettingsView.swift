@@ -79,7 +79,7 @@ struct HomeSettingsView: View {
     }
 
     private var continueWatchingSummary: String {
-        showsContinueWatching ? "\(settings.preferences.display.continueWatchingStyle.title) cards" : "Hidden"
+        showsContinueWatching ? "On Home" : "Hidden"
     }
 
     /// Everything about the hero, in one section.

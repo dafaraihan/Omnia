@@ -257,7 +257,7 @@ struct MediaDetailView: View {
                 HeroTrailerBottomFade(item: displayItem, usesWash: usesArtworkBackground)
                     .transition(.opacity)
             }
-            if heroTrailer.isVisible {
+            if heroTrailer.isVisible, settings.preferences.display.heroBlend.isEnabled {
                 HeroTrailerTopFade(item: displayItem, usesWash: usesArtworkBackground)
                     .transition(.opacity)
             }

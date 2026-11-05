@@ -20,22 +20,8 @@ struct ContinueWatchingCard: View {
 
     static func width(for display: DisplayPreferences) -> CGFloat {
         let posterWidth = display.continueWatchingCard.size.posterWidth(for: display)
-        switch display.continueWatchingStyle {
-        case .card: return (posterWidth * 180 / 110 * 1.2).rounded()
-        case .poster: return posterWidth
-        case .wide:
-            #if os(iOS)
-            let originalWidth: CGFloat = 248
-            #else
-            let originalWidth: CGFloat = 304
-            #endif
-            if display.continueWatchingCard.size == .styleDefault { return originalWidth }
-            return (originalWidth * posterWidth / PosterWidthPreset.standard.width).rounded()
-        }
+        return (posterWidth * 180 / 110 * 1.2).rounded()
     }
-
-    private var style: ContinueWatchingStyle { display.continueWatchingStyle }
-    private var isPoster: Bool { style == .poster }
 
     private var cornerRadius: CGFloat {
         display.continueWatchingCard.corners.radius(for: display)
@@ -48,7 +34,7 @@ struct ContinueWatchingCard: View {
     }
 
     private var usesEpisodeStill: Bool {
-        !isPoster && item.kind == .series && display.continueWatchingEpisodeThumbnails
+        item.kind == .series && display.continueWatchingEpisodeThumbnails
     }
 
     var body: some View {
@@ -88,13 +74,8 @@ struct ContinueWatchingCard: View {
             .mediaContextMenu(for: item, placement: .continueWatching)
     }
 
-    @ViewBuilder
     private var previewContent: some View {
-        switch style {
-        case .wide: wideCard
-        case .card: upNextCard
-        case .poster: classicCard
-        }
+        card
     }
 
     /// The three dots sit over the card, not in its link, so a tap on them
@@ -112,159 +93,53 @@ struct ContinueWatchingCard: View {
         .frame(width: cardWidth, height: cardHeight, alignment: .bottomTrailing)
     }
 
-    private var classicCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ZStack(alignment: .bottom) {
-                resumeArtwork
-                LinearGradient(
-                    colors: [.clear, .black.opacity(0.62)],
-                    startPoint: .center,
-                    endPoint: .bottom
-                )
-
-                if let resumePresentation {
-                    VStack(spacing: 9) {
-                        Text(resumePresentation.continueWatchingMetadataText)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
-                            .frame(maxWidth: .infinity, alignment: .trailing)
-                        ResumeProgressBar(progress: resumePresentation.progress)
-                    }
-                    .font(isPoster ? .caption.weight(.semibold) : .subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .padding(.leading, 10)
-                    .padding(.trailing, 34)
-                    .padding(.bottom, 10)
-                } else if isNextUp {
-                    Text(nextUpText)
-                        .font(isPoster ? .caption.weight(.semibold) : .subheadline.weight(.semibold))
+    /// Apple TV's Up Next: the show's logo on the episode's still, then what's
+    /// playing and a thin line, all inside the art. Next Up has no line.
+    private var card: some View {
+        ZStack(alignment: .bottomLeading) {
+            resumeArtwork
+            LinearGradient(
+                stops: [
+                    .init(color: .clear, location: 0.35),
+                    .init(color: .black.opacity(0.8), location: 1)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            VStack(alignment: .leading, spacing: 5) {
+                if let logoURL = item.logoURL {
+                    TitleLogoView(
+                        url: logoURL,
+                        title: item.title,
+                        maximumWidth: cardWidth * 0.55,
+                        maximumHeight: cardHeight * 0.3,
+                        alignment: .bottomLeading
+                    )
+                } else {
+                    Text(item.title)
+                        .font(.headline.weight(.bold))
                         .foregroundStyle(.white)
                         .lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                        .padding(.leading, 10)
-                        .padding(.trailing, 34)
-                        .padding(.bottom, 10)
                 }
-            }
-            .frame(width: cardWidth, height: cardHeight)
-            .clipShape(.rect(cornerRadius: cornerRadius, style: .continuous))
-            .cardDepth(.continueWatching, cornerRadius: cornerRadius, fallbackBorderOpacity: 0.24)
-
-            if display.continueWatchingShowsLabels {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(cardPresentation.primaryText)
-                        .font(.headline)
-                        .foregroundStyle(.primary)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(cardMetadata)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.9))
                         .lineLimit(1)
-                    Text(cardPresentation.secondaryText)
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.secondary)
-                }
-                .frame(width: cardWidth, alignment: .leading)
-            }
-        }
-    }
-
-    /// Artwork with the play symbol, a long progress bar and what's left.
-    private var wideCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ZStack(alignment: .bottomLeading) {
-                resumeArtwork
-                LinearGradient(
-                    stops: [
-                        .init(color: .clear, location: 0.55),
-                        .init(color: .black.opacity(0.72), location: 1)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                HStack(spacing: 8) {
-                    Image(systemName: "play.fill")
-                        .font(.caption)
-                    if cardProgress > 0 {
-                        progressLine
-                    }
-                    Text(wideMetadata)
+                        .minimumScaleFactor(0.8)
                         .contentTransition(.numericText())
-                        .lineLimit(1)
-                        .fixedSize()
-                    if cardProgress <= 0 {
-                        Spacer(minLength: 0)
-                    }
-                }
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(.white)
-                .padding(.leading, 12)
-                .padding(.trailing, 40)
-                .padding(.bottom, 12)
-            }
-            .frame(width: cardWidth, height: cardHeight)
-            .clipShape(.rect(cornerRadius: cornerRadius, style: .continuous))
-            .cardDepth(.continueWatching, cornerRadius: cornerRadius, fallbackBorderOpacity: 0.24)
-
-            if display.continueWatchingShowsLabels {
-                Text(item.title)
-                    .font(.subheadline)
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .frame(width: cardWidth, alignment: .leading)
-            }
-        }
-    }
-
-    /// Apple TV's Up Next: the show's logo on the episode's still, a thin line
-    /// inside the image, then the episode underneath. Next Up has no line.
-    private var upNextCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ZStack(alignment: .bottomLeading) {
-                resumeArtwork
-                LinearGradient(
-                    stops: [
-                        .init(color: .clear, location: 0.45),
-                        .init(color: .black.opacity(0.7), location: 1)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                VStack(alignment: .leading, spacing: 8) {
-                    if let logoURL = item.logoURL {
-                        TitleLogoView(
-                            url: logoURL,
-                            title: item.title,
-                            maximumWidth: cardWidth * 0.55,
-                            maximumHeight: cardHeight * 0.32,
-                            alignment: .bottomLeading
-                        )
-                    } else {
-                        Text(item.title)
-                            .font(.headline.weight(.bold))
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
-                    }
                     if cardProgress > 0 {
                         progressLine
                     }
                 }
-                .padding(.leading, 12)
-                .padding(.trailing, 40)
-                .padding(.bottom, 12)
+                .padding(.trailing, 28)
             }
-            .frame(width: cardWidth, height: cardHeight)
-            .clipShape(.rect(cornerRadius: cornerRadius, style: .continuous))
-            .cardDepth(.continueWatching, cornerRadius: cornerRadius, fallbackBorderOpacity: 0.24)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(upNextMetadata)
-                    .contentTransition(.numericText())
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(episodeTitle ?? item.title)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-            }
-            .lineLimit(1)
-            .frame(width: cardWidth, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 11)
         }
+        .frame(width: cardWidth, height: cardHeight)
+        .clipShape(.rect(cornerRadius: cornerRadius, style: .continuous))
+        .cardDepth(.continueWatching, cornerRadius: cornerRadius, fallbackBorderOpacity: 0.24)
     }
 
     private var progressLine: some View {
@@ -294,34 +169,23 @@ struct ContinueWatchingCard: View {
         guard item.kind == .series, let season = item.resumeSeasonNumber, let episode = item.resumeEpisodeNumber else {
             return nil
         }
-        return "S\(season), E\(episode)"
+        return "S\(season) • E\(episode)"
     }
 
-    private var wideMetadata: String {
+    /// "S1 • E2 · 38m left" or "1h 12m left". Next Up says which episode.
+    private var cardMetadata: String {
         if let remainingShort {
-            return [episodeShort, remainingShort].compactMap { $0 }.joined(separator: " · ")
-        }
-        if cardProgress > 0 {
-            return episodeShort ?? "\(Int((cardProgress * 100).rounded()))%"
-        }
-        if let upcomingAirDateText { return upcomingAirDateText }
-        return episodeShort ?? nextUpText
-    }
-
-    private var upNextMetadata: String {
-        let label = episodeShort ?? (item.kind == .movie ? "Movie" : nil)
-        if let remainingShort {
-            return [label, "\(remainingShort) left"].compactMap { $0 }.joined(separator: " · ")
+            return [episodeShort, "\(remainingShort) left"].compactMap { $0 }.joined(separator: " · ")
         }
         if let upcomingAirDateText {
-            return [label, upcomingAirDateText].compactMap { $0 }.joined(separator: " · ")
+            return [episodeShort, upcomingAirDateText].compactMap { $0 }.joined(separator: " · ")
         }
         if isNextUp, let episodeShort { return "Next · \(episodeShort)" }
-        return label ?? nextUpText
+        return episodeShort ?? (cardProgress > 0 ? "\(Int((cardProgress * 100).rounded()))% watched" : nextUpText)
     }
 
     private var accessibilityValue: String {
-        let status: String? = isNextUp ? "Up next" : resumePresentation?.remainingText
+        let status: String? = isNextUp ? "Up next" : remainingShort.map { "\($0) left" }
         return [cardPresentation.accessibilityValue, status]
             .compactMap { $0 }
             .joined(separator: ", ")
@@ -347,11 +211,6 @@ struct ContinueWatchingCard: View {
         upcomingAirDate.map { $0.formatted(date: .abbreviated, time: .omitted) }
     }
 
-    private var episodeTitle: String? {
-        let title = item.resumeEpisodeTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return title.isEmpty ? nil : title
-    }
-
     private var nextUpText: String {
         isNextUp ? "Up Next" : item.year
     }
@@ -365,30 +224,22 @@ struct ContinueWatchingCard: View {
             : nil
         let url: URL? = if let scene {
             scene
-        } else if isPoster {
-            item.artworkURL ?? item.backdropURL
-        } else if style == .card && upcomingAirDate != nil {
+        } else if upcomingAirDate != nil {
             item.backdropURL ?? item.artworkURL ?? item.resumeEpisodeStillURL
         } else if usesEpisodeStill {
-            item.resumeEpisodeStillURL ?? (style == .card ? item.resumeEpisode?.stillURL : nil) ?? item.backdropURL ?? item.artworkURL
+            item.resumeEpisodeStillURL ?? item.resumeEpisode?.stillURL ?? item.backdropURL ?? item.artworkURL
         } else {
-            item.backdropURL ?? item.artworkURL ?? (style == .card ? item.resumeEpisodeStillURL : nil)
+            item.backdropURL ?? item.artworkURL ?? item.resumeEpisodeStillURL
         }
         let episodeStill = item.resumeEpisodeStillURL ?? item.resumeEpisode?.stillURL
-        let isUnwatched = isNextUp || (style == .card && cardProgress < 0.9)
+        let isUnwatched = isNextUp || cardProgress < 0.9
         let blursArtwork = scene == nil && display.blursNextUp && isUnwatched
             && usesEpisodeStill && episodeStill != nil && url == episodeStill
 
-        let fallbackURL = style == .card
-            ? [item.backdropURL, item.artworkURL].compactMap { $0 }.first(where: { $0 != url })
-            : nil
+        let fallbackURL = [item.backdropURL, item.artworkURL].compactMap { $0 }.first(where: { $0 != url })
 
         ZStack {
-            if style == .card {
-                cardBackground
-            } else {
-                MediaItem.placeholderArtworkColor
-            }
+            cardBackground
             Image(systemName: item.symbol)
                 .font(.system(size: 42, weight: .light))
                 .foregroundStyle(.white.opacity(0.7))
@@ -403,10 +254,6 @@ struct ContinueWatchingCard: View {
         .accessibilityHidden(true)
     }
 
-    private var resumePresentation: ResumeProgressPresentation? {
-        ResumeProgressPresentation(item: item)
-    }
-
     private var cardPresentation: ContinueWatchingCardPresentation {
         ContinueWatchingCardPresentation(item: item)
     }
@@ -416,15 +263,6 @@ struct ContinueWatchingCard: View {
     }
 
     private var cardHeight: CGFloat {
-        switch style {
-        case .poster: return cardWidth * 1.5
-        case .card: return (cardWidth / 1.77).rounded()
-        case .wide:
-            #if os(iOS)
-            return (cardWidth * 140 / 248).rounded()
-            #else
-            return (cardWidth * 172 / 304).rounded()
-            #endif
-        }
+        (cardWidth / 1.77).rounded()
     }
 }

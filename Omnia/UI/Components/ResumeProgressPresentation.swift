@@ -90,8 +90,10 @@ nonisolated struct ResumeProgressPresentation: Equatable {
         }
     }
 
+    /// "S1 • E2" for a show, and "1h 12m left" for a movie.
     var heroMetadataText: String {
-        episodeIdentifier ?? remainingText
+        if let resumeSeasonNumber, let resumeEpisodeNumber { return "S\(resumeSeasonNumber) • E\(resumeEpisodeNumber)" }
+        return remainingText
     }
 
     var continueWatchingMetadataText: String {
@@ -141,22 +143,21 @@ nonisolated struct ContinueWatchingCardPresentation: Equatable {
     }
 }
 
+/// White in dark appearance and black in light, as Apple's own bars are.
 struct ResumeProgressBar: View {
     let progress: Double
-    @Environment(\.displayPreferences) private var display
 
     var body: some View {
         GeometryReader { geometry in
             Capsule()
-                .fill(.white.opacity(0.28))
+                .fill(.primary.opacity(0.25))
                 .overlay(alignment: .leading) {
-                    // The watched part takes the accent, or its gradient.
                     Capsule()
-                        .fill(display.accentStyle)
+                        .fill(.primary)
                         .frame(width: geometry.size.width * min(max(progress, 0), 1))
                 }
         }
-        .frame(height: 7)
+        .frame(height: 5)
         .accessibilityLabel("Playback progress")
         .accessibilityValue("\(Int(min(max(progress, 0), 1) * 100)) percent")
     }
