@@ -272,7 +272,7 @@ final class PlaybackSession {
     @ObservationIgnored private var trailerPlaylistLoader: TrailerPlaylistLoader?
 
     #if OMNIA_MPV
-    private(set) var player: OMMpvPlayerController?
+    private(set) var player: (any PlaybackEngine)?
     #else
     private(set) var player: AVPlayer?
     #endif
@@ -723,7 +723,7 @@ final class PlaybackSession {
     /// mpv couldn't draw this source (no Metal output on this device), so
     /// AVPlayer plays it from where it was. Network and format errors stay
     /// mpv's, since AVPlayer would fail the same way and say less.
-    private func fallBackToAVPlayer(from mpv: OMMpvPlayerController) {
+    private func fallBackToAVPlayer(from mpv: any PlaybackEngine) {
         guard let source, let mediaItem, let fallbackContext,
               mpv.renderingFallbackReason != nil || mpv.errorMessage?.hasPrefix("libmpv could not create") == true
         else { return }
@@ -1403,7 +1403,7 @@ final class PlaybackSession {
         url: URL,
         addonName: String,
         select: Bool,
-        to player: OMMpvPlayerController
+        to player: any PlaybackEngine
     ) {
         let language = PlaybackLanguageMatching.normalized(subtitle.lang)
         let languageName = language.flatMap { Locale.current.localizedString(forLanguageCode: $0) }
@@ -1683,7 +1683,7 @@ final class PlaybackSession {
     }
 
     #if OMNIA_MPV
-    private func refreshState(from player: OMMpvPlayerController) {
+    private func refreshState(from player: any PlaybackEngine) {
         #if os(iOS)
         // FILE_LOADED arrives through the native snapshot callback. Until
         // then, keep opening-stream queries off the main-thread poller.

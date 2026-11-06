@@ -9,7 +9,7 @@ import SwiftUI
 import AppKit
 
 final class PlaybackVideoHostView: NSView {
-    weak var player: OMMpvPlayerController?
+    weak var player: (any PlaybackEngine)?
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         nil
@@ -20,7 +20,7 @@ final class PlaybackVideoHostView: NSView {
 /// intentionally owns the controls above it, leaving the decoder/rendering
 /// stack isolated to libmpv.
 struct NativePlayerView: NSViewRepresentable {
-    let player: OMMpvPlayerController
+    let player: any PlaybackEngine
 
     func makeNSView(context: Context) -> PlaybackVideoHostView {
         let view = PlaybackVideoHostView()
@@ -53,7 +53,7 @@ import UIKit
 
 #if OMNIA_MPV
 final class PlaybackVideoHostView: UIView {
-    weak var player: OMMpvPlayerController?
+    weak var player: (any PlaybackEngine)?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -71,7 +71,7 @@ final class PlaybackVideoHostView: UIView {
 /// Hosts the view libmpv draws into with Metal, as on the Mac. SwiftUI owns
 /// the controls above it.
 struct NativePlayerView: UIViewRepresentable {
-    let player: OMMpvPlayerController
+    let player: any PlaybackEngine
 
     func makeUIView(context: Context) -> PlaybackVideoHostView {
         let view = PlaybackVideoHostView()

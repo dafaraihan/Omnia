@@ -64,6 +64,11 @@ typedef void (^OMMpvTrackSelectionCompletion)(
 @property (nonatomic, readonly) BOOL tracksLoading;
 @property (nonatomic, readonly, nullable) NSString *errorMessage;
 
+/// Also used by Omnia's other playback engine to report the same state.
+- (instancetype)initWithAudioTracks:(NSArray<OMMpvTrack *> *)audioTracks
+                      subtitleTracks:(NSArray<OMMpvTrack *> *)subtitleTracks
+                       tracksLoading:(BOOL)tracksLoading
+                         errorMessage:(nullable NSString *)errorMessage;
 - (instancetype)init NS_UNAVAILABLE;
 
 @end
