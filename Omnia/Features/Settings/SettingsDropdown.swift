@@ -59,6 +59,24 @@ struct SettingsDropdown<Value: Hashable>: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
+            #if os(macOS)
+            // The Mac's own pop-up button: its menu draws every choice in the
+            // normal text color, ready to pick.
+            Picker(selection: $selection) {
+                ForEach(Array(sections.enumerated()), id: \.offset) { index, options in
+                    if index > 0 { Divider() }
+                    ForEach(options, id: \.self) { option in
+                        Text(label(option)).tag(option)
+                    }
+                }
+            } label: {
+                EmptyView()
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .tint(.primary)
+            .fixedSize()
+            #else
             Menu {
                 Picker(selection: $selection) {
                     ForEach(Array(sections.enumerated()), id: \.offset) { index, options in
@@ -88,6 +106,7 @@ struct SettingsDropdown<Value: Hashable>: View {
             .menuIndicator(.hidden)
             .buttonStyle(.plain)
             .fixedSize()
+            #endif
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(title)

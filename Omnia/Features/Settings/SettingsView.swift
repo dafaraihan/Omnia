@@ -14,6 +14,9 @@ struct SettingsView: View {
 
     private var unlockedSettings: some View {
         rootSettingsContent
+        #if os(macOS)
+            .modifier(MacSettingsLargeTitle(title: AppDestination.settings.title(for: profiles.activeProfile)))
+        #endif
             .omniaNavigationTitle(AppDestination.settings.title(for: profiles.activeProfile), screen: .settings)
         #if os(macOS)
             .toolbar {
@@ -203,6 +206,9 @@ struct SettingsDestinationView: View {
     let route: SettingsRoute
     var body: some View {
         page
+        #if os(macOS)
+            .modifier(MacSettingsLargeTitle(title: route.linkTitle))
+        #endif
     }
 
     private var page: some View {

@@ -81,6 +81,15 @@ struct OmniaSettingsForm<Content: View>: View {
                 content
             }
             .formStyle(.grouped)
+            #if os(macOS)
+            // As on iPad: rows near the window's full width, larger text and
+            // rows, on the page's own background.
+            .contentMargins(.horizontal, 32, for: .scrollContent)
+            .scrollContentBackground(.hidden)
+            .background(MacSettingsPageBackground())
+            .font(.title3)
+            .environment(\.defaultMinListRowHeight, 50)
+            #endif
             .toggleStyle(OmniaSwitchToggleStyle())
             .labelStyle(OmniaMonochromeLabelStyle())
             .modifier(SettingsFocusScroller(proxy: proxy))
@@ -100,6 +109,35 @@ struct OmniaSettingsForm<Content: View>: View {
 }
 
 /// AMOLED Black draws Settings pages on true black in Dark appearance.
+#if os(macOS)
+/// Black in dark appearance, like iPad's grouped pages, and the window's color in light.
+private struct MacSettingsPageBackground: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        (colorScheme == .dark ? Color.black : Color(nsColor: .windowBackgroundColor))
+            .ignoresSafeArea()
+    }
+}
+
+/// iPad's large title at the top of a Settings page.
+struct MacSettingsLargeTitle: ViewModifier {
+    let title: String
+
+    func body(content: Content) -> some View {
+        content.safeAreaInset(edge: .top, spacing: 0) {
+            Text(title)
+                .font(.largeTitle.bold())
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 32)
+                .padding(.top, 12)
+                .padding(.bottom, 4)
+                .background(MacSettingsPageBackground())
+        }
+    }
+}
+#endif
+
 private struct AmoledFormBackground: ViewModifier {
     let isActive: Bool
 

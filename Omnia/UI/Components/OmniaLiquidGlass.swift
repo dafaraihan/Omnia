@@ -453,7 +453,8 @@ struct OmniaSegmentedControl<Value: Hashable>: View {
                         .background {
                             if isSelected {
                                 Capsule()
-                                    .fill(.primary.opacity(0.14))
+                                    .fill(.primary.opacity(0.16))
+                                    .glassEffect(.regular.interactive(), in: Capsule())
                                     .matchedGeometryEffect(id: "selection", in: highlight)
                             }
                         }
@@ -463,8 +464,9 @@ struct OmniaSegmentedControl<Value: Hashable>: View {
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
         }
-        .padding(3)
-        .omniaGlass(.panels, base: .regular, in: Capsule())
+        .padding(4)
+        // The same glass as the floating tab and top bar.
+        .omniaGlass(.navigationBar, base: .clear, in: Capsule())
         .sensoryFeedback(.selection, trigger: selection)
     }
 }
