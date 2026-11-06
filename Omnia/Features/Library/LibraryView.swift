@@ -36,40 +36,30 @@ struct LibraryView: View {
         trackerLibrary.effectiveSource(trackerLibrary.watchlistSource).tracker
     }
 
-    private var sections: [LibrarySection] {
-        LibraryCollectionPresentation.sections(
-            // Only what's saved to the library. Continue Watching has its own row on Home.
-            snapshots: (tracker.map(trackerSnapshots) ?? store.localMediaSnapshots).filter(\.isInWatchlist),
+    /// Saved titles, each once. One that's in progress keeps its progress bar.
+    private var items: [MediaItem] {
+        LibraryCollectionPresentation.items(
+            snapshots: tracker.map(trackerSnapshots) ?? store.localMediaSnapshots,
             kind: selectedKind,
             sort: sortOrder
         )
     }
 
-    /// A tracker's lists in the shape Omnia's own library has: paused
-    /// titles under Continue Watching, the watchlist under My List.
+    /// A tracker's watchlist, with progress from its paused titles.
     private func trackerSnapshots(_ kind: TrackerKind) -> [LocalMediaSnapshot] {
-        let progress = trackerLibrary.items(.progress, from: kind).map {
-            LocalMediaSnapshot(item: $0, isInWatchlist: false, savedAt: nil, lastPlayedAt: nil)
-        }
-        let watchlist = trackerLibrary.items(.watchlist, from: kind).map { item in
+        let progress = trackerLibrary.items(.progress, from: kind)
+        return trackerLibrary.items(.watchlist, from: kind).map { item in
             var item = item
-            item.progress = nil
+            let paused = progress.first { $0.isSameTitle(as: item) }
+            item.progress = paused?.progress
+            item.positionSeconds = paused?.positionSeconds
+            item.durationSeconds = paused?.durationSeconds
             return LocalMediaSnapshot(item: item, isInWatchlist: true, savedAt: nil, lastPlayedAt: nil)
         }
-        return progress + watchlist
     }
 
     private var sortOrder: LibrarySortOrder {
         LibrarySortOrder(rawValue: savedSortOrder) ?? .recentAdded
-    }
-
-    /// One grid, each title once, even when two sources list it.
-    private var items: [MediaItem] {
-        var kept: [MediaItem] = []
-        for item in sections.flatMap(\.items) where !kept.contains(where: { $0.id == item.id || $0.isSameTitle(as: item) }) {
-            kept.append(item)
-        }
-        return kept
     }
 
     /// Columns that share the width evenly, so a row never ends in a gap.

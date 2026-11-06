@@ -1,66 +1,21 @@
 import Foundation
 
-enum LibrarySectionKind: String, CaseIterable, Hashable, Identifiable, Sendable {
-    case myList
-    case continueWatching
-    case rewatch
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .myList: "My List"
-        case .continueWatching: "Continue Watching"
-        case .rewatch: "Rewatch"
-        }
-    }
-}
-
-struct LibrarySection: Equatable, Identifiable, Sendable {
-    let kind: LibrarySectionKind
-    let items: [MediaItem]
-
-    var id: LibrarySectionKind { kind }
-}
-
+/// Library is what's saved to it, each title once. Continue Watching and
+/// finished titles have their own places, so they aren't listed here.
 enum LibraryCollectionPresentation {
-    static func sections(
+    static func items(
         snapshots: [LocalMediaSnapshot],
         kind selectedKind: MediaItem.Kind?,
         sort: LibrarySortOrder
-    ) -> [LibrarySection] {
-        let filtered = snapshots.filter { selectedKind == nil || $0.item.kind == selectedKind }
-        var values: [LibrarySectionKind: [LocalMediaSnapshot]] = Dictionary(
-            uniqueKeysWithValues: LibrarySectionKind.allCases.map { ($0, []) }
-        )
-
-        for snapshot in filtered {
-            if snapshot.progress != nil {
-                values[.continueWatching, default: []].append(snapshot)
-            } else if isCompleted(snapshot) {
-                values[.rewatch, default: []].append(snapshot)
-            } else if snapshot.isInWatchlist {
-                // A title saved twice under different IDs shows once.
-                if !values[.myList, default: []].contains(where: { $0.item.isSameTitle(as: snapshot.item) }) {
-                    values[.myList, default: []].append(snapshot)
-                }
+    ) -> [MediaItem] {
+        var kept: [LocalMediaSnapshot] = []
+        for snapshot in snapshots where snapshot.isInWatchlist && (selectedKind == nil || snapshot.item.kind == selectedKind) {
+            // A title saved twice under different IDs shows once.
+            if !kept.contains(where: { $0.item.isSameTitle(as: snapshot.item) }) {
+                kept.append(snapshot)
             }
         }
-
-        return LibrarySectionKind.allCases.map { sectionKind in
-            LibrarySection(
-                kind: sectionKind,
-                items: sortSnapshots(values[sectionKind, default: []], by: sort).map(\.item)
-            )
-        }
-    }
-
-    static func isCompleted(_ snapshot: LocalMediaSnapshot) -> Bool {
-        if snapshot.item.kind == .movie {
-            return snapshot.watchState.movieWatched == true
-        }
-        let states = snapshot.watchState.episodeStates.values
-        return !states.isEmpty && states.allSatisfy { $0 }
+        return sortSnapshots(kept, by: sort).map(\.item)
     }
 
     private static func sortSnapshots(
