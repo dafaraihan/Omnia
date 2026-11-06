@@ -22,6 +22,16 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "0.4.0",
+          "buildVersion": "14",
+          "date": "2026-11-06T05:53:20Z",
+          "localizedDescription": "A big redesign: a cleaner player, a new Library and Continue Watching, and Settings that look the same on every device.\n\nNew\n- Continue Watching cards in two styles, Card and Poster, with a menu from the ⋯ button, a long press or a right-click: Go to Show, Mark as Watched, Remove from Watchlist.\n- Landscape Card Style: one place to size every landscape card, including Continue Watching and collections.\n- A new Library: only the titles you've added, each once, with All, Movies and Series in a Liquid Glass switch.\n- An Apple TV-style player: glass controls, a thin timeline you can tap or drag to seek, AirPlay, and pinch to fill or fit on iPhone and iPad.\n- Mono accent, which adapts to light and dark, and system text and icon colours throughout.\n\nImproved\n- Settings are regrouped, with everyday options first and the rest on Advanced pages. Mac Settings now match iPhone and iPad.\n- Native animations: the poster zooms into its title page, buttons respond with symbol effects, and iPhone gives haptic feedback.\n- iPad shows sources on the full page, as on Mac.\n- Cleanup, security checks and better power use: Omnia eases off when the device runs hot.\n\nRemoved\n- Upcoming. New Episode Reminders still work.\n\nUpdate all your devices together. Settings saved by 0.4.0 may not load on 0.3.9.",
+          "downloadURL": "https://github.com/dafaraihan/Omnia/releases/download/v0.4.0/Omnia-0.4.0-iPhone-iPad.ipa",
+          "size": 33293838,
+          "sha256": "87a72f238a3d1d55cb5daa3d362cbf3647c71c1adf1b35cec189076ebf08060d",
+          "minOSVersion": "26.5"
+        },
+        {
           "version": "0.3.9",
           "buildVersion": "13",
           "date": "2026-11-04T10:15:50Z",
