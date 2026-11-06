@@ -94,6 +94,7 @@ private struct MacPushedToolbarTitleModifier: ViewModifier {
     /// False for a stack's first page, such as a Settings page beside its
     /// categories, which has nowhere to go back to and draws its own title.
     @Environment(\.isPresented) private var isPresented
+    @Environment(\.omniaHidesPushedTitle) private var hidesTitle
 
     func body(content: Content) -> some View {
         content
@@ -112,7 +113,7 @@ private struct MacPushedToolbarTitleModifier: ViewModifier {
                     .help("Back")
                 }
 
-                if let title {
+                if let title, !hidesTitle {
                     ToolbarSpacer(.fixed, placement: .navigation)
 
                     ToolbarItem(placement: .navigation) {
@@ -135,5 +136,17 @@ struct OmniaToolbarSymbol<Content: View>: View {
     var body: some View {
         content()
             .tint(.primary)
+    }
+}
+
+private struct OmniaHidesPushedTitleKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    /// A page that draws its own large title keeps the Mac toolbar to Back alone.
+    var omniaHidesPushedTitle: Bool {
+        get { self[OmniaHidesPushedTitleKey.self] }
+        set { self[OmniaHidesPushedTitleKey.self] = newValue }
     }
 }

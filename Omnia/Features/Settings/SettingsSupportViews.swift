@@ -75,27 +75,24 @@ struct OmniaSettingsForm<Content: View>: View {
 
     @ViewBuilder
     private var form: some View {
-        // One grouped Form on every device, so Mac and iPad look like iPhone.
+        #if os(macOS)
+        if isRoot {
+            rootCards
+        } else {
+            pageCards
+        }
+        #else
         ScrollViewReader { proxy in
             Form {
                 content
             }
-            .formStyle(.grouped)
-            #if os(macOS)
-            // As on iPad: rows near the window's full width, larger text and
-            // rows, on the page's own background.
-            .contentMargins(.horizontal, 32, for: .scrollContent)
-            .scrollContentBackground(.hidden)
-            .background(MacSettingsPageBackground())
-            .font(.title3)
-            .environment(\.defaultMinListRowHeight, 50)
-            #endif
             .toggleStyle(OmniaSwitchToggleStyle())
             .labelStyle(OmniaMonochromeLabelStyle())
             .modifier(SettingsFocusScroller(proxy: proxy))
         }
         .modifier(AmoledFormBackground(isActive: usesAmoledBackground))
         .tint(resolvedTint)
+        #endif
     }
 
     /// Row text and symbols stay in the label colors. Switches and sliders set
@@ -106,20 +103,128 @@ struct OmniaSettingsForm<Content: View>: View {
         display.amoledBlack && colorScheme == .dark
     }
 
+    #if os(macOS)
+    private var rootCards: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 20) {
+                Group(sections: content) { sections in
+                    ForEach(sections) { section in
+                        VStack(alignment: .leading, spacing: 8) {
+                            section.header
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.secondary)
+
+                            Group(subviews: section.content) { rows in
+                                VStack(spacing: 0) {
+                                    ForEach(rows) { row in
+                                        MacSettingsInteractiveRow {
+                                            row
+                                                .frame(maxWidth: .infinity, alignment: .leading)
+                                                .padding(.horizontal, 12)
+                                                .padding(.vertical, 12)
+                                                .focusEffectDisabled()
+                                        }
+
+                                        if row.id != rows.last?.id {
+                                            Divider()
+                                                .padding(.leading, 12)
+                                        }
+                                    }
+                                }
+                                .background {
+                                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                                        .fill(Color.primary.opacity(0.065))
+                                }
+                                .clipShape(.rect(cornerRadius: 22, style: .continuous))
+                            }
+
+                            section.footer
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(MacSettingsLayout.minimumOuterMargin)
+        }
+        .scrollIndicators(.automatic)
+        .font(.title3)
+        .modifier(TopBarScrollReporting(destination: .settings))
+        .tint(resolvedTint)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    /// Sub-pages: the root's cards, with Form-style rows for switches,
+    /// values and pickers, at the root's width and margins.
+    private var pageCards: some View {
+        ScrollViewReader { proxy in
+        ScrollView {
+            // Not lazy, so search can scroll to a row that's still off screen.
+            VStack(alignment: .leading, spacing: 20) {
+                Group(sections: content) { sections in
+                    ForEach(sections) { section in
+                        VStack(alignment: .leading, spacing: 8) {
+                            section.header
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 12)
+
+                            Group(subviews: section.content) { rows in
+                                if !rows.isEmpty {
+                                    VStack(spacing: 0) {
+                                        ForEach(rows) { row in
+                                            MacSettingsInteractiveRow {
+                                                row
+                                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                                    .padding(.horizontal, 12)
+                                                    .padding(.vertical, 12)
+                                                    .focusEffectDisabled()
+                                            }
+
+                                            if row.id != rows.last?.id {
+                                                Divider()
+                                                    .padding(.leading, 12)
+                                            }
+                                        }
+                                    }
+                                    .background {
+                                        RoundedRectangle(cornerRadius: 22, style: .continuous)
+                                            .fill(Color.primary.opacity(0.065))
+                                    }
+                                    .clipShape(.rect(cornerRadius: 22, style: .continuous))
+                                }
+                            }
+
+                            section.footer
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 12)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(MacSettingsLayout.minimumOuterMargin)
+        }
+        .modifier(SettingsFocusScroller(proxy: proxy))
+        }
+        .scrollIndicators(.automatic)
+        .font(.title3)
+        .toggleStyle(MacSettingsRowToggleStyle())
+        // As on iPhone: the field sits in its row's card, not in a box of its own.
+        .textFieldStyle(.plain)
+        .labeledContentStyle(MacSettingsRowLabeledContentStyle())
+        .labelStyle(OmniaMonochromeLabelStyle())
+        .background(usesAmoledBackground ? Color.black : Color.clear)
+        .tint(resolvedTint)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+    #endif
 }
 
 /// AMOLED Black draws Settings pages on true black in Dark appearance.
 #if os(macOS)
-/// Black in dark appearance, like iPad's grouped pages, and the window's color in light.
-private struct MacSettingsPageBackground: View {
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        (colorScheme == .dark ? Color.black : Color(nsColor: .windowBackgroundColor))
-            .ignoresSafeArea()
-    }
-}
-
 /// iPad's large title at the top of a Settings page.
 struct MacSettingsLargeTitle: ViewModifier {
     let title: String
@@ -129,11 +234,13 @@ struct MacSettingsLargeTitle: ViewModifier {
             Text(title)
                 .font(.largeTitle.bold())
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 32)
+                // The cards' leading edge, so title and rows line up.
+                .padding(.horizontal, MacSettingsLayout.minimumOuterMargin)
                 .padding(.top, 12)
                 .padding(.bottom, 4)
-                .background(MacSettingsPageBackground())
         }
+        // The page name shows once, here, not again in the toolbar.
+        .environment(\.omniaHidesPushedTitle, true)
     }
 }
 #endif
@@ -237,7 +344,11 @@ extension View {
     /// chevron, as Form draws it. Only macOS needs it; elsewhere the Form
     /// draws the row.
     func settingsLinkRow() -> some View {
+        #if os(macOS)
+        buttonStyle(MacSettingsLinkRowStyle())
+        #else
         self
+        #endif
     }
 }
 
@@ -280,6 +391,109 @@ extension EnvironmentValues {
     }
 }
 
+struct MacSettingsSymbolImage: View {
+    let systemName: String
+    @Environment(\.macSettingsSymbolTreatment) private var treatment
+
+    var body: some View {
+        Image(systemName: systemName)
+            .symbolRenderingMode(.monochrome)
+            .foregroundStyle(treatment.color)
+    }
+}
+
+private struct MacSettingsLinkRowStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 12) {
+            configuration.label
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Image(systemName: "chevron.forward")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
+        }
+        .contentShape(Rectangle())
+        .opacity(configuration.isPressed ? 0.6 : 1)
+    }
+}
+/// A Form-style switch row outside a Form: the first line of the label as
+/// the title, any further lines as caption details, the switch trailing.
+struct MacSettingsRowToggleStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Group(subviews: configuration.label) { lines in
+                    ForEach(Array(lines.enumerated()), id: \.element.id) { index, line in
+                        if index == 0 {
+                            line
+                        } else {
+                            line
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Toggle(isOn: configuration.$isOn) {
+                configuration.label
+            }
+            .toggleStyle(OmniaSwitchToggleStyle())
+            .labelsHidden()
+        }
+    }
+}
+
+/// Label leading and value trailing, as a grouped Form draws it.
+struct MacSettingsRowLabeledContentStyle: LabeledContentStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 12) {
+            configuration.label
+            Spacer(minLength: 12)
+            configuration.content
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.trailing)
+        }
+    }
+}
+
+private struct MacSettingsInteractiveRow<Content: View>: View {
+    private let content: Content
+    @State private var isHovered = false
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        let treatment = MacSettingsPresentation.symbolTreatment(
+            isHovered: isHovered,
+            isPressed: false
+        )
+        content
+            .environment(\.macSettingsSymbolTreatment, treatment)
+            .labelStyle(MacSettingsLabelStyle(treatment: treatment))
+            .onHover { isHovered = $0 }
+    }
+}
+
+private struct MacSettingsLabelStyle: LabelStyle {
+    let treatment: MacSettingsSymbolTreatment
+
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 7) {
+            configuration.icon
+                .symbolRenderingMode(.monochrome)
+                .foregroundStyle(treatment.color)
+            configuration.title
+        }
+    }
+}
+
+enum MacSettingsLayout {
+    static let minimumOuterMargin: CGFloat = 24
+}
 #endif
 
 /// Writes to Settings when the drag ends: saving on every step redraws the
