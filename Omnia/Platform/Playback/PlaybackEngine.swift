@@ -8,6 +8,7 @@ import Foundation
 import AppKit
 typealias PlaybackEngineView = NSView
 #else
+import AVKit
 import CoreVideo
 import UIKit
 typealias PlaybackEngineView = UIView
@@ -65,6 +66,9 @@ protocol PlaybackEngine: AnyObject {
     func detachVideoView(fromHost hostView: PlaybackEngineView)
     func togglePictureInPicture()
     #if os(iOS)
+    /// An engine that floats its own video gives its controller here; nil
+    /// has Omnia copy frames into its own floating window, as for mpv.
+    var systemPictureInPictureController: AVPictureInPictureController? { get }
     func beginSampleBufferOutput(_ frameHandler: @escaping (CVPixelBuffer) -> Void) -> Bool
     func endSampleBufferOutput()
     func captureCurrentFrame(_ frameHandler: @escaping (CVPixelBuffer) -> Void)
@@ -73,5 +77,9 @@ protocol PlaybackEngine: AnyObject {
     func stop()
 }
 
-extension OMMpvPlayerController: PlaybackEngine {}
+extension OMMpvPlayerController: PlaybackEngine {
+    #if os(iOS)
+    var systemPictureInPictureController: AVPictureInPictureController? { nil }
+    #endif
+}
 #endif

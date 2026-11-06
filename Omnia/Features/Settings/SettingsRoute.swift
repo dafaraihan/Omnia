@@ -242,7 +242,7 @@ enum SettingsRoute: Hashable, Sendable {
         case .animeEnrichment: ["anime", "enrichment", "AniList", "Kitsu", "MyAnimeList", "MAL", "synopsis", "artwork", "genres"]
         case .metadataSources: ["metadata", "TMDB", "TVDB", "AniList", "Kitsu", "MyAnimeList", "MAL", "Jikan", "fallback", "anime", "primary source"]
         case .progress: ["local progress", "continue watching", "watchlist", "backup"]
-        case .videoPlayer: ["video player", "player", "skip intro", "auto skip", "recap", "credits", "up next", "next episode", "threshold", "decoder", "hardware", "Metal", "rendering", "gpu-next", "OpenGL", "overlay", "audio", "subtitles", "SDH", "forced", "source selection", "auto play"]
+        case .videoPlayer: ["video player", "player", "skip intro", "auto skip", "recap", "credits", "up next", "next episode", "threshold", "decoder", "engine", "KSPlayer", "mpv", "hardware", "Metal", "rendering", "gpu-next", "OpenGL", "overlay", "audio", "subtitles", "SDH", "forced", "source selection", "auto play"]
         case .subtitle: ["player appearance", "subtitles", "captions", "SDH", "appearance"]
         case .playbackResolver: ["endpoint", "bearer token", "approved add-ons", "approved HTTPS hosts"]
         case .playbackDiagnostics: ["diagnostics", "log", "errors", "failures", "could not play", "libmpv", "copy"]

@@ -115,6 +115,7 @@ enum SettingsSearchIndex {
         Row(title: "Threshold", terms: "", route: .advanced(.videoPlayer)),
         Row(title: "Preload Next Episode Sources", terms: "Looks up the next episode's sources shortly before Up Next appears.", route: .advanced(.videoPlayer)),
         Row(title: "Skip Intro, Recap and Credits", terms: "Shows a Skip button using timestamps from IntroDB.", route: .videoPlayer),
+        Row(title: "Engine", terms: "playback engine player engine mpv KSPlayer decoder Picture in Picture", route: .advanced(.videoPlayer)),
         Row(title: "Use Whole Screen", terms: "Video also covers the strip beside the camera notch. Full screen then stays in the current", route: .advanced(.videoPlayer)),
         Row(title: "Preferred audio", terms: "", route: .videoPlayer),
         Row(title: "Audio fallback", terms: "", route: .advanced(.videoPlayer)),

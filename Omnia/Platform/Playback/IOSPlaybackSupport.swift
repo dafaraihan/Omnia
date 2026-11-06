@@ -97,6 +97,12 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
         hasHandoffPlayer && (handingOff || handoffController?.isPictureInPictureActive == true)
     }
     private var controller: AVPictureInPictureController?
+    /// An engine's own floating window (KSPlayer), fed by its decoder.
+    private var usesEngineController = false
+    private weak var engineVideoView: UIView?
+    /// The view behind the whole app that keeps a floating video's layer in
+    /// the window while the player is closed.
+    weak var backgroundHost: UIView?
     private var activeController: AVPictureInPictureController? {
         [controller, handoffController].compactMap { $0 }.first { $0.isPictureInPictureActive }
     }
@@ -206,6 +212,23 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
         attach(player)
     }
 
+    /// An engine that floats its own video (KSPlayer). Swiping home floats
+    /// it too; its view moves behind the app while the player is closed.
+    func attachEngineController(_ engineController: AVPictureInPictureController, videoView: UIView) {
+        engineVideoView = videoView
+        guard controller !== engineController else { return }
+        guard controller?.isPictureInPictureActive != true else { return }
+        reset()
+        guard AVPictureInPictureController.isPictureInPictureSupported() else { return }
+        usesEngineController = true
+        controller = engineController
+        engineController.delegate = self
+        engineController.canStartPictureInPictureAutomaticallyFromInline = true
+        possibility = engineController.observe(\.isPictureInPicturePossible, options: [.initial, .new]) { [weak self] _, _ in
+            Task { @MainActor [weak self] in self?.publish() }
+        }
+    }
+
     /// mpv's sources: iOS floats the frames mpv hands over.
     func attachSampleBuffers() {
         guard !usesSampleBuffers else { return }
@@ -227,6 +250,16 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
         possibility = controller?.observe(\.isPictureInPicturePossible, options: [.initial, .new]) { [weak self] _, _ in
             Task { @MainActor [weak self] in self?.publish() }
         }
+    }
+
+    /// The player closes behind the floating window, taking its views with
+    /// it; the engine's video moves behind the app so its layer stays in the
+    /// window. The player takes it back when it opens again.
+    private func parkEngineVideo() {
+        guard let view = engineVideoView, let backgroundHost, view.superview !== backgroundHost else { return }
+        view.frame = backgroundHost.bounds
+        view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        backgroundHost.addSubview(view)
     }
 
     /// Keeps the layer on the real picture and its shape, ready to float.
@@ -325,6 +358,10 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
     }
 
     func pictureInPictureControllerWillStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        if usesEngineController, pictureInPictureController === controller {
+            parkEngineVideo()
+            return
+        }
         guard pictureInPictureController === controller, usesSampleBuffers else { return }
         let layer = sampleLayer
         let started = beginFrames? { frame in Self.enqueue(frame, on: layer) } ?? false
@@ -435,7 +472,7 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
 
     private func publish() {
         let samplePossible = controller?.isPictureInPicturePossible == true
-            && (usesSampleBuffers || player?.currentItem?.status == .readyToPlay)
+            && (usesSampleBuffers || usesEngineController || player?.currentItem?.status == .readyToPlay)
         stateChanged?(activeController != nil, samplePossible || isHandoffReady)
     }
 
@@ -448,6 +485,11 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
     }
 
     private func start() {
+        if usesEngineController {
+            guard let controller, controller.isPictureInPicturePossible else { unavailable?(nil); return }
+            controller.startPictureInPicture()
+            return
+        }
         if usesSampleBuffers {
             guard startTask == nil else { return }
             if isHandoffReady, let handoffController, let player {
@@ -598,6 +640,7 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
         controller?.delegate = nil
         controller?.stopPictureInPicture()
         controller = nil
+        usesEngineController = false
         handoffPossibility = nil
         handoffController?.delegate = nil
         handoffController?.stopPictureInPicture()
@@ -695,6 +738,7 @@ struct IOSSampleBufferLayerHost: UIViewRepresentable {
         let view = HostView()
         view.isUserInteractionEnabled = false
         view.sampleLayer = controller.sampleLayer
+        controller.backgroundHost = view
         return view
     }
 

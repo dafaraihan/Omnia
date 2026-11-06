@@ -98,6 +98,20 @@ Group {
             } header: {
                 Text("Audio")
             }
+            #if OMNIA_MPV
+            Section {
+                SettingsDropdown(
+                    "Engine",
+                    selection: settings.binding(\.playbackBehavior.engine),
+                    options: Array(PlaybackEngineKind.allCases)
+                ) { engine in engine.title }
+                .settingsRow("Engine")
+            } header: {
+                Text("Playback")
+            } footer: {
+                Text("\(settings.preferences.playbackBehavior.engine.detail) Controls and settings are the same with either. Applies from the next title you play.")
+            }
+            #endif
             Section {
                 Toggle(isOn: settings.binding(\.compatibleFormatsOnly)) {
                     Text("Show Only Compatible Formats")
@@ -128,9 +142,7 @@ Group {
                 }
                 .settingsLinkRow()
                 LabeledContent("Default player", value: "Omnia (in-app)")
-                #if OMNIA_MPV
-                LabeledContent("Playback engine", value: "libmpv")
-                #else
+                #if !OMNIA_MPV
                 LabeledContent("Playback engine", value: "AVPlayer")
                 #endif
             } header: {

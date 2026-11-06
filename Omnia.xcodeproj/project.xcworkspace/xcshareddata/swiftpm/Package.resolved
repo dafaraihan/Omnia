@@ -1,6 +1,23 @@
 {
-  "originHash" : "ccc727310637079b7355ccf59e7d153c26677020c1a43e177b78cc9df7963c0f",
+  "originHash" : "260f255e98bad9c980ee50314f4a3a46fee7160adf268889ac5cc7d7066b195a",
   "pins" : [
+    {
+      "identity" : "ffmpegkit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/kingslay/FFmpegKit.git",
+      "state" : {
+        "revision" : "c32be9bfb628042737ad3ef622e930c5c7b15954",
+        "version" : "6.1.4"
+      }
+    },
+    {
+      "identity" : "ksplayer",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/kingslay/KSPlayer.git",
+      "state" : {
+        "revision" : "be7f60d3b94a0941c643fe8699113cfce4f08e83"
+      }
+    },
     {
       "identity" : "supabase-swift",
       "kind" : "remoteSourceControl",

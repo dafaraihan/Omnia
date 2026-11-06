@@ -612,16 +612,17 @@ final class PlaybackSession {
         #if OMNIA_MPV
         trackSelectionGate.reset()
         pendingSubtitlePreference = nil
-        let mpv: OMMpvPlayerController
+        let mpv: any PlaybackEngine
+        let usesKSPlayer = preferences.playbackBehavior.engine == .ksPlayer
         #if os(macOS)
         cacheProtection = input.cacheProtection
         switch input {
         case .stream, .cachedStream:
-            mpv = OMMpvPlayerController(
-                url: source.url,
-                requestHeaders: source.requestHeaders
-            )
+            mpv = usesKSPlayer
+                ? KSPlayerEngine(url: source.url, requestHeaders: source.requestHeaders)
+                : OMMpvPlayerController(url: source.url, requestHeaders: source.requestHeaders)
         case let .disc(_, request, _):
+            // Discs stay with mpv, which reads Blu-ray menus and playlists.
             mpv = OMMpvPlayerController(
                 url: request.playbackURL,
                 requestHeaders: request.requestHeaders,
@@ -629,7 +630,9 @@ final class PlaybackSession {
             )
         }
         #else
-        mpv = OMMpvPlayerController(url: source.url, requestHeaders: source.requestHeaders)
+        mpv = usesKSPlayer
+            ? KSPlayerEngine(url: source.url, requestHeaders: source.requestHeaders)
+            : OMMpvPlayerController(url: source.url, requestHeaders: source.requestHeaders)
         fallbackContext = (preferences, position)
         #endif
         mpv.stateChangeHandler = { [weak self] snapshot in
@@ -1699,10 +1702,14 @@ final class PlaybackSession {
                 // mpv's audio output sets up the session as it opens, so
                 // Omnia's playback settings go back on once it has.
                 pictureInPictureController.activateAudioSession()
-                pictureInPictureController.attachSampleBuffers()
-                // Probing opens a second connection, so it waits until the
-                // video is playing rather than competing with the start.
-                if let source { pictureInPictureController.prepare(source: source) }
+                if let engineController = player.systemPictureInPictureController {
+                    pictureInPictureController.attachEngineController(engineController, videoView: player.videoView)
+                } else {
+                    pictureInPictureController.attachSampleBuffers()
+                    // Probing opens a second connection, so it waits until the
+                    // video is playing rather than competing with the start.
+                    if let source { pictureInPictureController.prepare(source: source) }
+                }
             }
             #endif
         }
@@ -1789,6 +1796,12 @@ final class PlaybackSession {
                 message: "Metal rendering unavailable: \(reason)"
             )
             PlaybackFailureLog.shared.setOutcome("Played with OpenGL", for: date)
+        }
+        #endif
+        #if os(iOS)
+        // KSPlayer makes a new floating window when the video's format changes.
+        if hasRenderedVideoFrame, let player, let engineController = player.systemPictureInPictureController {
+            pictureInPictureController.attachEngineController(engineController, videoView: player.videoView)
         }
         #endif
         audioTracks = snapshot.audioTracks.map(PlaybackTrack.init)

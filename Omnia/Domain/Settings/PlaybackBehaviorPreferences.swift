@@ -48,6 +48,29 @@ nonisolated enum NextEpisodeThresholdMode: String, Codable, CaseIterable, Identi
     }
 }
 
+/// Which engine decodes and draws video. The player's controls are the same
+/// for both; mpv stays the default.
+nonisolated enum PlaybackEngineKind: String, Codable, CaseIterable, Identifiable, Sendable {
+    case mpv
+    case ksPlayer
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .mpv: "mpv"
+        case .ksPlayer: "KSPlayer"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .mpv: "mpv plays almost every format, and its Auto Sync and subtitles are the most complete."
+        case .ksPlayer: "KSPlayer decodes with Apple's hardware and floats every format smoothly in Picture in Picture."
+        }
+    }
+}
+
 /// Nuvio's Decoder Priority, mapped onto mpv's hwdec options.
 nonisolated enum DecoderPriority: String, Codable, CaseIterable, Identifiable, Sendable {
     case deviceOnly
@@ -164,6 +187,7 @@ nonisolated struct PlaybackBehaviorPreferences: Codable, Equatable, Sendable {
 
     // Decoding
     var decoderPriority: DecoderPriority = .preferDevice
+    var engine: PlaybackEngineKind = .mpv
 
     // Overlays
     var showLoadingOverlay = true
@@ -203,7 +227,7 @@ nonisolated struct PlaybackBehaviorPreferences: Codable, Equatable, Sendable {
         case nextEpisodeFallbackToAnySource, preloadNextEpisodeSources
         case autoSkipSegments
         case stripSDHSubtitles, useForcedSubtitles, showOnlyPreferredSubtitleLanguages
-        case decoderPriority
+        case decoderPriority, engine
         case showLoadingOverlay, showLoadingStatus, showPauseOverlay, showContentWarnings
         case usesWholeScreen
         case metalRendering
@@ -239,6 +263,7 @@ nonisolated struct PlaybackBehaviorPreferences: Codable, Equatable, Sendable {
         useForcedSubtitles = value(.useForcedSubtitles, defaults.useForcedSubtitles)
         showOnlyPreferredSubtitleLanguages = value(.showOnlyPreferredSubtitleLanguages, defaults.showOnlyPreferredSubtitleLanguages)
         decoderPriority = value(.decoderPriority, defaults.decoderPriority)
+        engine = value(.engine, defaults.engine)
         showLoadingOverlay = value(.showLoadingOverlay, defaults.showLoadingOverlay)
         showLoadingStatus = value(.showLoadingStatus, defaults.showLoadingStatus)
         showPauseOverlay = value(.showPauseOverlay, defaults.showPauseOverlay)
@@ -271,6 +296,7 @@ nonisolated struct PlaybackBehaviorPreferences: Codable, Equatable, Sendable {
         try container.encode(useForcedSubtitles, forKey: .useForcedSubtitles)
         try container.encode(showOnlyPreferredSubtitleLanguages, forKey: .showOnlyPreferredSubtitleLanguages)
         try container.encode(decoderPriority, forKey: .decoderPriority)
+        try container.encode(engine, forKey: .engine)
         try container.encode(showLoadingOverlay, forKey: .showLoadingOverlay)
         try container.encode(showLoadingStatus, forKey: .showLoadingStatus)
         try container.encode(showPauseOverlay, forKey: .showPauseOverlay)

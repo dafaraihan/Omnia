@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		E170B0013018EA5D0066A3C3 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = E170B0023018EA5D0066A3C3 /* Supabase */; };
+		E170B0213018EA5D0066A3C3 /* OmniaKSEngine in Frameworks */ = {isa = PBXBuildFile; productRef = E170B0223018EA5D0066A3C3 /* OmniaKSEngine */; };
+		E170B0243018EA5D0066A3C3 /* OmniaKSEngine in Embed Frameworks */ = {isa = PBXBuildFile; productRef = E170B0223018EA5D0066A3C3 /* OmniaKSEngine */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -26,6 +28,20 @@
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		E170B0253018EA5D0066A3C3 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				E170B0243018EA5D0066A3C3 /* OmniaKSEngine in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		9D577E433018EA5D0066A3C3 /* Omnia */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
@@ -43,6 +59,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				E170B0013018EA5D0066A3C3 /* Supabase in Frameworks */,
+				E170B0213018EA5D0066A3C3 /* OmniaKSEngine in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -76,6 +93,8 @@
 				9D577E3D3018EA5D0066A3C3 /* Sources */,
 				9D577E3E3018EA5D0066A3C3 /* Frameworks */,
 				9D577E3F3018EA5D0066A3C3 /* Resources */,
+				E170B0253018EA5D0066A3C3 /* Embed Frameworks */,
+				E170B0263018EA5D0066A3C3 /* Remove Static Framework Placeholders */,
 				F6B4A9303018EA5D0066A3C3 /* Embed libmpv */,
 			);
 			buildRules = (
@@ -88,6 +107,7 @@
 			name = Omnia;
 			packageProductDependencies = (
 				E170B0023018EA5D0066A3C3 /* Supabase */,
+				E170B0223018EA5D0066A3C3 /* OmniaKSEngine */,
 			);
 			productName = Omnia;
 			productReference = 9D577E413018EA5D0066A3C3 /* Omnia.app */;
@@ -119,6 +139,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				E170B0033018EA5D0066A3C3 /* XCRemoteSwiftPackageReference "supabase-swift" */,
+				E170B0233018EA5D0066A3C3 /* XCLocalSwiftPackageReference "Packages/OmniaKSEngine" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 9D577E423018EA5D0066A3C3 /* Products */;
@@ -141,6 +162,26 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		E170B0263018EA5D0066A3C3 /* Remove Static Framework Placeholders */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/Scripts/remove-static-framework-stubs.sh",
+			);
+			name = "Remove Static Framework Placeholders";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "/bin/bash \"${SRCROOT}/Scripts/remove-static-framework-stubs.sh\"\n";
+		};
 		F6B4A9303018EA5D0066A3C3 /* Embed libmpv */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
@@ -535,6 +576,13 @@
 		};
 /* End XCConfigurationList section */
 
+/* Begin XCLocalSwiftPackageReference section */
+		E170B0233018EA5D0066A3C3 /* XCLocalSwiftPackageReference "Packages/OmniaKSEngine" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/OmniaKSEngine;
+		};
+/* End XCLocalSwiftPackageReference section */
+
 /* Begin XCRemoteSwiftPackageReference section */
 		E170B0033018EA5D0066A3C3 /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
 			isa = XCRemoteSwiftPackageReference;
@@ -553,6 +601,10 @@
 			isa = XCSwiftPackageProductDependency;
 			package = E170B0033018EA5D0066A3C3 /* XCRemoteSwiftPackageReference "supabase-swift" */;
 			productName = Supabase;
+		};
+		E170B0223018EA5D0066A3C3 /* OmniaKSEngine */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = OmniaKSEngine;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

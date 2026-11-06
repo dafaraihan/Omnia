@@ -119,3 +119,42 @@ at the pinned tags; each archive digest was reproduced locally.
 - Reproducibility: not yet checked. No two-builder reproduction has been
   done for the new components, and whether MoltenVK's Xcode build is
   byte-for-byte reproducible is unknown.
+
+## KSPlayer engine (Settings › Player › Advanced › Engine)
+
+Added 2026-11-06 at Dafa's request as a second playback engine behind the
+same player UI; mpv stays the default. It lives in the local package
+`Packages/OmniaKSEngine`, which builds as `OmniaKSEngine.framework` and is
+embedded in the app on iPhone, iPad and Mac. Unlike the closure above it comes
+through Swift Package Manager, pinned in `Package.resolved`.
+
+| Component | Pin | Licence | Role |
+| --- | --- | --- | --- |
+| KSPlayer (`kingslay/KSPlayer`, `GPLv3` branch) | revision `be7f60d3b94a0941c643fe8699113cfce4f08e83` | GPL-3.0 | Player, decoders' glue, PiP, subtitles |
+| FFmpegKit (`kingslay/FFmpegKit`) | 6.1.4, revision `c32be9bfb628042737ad3ef622e930c5c7b15954` | GPL-3.0 (bundles FFmpeg 6.1, libass, libplacebo, MoltenVK, dav1d, gnutls, libsmbclient and others under their own licences) | Prebuilt static xcframeworks KSPlayer links |
+
+**Why the GPLv3 branch.** KSPlayer's `main` branch ships its core only as a
+prebuilt binary for macOS, the iOS Simulator and tvOS; full source for every
+device is the paid LGPL edition. The `GPLv3` branch is the maintained
+open-source edition with source for every platform. Only it is used; none of
+the paid features are.
+
+**Isolation.** FFmpegKit's FFmpeg 6.1 and Omnia's mpv FFmpeg 8 can't share one
+binary: on iPhone and iPad both are static, so the linker would mix them. The
+package links KSPlayer and FFmpegKit into its own framework, imports KSPlayer
+`@_implementationOnly`, and exports only `_$s13OmniaKSEngine*` Swift symbols
+(Xcode also applies the export list to the app link, which keeps `_$s5Omnia*`
+and `___debug_*`). `Scripts/remove-static-framework-stubs.sh` deletes the
+empty placeholder bundles Xcode copies for FFmpegKit's static frameworks. One
+ObjC class (`MVKBlockObserver`, from MoltenVK) exists in both copies; each
+image binds its own, and the runtime logs a warning.
+
+**Supply chain.** FFmpegKit's binaries are committed to its Git repository
+and built by its author; they have not been rebuilt or reproduced here. The
+pins fix the exact commits. Building requires Xcode's Metal Toolchain
+(`xcodebuild -downloadComponent MetalToolchain`) for KSPlayer's shaders.
+
+**Release review still needed:** add KSPlayer's and FFmpegKit's licence texts
+and FFmpegKit's bundled component notices to the release's licences zip,
+record a vulnerability check of FFmpeg 6.1.x and the bundled libraries, and
+measure the size change of a Release build.
