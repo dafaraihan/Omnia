@@ -390,6 +390,27 @@ nonisolated struct CardHoverPreferences: Codable, Equatable, Sendable {
     }
 }
 
+/// Settings › Landscape Card Style › Continue Watching Style.
+nonisolated enum ContinueWatchingStyle: String, Codable, CaseIterable, Identifiable, Sendable {
+    case card
+    case poster
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .card: "Card"
+        case .poster: "Poster"
+        }
+    }
+
+    /// Wide, removed in Nov 2026, reads as Card.
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = raw == "poster" ? .poster : .card
+    }
+}
+
 /// Independent Continue Watching geometry. Style Default preserves saved layouts.
 nonisolated struct ContinueWatchingCardPreferences: Codable, Equatable, Sendable {
     var size: Size = .styleDefault
@@ -915,6 +936,7 @@ nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
     var hoverPreviewEnabled = false
     var hoverPreviewDelay: HoverPreviewDelay = .two
 
+    var continueWatchingStyle: ContinueWatchingStyle = .card
     var continueWatchingCard: ContinueWatchingCardPreferences = .default { didSet { rememberCardStyle() } }
     var continueWatchingSort: ContinueWatchingSort = .recent
     /// Settings › Layout › Liquid Glass.
@@ -980,6 +1002,7 @@ nonisolated struct DisplayPreferences: Codable, Equatable, Sendable {
         cardHover = (try? c.decodeIfPresent(CardHoverPreferences.self, forKey: .cardHover)) ?? d.cardHover
         hoverPreviewEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .hoverPreviewEnabled)) ?? d.hoverPreviewEnabled
         hoverPreviewDelay = (try? c.decodeIfPresent(HoverPreviewDelay.self, forKey: .hoverPreviewDelay)) ?? d.hoverPreviewDelay
+        continueWatchingStyle = (try? c.decodeIfPresent(ContinueWatchingStyle.self, forKey: .continueWatchingStyle)) ?? .card
         if c.contains(.continueWatchingCard), let nested = try? c.superDecoder(forKey: .continueWatchingCard),
            let card = try? ContinueWatchingCardPreferences(from: nested, posterWidth: posterWidth, posterCorner: posterCorner) {
             continueWatchingCard = card

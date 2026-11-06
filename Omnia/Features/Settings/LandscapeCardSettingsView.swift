@@ -24,6 +24,12 @@ struct LandscapeCardSettingsView: View {
                 OmniaSettingsForm {
             Section {
                 SettingsDropdown(
+                    "Collection Shape",
+                    selection: settings.binding(\.display.collectionCard.shape),
+                    options: Array(CollectionCardPreferences.Shape.allCases)
+                ) { $0.title }
+                .settingsRow("Collection Shape")
+                SettingsDropdown(
                     "Folder Names",
                     selection: settings.binding(\.display.collectionCard.titles),
                     options: Array(CollectionCardPreferences.Titles.allCases)
@@ -32,7 +38,7 @@ struct LandscapeCardSettingsView: View {
             } header: {
                 Text("Collections")
             } footer: {
-                Text("Collections keep the shape they were imported with.")
+                Text("As Imported keeps each collection's own shape. Titles inside a collection always stay as imported.")
             }
 
             if display.cardDepth.isEnabled {
@@ -45,7 +51,7 @@ struct LandscapeCardSettingsView: View {
                     Text("Depth and hover glow are set in Poster Card Style.")
                 }
             }
-        
+
                 }
             } else {
                 OmniaSettingsForm {
@@ -62,6 +68,13 @@ struct LandscapeCardSettingsView: View {
                     options: Array(ContinueWatchingCardPreferences.Corners.allCases)
                 ) { $0.title }
                 .settingsRow("Corners")
+                SettingsDropdown(
+                    "Continue Watching Style",
+                    subtitle: "Poster uses Poster Card Style's size and corners.",
+                    selection: settings.binding(\.display.continueWatchingStyle),
+                    options: ContinueWatchingStyle.allCases
+                ) { $0.title }
+                .settingsRow("Continue Watching Style")
             } header: {
                 Text("All Landscape Cards")
             } footer: {

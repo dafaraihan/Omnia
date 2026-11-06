@@ -294,7 +294,7 @@ struct StreamSelectionSections: View {
                 }
                 .settingsRow("Forget Saved Links and Releases")
             }
-        
+
             } else {
                 StreamSortingSections(advanced: false)
             Section {

@@ -112,7 +112,7 @@ struct StreamsSettingsView: View {
                     Text("Press and hold or right-click a stream to pin it.")
                 }
             }
-        
+
                 }
             } else {
                 OmniaSettingsForm {

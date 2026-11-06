@@ -115,7 +115,7 @@ struct PluginsSettingsView: View {
             } footer: {
                 Text("Many plugins look titles up on TMDB. Some include their own key; others need yours. It's kept in your Keychain and only given to plugins.")
             }
-        
+
             Section {
                 SettingsRouteLink(route: .advanced(.plugins), summary: nil)
             }

@@ -475,18 +475,6 @@ nonisolated struct AddonSubtitlesResponse: Decodable, Sendable {
     let subtitles: [AddonSubtitle]
 }
 
-nonisolated struct AddonCatalogAddon: Decodable, Identifiable, Sendable {
-    let transportURL: URL?
-    let manifest: StremioAddonManifest?
-
-    var id: String { transportURL?.absoluteString ?? manifest?.id ?? "unidentified-addon" }
-
-    enum CodingKeys: String, CodingKey {
-        case transportURL = "transportUrl"
-        case manifest
-    }
-}
-
 nonisolated struct AddonSubtitle: Decodable, Identifiable, Hashable, Sendable {
     let id: String
     let url: URL?

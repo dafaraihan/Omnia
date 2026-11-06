@@ -71,7 +71,7 @@ struct StreamSortingSections: View {
                     }
                 }
             }
-        
+
             } else {
             Section {
                 SettingsDropdown(

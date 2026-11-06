@@ -19,11 +19,11 @@ struct ContinueWatchingCard: View {
     }
 
     static func width(for display: DisplayPreferences) -> CGFloat {
-        display.landscapePosterCardWidth
+        display.continueWatchingStyle == .poster ? display.posterCardWidth : display.landscapePosterCardWidth
     }
 
     private var cornerRadius: CGFloat {
-        display.landscapeCornerRadius
+        display.continueWatchingStyle == .poster ? display.posterCornerRadius : display.landscapeCornerRadius
     }
 
     /// The next episode, offered after the previous one ended, before any
@@ -73,9 +73,68 @@ struct ContinueWatchingCard: View {
             .mediaContextMenu(for: item, placement: .continueWatching)
     }
 
+    @ViewBuilder
     private var previewContent: some View {
-        card
+        if display.continueWatchingStyle == .poster { classicCard } else { card }
     }
+
+    private var resumePresentation: ResumeProgressPresentation? {
+        ResumeProgressPresentation(item: item)
+    }
+
+    private var classicCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ZStack(alignment: .bottom) {
+                resumeArtwork
+                LinearGradient(
+                    colors: [.clear, .black.opacity(0.62)],
+                    startPoint: .center,
+                    endPoint: .bottom
+                )
+
+                if let resumePresentation {
+                    VStack(spacing: 9) {
+                        Text(resumePresentation.heroMetadataText)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                        ResumeProgressBar(progress: resumePresentation.progress)
+                    }
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.leading, 10)
+                    .padding(.trailing, 34)
+                    .padding(.bottom, 10)
+                } else if isNextUp {
+                    Text(nextUpText)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        .padding(.leading, 10)
+                        .padding(.trailing, 34)
+                        .padding(.bottom, 10)
+                }
+            }
+            .frame(width: cardWidth, height: cardHeight)
+            .clipShape(.rect(cornerRadius: cornerRadius, style: .continuous))
+            .cardDepth(.continueWatching, cornerRadius: cornerRadius, fallbackBorderOpacity: 0.24)
+
+            do {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(cardPresentation.primaryText)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Text(cardPresentation.secondaryText)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.secondary)
+                }
+                .frame(width: cardWidth, alignment: .leading)
+            }
+        }
+    }
+
 
     /// The three dots sit over the card, not in its link, so a tap on them
     /// opens the menu and not the title.
@@ -262,6 +321,6 @@ struct ContinueWatchingCard: View {
     }
 
     private var cardHeight: CGFloat {
-        (cardWidth * 9 / 16).rounded()
+        display.continueWatchingStyle == .poster ? (cardWidth * 1.5).rounded() : (cardWidth * 9 / 16).rounded()
     }
 }

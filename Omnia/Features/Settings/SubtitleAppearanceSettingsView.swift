@@ -169,7 +169,7 @@ Group {
                 Text("The delay applies to every video. A delay set in the player is kept for that title.")
             }
 
-        
+
                 }
             } else {
                 OmniaSettingsForm {

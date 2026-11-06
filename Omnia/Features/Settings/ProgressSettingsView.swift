@@ -96,7 +96,7 @@ struct ProgressSettingsView: View {
                     .foregroundStyle(.red)
             }
             if let statusMessage { Text(statusMessage).foregroundStyle(.secondary) }
-        
+
             Section {
                 SettingsRouteLink(route: .advanced(.progress), summary: nil)
             }

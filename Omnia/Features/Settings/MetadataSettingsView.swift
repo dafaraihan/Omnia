@@ -60,7 +60,7 @@ struct MetadataSettingsView: View {
             } footer: {
                 Text("Add-ons describe the titles they list. Metadata Sources choose TMDB, TVDB, AniList, Kitsu or MyAnimeList for Omnia's built-in rows and fill in titles no add-on describes.")
             }
-        
+
                 }
             } else {
                 OmniaSettingsForm {

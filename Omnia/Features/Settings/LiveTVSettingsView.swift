@@ -158,7 +158,7 @@ struct LiveTVSettingsView: View {
             } footer: {
                 Text(live.guideStatus)
             }
-        
+
             Section {
                 SettingsRouteLink(route: .advanced(.liveTV), summary: nil)
             }

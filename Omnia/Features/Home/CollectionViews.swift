@@ -57,18 +57,18 @@ struct CollectionFolderTile: View {
     /// The folder's own shape, at the size of the card style for that shape.
     static func width(for folderShape: HomeCollectionFolder.TileShape, display: DisplayPreferences) -> CGFloat {
         // Collections keep their imported shape. Shape decides whose size applies.
-        switch folderShape {
+        switch display.collectionCard.shape.resolved(folderShape) {
         case .poster: display.posterCardWidth
         case .square: (display.posterCardWidth * 1.25).rounded()
         case .landscape, .wide: display.landscapePosterCardWidth.rounded()
         }
     }
 
+    /// Imported shape by default; Landscape Card Style can choose another.
     static func height(for folderShape: HomeCollectionFolder.TileShape, display: DisplayPreferences) -> CGFloat {
-        switch folderShape {
-        case .landscape, .wide: display.landscapeCardHeight
-        case .poster, .square: width(for: folderShape, display: display) / CGFloat(folderShape.aspectRatio)
-        }
+        let shape = display.collectionCard.shape.resolved(folderShape)
+        if shape == .landscape { return display.landscapeCardHeight }
+        return (width(for: folderShape, display: display) / CGFloat(shape.aspectRatio)).rounded()
     }
 
     #if os(iOS)
@@ -80,7 +80,7 @@ struct CollectionFolderTile: View {
     #endif
 
     private var cornerRadius: CGFloat {
-        switch folder.tileShape {
+        switch display.collectionCard.shape.resolved(folder.tileShape) {
         case .landscape, .wide: display.landscapeCornerRadius
         case .poster, .square: display.posterCornerRadius
         }

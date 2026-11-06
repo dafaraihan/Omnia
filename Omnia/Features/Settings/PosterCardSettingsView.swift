@@ -160,7 +160,7 @@ struct PosterCardSettingsView: View {
             }
             }
 
-            
+
                 }
             } else {
                 OmniaSettingsForm {

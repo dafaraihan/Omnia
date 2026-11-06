@@ -55,7 +55,7 @@ struct LiquidGlassSettingsView: View {
                     Text(systemBarsFooter)
                 }
             }
-        
+
                 }
             } else {
                 OmniaSettingsForm {

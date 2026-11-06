@@ -73,7 +73,7 @@ struct HomeSettingsView: View {
                 SettingsRouteLink(route: .collections, summary: collectionsSummary)
                 SettingsRouteLink(route: .continueWatching, summary: continueWatchingSummary)
             }
-        
+
             Section {
                 SettingsRouteLink(route: .advanced(.home), summary: nil)
             }
@@ -326,7 +326,7 @@ struct DetailPageSettingsView: View {
             } footer: {
                 Text("Drag to reorder. Turned-off sections are left out.")
             }
-        
+
                 }
             } else {
                 OmniaSettingsForm {

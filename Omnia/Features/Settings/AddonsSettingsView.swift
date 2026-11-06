@@ -218,7 +218,7 @@ struct AddonsSettingsView: View {
             if let statusMessage {
                 Section { Text(statusMessage).foregroundStyle(.secondary) }
             }
-        
+
             Section {
                 SettingsRouteLink(route: .advanced(.addons), summary: nil)
             }

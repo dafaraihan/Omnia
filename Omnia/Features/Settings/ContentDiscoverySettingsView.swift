@@ -51,7 +51,7 @@ struct ContentDiscoverySettingsView: View {
                 Text("The Search page's Filter menu changes these too.")
             }
 
-        
+
                 }
             } else {
                 OmniaSettingsForm {
