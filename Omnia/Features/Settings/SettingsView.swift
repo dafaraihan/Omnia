@@ -17,7 +17,7 @@ struct SettingsView: View {
 
     private var unlockedSettings: some View {
         rootSettingsContent
-            .omniaNavigationTitle(AppDestination.settings.title(for: profiles.activeProfile), screen: .settings)
+            .omniaNavigationTitle("Settings", screen: .settings)
         #if os(macOS)
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {

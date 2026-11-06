@@ -364,10 +364,14 @@ struct OmniaRootView: View {
             Tab(value: AppDestination.settings) {
                 tabStack { SettingsView() }
             } label: {
+                // iPhone's tab bar names the profile; iPad's own sidebar and
+                // tabs say Settings, as the page does.
                 Label {
-                    Text(AppDestination.settings.title(for: profiles.activeProfile))
+                    Text(UIDevice.current.userInterfaceIdiom == .phone
+                        ? AppDestination.settings.title(for: profiles.activeProfile)
+                        : "Settings")
                 } icon: {
-                    if let profileTabImage {
+                    if UIDevice.current.userInterfaceIdiom == .phone, let profileTabImage {
                         Image(uiImage: profileTabImage).renderingMode(.original)
                     } else {
                         Image(systemName: AppDestination.settings.symbolName)
@@ -606,12 +610,15 @@ struct OmniaRootView: View {
     }
 
     private func macSidebarLabel(for destination: AppDestination) -> some View {
+        // The sidebar says Settings; the floating top bar keeps the profile.
         Label {
-            Text(destination.title(for: profiles.activeProfile))
+            Text(destination == .settings ? "Settings" : destination.title(for: profiles.activeProfile))
                 .foregroundStyle(.primary)
         } icon: {
-            if destination == .settings, let profile = profiles.activeProfile {
-                ProfileAvatarView(profile: profile, size: 28, isSelected: navigation.selection == .settings)
+            if destination == .settings {
+                Image(systemName: "gearshape")
+                    .symbolRenderingMode(.monochrome)
+                    .foregroundStyle(.primary)
                     .modifier(ProfileAnchorReporting())
             } else {
                 Image(systemName: destination.symbolName)
