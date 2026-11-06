@@ -76,12 +76,6 @@ struct LibraryView: View {
             let columns = gridColumns(width: proxy.size.width)
             ScrollView {
                 VStack(spacing: 18) {
-                    #if os(macOS)
-                    Text("My Library")
-                        .font(.largeTitle.bold())
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, MediaBrowseMetrics.pageInset)
-                    #endif
                     kindPicker
                     if let tracker {
                         TrackerSyncStatusLine(kind: tracker)
@@ -105,11 +99,7 @@ struct LibraryView: View {
             }
             .modifier(TopBarScrollReporting(destination: .library))
         }
-        #if os(macOS)
-        .omniaNavigationTitle("", screen: .library)
-        #else
         .omniaNavigationTitle("My Library", screen: .library)
-        #endif
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 OmniaToolbarSymbol {
@@ -149,7 +139,7 @@ struct LibraryView: View {
             ContentUnavailableView(
                 "Your Library Is Empty",
                 systemImage: "rectangle.stack",
-                description: Text("Add a title, start watching, or mark something as watched to see it here.")
+                description: Text("Titles you add to My List show here.")
             )
         }
     }

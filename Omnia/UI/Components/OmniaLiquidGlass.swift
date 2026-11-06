@@ -369,46 +369,75 @@ extension View {
     }
 }
 
-/// The capsule switch from iPhone's Library, on every device: Liquid Glass, with
-/// a neutral highlight that slides to the choice and text in the label color.
+/// The capsule switch from iPhone's Library, on every device: Liquid Glass that
+/// answers a press, with a glass lens that follows a drag across the choices and
+/// snaps to the one let go on, as the system tab bar does.
 struct OmniaSegmentedControl<Value: Hashable>: View {
     @Binding var selection: Value
     let options: [(Value, String)]
 
-    @Namespace private var highlight
+    @State private var dragIndex: Int?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    private var selectedIndex: Int {
+        options.firstIndex { $0.0 == selection } ?? 0
+    }
+
     var body: some View {
-        HStack(spacing: 0) {
-            ForEach(options.indices, id: \.self) { index in
-                let (value, title) = options[index]
-                let isSelected = value == selection
-                Button {
-                    withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { selection = value }
-                } label: {
-                    Text(title)
-                        .font(.subheadline.weight(isSelected ? .semibold : .regular))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 34)
-                        .background {
-                            if isSelected {
-                                Capsule()
-                                    .fill(.primary.opacity(0.16))
-                                    .glassEffect(.regular.interactive(), in: Capsule())
-                                    .matchedGeometryEffect(id: "selection", in: highlight)
-                            }
-                        }
-                        .contentShape(Capsule())
+        GeometryReader { proxy in
+            let segment = proxy.size.width / CGFloat(max(options.count, 1))
+            let lensIndex = dragIndex ?? selectedIndex
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(.primary.opacity(dragIndex == nil ? 0.16 : 0.22))
+                    .glassEffect(.regular.interactive(), in: Capsule())
+                    .frame(width: segment, height: proxy.size.height)
+                    .scaleEffect(reduceMotion || dragIndex == nil ? 1 : 1.08)
+                    .offset(x: segment * CGFloat(lensIndex))
+                    .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: lensIndex)
+                    .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.7), value: dragIndex == nil)
+
+                HStack(spacing: 0) {
+                    ForEach(options.indices, id: \.self) { index in
+                        Text(options[index].1)
+                            .font(.subheadline.weight(index == lensIndex ? .semibold : .regular))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                            .scaleEffect(reduceMotion || dragIndex != index ? 1 : 1.08)
+                            .frame(width: segment, height: proxy.size.height)
+                            .accessibilityElement()
+                            .accessibilityLabel(options[index].1)
+                            .accessibilityAddTraits(index == selectedIndex ? [.isButton, .isSelected] : .isButton)
+                            .accessibilityAction { select(index) }
+                    }
                 }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
+            .contentShape(Capsule())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        let index = clampedIndex(value.location.x, segment: segment)
+                        if dragIndex != index { dragIndex = index }
+                    }
+                    .onEnded { value in
+                        dragIndex = nil
+                        select(clampedIndex(value.location.x, segment: segment))
+                    }
+            )
         }
+        .frame(height: 34)
         .padding(4)
         // The same glass as the floating tab and top bar.
-        .omniaGlass(.navigationBar, base: .clear, in: Capsule())
-        .sensoryFeedback(.selection, trigger: selection)
+        .omniaGlass(.navigationBar, base: .clear, interactive: true, in: Capsule())
+        .sensoryFeedback(.selection, trigger: dragIndex ?? selectedIndex)
+    }
+
+    private func clampedIndex(_ x: CGFloat, segment: CGFloat) -> Int {
+        min(max(Int(x / max(segment, 1)), 0), options.count - 1)
+    }
+
+    private func select(_ index: Int) {
+        guard options.indices.contains(index) else { return }
+        withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { selection = options[index].0 }
     }
 }

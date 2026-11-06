@@ -225,24 +225,6 @@ struct OmniaSettingsForm<Content: View>: View {
 
 /// AMOLED Black draws Settings pages on true black in Dark appearance.
 #if os(macOS)
-/// iPad's large title at the top of a Settings page.
-struct MacSettingsLargeTitle: ViewModifier {
-    let title: String
-
-    func body(content: Content) -> some View {
-        content.safeAreaInset(edge: .top, spacing: 0) {
-            Text(title)
-                .font(.largeTitle.bold())
-                .frame(maxWidth: .infinity, alignment: .leading)
-                // The cards' leading edge, so title and rows line up.
-                .padding(.horizontal, MacSettingsLayout.minimumOuterMargin)
-                .padding(.top, 12)
-                .padding(.bottom, 4)
-        }
-        // The page name shows once, here, not again in the toolbar.
-        .environment(\.omniaHidesPushedTitle, true)
-    }
-}
 #endif
 
 private struct AmoledFormBackground: ViewModifier {
