@@ -52,7 +52,8 @@ nonisolated struct MDBListRatingsPresentation: Equatable, Sendable {
                 )
             }
 
-        if let score = response.score,
+        if preferences.hidesScore != true,
+           let score = response.score,
            let formattedScore = MDBListRatingProviderRegistry.formattedAggregate(score) {
             resolvedItems.append(MDBListRatingPresentationItem(
                 id: "mdblist",
@@ -98,8 +99,8 @@ nonisolated enum MDBListRatingSettingsModel {
             providerID: nil,
             displayName: "MDBList Score",
             assetName: MDBListRatingProviderRegistry.aggregateAssetName,
-            isEnabled: nil,
-            detail: "Always shown"
+            isEnabled: preferences.hidesScore != true,
+            detail: nil
         ))
         return rows
     }

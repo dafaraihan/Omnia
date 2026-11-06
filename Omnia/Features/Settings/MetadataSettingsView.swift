@@ -668,11 +668,13 @@ struct MetadataProviderDetailView: View {
 
                     if let aggregate = ratingSettingsRows.last,
                        aggregate.providerID == nil {
-                        LabeledContent {
-                            Text(aggregate.detail ?? "")
-                        } label: {
+                        Toggle(isOn: Binding(
+                            get: { settings.preferences.mdblistRatings.hidesScore != true },
+                            set: { isOn in settings.update { $0.mdblistRatings.hidesScore = isOn ? nil : true } }
+                        )) {
                             MDBListRatingProviderLabel(row: aggregate)
                         }
+                        .settingsRow("MDBList Score")
                     }
                 } header: {
                     Text("External Ratings Providers")

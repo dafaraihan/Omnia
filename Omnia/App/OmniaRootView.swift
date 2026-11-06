@@ -359,6 +359,8 @@ struct OmniaRootView: View {
                 Tab("Live TV", systemImage: AppDestination.liveTV.symbolName, value: .liveTV) {
                     tabStack { LiveTVView() }
                 }
+                // iPad's tab bar has room for four; Live TV stays in the sidebar.
+                .tabPlacement(UIDevice.current.userInterfaceIdiom == .pad ? .sidebarOnly : .automatic)
             }
 
             Tab(value: AppDestination.settings) {

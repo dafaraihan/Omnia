@@ -132,6 +132,8 @@ enum MacSearchStyle: String, Codable, CaseIterable, Identifiable, Sendable {
 nonisolated struct MDBListRatingPreferences: Codable, Equatable, Sendable {
     var discoveredProviderIDs: Set<String>
     var disabledProviderIDs: Set<String>
+    /// True once MDBList's own score is switched off. Missing in older settings.
+    var hidesScore: Bool?
 
     init(
         discoveredProviderIDs: Set<String> = [],
@@ -154,10 +156,12 @@ nonisolated struct MDBListRatingPreferences: Codable, Equatable, Sendable {
     }
 
     var normalized: Self {
-        Self(
+        var value = Self(
             discoveredProviderIDs: canonicalIDs(from: discoveredProviderIDs),
             disabledProviderIDs: canonicalIDs(from: disabledProviderIDs)
         )
+        value.hidesScore = hidesScore
+        return value
     }
 
     private func canonicalIDs(from values: Set<String>) -> Set<String> {

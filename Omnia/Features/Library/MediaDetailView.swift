@@ -280,7 +280,7 @@ struct MediaDetailView: View {
                         showsTitleWithoutLogo: resolvedItem != nil,
                         isSaved: store.isSaved(displayItem),
                         libraryAction: { store.toggleSaved(displayItem) },
-                        watchAction: heroWatchAction,
+                        watchAction: nil,
                         shuffleAction: heroShuffleAction,
                         ratings: { portraitHeroRatings }
                     ) {
@@ -600,7 +600,7 @@ struct MediaDetailView: View {
             width: CinematicHeroLayout.logoWidth,
             isSaved: store.isSaved(displayItem),
             libraryAction: { store.toggleSaved(displayItem) },
-            watchAction: heroWatchAction,
+            watchAction: nil,
             shuffleAction: heroShuffleAction
         ) {
             playButton
@@ -680,26 +680,6 @@ struct MediaDetailView: View {
             ?? displayItem.resumeEpisode
             ?? detailEpisodes.first(where: { $0.seasonNumber == selectedSeasonNumber })
             ?? detailEpisodes.first
-    }
-
-    private var heroWatchAction: HeroWatchAction? {
-        guard let action = MediaDetailWatchActionPresentation.action(
-            kind: displayItem.kind,
-            currentEpisode: currentDetailEpisode,
-            watchState: store.watchState(for: displayItem)
-        ) else { return nil }
-        return HeroWatchAction(
-            systemImage: action.systemImage,
-            accessibilityLabel: action.accessibilityLabel,
-            perform: {
-                store.applyWatchCommand(
-                    action.command,
-                    to: displayItem,
-                    episodes: detailEpisodes,
-                    leavingContinueWatching: action.leavesContinueWatching
-                )
-            }
-        )
     }
 
     private var currentRatingsState: MDBListRatingsLoadState {

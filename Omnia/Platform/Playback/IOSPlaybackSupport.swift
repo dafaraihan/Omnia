@@ -280,6 +280,10 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
     // MARK: AVPictureInPictureSampleBufferPlaybackDelegate
 
     func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, setPlaying playing: Bool) {
+        // The system can ask for this while Omnia is only inactive, under
+        // Control Center or Notification Center; only the floating window's own
+        // button should pause or play.
+        guard pictureInPictureController.isPictureInPictureActive else { return }
         setPlaying?(playing)
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(150))

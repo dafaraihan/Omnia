@@ -13,7 +13,7 @@ nonisolated struct HomeLayoutPreferences: Codable, Equatable, Sendable {
     /// Nuvio caps hero sources at two catalogs; more sources dilute the
     /// eight-title carousel without adding variety.
     static let heroSourceLimit = 6
-    static let heroItemLimit = 8
+    static let heroItemLimit = 15
 
     /// Nuvio Enhanced's Hero Style.
     enum HeroStyle: String, Codable, CaseIterable, Identifiable, Sendable {

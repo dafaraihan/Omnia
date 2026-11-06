@@ -388,9 +388,10 @@ struct OmniaSegmentedControl<Value: Hashable>: View {
             let segment = proxy.size.width / CGFloat(max(options.count, 1))
             let lensIndex = dragIndex ?? selectedIndex
             ZStack(alignment: .leading) {
+                // Clear glass that bends what's under it, with no grey fill.
                 Capsule()
-                    .fill(.primary.opacity(dragIndex == nil ? 0.16 : 0.22))
-                    .glassEffect(.regular.interactive(), in: Capsule())
+                    .fill(.primary.opacity(dragIndex == nil ? 0.08 : 0))
+                    .glassEffect(.clear.interactive(), in: Capsule())
                     .frame(width: segment, height: proxy.size.height)
                     .scaleEffect(reduceMotion || dragIndex == nil ? 1 : 1.08)
                     .offset(x: segment * CGFloat(lensIndex))

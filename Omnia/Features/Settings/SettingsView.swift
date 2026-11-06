@@ -27,7 +27,12 @@ struct SettingsView: View {
                 }
             }
         #else
-            .searchable(text: $searchText, prompt: "Search Settings")
+            // On iPad it sits under the title, clear of the floating top bar.
+            .searchable(
+                text: $searchText,
+                placement: UIDevice.current.userInterfaceIdiom == .pad ? .navigationBarDrawer(displayMode: .always) : .automatic,
+                prompt: "Search Settings"
+            )
         #endif
     }
 

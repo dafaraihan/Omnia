@@ -115,10 +115,24 @@ struct LibraryView: View {
     }
 
     private var kindPicker: some View {
-        OmniaSegmentedControl(
-            selection: $selectedKind,
-            options: [(nil, "All"), (.movie, "Movies"), (.series, "Series")]
-        )
+        Group {
+            #if os(iOS)
+            // The system control has Apple's own Liquid Glass lens.
+            Picker("Show", selection: $selectedKind) {
+                Text("All").tag(MediaItem.Kind?.none)
+                Text("Movies").tag(MediaItem.Kind?.some(.movie))
+                Text("Series").tag(MediaItem.Kind?.some(.series))
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .controlSize(.large)
+            #else
+            OmniaSegmentedControl(
+                selection: $selectedKind,
+                options: [(nil, "All"), (.movie, "Movies"), (.series, "Series")]
+            )
+            #endif
+        }
         // Full width on iPhone, centred on iPad and Mac.
         .frame(maxWidth: OmniaDevice.isPhone ? .infinity : 420)
         .padding(.horizontal, MediaBrowseMetrics.pageInset)

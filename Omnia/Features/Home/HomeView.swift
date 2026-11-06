@@ -503,31 +503,6 @@ struct HomeView: View {
         _ = await RemoteArtworkCache.shared.image(for: url, target: target)
     }
 
-    /// Mark Watched for a movie, or the show's resume/first episode.
-    private func heroWatchAction(for featured: MediaItem) -> HeroWatchAction? {
-        let episodes = featured.details?.seasons.flatMap(\.episodes) ?? []
-        let currentEpisode = featured.resumeEpisode
-            ?? episodes.first(where: { $0.seasonNumber > 0 })
-            ?? episodes.first
-        guard let action = MediaDetailWatchActionPresentation.action(
-            kind: featured.kind,
-            currentEpisode: currentEpisode,
-            watchState: store.watchState(for: featured)
-        ) else { return nil }
-        return HeroWatchAction(
-            systemImage: action.systemImage,
-            accessibilityLabel: action.accessibilityLabel,
-            perform: {
-                store.applyWatchCommand(
-                    action.command,
-                    to: featured,
-                    episodes: episodes,
-                    leavingContinueWatching: action.leavesContinueWatching
-                )
-            }
-        )
-    }
-
     private func retryHeroRatings(for featured: MediaItem) {
         Task {
             await heroRatings.retry(for: featured, preferences: settings.preferences.mdblistRatings)
@@ -642,23 +617,6 @@ struct HomeView: View {
                 .padding(.top, OmniaDevice.isPhone ? 62 : 0)
                 .padding(.bottom, OmniaDevice.isPhone ? 0 : 18)
                 .animation(.snappy(duration: 0.25), value: heroTrailer.isVisible)
-        }
-        .overlay(alignment: .bottom) {
-            if heroCandidates.count > 1 {
-                HeroPageControl(
-                    count: heroCandidates.count,
-                    isCompact: isPortraitPad,
-                    selection: heroIndex % heroCandidates.count,
-                    select: { index in
-                        withAnimation(.easeInOut(duration: 0.45)) {
-                            heroIndex = index
-                        }
-                    }
-                )
-                .padding(.bottom, isPortraitPad ? 12 : 22)
-                // Centred in the part of the hero the sidebar leaves visible.
-                .padding(.leading, sidebarInset)
-            }
         }
         #if os(iOS)
         .simultaneousGesture(heroSwipe)
@@ -1031,13 +989,7 @@ struct HomeView: View {
                     width: homeIdentityWidth,
                     isSaved: store.isSaved(featured),
                     libraryAction: { store.toggleSaved(featured) },
-                    watchAction: heroWatchAction(for: featured) ?? HeroWatchAction(
-                        systemImage: "eye",
-                        accessibilityLabel: resolvedFeatured?.id == featured.id
-                            ? "Episode information unavailable" : "Loading episode information",
-                        perform: {},
-                        isEnabled: false
-                    )
+                    watchAction: nil
                 ) {
                     NavigationLink(value: featured) {
                         HeroPrimaryActionLabel(title: "View Details")
@@ -1067,13 +1019,7 @@ struct HomeView: View {
                 showsTitleWithoutLogo: resolvedFeatured?.id == featured.id,
                 isSaved: store.isSaved(featured),
                 libraryAction: { store.toggleSaved(featured) },
-                watchAction: heroWatchAction(for: featured) ?? HeroWatchAction(
-                    systemImage: "eye",
-                    accessibilityLabel: resolvedFeatured?.id == featured.id
-                        ? "Episode information unavailable" : "Loading episode information",
-                    perform: {},
-                    isEnabled: false
-                ),
+                watchAction: nil,
                 ratings: { portraitHeroRatings(featured) }
             ) {
                 NavigationLink(value: featured) {
@@ -1084,7 +1030,7 @@ struct HomeView: View {
             .id(featured.id)
             .transition(.heroIdentity)
             // Room for the page dots under the buttons.
-            .padding(.bottom, heroCandidates.count > 1 ? 46 : 22)
+            .padding(.bottom, 22)
         }
     }
 
@@ -1262,38 +1208,6 @@ private struct HeroNavigationButtonStyle: ButtonStyle {
             }
             .contentShape(Capsule())
             .animation(.easeInOut(duration: 0.16), value: isActive)
-    }
-}
-
-private struct HeroPageControl: View {
-    let count: Int
-    var isCompact = false
-    let selection: Int
-    let select: (Int) -> Void
-
-    var body: some View {
-        HStack(spacing: isCompact ? 5 : 7) {
-            ForEach(0..<count, id: \.self) { index in
-                Button {
-                    select(index)
-                } label: {
-                    Circle()
-                        .fill(.white.opacity(index == selection ? 1 : 0.42))
-                        .frame(width: index == selection ? (isCompact ? 6 : 8) : (isCompact ? 4 : 6),
-                               height: index == selection ? (isCompact ? 6 : 8) : (isCompact ? 4 : 6))
-                        .frame(width: 20, height: 20)
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Feature \(index + 1) of \(count)")
-                .accessibilityValue(index == selection ? "Current feature" : "")
-            }
-        }
-        .padding(.horizontal, 8)
-        // No backing shape, so a soft shadow keeps the dots clear of bright art.
-        .shadow(color: .black.opacity(0.45), radius: 3, y: 1)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Featured titles")
     }
 }
 

@@ -79,7 +79,7 @@ struct HeroActionRow<Primary: View>: View {
         }
         // The action group belongs to the same leading identity column as the
         // transparent logo, metadata, and synopsis.
-        .frame(width: width, alignment: watchAction == nil ? .leading : .center)
+        .frame(width: width, alignment: .center)
     }
 
     private func watchButton(action: HeroWatchAction) -> some View {

@@ -10,6 +10,7 @@ enum SettingsSearchIndex {
     }
 
     static let rows: [Row] = [
+        Row(title: "MDBList Score", terms: "mdblist ratings score", route: .metadataProvider("mdblist")),
         Row(title: "Appearance", terms: "", route: .appearance),
         Row(title: "Style", terms: "", route: .appearance),
         Row(title: "Custom Color", terms: "", route: .appearance),
