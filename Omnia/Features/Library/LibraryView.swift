@@ -38,7 +38,8 @@ struct LibraryView: View {
 
     private var sections: [LibrarySection] {
         LibraryCollectionPresentation.sections(
-            snapshots: tracker.map(trackerSnapshots) ?? store.localMediaSnapshots,
+            // Only what's saved to the library. Continue Watching has its own row on Home.
+            snapshots: (tracker.map(trackerSnapshots) ?? store.localMediaSnapshots).filter(\.isInWatchlist),
             kind: selectedKind,
             sort: sortOrder
         )
@@ -62,15 +63,27 @@ struct LibraryView: View {
         LibrarySortOrder(rawValue: savedSortOrder) ?? .recentAdded
     }
 
-    /// One grid: what's in progress, saved or watched, each title once.
+    /// One grid, each title once, even when two sources list it.
     private var items: [MediaItem] {
-        var seen = Set<String>()
-        return sections.flatMap(\.items).filter { seen.insert($0.id).inserted }
+        var kept: [MediaItem] = []
+        for item in sections.flatMap(\.items) where !kept.contains(where: { $0.id == item.id || $0.isSameTitle(as: item) }) {
+            kept.append(item)
+        }
+        return kept
+    }
+
+    /// Columns that share the width evenly, so a row never ends in a gap.
+    private func gridColumns(width: CGFloat) -> [GridItem] {
+        let spacing = MediaBrowseMetrics.gridSpacing
+        let available = max(0, width - MediaBrowseMetrics.pageInset * 2)
+        let minimum = display.landscapePosters ? display.landscapePosterCardWidth * 0.85 : display.posterCardWidth * 0.85
+        let count = max(OmniaDevice.isPhone && !display.landscapePosters ? 3 : 2, Int((available + spacing) / (minimum + spacing)))
+        return Array(repeating: GridItem(.flexible(), spacing: spacing, alignment: .top), count: count)
     }
 
     var body: some View {
         GeometryReader { proxy in
-            let layout = MediaBrowseMetrics.posterGridLayout(containerWidth: proxy.size.width, display: display)
+            let columns = gridColumns(width: proxy.size.width)
             ScrollView {
                 VStack(spacing: 18) {
                     #if os(macOS)
@@ -89,7 +102,7 @@ struct LibraryView: View {
                         emptyState
                             .frame(maxWidth: .infinity, minHeight: 360)
                     } else {
-                        LazyVGrid(columns: layout.columns, alignment: .leading, spacing: 18) {
+                        LazyVGrid(columns: columns, alignment: .center, spacing: 18) {
                             ForEach(items) { item in
                                 MediaPoster(item: item, fillsAvailableWidth: true, showsTitleOnly: true)
                                     .modifier(OmniaScrollEdgeEffect(axis: .vertical))
@@ -122,14 +135,11 @@ struct LibraryView: View {
     }
 
     private var kindPicker: some View {
-        Picker("Show", selection: $selectedKind) {
-            Text("All").tag(MediaItem.Kind?.none)
-            Text("Movies").tag(MediaItem.Kind?.some(.movie))
-            Text("Series").tag(MediaItem.Kind?.some(.series))
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .frame(maxWidth: 420)
+        OmniaSegmentedControl(
+            selection: $selectedKind,
+            options: [(nil, "All"), (.movie, "Movies"), (.series, "Series")]
+        )
+        .frame(maxWidth: OmniaDevice.isPhone ? .infinity : 420)
         .padding(.horizontal, MediaBrowseMetrics.pageInset)
         .frame(maxWidth: .infinity)
     }

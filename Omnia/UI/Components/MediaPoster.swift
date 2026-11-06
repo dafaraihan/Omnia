@@ -61,7 +61,7 @@ struct MediaPoster: View {
                         }
                     }
                     .overlay(alignment: .bottom) {
-                        if let progress = item.progress {
+                        if !showsTitleOnly, let progress = item.progress {
                             ProgressView(value: progress)
                                 .controlSize(.mini)
                                 .tint(.white)

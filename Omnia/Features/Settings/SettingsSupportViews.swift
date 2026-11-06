@@ -111,8 +111,7 @@ struct OmniaSettingsForm<Content: View>: View {
                     ForEach(sections) { section in
                         VStack(alignment: .leading, spacing: 8) {
                             section.header
-                                .font(.caption.weight(.semibold))
-                                .textCase(.uppercase)
+                                .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(.secondary)
 
                             Group(subviews: section.content) { rows in
@@ -133,10 +132,10 @@ struct OmniaSettingsForm<Content: View>: View {
                                     }
                                 }
                                 .background {
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    RoundedRectangle(cornerRadius: 22, style: .continuous)
                                         .fill(Color.primary.opacity(0.065))
                                 }
-                                .clipShape(.rect(cornerRadius: 12, style: .continuous))
+                                .clipShape(.rect(cornerRadius: 22, style: .continuous))
                             }
 
                             section.footer
@@ -166,8 +165,7 @@ struct OmniaSettingsForm<Content: View>: View {
                     ForEach(sections) { section in
                         VStack(alignment: .leading, spacing: 8) {
                             section.header
-                                .font(.caption.weight(.semibold))
-                                .textCase(.uppercase)
+                                .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(.secondary)
                                 .padding(.horizontal, 12)
 
@@ -190,10 +188,10 @@ struct OmniaSettingsForm<Content: View>: View {
                                         }
                                     }
                                     .background {
-                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        RoundedRectangle(cornerRadius: 22, style: .continuous)
                                             .fill(Color.primary.opacity(0.065))
                                     }
-                                    .clipShape(.rect(cornerRadius: 12, style: .continuous))
+                                    .clipShape(.rect(cornerRadius: 22, style: .continuous))
                                 }
                             }
 
@@ -212,6 +210,8 @@ struct OmniaSettingsForm<Content: View>: View {
         }
         .scrollIndicators(.automatic)
         .toggleStyle(MacSettingsRowToggleStyle())
+        // As on iPhone: the field sits in its row's card, not in a box of its own.
+        .textFieldStyle(.plain)
         .labeledContentStyle(MacSettingsRowLabeledContentStyle())
         .labelStyle(OmniaMonochromeLabelStyle())
         .background(usesAmoledBackground ? Color.black : Color.clear)

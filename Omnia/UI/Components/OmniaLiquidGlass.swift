@@ -350,6 +350,8 @@ extension View {
             }
         }
         .animation(.easeOut(duration: 0.2), value: isPresented.wrappedValue)
+        // The page has its own Back; the window's would leave the title instead.
+        .navigationBarBackButtonHidden(isPresented.wrappedValue)
         #else
         if UIDevice.current.userInterfaceIdiom == .pad {
             // iPadOS centres every sheet as a floating card, so this one is
@@ -424,3 +426,45 @@ private struct DockedStreamsSheet<Content: View>: View {
     }
 }
 #endif
+
+/// The capsule switch from iPhone's Library, on every device: Liquid Glass, with
+/// a neutral highlight that slides to the choice and text in the label color.
+struct OmniaSegmentedControl<Value: Hashable>: View {
+    @Binding var selection: Value
+    let options: [(Value, String)]
+
+    @Namespace private var highlight
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(options.indices, id: \.self) { index in
+                let (value, title) = options[index]
+                let isSelected = value == selection
+                Button {
+                    withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { selection = value }
+                } label: {
+                    Text(title)
+                        .font(.subheadline.weight(isSelected ? .semibold : .regular))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 34)
+                        .background {
+                            if isSelected {
+                                Capsule()
+                                    .fill(.primary.opacity(0.14))
+                                    .matchedGeometryEffect(id: "selection", in: highlight)
+                            }
+                        }
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
+            }
+        }
+        .padding(3)
+        .omniaGlass(.panels, base: .regular, in: Capsule())
+        .sensoryFeedback(.selection, trigger: selection)
+    }
+}
