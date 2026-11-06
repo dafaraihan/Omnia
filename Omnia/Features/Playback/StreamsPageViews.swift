@@ -29,7 +29,7 @@ struct StreamsPageLayout<Panel: View>: View {
                     panel()
                         .frame(maxWidth: isWide ? 640 : .infinity, maxHeight: .infinity)
                         .background(.black.opacity(0.34), in: .rect(cornerRadius: 26, style: .continuous))
-                        #if os(macOS)
+                        #if os(macOS) || os(iOS)
                         .omniaGlass(.panels, base: .clear, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
                         #endif
                         .clipShape(.rect(cornerRadius: 26, style: .continuous))

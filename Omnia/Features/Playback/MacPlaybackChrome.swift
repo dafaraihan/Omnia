@@ -965,11 +965,13 @@ struct MacPlaybackChrome: View {
 
     @ViewBuilder
     private var bottomControls: some View {
-        if isPhone { phoneBottomControls } else { regularBottomControls }
+        // The same order everywhere: title and options, the timeline, then
+        // Sources, Episodes and Next Episode.
+        regularBottomControls
     }
 
     private var regularBottomControls: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: isShort ? 4 : 10) {
             HStack(alignment: .bottom, spacing: 24) {
                 playbackMetadata
                     .shadow(color: .black.opacity(0.55), radius: 12, y: 3)
@@ -978,21 +980,6 @@ struct MacPlaybackChrome: View {
             }
             if isLive { liveBar } else { timelineBar }
             pillButtons
-        }
-    }
-
-    /// A phone on its side has no height for a row of its own under the timeline.
-    private var phoneBottomControls: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if !isShort {
-                playbackMetadata
-            }
-            HStack(alignment: .bottom, spacing: 8) {
-                pillButtons
-                Spacer(minLength: 8)
-                optionsCapsule
-            }
-            if isLive { liveBar } else { timelineBar }
         }
     }
 
