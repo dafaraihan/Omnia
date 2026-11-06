@@ -7,9 +7,6 @@ struct SettingsView: View {
     @Environment(PluginStore.self) private var plugins
     @Environment(ProfileStore.self) private var profiles
     @State private var searchText = ""
-    #if os(macOS)
-    @State private var hoveredRoute: SettingsRoute?
-    #endif
 
     var body: some View {
         SettingsLockGate { unlockedSettings }
@@ -40,13 +37,6 @@ struct SettingsView: View {
                     } label: {
                         SettingsProfileCard()
                     }
-                    #if os(macOS)
-                    .buttonStyle(MacSettingsNavigationButtonStyle(isHovered: hoveredRoute == .account))
-                    .focusEffectDisabled()
-                    .onHover { isHovered in
-                        hoveredRoute = isHovered ? .account : (hoveredRoute == .account ? nil : hoveredRoute)
-                    }
-                    #endif
                 }
             }
             let matchingRows = SettingsSearchIndex.matches(searchText)
@@ -77,17 +67,6 @@ struct SettingsView: View {
                         } label: {
                             SettingsRouteLabel(route: route)
                         }
-                        #if os(macOS)
-                        .buttonStyle(MacSettingsNavigationButtonStyle(isHovered: hoveredRoute == route))
-                        .focusEffectDisabled()
-                        .onHover { isHovered in
-                            if isHovered {
-                                hoveredRoute = route
-                            } else if hoveredRoute == route {
-                                hoveredRoute = nil
-                            }
-                        }
-                        #endif
                     }
                 }
             }
@@ -339,10 +318,6 @@ struct SettingsRouteLink: View {
     let route: SettingsRoute
     let summary: String?
     @Environment(\.settingsUsesNativeForm) private var usesNativeForm
-    #if os(macOS)
-    @State private var isHovered = false
-    #endif
-
     var body: some View {
         if usesNativeForm {
             // Inside a grouped Form the system draws the row, its chevron and
@@ -368,11 +343,6 @@ struct SettingsRouteLink: View {
             } label: {
                 SettingsRouteLabel(route: route, explicitSummary: summary)
             }
-            #if os(macOS)
-            .buttonStyle(MacSettingsNavigationButtonStyle(isHovered: isHovered))
-            .focusEffectDisabled()
-            .onHover { isHovered = $0 }
-            #endif
         }
     }
 }
@@ -381,16 +351,12 @@ private struct SettingsRouteIcon: View {
     let route: SettingsRoute
 
     var body: some View {
-        #if os(macOS)
-        MacSettingsSymbolImage(systemName: route.systemImage)
-        #else
         // Plain, which a Form row would otherwise tint and enlarge.
         Image(systemName: route.systemImage)
             .symbolRenderingMode(.monochrome)
             .imageScale(.medium)
             .font(.body)
             .foregroundStyle(.primary)
-        #endif
     }
 }
 
@@ -468,29 +434,4 @@ struct MacSettingsSearchField: NSViewRepresentable {
     }
 }
 
-private struct MacSettingsNavigationButtonStyle: ButtonStyle {
-    let isHovered: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .environment(
-                \.macSettingsSymbolTreatment,
-                MacSettingsPresentation.symbolTreatment(
-                    isHovered: isHovered,
-                    isPressed: configuration.isPressed
-                )
-            )
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .background {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(backgroundColor(isPressed: configuration.isPressed))
-            }
-            .contentShape(Rectangle())
-    }
-
-    private func backgroundColor(isPressed: Bool) -> Color {
-        isPressed || isHovered ? .gray.opacity(isPressed ? 0.28 : 0.20) : .clear
-    }
-}
 #endif
