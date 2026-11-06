@@ -1700,6 +1700,9 @@ final class PlaybackSession {
                 // Omnia's playback settings go back on once it has.
                 pictureInPictureController.activateAudioSession()
                 pictureInPictureController.attachSampleBuffers()
+                // Probing opens a second connection, so it waits until the
+                // video is playing rather than competing with the start.
+                if let source { pictureInPictureController.prepare(source: source) }
             }
             #endif
         }

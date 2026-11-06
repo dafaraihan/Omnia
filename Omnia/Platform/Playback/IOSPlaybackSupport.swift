@@ -84,8 +84,22 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
     private var sampleTimebase: CMTimebase?
     private var sampleClock: Task<Void, Never>?
     private(set) var player: AVPlayer?
-    private(set) var isHandoff = false
+    /// An AVPlayer copy of mpv's source, for a floating window as smooth as
+    /// other video apps. mpv's frames are the fallback.
+    private var hasHandoffPlayer = false
+    private var handoffSourceURL: URL?
+    private var handoffController: AVPictureInPictureController?
+    private var handoffPossibility: NSKeyValueObservation?
+    /// mpv is paused while Apple's player plays in the window.
+    private var handoffPausedMpv = false
+    /// True while Apple's player, not mpv, plays the floating video.
+    var isHandoff: Bool {
+        hasHandoffPlayer && (handingOff || handoffController?.isPictureInPictureActive == true)
+    }
     private var controller: AVPictureInPictureController?
+    private var activeController: AVPictureInPictureController? {
+        [controller, handoffController].compactMap { $0 }.first { $0.isPictureInPictureActive }
+    }
     private var possibility: NSKeyValueObservation?
     private var readiness: NSKeyValueObservation?
     private var preparation: Task<Void, Never>?
@@ -133,9 +147,7 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                if self.controller?.isPictureInPictureActive == true { self.startedInBackground = true }
-                guard self.isHandoff, self.isPlaying?() == true else { return }
-                self.start()
+                if self.activeController != nil { self.startedInBackground = true }
             }
         }
         // Swiping home starts here, while the GPU can still copy the frame.
@@ -143,7 +155,7 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
             forName: UIApplication.willResignActiveNotification, object: nil, queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                guard let self, self.usesSampleBuffers, self.controller?.isPictureInPictureActive != true else { return }
+                guard let self, self.usesSampleBuffers, self.activeController == nil else { return }
                 self.refreshSampleFrame()
             }
         }
@@ -155,7 +167,7 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
             Task { @MainActor [weak self] in
                 guard let self, self.startedInBackground else { return }
                 self.startedInBackground = false
-                self.controller?.stopPictureInPicture()
+                self.activeController?.stopPictureInPicture()
             }
         }
     }
@@ -191,7 +203,7 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
 
     func configure(player: AVPlayer) {
         reset()
-        attach(player, handoff: false)
+        attach(player)
     }
 
     /// mpv's sources: iOS floats the frames mpv hands over.
@@ -313,7 +325,7 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
     }
 
     func pictureInPictureControllerWillStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-        guard usesSampleBuffers else { return }
+        guard pictureInPictureController === controller, usesSampleBuffers else { return }
         let layer = sampleLayer
         let started = beginFrames? { frame in Self.enqueue(frame, on: layer) } ?? false
         if !started { unavailable?(nil) }
@@ -328,8 +340,13 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
 
     private static let unplayableExtensions: Set<String> = ["mkv", "avi", "webm", "flv", "wmv", "vob", "iso", "m2ts"]
 
+    /// Loads mpv's source into AVPlayer too, when AVFoundation can play it,
+    /// so the floating window can use Apple's player. Call it after
+    /// `attachSampleBuffers()`, which stays the fallback.
     func prepare(source: PlaybackSource) {
-        reset()
+        guard usesSampleBuffers, source.url != handoffSourceURL else { return }
+        detachHandoff()
+        handoffSourceURL = source.url
         // Header-bearing sources stay with the authorized native player:
         // AVURLAsset has no public arbitrary HTTP-header API.
         guard source.requestHeaders.isEmpty else { return }
@@ -349,23 +366,22 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
             do {
                 guard try await asset.load(.isPlayable), !Task.isCancelled,
                       let self, self.generation == token else { return }
-                self.attach(AVPlayer(playerItem: AVPlayerItem(asset: asset)), handoff: true)
+                self.attachHandoff(AVPlayer(playerItem: AVPlayerItem(asset: asset)))
             } catch {
-                // Native playback continues; PiP remains unavailable.
+                // mpv's frames float the video instead.
             }
         }
     }
 
-    private func attach(_ player: AVPlayer, handoff: Bool) {
+    private func attach(_ player: AVPlayer) {
         self.player = player
-        isHandoff = handoff
         layer.player = player
         layer.videoGravity = .resizeAspect
         // Inline video must render even when this device cannot offer PiP.
         guard AVPictureInPictureController.isPictureInPictureSupported() else { return }
         controller = AVPictureInPictureController(playerLayer: layer)
         controller?.delegate = self
-        controller?.canStartPictureInPictureAutomaticallyFromInline = !handoff
+        controller?.canStartPictureInPictureAutomaticallyFromInline = true
         possibility = controller?.observe(\.isPictureInPicturePossible, options: [.initial, .new]) { [weak self] _, _ in
             Task { @MainActor [weak self] in self?.publish() }
         }
@@ -374,15 +390,58 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
         }
     }
 
+    /// Swiping home still floats mpv's frames: Apple's player can't take over
+    /// in time once Omnia leaves the screen.
+    private func attachHandoff(_ player: AVPlayer) {
+        guard AVPictureInPictureController.isPictureInPictureSupported() else { return }
+        self.player = player
+        hasHandoffPlayer = true
+        layer.player = player
+        layer.videoGravity = .resizeAspect
+        handoffController = AVPictureInPictureController(playerLayer: layer)
+        handoffController?.delegate = self
+        handoffController?.canStartPictureInPictureAutomaticallyFromInline = false
+        handoffPossibility = handoffController?.observe(\.isPictureInPicturePossible, options: [.initial, .new]) { [weak self] _, _ in
+            Task { @MainActor [weak self] in self?.publish() }
+        }
+        readiness = player.currentItem?.observe(\.status, options: [.initial, .new]) { [weak self] _, _ in
+            Task { @MainActor [weak self] in self?.publish() }
+        }
+    }
+
+    private func detachHandoff() {
+        preparingAsset?.cancelLoading()
+        preparingAsset = nil
+        preparationDeadline?.cancel()
+        preparationDeadline = nil
+        preparation?.cancel()
+        preparation = nil
+        handoffSourceURL = nil
+        guard hasHandoffPlayer, handoffController?.isPictureInPictureActive != true, !handingOff else { return }
+        handoffPossibility = nil
+        readiness = nil
+        handoffController?.delegate = nil
+        handoffController = nil
+        player?.pause()
+        player?.replaceCurrentItem(with: nil)
+        layer.player = nil
+        player = nil
+        hasHandoffPlayer = false
+    }
+
+    private var isHandoffReady: Bool {
+        handoffController?.isPictureInPicturePossible == true && player?.currentItem?.status == .readyToPlay
+    }
+
     private func publish() {
-        stateChanged?(controller?.isPictureInPictureActive == true,
-                      controller?.isPictureInPicturePossible == true
-                        && (usesSampleBuffers || player?.currentItem?.status == .readyToPlay))
+        let samplePossible = controller?.isPictureInPicturePossible == true
+            && (usesSampleBuffers || player?.currentItem?.status == .readyToPlay)
+        stateChanged?(activeController != nil, samplePossible || isHandoffReady)
     }
 
     func toggle() {
-        if controller?.isPictureInPictureActive == true {
-            controller?.stopPictureInPicture()
+        if let activeController {
+            activeController.stopPictureInPicture()
         } else {
             start()
         }
@@ -390,33 +449,50 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
 
     private func start() {
         if usesSampleBuffers {
-            guard let controller, controller.isPictureInPicturePossible else { unavailable?(nil); return }
-            refreshSampleFrame()
-            controller.startPictureInPicture()
+            guard startTask == nil else { return }
+            if isHandoffReady, let handoffController, let player {
+                handOff(to: handoffController, player: player)
+            } else {
+                startSampleBuffers()
+            }
             return
         }
         guard let controller, controller.isPictureInPicturePossible,
-              !controller.isPictureInPictureActive, startTask == nil,
+              !controller.isPictureInPictureActive,
               let player, player.currentItem?.status == .readyToPlay else {
-            if controller?.isPictureInPictureActive != true, startTask == nil { unavailable?(nil) }
+            if controller?.isPictureInPictureActive != true { unavailable?(nil) }
             return
         }
-        if !isHandoff { controller.startPictureInPicture(); return }
-        let target = position?() ?? 0
+        controller.startPictureInPicture()
+    }
+
+    private func startSampleBuffers() {
+        guard let controller, controller.isPictureInPicturePossible else { unavailable?(nil); return }
+        refreshSampleFrame()
+        controller.startPictureInPicture()
+    }
+
+    /// Apple's player couldn't take over; mpv's frames float the video.
+    private func fallBackToSampleBuffers() {
+        startTask?.cancel()
+        startTask = nil
+        restore()
+        startSampleBuffers()
+    }
+
+    /// mpv keeps playing while AVPlayer matches the tracks and buffers near
+    /// the current spot, so the hand-over itself is a short, nearby seek.
+    private func handOff(to controller: AVPictureInPictureController, player: AVPlayer) {
         let token = generation
-        let shouldPlay = isPlaying?() == true
         handingOff = true
-        handoffWasPlaying = shouldPlay
-        handoffPosition = target
-        beginHandoff?()
+        handoffPausedMpv = false
+        handoffWasPlaying = isPlaying?() == true
+        handoffPosition = position?() ?? 0
         startDeadline = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(5))
+            try? await Task.sleep(for: .seconds(6))
             guard !Task.isCancelled, let self, self.generation == token,
-                  self.controller?.isPictureInPictureActive != true else { return }
-            self.startTask?.cancel()
-            self.startTask = nil
-            self.restore()
-            self.handoffFailed?()
+                  controller.isPictureInPictureActive != true else { return }
+            self.fallBackToSampleBuffers()
         }
         startTask = Task { [weak self] in
             guard let self else { return }
@@ -424,16 +500,24 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
             let selectedSubtitle = self.subtitleTrack?()
             let selectionMatches = await self.selectTracks(audio: selectedAudio, subtitle: selectedSubtitle, player: player)
             guard !Task.isCancelled, self.generation == token else { return }
-            guard selectionMatches else {
-                self.startTask = nil
-                self.restore()
-                self.handoffFailed?()
-                return
-            }
+            guard selectionMatches else { self.fallBackToSampleBuffers(); return }
+            let lead = CMTime(seconds: 2, preferredTimescale: 600)
+            let warmed = await player.seek(
+                to: CMTime(seconds: self.position?() ?? 0, preferredTimescale: 600),
+                toleranceBefore: lead, toleranceAfter: lead
+            )
+            guard !Task.isCancelled, self.generation == token else { return }
+            guard warmed else { self.fallBackToSampleBuffers(); return }
+            let shouldPlay = self.isPlaying?() == true
+            let target = self.position?() ?? 0
+            self.handoffWasPlaying = shouldPlay
+            self.handoffPosition = target
+            self.handoffPausedMpv = true
+            self.beginHandoff?()
             let finished = await player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
             guard !Task.isCancelled, self.generation == token else { return }
+            guard finished else { self.fallBackToSampleBuffers(); return }
             self.startTask = nil
-            guard finished else { self.restore(); self.handoffFailed?(); return }
             if shouldPlay { player.playImmediately(atRate: Float(self.rate?() ?? 1)) }
             controller.startPictureInPicture()
         }
@@ -483,6 +567,8 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
         handingOff = false
         startDeadline?.cancel()
         startDeadline = nil
+        guard handoffPausedMpv else { return }
+        handoffPausedMpv = false
         endHandoff?(time.isFinite ? time : (position?() ?? 0), playing)
     }
 
@@ -512,16 +598,22 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
         controller?.delegate = nil
         controller?.stopPictureInPicture()
         controller = nil
-        if isHandoff { player?.pause(); player?.replaceCurrentItem(with: nil) }
+        handoffPossibility = nil
+        handoffController?.delegate = nil
+        handoffController?.stopPictureInPicture()
+        handoffController = nil
+        handoffSourceURL = nil
+        if hasHandoffPlayer { player?.pause(); player?.replaceCurrentItem(with: nil) }
         layer.player = nil
         player = nil
-        isHandoff = false
+        hasHandoffPlayer = false
         handingOff = false
+        handoffPausedMpv = false
         stateChanged?(false, false)
     }
 
     func pictureInPictureControllerDidStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-        guard !isHandoff || handingOff else {
+        guard pictureInPictureController !== handoffController || handingOff else {
             pictureInPictureController.stopPictureInPicture()
             return
         }
@@ -535,7 +627,7 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
         startedInBackground = false
         sampleClock?.cancel()
         sampleClock = nil
-        if usesSampleBuffers {
+        if pictureInPictureController === controller, usesSampleBuffers {
             endFrames?()
             // Keeps the layer showing something, so it can float again.
             Self.enqueueBlackFrame(on: sampleLayer)
@@ -545,6 +637,11 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
         if wasClosed { closedFromWindow?() }
     }
     func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, failedToStartPictureInPictureWithError error: Error) {
+        if pictureInPictureController === handoffController, usesSampleBuffers {
+            fallBackToSampleBuffers()
+            publish()
+            return
+        }
         sampleClock?.cancel()
         if usesSampleBuffers { endFrames?() }
         restore()
@@ -556,7 +653,7 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
         isRestoring = true
         willRestore?()
         // Back on Metal now, so the player has its picture when the window lands.
-        if usesSampleBuffers { endFrames?() }
+        if pictureInPictureController === controller, usesSampleBuffers { endFrames?() }
         // Lets the player come back on screen for the window to land on.
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(350))
