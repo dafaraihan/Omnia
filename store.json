@@ -22,6 +22,16 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "0.4.1",
+          "buildVersion": "15",
+          "date": "2026-11-06T13:58:40Z",
+          "localizedDescription": "A second playback engine to try, smoother Picture in Picture, and a round of fixes.\n\nNew\n- KSPlayer engine (experimental): Settings › Player › Advanced › Engine. mpv stays the default. KSPlayer uses the same controls, and on iPhone and iPad it floats every format, MKV included, smoothly in Picture in Picture, also when you swipe home. Dolby Vision dynamic metadata and styled .ass subtitles aren't supported in it yet, and Blu-ray discs on the Mac stay with mpv.\n- Smooth Picture in Picture for MP4 and HLS streams with mpv: tapping the button hands the video to Apple's player at the same spot and audio track.\n- The All, Movies and Series switch in Library is interactive glass you can drag across.\n- MDBList's score can be turned off in its settings.\n\nImproved\n- Mac shows page titles in the toolbar, and the sidebar says Settings.\n- iPad portrait fits better, including Settings search.\n- The home hero shows up to 15 titles, without dots.\n- Mark as Watched is gone from the home and title page heroes, and their buttons line up.\n- Pulling down Control Center or Notification Center no longer pauses the video.",
+          "downloadURL": "https://github.com/dafaraihan/Omnia/releases/download/v0.4.1/Omnia-0.4.1-iPhone-iPad.ipa",
+          "size": 45916500,
+          "sha256": "fce1c9e0cec5acc3317a2f08053651d8454ca3b20045d3f116ff924cecfd083e",
+          "minOSVersion": "26.5"
+        },
+        {
           "version": "0.4.0",
           "buildVersion": "14",
           "date": "2026-11-06T05:53:20Z",
