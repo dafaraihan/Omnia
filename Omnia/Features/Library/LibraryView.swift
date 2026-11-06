@@ -129,9 +129,10 @@ struct LibraryView: View {
             selection: $selectedKind,
             options: [(nil, "All"), (.movie, "Movies"), (.series, "Series")]
         )
+        // As on iPhone: right under the title, from the page's leading edge.
         .frame(maxWidth: OmniaDevice.isPhone ? .infinity : 420)
         .padding(.horizontal, MediaBrowseMetrics.pageInset)
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
