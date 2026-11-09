@@ -10,7 +10,7 @@ import Foundation
 /// Omnia keeps this separate from `PlaybackSource`: an add-on may identify a
 /// stream with a direct URL, a bounded local torrent descriptor, or an
 /// external handoff URL. Only validated playback input reaches libmpv.
-struct AddonStreamCandidate: Identifiable, Hashable, Sendable {
+nonisolated struct AddonStreamCandidate: Identifiable, Hashable, Sendable {
     enum NativePlaybackCompatibility: Hashable, Sendable {
         /// HLS and common containers are expected to play directly.
         case likelySupported
@@ -167,7 +167,7 @@ struct AddonStreamCandidate: Identifiable, Hashable, Sendable {
 
 /// A validated direct HTTPS stream or completed local cache file. The player
 /// never receives a torrent hash, magnet URI, tracker, or webpage handoff.
-struct PlaybackSource: Identifiable, Hashable, Sendable {
+nonisolated struct PlaybackSource: Identifiable, Hashable, Sendable {
     let id: String
     let addonID: String
     let addonName: String
@@ -548,7 +548,7 @@ enum PlaybackSourceResolver {
     }
 }
 
-private extension URL {
+nonisolated private extension URL {
     static func validHTTPSURL(from text: String?) -> URL? {
         guard let text, let url = URL(string: text), url.scheme?.lowercased() == "https", url.host != nil else {
             return nil
@@ -571,7 +571,7 @@ private extension URL {
     }
 }
 
-private extension String {
+nonisolated private extension String {
     var nonEmpty: String? { isEmpty ? nil : self }
 }
 

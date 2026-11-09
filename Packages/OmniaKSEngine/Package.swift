@@ -18,6 +18,9 @@ let package = Package(
         .target(
             name: "OmniaKSEngine",
             dependencies: [.product(name: "KSPlayer", package: "KSPlayer")],
+            // KSPlayer stays out of this module's interface; the compiler
+            // checks that nothing of it leaks into what the app sees.
+            swiftSettings: [.enableExperimentalFeature("CheckImplementationOnly")],
             // Xcode also applies these to the app's own link. The app keeps
             // its Swift symbols (for Xcode Previews) and the entry point
             // Xcode's debug launcher looks up; nothing else in the app needs

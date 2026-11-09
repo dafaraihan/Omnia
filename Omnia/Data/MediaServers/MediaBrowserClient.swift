@@ -355,7 +355,7 @@ private nonisolated final class SameOriginRedirects: NSObject, URLSessionTaskDel
 // MARK: Wire models
 
 extension MediaBrowserClient {
-    struct PublicInfo: Decodable, Sendable {
+    nonisolated struct PublicInfo: Decodable, Sendable {
         let serverName: String?
         let version: String?
         let id: String?
@@ -412,7 +412,7 @@ extension MediaBrowserClient {
         init(from decoder: Decoder) throws { item = try? BaseItem(from: decoder) }
     }
 
-    struct UserData: Decodable, Hashable, Sendable {
+    nonisolated struct UserData: Decodable, Hashable, Sendable {
         let playbackPositionTicks: Int64?
         let played: Bool?
         let playedPercentage: Double?
@@ -463,7 +463,7 @@ extension MediaBrowserClient {
         }
     }
 
-    struct BaseItem: Decodable, Hashable, Sendable {
+    nonisolated struct BaseItem: Decodable, Hashable, Sendable {
         let id: String
         let name: String?
         let type: String?

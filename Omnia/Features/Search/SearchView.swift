@@ -453,7 +453,7 @@ enum SearchFilterChoices {
         }
     }
 
-    static func kindTitle(_ kind: MediaItem.Kind?) -> String {
+    nonisolated static func kindTitle(_ kind: MediaItem.Kind?) -> String {
         switch kind {
         case nil: "All Kinds"
         case .movie: "Movies"

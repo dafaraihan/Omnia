@@ -81,7 +81,7 @@ private final class PhonePlaybackOrientationState {
 
     func begin(in scene: UIWindowScene) {
         let orientation: UIInterfaceOrientationMask
-        switch scene.interfaceOrientation {
+        switch scene.effectiveGeometry.interfaceOrientation {
         case .landscapeLeft: orientation = .landscapeLeft
         case .landscapeRight: orientation = .landscapeRight
         case .portraitUpsideDown: orientation = .portraitUpsideDown

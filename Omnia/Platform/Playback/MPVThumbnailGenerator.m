@@ -2,7 +2,11 @@
 
 #if TARGET_OS_OSX
 
+// libmpv's header uses @deprecated doc tags without the matching attribute.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdocumentation-deprecated-sync"
 #import <mpv/client.h>
+#pragma clang diagnostic pop
 #import <math.h>
 
 static NSString *const OMMpvThumbnailErrorDomain = @"OMMpvThumbnailErrorDomain";

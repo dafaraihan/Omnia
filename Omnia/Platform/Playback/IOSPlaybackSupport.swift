@@ -229,7 +229,7 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
         sampleTimebase = timebase
         sampleLayer.controlTimebase = timebase
         syncSampleClock()
-        Self.enqueueBlackFrame(on: sampleLayer)
+        Self.enqueueBlackFrame(to: SampleTarget(sampleLayer))
         controller = AVPictureInPictureController(
             contentSource: .init(sampleBufferDisplayLayer: sampleLayer, playbackDelegate: self)
         )
@@ -254,7 +254,8 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
     /// Keeps the layer on the real picture and its shape, ready to float.
     private func refreshSampleFrame() {
         let layer = sampleLayer
-        captureFrame? { frame in Self.enqueue(frame, on: layer) }
+        let target = SampleTarget(layer)
+        captureFrame? { frame in Self.enqueue(frame, to: target) }
     }
 
     private func syncSampleClock() {
@@ -271,12 +272,24 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
         controller?.invalidatePlaybackState()
     }
 
-    private nonisolated static func enqueue(_ frame: CVPixelBuffer, on layer: AVSampleBufferDisplayLayer) {
+    /// The layer's renderer and clock, read on the main thread for frames
+    /// that arrive on mpv's queue. Both are safe to use from any thread.
+    private nonisolated struct SampleTarget: @unchecked Sendable {
+        let renderer: AVSampleBufferVideoRenderer
+        let timebase: CMTimebase?
+
+        @MainActor init(_ layer: AVSampleBufferDisplayLayer) {
+            renderer = layer.sampleBufferRenderer
+            timebase = layer.controlTimebase
+        }
+    }
+
+    private nonisolated static func enqueue(_ frame: CVPixelBuffer, to target: SampleTarget) {
         var format: CMVideoFormatDescription?
         CMVideoFormatDescriptionCreateForImageBuffer(allocator: kCFAllocatorDefault, imageBuffer: frame, formatDescriptionOut: &format)
         guard let format else { return }
         // Stamped with the layer's own clock, so it never counts as late or early.
-        let now = layer.controlTimebase.map { CMTimebaseGetTime($0) } ?? CMClockGetTime(CMClockGetHostTimeClock())
+        let now = target.timebase.map { CMTimebaseGetTime($0) } ?? CMClockGetTime(CMClockGetHostTimeClock())
         var timing = CMSampleTimingInfo(duration: .invalid, presentationTimeStamp: now, decodeTimeStamp: .invalid)
         var sample: CMSampleBuffer?
         CMSampleBufferCreateReadyWithImageBuffer(
@@ -293,12 +306,12 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
                 Unmanaged.passUnretained(kCFBooleanTrue).toOpaque()
             )
         }
-        let renderer = layer.sampleBufferRenderer
+        let renderer = target.renderer
         if renderer.status == .failed { renderer.flush() }
         renderer.enqueue(sample)
     }
 
-    private static func enqueueBlackFrame(on layer: AVSampleBufferDisplayLayer) {
+    private static func enqueueBlackFrame(to target: SampleTarget) {
         var frame: CVPixelBuffer?
         let attributes = [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary
         CVPixelBufferCreate(kCFAllocatorDefault, 16, 9, kCVPixelFormatType_32BGRA, attributes, &frame)
@@ -308,7 +321,7 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
             memset(base, 0, CVPixelBufferGetDataSize(frame))
         }
         CVPixelBufferUnlockBaseAddress(frame, [])
-        enqueue(frame, on: layer)
+        enqueue(frame, to: target)
     }
 
     // MARK: AVPictureInPictureSampleBufferPlaybackDelegate
@@ -352,7 +365,8 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
         if usesEngineController { return }
         guard usesSampleBuffers else { return }
         let layer = sampleLayer
-        let started = beginFrames? { frame in Self.enqueue(frame, on: layer) } ?? false
+        let target = SampleTarget(layer)
+        let started = beginFrames? { frame in Self.enqueue(frame, to: target) } ?? false
         if !started { unavailable?(nil) }
         sampleClock?.cancel()
         sampleClock = Task { @MainActor [weak self] in
@@ -586,7 +600,7 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
         if usesSampleBuffers {
             endFrames?()
             // Keeps the layer showing something, so it can float again.
-            Self.enqueueBlackFrame(on: sampleLayer)
+            Self.enqueueBlackFrame(to: SampleTarget(sampleLayer))
         }
         restore(completed: true)
         publish()

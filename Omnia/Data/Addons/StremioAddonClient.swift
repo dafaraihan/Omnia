@@ -218,7 +218,7 @@ enum StremioAddonClient {
                 let values = enabledCatalogs.indices.flatMap { completed[$0] ?? [] }
                 if let onUpdate {
                     let snapshot = values
-                    await onUpdate(snapshot)
+                    onUpdate(snapshot)
                 }
             }
             return enabledCatalogs.indices.flatMap { completed[$0] ?? [] }

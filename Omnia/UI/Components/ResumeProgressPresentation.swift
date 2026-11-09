@@ -67,7 +67,7 @@ nonisolated struct MediaDetailPlaybackIntent: Equatable {
 }
 
 extension MediaDetailPlaybackIntent {
-    static func estimatedPosition(
+    nonisolated static func estimatedPosition(
         progress: Double?,
         persisted: MediaItem,
         display: MediaItem,

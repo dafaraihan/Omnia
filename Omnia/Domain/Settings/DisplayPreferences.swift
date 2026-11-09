@@ -92,7 +92,7 @@ nonisolated enum AccentLuminance {
     }
 }
 
-extension Color {
+nonisolated extension Color {
     static let omniaMonoLight = Color(red: 0.11, green: 0.11, blue: 0.12)
     static let omniaMonoDark = Color(red: 0.96, green: 0.96, blue: 0.96)
     /// The Mono accent: near-black on a light page, near-white on a dark one.
@@ -774,7 +774,7 @@ nonisolated struct CardAppearance: Codable, Equatable, Sendable {
 /// How Omnia looks: accent, cards, Continue Watching and the title page.
 /// Every value here is read by the views that draw it.
 /// Multipliers on the floating top bar's designed size.
-struct TopBarSizePreferences: Codable, Equatable, Sendable {
+nonisolated struct TopBarSizePreferences: Codable, Equatable, Sendable {
     static let range = 0.7 ... 1.3
 
     var size = 1.0
@@ -795,7 +795,7 @@ struct TopBarSizePreferences: Codable, Equatable, Sendable {
 }
 
 /// Multipliers on the player's designed control and menu sizes.
-struct PlayerSizePreferences: Codable, Equatable, Sendable {
+nonisolated struct PlayerSizePreferences: Codable, Equatable, Sendable {
     static let range = 0.6 ... 1.4
 
     var controls = 1.0
@@ -838,7 +838,7 @@ enum LowPowerMode: String, Codable, CaseIterable, Identifiable, Sendable {
 }
 
 /// The fade from a hero's artwork into the page below it.
-struct HeroBlendPreferences: Codable, Equatable, Sendable {
+nonisolated struct HeroBlendPreferences: Codable, Equatable, Sendable {
     var isEnabled = true
     /// How solid the fade gets, from 0 to 1.
     var strength = 1.0
@@ -878,7 +878,7 @@ enum LiquidGlassStyle: String, Codable, CaseIterable, Identifiable, Sendable {
     }
 }
 
-struct LiquidGlassPreferences: Codable, Equatable, Sendable {
+nonisolated struct LiquidGlassPreferences: Codable, Equatable, Sendable {
     var isEnabled = true
     var style = LiquidGlassStyle.standard
     /// 0.5 is the designed look. Lower is more see-through, higher more frosted.

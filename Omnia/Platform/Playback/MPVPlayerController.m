@@ -66,6 +66,10 @@ static dispatch_queue_t OMMpvTeardownQueue(void) {
 }
 
 #if TARGET_OS_OSX
+// The OpenGL headers come in as a module, which GL_SILENCE_DEPRECATION
+// can't reach, so the OpenGL layer silences the deprecation itself.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
 static void *OMOpenGLProcedureAddress(void *context, const char *name) {
     CFStringRef symbolName = CFStringCreateWithCString(kCFAllocatorDefault, name, kCFStringEncodingASCII);
     void *address = CFBundleGetFunctionPointerForName(
@@ -258,6 +262,7 @@ static void *OMOpenGLProcedureAddress(void *context, const char *name) {
 
 @end
 
+#pragma clang diagnostic pop
 #endif
 
 /// The layer libmpv's gpu-next output draws into through MoltenVK, after
@@ -1649,7 +1654,7 @@ static void OMMpvSoftwareUpdate(void *context) {
 }
 
 /// Opens the floating window on a copy of the current frame.
-static const BOOL OMMpvCapturesPictureInPictureStartFrame = NO;
+static BOOL OMMpvCapturesPictureInPictureStartFrame = NO;
 
 /// mpv's raw frames leave the alpha byte unset.
 static void OMMpvFillAlpha(uint8_t *pixels, int width, int height, size_t stride) {
@@ -1660,10 +1665,7 @@ static void OMMpvFillAlpha(uint8_t *pixels, int width, int height, size_t stride
 - (void)captureCurrentFrame:(void (^)(CVPixelBufferRef))frameHandler {
     // The Simulator's Metal driver aborts on the buffer this readback needs,
     // so it has never run. Off until it has been tried on a real device.
-    if (!OMMpvCapturesPictureInPictureStartFrame) return;
-    #if TARGET_OS_SIMULATOR
-    return;
-    #endif
+    if (!OMMpvCapturesPictureInPictureStartFrame || TARGET_OS_SIMULATOR) return;
     if (!_mpv || _stopped) return;
     if (!_softwareQueue) {
         _softwareQueue = dispatch_queue_create("omnia.mpv.software-frames", DISPATCH_QUEUE_SERIAL);

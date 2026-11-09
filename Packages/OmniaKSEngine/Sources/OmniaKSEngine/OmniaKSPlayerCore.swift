@@ -153,7 +153,7 @@ final class KSEngine {
     private var publishedTrackCounts = (0, 0)
     private var userChoseSubtitle = false
 
-    private struct ExternalSubtitle {
+    @_implementationOnly private struct ExternalSubtitle {
         let id: Int
         let title: String?
         let language: String?
@@ -660,7 +660,7 @@ final class KSEngine {
 
 /// KSPlayer's delegate protocol stays inside this module.
 @MainActor
-private final class DelegateBox: MediaPlayerDelegate {
+@_implementationOnly private final class DelegateBox: MediaPlayerDelegate {
     weak var engine: KSEngine?
 
     func readyToPlay(player _: some MediaPlayerProtocol) { engine?.readyToPlay() }
