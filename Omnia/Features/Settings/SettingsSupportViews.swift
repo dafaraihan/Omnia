@@ -180,7 +180,7 @@ struct OmniaSettingsForm<Content: View>: View {
                                 if !rows.isEmpty {
                                     VStack(spacing: 0) {
                                         ForEach(rows) { row in
-                                            MacSettingsInteractiveRow(highlightsOnHover: true) {
+                                            MacSettingsInteractiveRow {
                                                 row
                                                     .frame(
                                                         maxWidth: .infinity,
@@ -404,7 +404,7 @@ private struct MacSettingsLinkRowStyle: ButtonStyle {
                 .accessibilityHidden(true)
         }
         .contentShape(Rectangle())
-        .opacity(configuration.isPressed ? 0.6 : 1)
+        .macSettingsRowHighlight(isPressed: configuration.isPressed)
     }
 }
 /// A Form-style switch row outside a Form: the first line of the label as
@@ -449,31 +449,65 @@ struct MacSettingsRowLabeledContentStyle: LabeledContentStyle {
     }
 }
 
+/// A row of a Mac Settings card. A row that opens another page highlights
+/// edge to edge while hovered or pressed, like a tapped row on iPhone; the
+/// card's corners clip it on the first and last rows. Rows with their own
+/// controls, such as switches, don't highlight.
 private struct MacSettingsInteractiveRow<Content: View>: View {
     private let content: Content
-    private let highlightsOnHover: Bool
     @State private var isHovered = false
+    @State private var link: MacSettingsRowHighlight?
 
-    /// Root rows draw their own hover in their button style.
-    init(highlightsOnHover: Bool = false, @ViewBuilder content: () -> Content) {
-        self.highlightsOnHover = highlightsOnHover
+    init(@ViewBuilder content: () -> Content) {
         self.content = content()
     }
 
     var body: some View {
         let treatment = MacSettingsPresentation.symbolTreatment(
             isHovered: isHovered,
-            isPressed: false
+            isPressed: link?.isPressed ?? false
         )
         content
             .environment(\.macSettingsSymbolTreatment, treatment)
             .labelStyle(MacSettingsLabelStyle(treatment: treatment))
+            .onPreferenceChange(MacSettingsRowHighlightKey.self) { link = $0 }
             .background {
-                if highlightsOnHover && isHovered {
-                    Color.primary.opacity(0.045)
+                if let link, isHovered || link.isPressed {
+                    Rectangle()
+                        .fill(MacSettingsRowHighlight.fill)
+                        .accessibilityHidden(true)
                 }
             }
             .onHover { isHovered = $0 }
+    }
+}
+
+/// What a row's link reports to the row around it.
+struct MacSettingsRowHighlight: Equatable {
+    var isPressed: Bool
+
+    /// iPhone's selected-row color, systemGray4.
+    static let fill = Color(nsColor: NSColor(name: nil) { appearance in
+        let dark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        return dark
+            ? NSColor(srgbRed: 58 / 255, green: 58 / 255, blue: 60 / 255, alpha: 1)
+            : NSColor(srgbRed: 209 / 255, green: 209 / 255, blue: 214 / 255, alpha: 1)
+    })
+}
+
+struct MacSettingsRowHighlightKey: PreferenceKey {
+    static let defaultValue: MacSettingsRowHighlight? = nil
+
+    static func reduce(value: inout MacSettingsRowHighlight?, nextValue: () -> MacSettingsRowHighlight?) {
+        value = value ?? nextValue()
+    }
+}
+
+extension View {
+    /// Marks a Mac Settings row as one that opens something, so the row
+    /// highlights edge to edge.
+    func macSettingsRowHighlight(isPressed: Bool) -> some View {
+        preference(key: MacSettingsRowHighlightKey.self, value: MacSettingsRowHighlight(isPressed: isPressed))
     }
 }
 

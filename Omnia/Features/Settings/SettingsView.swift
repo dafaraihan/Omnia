@@ -481,15 +481,9 @@ private struct MacSettingsNavigationButtonStyle: ButtonStyle {
             )
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
-            .background {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(backgroundColor(isPressed: configuration.isPressed))
-            }
             .contentShape(Rectangle())
-    }
-
-    private func backgroundColor(isPressed: Bool) -> Color {
-        isPressed || isHovered ? .gray.opacity(isPressed ? 0.28 : 0.20) : .clear
+            // The row draws the highlight across its full width, as on iPhone.
+            .macSettingsRowHighlight(isPressed: configuration.isPressed)
     }
 }
 #endif
