@@ -1556,10 +1556,6 @@ struct PlaybackExperienceView: View {
     @State private var chromeHideTask: Task<Void, Never>?
     @State private var segments: [SkipSegment] = []
     @State private var visibleSkipSegment: SkipSegment?
-    /// Nuvio hides the skip prompt after 10 seconds while the controls are
-    /// hidden; it comes back with the controls.
-    @State private var skipPromptExpired = false
-    @State private var skipPromptTask: Task<Void, Never>?
     @State private var skipNotice: String?
     @State private var showsUpNext = false
     /// Up Next reached during an outro waits for the outro to end, so the
@@ -1764,7 +1760,7 @@ struct PlaybackExperienceView: View {
         .overlay(alignment: .bottomTrailing) {
             if showsPromptOverlay {
                 PlaybackPromptOverlay(
-                    skipTitle: showsChrome || showsContextualSkip ? visibleSkipSegment.map { _ in skipTitle } : nil,
+                    skipTitle: visibleSkipSegment.map { _ in skipTitle },
                     skip: skipIntro,
                     upNext: upNextPrompt,
                     playNext: showUpNext,
@@ -1800,7 +1796,6 @@ struct PlaybackExperienceView: View {
         .onAppear { revealChrome() }
         .onDisappear {
             chromeHideTask?.cancel()
-            skipPromptTask?.cancel()
             nextEpisodeTask?.cancel()
             preloadTask?.cancel()
             pauseOverlayTask?.cancel()
@@ -1827,11 +1822,6 @@ struct PlaybackExperienceView: View {
                 showsChrome = true
             } else {
                 hideChrome(after: 3.2)
-            }
-        }
-        .onChange(of: showsChrome) { _, isVisible in
-            if isVisible, visibleSkipSegment != nil {
-                restartSkipPromptTimer()
             }
         }
         .omniaStreamsPage(isPresented: showsNextSourceSheet) {
@@ -1938,10 +1928,11 @@ struct PlaybackExperienceView: View {
             && !playback.hasRenderedVideoFrame
     }
 
-    /// Clicks and the pointer don't bring the controls up over the loading
-    /// overlay or an on-screen Skip Intro or Outro.
+    /// Taps, clicks, the pointer and keys don't bring the controls up over
+    /// the loading overlay, a Skip prompt or Up Next. The prompt stays until
+    /// it's used, dismissed or its segment ends (Dafa, 2026-11-09).
     private var holdsChromeHidden: Bool {
-        showsLoadingOverlay || showsContextualSkip
+        showsLoadingOverlay || visibleSkipSegment != nil || upNextPrompt != nil
     }
 
     private var loadingStatus: String {
@@ -2005,10 +1996,6 @@ struct PlaybackExperienceView: View {
         showsPauseOverlay = true
     }
 
-    private var showsContextualSkip: Bool {
-        visibleSkipSegment != nil && !skipPromptExpired
-    }
-
     private var skipTitle: String {
         visibleSkipSegment?.kind.skipTitle ?? "Skip Intro"
     }
@@ -2017,8 +2004,7 @@ struct PlaybackExperienceView: View {
     /// panel is open or the timeline is being dragged.
     private var showsPromptOverlay: Bool {
         guard !(showsChrome && isScrubbing) else { return false }
-        let showsSkip = visibleSkipSegment != nil && (showsChrome || showsContextualSkip)
-        return showsSkip || upNextPrompt != nil
+        return visibleSkipSegment != nil || upNextPrompt != nil
     }
 
     private var upNextPrompt: PlaybackUpNextPrompt? {
@@ -2079,8 +2065,13 @@ struct PlaybackExperienceView: View {
         nextSourceRequest = PlaybackRequest(item: item, episode: episode, resumeAt: nil)
     }
 
+    /// Cancel stops the countdown and puts Up Next away, so the controls
+    /// can come back.
     private var cancelUpNextAction: (() -> Void)? {
-        nextEpisodeAutoPlay == nil ? nil : { cancelNextEpisodeAutoPlay() }
+        {
+            cancelNextEpisodeAutoPlay()
+            showsUpNext = false
+        }
     }
 
     private func skipIntro() {
@@ -2105,7 +2096,6 @@ struct PlaybackExperienceView: View {
                 : nil
         ))
         visibleSkipSegment = nil
-        skipPromptExpired = false
         showsUpNext = false
         deferredUpNext = false
         didHandleEnd = false
@@ -2170,7 +2160,6 @@ struct PlaybackExperienceView: View {
         switch effect {
         case let .presentSkip(segment):
             visibleSkipSegment = segment
-            restartSkipPromptTimer()
             dismissChromeForContextualAction()
             // An outro that starts after Up Next took its place.
             if segment.kind.isEnding, showsUpNext {
@@ -2180,7 +2169,6 @@ struct PlaybackExperienceView: View {
             }
         case .dismissSkip:
             visibleSkipSegment = nil
-            skipPromptTask?.cancel()
             presentDeferredUpNext()
         case let .autoSkip(segment, position):
             playback.seek(to: position)
@@ -2210,16 +2198,6 @@ struct PlaybackExperienceView: View {
     private func presentDeferredUpNext() {
         guard deferredUpNext else { return }
         presentUpNext()
-    }
-
-    private func restartSkipPromptTimer() {
-        skipPromptExpired = false
-        skipPromptTask?.cancel()
-        skipPromptTask = Task {
-            try? await Task.sleep(for: .seconds(10))
-            guard !Task.isCancelled else { return }
-            skipPromptExpired = true
-        }
     }
 
     private func showSkipNotice(_ text: String) {
@@ -2354,6 +2332,7 @@ struct PlaybackExperienceView: View {
     }
 
     private func revealChrome() {
+        guard !holdsChromeHidden else { return }
         chromeHideTask?.cancel()
         showsChrome = true
         guard !isScrubbing else { return }
@@ -2583,7 +2562,7 @@ private struct PlaybackPromptOverlay: View {
                                 .contentShape(Capsule())
                         }
                         .omniaCapsuleGlassButton(element: .playerControls)
-                        .accessibilityHint("Stops the next episode from starting automatically")
+                        .accessibilityHint("Hides Up Next and stops the next episode from starting automatically")
                     }
                 }
                 .padding(.top, 4)

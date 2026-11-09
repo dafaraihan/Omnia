@@ -1699,16 +1699,15 @@ final class PlaybackSession {
             #if os(iOS)
             // iOS needs a frame on screen before it will float a video.
             if hasRenderedVideoFrame {
-                // mpv's audio output sets up the session as it opens, so
-                // Omnia's playback settings go back on once it has.
-                pictureInPictureController.activateAudioSession()
                 if let engineController = player.systemPictureInPictureController {
+                    // KSPlayer keeps the session it set up for its audio
+                    // engine; changing it while the engine runs stops it.
                     pictureInPictureController.attachEngineController(engineController, videoView: player.videoView)
                 } else {
+                    // mpv's audio output sets up the session as it opens, so
+                    // Omnia's playback settings go back on once it has.
+                    pictureInPictureController.activateAudioSession()
                     pictureInPictureController.attachSampleBuffers()
-                    // Probing opens a second connection, so it waits until the
-                    // video is playing rather than competing with the start.
-                    if let source { pictureInPictureController.prepare(source: source) }
                 }
             }
             #endif

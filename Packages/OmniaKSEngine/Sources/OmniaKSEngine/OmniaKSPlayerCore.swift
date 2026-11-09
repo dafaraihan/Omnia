@@ -136,6 +136,9 @@ final class KSEngine {
     private var subtitleDelay: Double = 0
     private var lastPictureInPictureController: AVPictureInPictureController?
     private var probe: SpeechProbe?
+    private var desiredVolume: Float = 1
+    private var publishedTrackCounts = (0, 0)
+    private var userChoseSubtitle = false
 
     private struct ExternalSubtitle {
         let id: Int
@@ -303,7 +306,50 @@ final class KSEngine {
             lastPictureInPictureController = player.pipController
             notify()
         }
+        keepAudioRunning()
+        refreshLateTracks()
         renderSubtitle()
+    }
+
+    /// Some embedded subtitles only show up in the stream after it opens, as
+    /// KSPlayer's own player allows for; the track lists go out again when
+    /// they do, and the preferred subtitle is picked then.
+    private func refreshLateTracks() {
+        guard player.isReadyToPlay else { return }
+        // KSPlayer can put a new picture view in; subtitles stay above it.
+        if containerView.subviews.last !== subtitleView {
+            #if canImport(UIKit)
+            containerView.bringSubviewToFront(subtitleView)
+            #else
+            containerView.addSubview(subtitleView, positioned: .above, relativeTo: nil)
+            #endif
+        }
+        let counts = (player.tracks(mediaType: .audio).count, player.tracks(mediaType: .subtitle).count)
+        guard counts != publishedTrackCounts else { return }
+        let gainedSubtitles = counts.1 > publishedTrackCounts.1
+        publishedTrackCounts = counts
+        if gainedSubtitles, selectedSubtitleID == nil, !subtitlesDisabled, !userChoseSubtitle {
+            selectDefaultSubtitle()
+        }
+        notify()
+    }
+
+    /// AVAudioEngine stops by itself when the audio session or the output
+    /// device changes underneath it, and KSPlayer doesn't start it again;
+    /// the picture then played on in silence. While playing it is kept
+    /// running, and the volume Omnia set is put back on its new nodes.
+    private func keepAudioRunning() {
+        guard player.isReadyToPlay, !userPaused,
+              player.playbackState == .playing, player.loadState == .playable,
+              let output = player.audioOutput as? AudioEnginePlayer
+        else { return }
+        if !output.engine.isRunning {
+            output.play()
+        }
+        if abs(player.playbackVolume - desiredVolume) > 0.001 {
+            player.playbackVolume = desiredVolume
+        }
+        if player.isMuted { player.isMuted = false }
     }
 
     // MARK: Transport
@@ -336,7 +382,8 @@ final class KSEngine {
     }
 
     func setVolume(_ percent: Double) {
-        player.playbackVolume = Float(min(max(percent, 0), 100) / 100)
+        desiredVolume = Float(min(max(percent, 0), 100) / 100)
+        player.playbackVolume = desiredVolume
     }
 
     func setPlaybackRate(_ rate: Double) {
@@ -367,6 +414,10 @@ final class KSEngine {
         if let match = Self.firstMatch(audio, languages: preferredAudioLanguages), !match.isEnabled {
             player.select(track: match)
         }
+        selectDefaultSubtitle()
+    }
+
+    private func selectDefaultSubtitle() {
         guard !subtitlesDisabled else { return }
         let subtitles = player.tracks(mediaType: .subtitle)
         let audioLanguage = player.tracks(mediaType: .audio).first(where: \.isEnabled)?.languageCode
@@ -380,7 +431,7 @@ final class KSEngine {
             candidates = subtitles
         }
         if let match = Self.firstMatch(candidates, languages: languages) {
-            _ = selectSubtitleTrack(id: Int(match.trackID))
+            _ = selectSubtitle(id: Int(match.trackID))
         }
     }
 
@@ -410,7 +461,14 @@ final class KSEngine {
         return true
     }
 
+    /// A choice from the player's subtitle list; the preferred subtitle
+    /// isn't picked over it later.
     func selectSubtitleTrack(id: Int?) -> Bool {
+        userChoseSubtitle = true
+        return selectSubtitle(id: id)
+    }
+
+    private func selectSubtitle(id: Int?) -> Bool {
         // The current one goes off first.
         if let current = selectedSubtitleID {
             if let track = player.tracks(mediaType: .subtitle).first(where: { Int($0.trackID) == current }) {
@@ -446,7 +504,7 @@ final class KSEngine {
         let name = (title?.isEmpty == false ? title : nil) ?? url.lastPathComponent
         let info = URLSubtitleInfo(subtitleID: "omnia-\(id)", name: name, url: url, userAgent: options.userAgent)
         external.append(ExternalSubtitle(id: id, title: title, language: language, url: url, info: info))
-        if select { _ = selectSubtitleTrack(id: id) } else { notify() }
+        if select { _ = selectSubtitle(id: id) } else { notify() }
     }
 
     func cycleAudioTrack() {
