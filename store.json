@@ -22,6 +22,16 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "0.4.3",
+          "buildVersion": "17",
+          "date": "2026-11-09T17:52:27Z",
+          "localizedDescription": "KSPlayer sound and subtitles fixed, and a rebuilt Settings.\n\nFixed\n- KSPlayer (experimental): sound plays and you can switch audio tracks, and subtitles stay on screen until each line ends.\n- The Mac build no longer fails on KSPlayer's FFmpeg placeholder frameworks, and Omnia's own code builds without warnings.\n\nNew\n- Settings is one list on every device, with no Advanced pages: every option is on its page, under clear headings. The playback Engine, mpv or KSPlayer, is first on Settings › Player.\n- Hero Catalogs, Add-ons and Plugins fold open into lists you can reorder by dragging or with each row's menu. Plugin order is kept when a repository refreshes.\n- Clearer controls: system switches, pop-up menus with a checkmark, and text fields that outline themselves while you type.\n- On Mac, Settings rows highlight edge to edge when you hover or click, as on iPhone.",
+          "downloadURL": "https://github.com/dafaraihan/Omnia/releases/download/v0.4.3/Omnia-0.4.3-iPhone-iPad.ipa",
+          "size": 45919468,
+          "sha256": "65a50f80a0f692a776083cd56e0e61fc3aedfe231ac8aa1771e5ac1aa939ee54",
+          "minOSVersion": "26.5"
+        },
+        {
           "version": "0.4.2",
           "buildVersion": "16",
           "date": "2026-11-09T09:12:13Z",
