@@ -638,6 +638,21 @@ final class PlaybackSession {
         mpv.stateChangeHandler = { [weak self] snapshot in
             self?.apply(snapshot)
         }
+        // KSPlayer notes what its audio is doing in Diagnostics, with the
+        // stream it played, until its sound is confirmed on every build.
+        (mpv as? KSPlayerEngine)?.onAudioReport = { [weak self] report in
+            guard let self, let mediaItem = self.mediaItem else { return }
+            let stream = [self.currentCandidate?.displayName, self.currentCandidate?.filename]
+                .compactMap { $0 }
+                .joined(separator: " / ")
+            _ = PlaybackFailureLog.shared.record(
+                item: mediaItem,
+                episode: self.episode,
+                candidate: self.currentCandidate,
+                streamURL: self.source?.url,
+                message: "KSPlayer audio check · \(report) · stream \(stream.isEmpty ? "unknown" : String(stream.prefix(160)))"
+            )
+        }
         player = mpv
         areTracksLoading = true
         let mediaPolicy = PlaybackMediaSelectionPolicy.resolve(

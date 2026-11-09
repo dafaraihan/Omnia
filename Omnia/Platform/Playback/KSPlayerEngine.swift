@@ -30,6 +30,12 @@ final class KSPlayerEngine: PlaybackEngine {
         core.onStateChange = { [weak self] in self?.publish() }
     }
 
+    /// KSPlayer's audio check for Diagnostics.
+    var onAudioReport: ((String) -> Void)? {
+        get { core.onAudioReport }
+        set { core.onAudioReport = newValue }
+    }
+
     var videoView: PlaybackEngineView { core.videoView }
     var errorMessage: String? { core.errorMessage }
     var isPaused: Bool { core.isPaused }

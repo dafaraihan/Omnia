@@ -105,6 +105,12 @@ public final class OmniaKSPlayerCore {
     /// Saves the frame on screen, without subtitles; the extension picks the format.
     public func writeCurrentFrame(to url: URL) -> Bool { engine.writeCurrentFrame(to: url) }
     public func stop() { engine.stop() }
+    /// One line for Diagnostics, about 8 seconds into playback: the audio
+    /// track, its format, the audio engine and the level it puts out.
+    public var onAudioReport: ((String) -> Void)? {
+        get { engine.onAudioReport }
+        set { engine.onAudioReport = newValue }
+    }
 }
 
 // MARK: - Engine
@@ -115,6 +121,8 @@ final class KSEngine {
     private(set) var errorMessage: String?
     private(set) var tracksLoading = true
     var onStateChange: (() -> Void)?
+    var onAudioReport: ((String) -> Void)?
+    private var audioCheckScheduled = false
     var preferredAudioLanguages: [String] = []
     var preferredSubtitleLanguages: [String] = []
     var subtitlesDisabled = false
@@ -291,6 +299,39 @@ final class KSEngine {
         applyDefaultTracks()
         if !userPaused { player.play() }
         notify()
+        scheduleAudioCheck()
+    }
+
+    private func scheduleAudioCheck() {
+        guard !audioCheckScheduled else { return }
+        audioCheckScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
+            guard let self, !self.stopped else { return }
+            let ownsProbe = self.probe == nil
+            if ownsProbe { self.setSpeechActivityProbeEnabled(true) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                guard let self, !self.stopped else { return }
+                let report = self.audioReport
+                if ownsProbe { self.setSpeechActivityProbeEnabled(false) }
+                self.onAudioReport?(report)
+            }
+        }
+    }
+
+    private var audioReport: String {
+        let tracks = player.tracks(mediaType: .audio)
+        let track = tracks.first(where: \.isEnabled) as? FFmpegAssetTrack
+        let format = track?.audioDescriptor?.audioFormat
+        let output = player.audioOutput as? AudioEnginePlayer
+        let level = probe?.level.map { String(format: "%.0f dB", $0) } ?? "none"
+        return [
+            "audio \(track.map { "\($0.codecName) #\($0.trackID) \($0.languageCode ?? "")" } ?? "none") of \(tracks.count)",
+            "out \(format.map { "\(Int($0.sampleRate)) Hz \($0.channelCount) ch" } ?? "none")",
+            "engine \(output?.engine.isRunning == true ? "running" : "stopped")",
+            "volume \(String(format: "%.2f", player.playbackVolume))/\(String(format: "%.2f", desiredVolume)) mixer \(String(format: "%.2f", output?.engine.mainMixerNode.outputVolume ?? -1))",
+            "level \(level)",
+            "state \(player.playbackState.rawValue)/\(player.loadState.rawValue) t=\(Int(player.currentPlaybackTime))",
+        ].joined(separator: " · ")
     }
 
     fileprivate func finished(error: Error?) {
