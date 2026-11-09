@@ -73,8 +73,10 @@ nonisolated enum TrackerLibraryClient {
         let entries: [TrackerLibraryEntry]
         switch (kind, list) {
         case (.trakt, .progress):
-            async let movies = traktGET("sync/playback/movies", [TraktPlayback].self, token: token, clientID: credentials.clientID)
-            async let episodes = traktGET("sync/playback/episodes", [TraktPlayback].self, token: token, clientID: credentials.clientID)
+            // extended=full adds each title's runtime, which turns Trakt's
+            // percentage into a resume point.
+            async let movies = traktGET("sync/playback/movies", [TraktPlayback].self, token: token, clientID: credentials.clientID, query: ["extended": "full"])
+            async let episodes = traktGET("sync/playback/episodes", [TraktPlayback].self, token: token, clientID: credentials.clientID, query: ["extended": "full"])
             entries = try await (movies + episodes).compactMap(\.entry)
         case (.trakt, .watchlist):
             entries = try await traktGET("sync/watchlist", [TraktListed].self, token: token, clientID: credentials.clientID)
@@ -235,8 +237,18 @@ nonisolated enum TrackerLibraryClient {
         return try TrackerClient.decode(type, from: data)
     }
 
-    private static func traktGET<T: Decodable>(_ path: String, _ type: T.Type, token: String, clientID: String) async throws -> T {
-        let (data, _) = try await TrackerClient.send(traktRequest(path, token: token, clientID: clientID), accepting: [200])
+    private static func traktGET<T: Decodable>(
+        _ path: String,
+        _ type: T.Type,
+        token: String,
+        clientID: String,
+        query: [String: String] = [:]
+    ) async throws -> T {
+        var request = traktRequest(path, token: token, clientID: clientID)
+        if !query.isEmpty, let url = request.url {
+            request.url = url.appending(queryItems: query.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) })
+        }
+        let (data, _) = try await TrackerClient.send(request, accepting: [200])
         return try TrackerClient.decode(type, from: data)
     }
 
@@ -297,11 +309,22 @@ private nonisolated struct TrackerWireMedia: Decodable {
     let title: String?
     let year: Int?
     let ids: TrackerWireIDs?
+    /// Minutes, with Trakt's extended=full.
+    let runtime: Int?
 }
 
 private nonisolated struct TrackerWireEpisode: Decodable {
     let season: Int?
     let number: Int?
+    /// Minutes, with Trakt's extended=full.
+    let runtime: Int?
+}
+
+/// A playback's runtime in seconds: the episode's, else the show's usual
+/// episode length, else the movie's.
+private nonisolated func playbackRuntimeSeconds(movie: TrackerWireMedia?, show: TrackerWireMedia?, episode: TrackerWireEpisode?) -> Double? {
+    let minutes = movie != nil ? movie?.runtime : (episode?.runtime ?? show?.runtime)
+    return minutes.flatMap { $0 > 0 ? Double($0) * 60 : nil }
 }
 
 private nonisolated extension TrackerLibraryEntry {
@@ -333,6 +356,7 @@ private nonisolated struct TraktPlayback: Decodable {
             ? TrackerLibraryEntry(.movie, media: movie)
             : TrackerLibraryEntry(.series, media: show, episode: episode)
         entry?.progress = progress.map { min(max($0 / 100, 0), 1) }
+        entry?.runtimeSeconds = playbackRuntimeSeconds(movie: movie, show: show, episode: episode)
         entry?.updatedAt = TrackerLibraryClient.date(paused_at)
         entry?.playbackID = id.map(String.init)
         return entry
@@ -371,6 +395,7 @@ private nonisolated struct SimklPlayback: Decodable {
             ? TrackerLibraryEntry(.movie, media: movie)
             : TrackerLibraryEntry(.series, media: show ?? anime, episode: episode)
         entry?.progress = progress.map { min(max($0 / 100, 0), 1) }
+        entry?.runtimeSeconds = playbackRuntimeSeconds(movie: movie, show: show ?? anime, episode: episode)
         entry?.updatedAt = TrackerLibraryClient.date(paused_at)
         entry?.playbackID = id.map(String.init)
         return entry

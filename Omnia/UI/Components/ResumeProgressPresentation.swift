@@ -36,8 +36,13 @@ nonisolated struct MediaDetailPlaybackIntent: Equatable {
                 airDate: nil
             )
             : nil)
-        let savedPosition = persistedItem?.positionSeconds
         let savedProgress = persistedItem?.progress
+        // A tracker can keep only a percentage (Trakt and Simkl without a
+        // runtime). The title's runtime then gives the resume point, rather
+        // than starting over (Dafa, 2026-11-09).
+        let savedPosition = persistedItem?.positionSeconds ?? persistedItem.flatMap { persisted in
+            Self.estimatedPosition(progress: savedProgress, persisted: persisted, display: displayItem, episodes: episodes)
+        }
         let isResume = savedPosition.map { $0 > 0 } == true
             && savedProgress.map { $0 > 0 && $0 < 1 } == true
 
@@ -58,6 +63,27 @@ nonisolated struct MediaDetailPlaybackIntent: Equatable {
             resumeAt = nil
             episode = displayItem.kind == .series ? firstEpisode : nil
         }
+    }
+}
+
+extension MediaDetailPlaybackIntent {
+    static func estimatedPosition(
+        progress: Double?,
+        persisted: MediaItem,
+        display: MediaItem,
+        episodes: [MediaEpisode]
+    ) -> Double? {
+        guard let progress, progress > 0, progress < 1 else { return nil }
+        let episodeMinutes = episodes.first { candidate in
+            candidate.id == persisted.resumeEpisodeID
+                || (candidate.seasonNumber == persisted.resumeSeasonNumber
+                    && candidate.episodeNumber == persisted.resumeEpisodeNumber)
+        }?.runtimeMinutes ?? persisted.resumeEpisode?.runtimeMinutes
+        let minutes = display.kind == .series
+            ? episodeMinutes ?? display.details?.runtimeMinutes
+            : display.details?.runtimeMinutes ?? persisted.details?.runtimeMinutes
+        guard let minutes, minutes > 0 else { return nil }
+        return progress * Double(minutes) * 60
     }
 }
 
