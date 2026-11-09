@@ -119,22 +119,7 @@ final class KSPlayerEngine: PlaybackEngine {
         if core.videoView.superview === hostView { core.videoView.removeFromSuperview() }
     }
 
-    func togglePictureInPicture() {
-        #if os(macOS)
-        // The player closes behind the floating window; the video's layer has
-        // to stay in a window for it to keep playing there.
-        if !pictureInPictureActive,
-           let content = (core.videoView.window ?? NSApp.keyWindow ?? NSApp.mainWindow)?.contentView {
-            let view = core.videoView
-            view.removeFromSuperview()
-            view.autoresizingMask = []
-            view.frame = CGRect(x: 0, y: 0, width: 2, height: 2)
-            view.alphaValue = 0.01
-            content.addSubview(view, positioned: .below, relativeTo: nil)
-        }
-        #endif
-        core.togglePictureInPicture()
-    }
+    func togglePictureInPicture() { core.togglePictureInPicture() }
 
     #if os(iOS)
     // KSPlayer floats its own decoded frames; mpv's copy path isn't needed.

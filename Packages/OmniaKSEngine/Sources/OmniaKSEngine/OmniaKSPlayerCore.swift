@@ -136,6 +136,9 @@ final class KSEngine {
     private var subtitleDelay: Double = 0
     private var lastPictureInPictureController: AVPictureInPictureController?
     private var probe: SpeechProbe?
+    #if os(macOS)
+    private lazy var pictureInPictureDelegate = MacPictureInPictureDelegate(engine: self)
+    #endif
     private var desiredVolume: Float = 1
     private var publishedTrackCounts = (0, 0)
     private var userChoseSubtitle = false
@@ -304,6 +307,9 @@ final class KSEngine {
         guard !stopped else { return }
         if player.isReadyToPlay, player.pipController !== lastPictureInPictureController {
             lastPictureInPictureController = player.pipController
+            #if os(macOS)
+            player.pipController?.delegate = pictureInPictureDelegate
+            #endif
             notify()
         }
         keepAudioRunning()
@@ -553,6 +559,24 @@ final class KSEngine {
         }
     }
 
+    #if os(macOS)
+    /// The player closes behind the floating window and takes its views
+    /// with it. Once the window is up, the video moves to the back of the
+    /// main window, out of sight, so its layer keeps feeding the window.
+    fileprivate func parkForPictureInPicture() {
+        guard let content = containerView.window?.contentView, containerView.superview !== content else { return }
+        let frame = containerView.superview.map { content.convert(containerView.frame, from: $0) } ?? content.bounds
+        containerView.removeFromSuperview()
+        containerView.frame = frame
+        containerView.alphaValue = 0.01
+        content.addSubview(containerView, positioned: .below, relativeTo: nil)
+    }
+
+    fileprivate func unparkAfterPictureInPicture() {
+        containerView.alphaValue = 1
+    }
+    #endif
+
     // MARK: Auto Sync
 
     var speechActivityLevel: Double? { probe?.level }
@@ -595,6 +619,25 @@ private final class DelegateBox: MediaPlayerDelegate {
     func playBack(player _: some MediaPlayerProtocol, loopCount _: Int) {}
     func finish(player _: some MediaPlayerProtocol, error: Error?) { engine?.finished(error: error) }
 }
+
+#if os(macOS)
+@MainActor
+private final class MacPictureInPictureDelegate: NSObject, AVPictureInPictureControllerDelegate {
+    weak var engine: KSEngine?
+
+    init(engine: KSEngine) {
+        self.engine = engine
+    }
+
+    nonisolated func pictureInPictureControllerDidStartPictureInPicture(_: AVPictureInPictureController) {
+        MainActor.assumeIsolated { engine?.parkForPictureInPicture() }
+    }
+
+    nonisolated func pictureInPictureControllerWillStopPictureInPicture(_: AVPictureInPictureController) {
+        MainActor.assumeIsolated { engine?.unparkAfterPictureInPicture() }
+    }
+}
+#endif
 
 // MARK: - Speech probe
 

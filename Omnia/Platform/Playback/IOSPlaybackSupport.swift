@@ -241,11 +241,12 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
     }
 
     /// The player closes behind the floating window, taking its views with
-    /// it; the engine's video moves behind the app so its layer stays in the
-    /// window. The player takes it back when it opens again.
+    /// it; the engine's video moves behind the app, at the size it had, so
+    /// its layer stays in the window. The player takes it back when it opens
+    /// again.
     private func parkEngineVideo() {
         guard let view = engineVideoView, let backgroundHost, view.superview !== backgroundHost else { return }
-        view.frame = backgroundHost.bounds
+        view.frame = view.superview.map { backgroundHost.convert(view.frame, from: $0) } ?? backgroundHost.bounds
         view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         backgroundHost.addSubview(view)
     }
@@ -346,10 +347,9 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
     }
 
     func pictureInPictureControllerWillStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-        if usesEngineController, pictureInPictureController === controller {
-            parkEngineVideo()
-            return
-        }
+        // KSPlayer's layer stays where it is while the window opens; moving
+        // it now blanked the start of the animation.
+        if usesEngineController { return }
         guard usesSampleBuffers else { return }
         let layer = sampleLayer
         let started = beginFrames? { frame in Self.enqueue(frame, on: layer) } ?? false
@@ -570,6 +570,11 @@ final class IOSPictureInPictureController: NSObject, AVPictureInPictureControlle
         }
         startDeadline?.cancel()
         startDeadline = nil
+        // The window is up; the video's layer moves behind the app before
+        // the player closes over it.
+        if usesEngineController, pictureInPictureController === controller {
+            parkEngineVideo()
+        }
         publish()
     }
     func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
