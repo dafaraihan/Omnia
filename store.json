@@ -22,6 +22,16 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "0.4.2",
+          "buildVersion": "16",
+          "date": "2026-11-09T09:12:13Z",
+          "localizedDescription": "Fixes for the player, Continue Watching and the KSPlayer engine.\n\nFixed\n- Skip Intro, Recap, Outro and Credits and Up Next keep the player controls hidden until you use them or they end. Up Next's Cancel also puts the card away.\n- Titles in Continue Watching from Trakt or Simkl resume where you left off instead of starting over.\n- KSPlayer (experimental): sound plays, and embedded subtitles that appear after the video starts are listed and picked.\n- KSPlayer's Picture in Picture opens on the live picture, without a black start.\n- mpv's Picture in Picture on iPhone and iPad is back to how it was in 0.4.0.",
+          "downloadURL": "https://github.com/dafaraihan/Omnia/releases/download/v0.4.2/Omnia-0.4.2-iPhone-iPad.ipa",
+          "size": 45913695,
+          "sha256": "637ead9c7ec5dc6280db80394e58bb644a9e887f89fd771f66d65dcc196e28d6",
+          "minOSVersion": "26.5"
+        },
+        {
           "version": "0.4.1",
           "buildVersion": "15",
           "date": "2026-11-06T13:58:40Z",
