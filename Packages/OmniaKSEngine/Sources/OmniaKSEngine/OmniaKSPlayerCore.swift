@@ -140,6 +140,8 @@ final class KSEngine {
     private lazy var pictureInPictureDelegate = MacPictureInPictureDelegate(engine: self)
     #endif
     private var desiredVolume: Float = 1
+    /// The subtitle lines on screen now.
+    private var shownParts: [SubtitlePart] = []
     private var publishedTrackCounts = (0, 0)
     private var userChoseSubtitle = false
 
@@ -484,6 +486,7 @@ final class KSEngine {
             }
         }
         selectedSubtitleID = nil
+        shownParts = []
         subtitleView.show([])
         guard let id else {
             notify()
@@ -537,7 +540,7 @@ final class KSEngine {
     private func renderSubtitle() {
         guard let id = selectedSubtitleID, player.isReadyToPlay else { return }
         let time = player.currentPlaybackTime - subtitleDelay
-        let parts: [SubtitlePart]
+        var parts: [SubtitlePart]
         if let track = player.tracks(mediaType: .subtitle).first(where: { Int($0.trackID) == id }) as? FFmpegAssetTrack {
             parts = track.search(for: time)
         } else if let subtitle = external.first(where: { $0.id == id }) {
@@ -545,6 +548,12 @@ final class KSEngine {
         } else {
             parts = []
         }
+        // An embedded line is handed out once, when it starts; it stays up
+        // until its own end time, as in KSPlayer's own player.
+        if parts.isEmpty {
+            parts = shownParts.filter { $0.start <= time && time <= $0.end }
+        }
+        shownParts = parts
         subtitleView.show(parts.map { SubtitleOverlayView.Cue(text: $0.text?.string, image: $0.image) })
     }
 
