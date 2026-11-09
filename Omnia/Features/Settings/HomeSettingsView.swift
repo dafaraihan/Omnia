@@ -17,6 +17,7 @@ struct HomeSettingsView: View {
     @Environment(CollectionsStore.self) private var collections
     @AppStorage(HomeView.continueWatchingVisibilityKey) private var showsContinueWatching = true
     @State private var showsHeroCatalogs = false
+    @State private var heroDropTarget: String?
 
     private var catalogs: [AddonHomeCatalog] {
         homeLayout.ordered(AddonCatalogStore.catalogs(in: store))
@@ -37,20 +38,17 @@ struct HomeSettingsView: View {
         heroSourceKeys.count >= HomeLayoutPreferences.heroSourceLimit
     }
 
-    let showsAdvanced: Bool
 
-    init(showsAdvanced: Bool = false) {
-        self.showsAdvanced = showsAdvanced
-    }
 
     var body: some View {
         Group {
-            if showsAdvanced {
-                OmniaSettingsForm {
-            heroAdvancedSection
-            backgroundSection
-            if !catalogs.isEmpty {
-                Section {
+            OmniaSettingsForm {
+            heroSection
+            Section {
+                SettingsRouteLink(route: .catalogs, summary: visibleCatalogSummary)
+                SettingsRouteLink(route: .collections, summary: collectionsSummary)
+                SettingsRouteLink(route: .continueWatching, summary: continueWatchingSummary)
+                if !catalogs.isEmpty {
                     Toggle(isOn: preferenceBinding(\.showsCatalogType)) {
                         settingLabel("Show Catalog Type", detail: "Add the type after each catalog's name.")
                     }
@@ -59,28 +57,14 @@ struct HomeSettingsView: View {
                         settingLabel("Hide Unreleased Content", detail: "Leave out movies and shows that haven't come out.")
                     }
                     .settingsRow("Hide Unreleased Content")
-                } header: {
-                    Text("Rows")
                 }
+            } header: {
+                Text("Rows")
             }
-
-                }
-            } else {
-                OmniaSettingsForm {
-            heroMainSection
-            Section {
-                SettingsRouteLink(route: .catalogs, summary: visibleCatalogSummary)
-                SettingsRouteLink(route: .collections, summary: collectionsSummary)
-                SettingsRouteLink(route: .continueWatching, summary: continueWatchingSummary)
-            }
-
-            Section {
-                SettingsRouteLink(route: .advanced(.home), summary: nil)
-            }
-                }
+            backgroundSection
             }
         }
-        .omniaNavigationTitle(showsAdvanced ? "Advanced" : "Home")
+        .omniaNavigationTitle("Home")
     }
 
     private var visibleCatalogSummary: String {
@@ -98,30 +82,13 @@ struct HomeSettingsView: View {
         showsContinueWatching ? "On Home" : "Hidden"
     }
 
-    /// Hero rows that most people change.
-    private var heroMainSection: some View {
+    private var heroSection: some View {
         Section {
             if !catalogs.isEmpty {
                 Toggle(isOn: preferenceBinding(\.showsHero)) {
                     settingLabel("Show Hero", detail: "Display the featured carousel at the top of Home.")
                 }
                 .settingsRow("Show Hero")
-            }
-            Toggle(isOn: settings.binding(\.heroTrailer.autoplay)) {
-                settingLabel(
-                    "Hero Trailer Playback",
-                    detail: "Autoplay trailers in the hero. While one plays, the hero stays on its title."
-                )
-            }
-            .settingsRow("Hero Trailer Playback")
-        } footer: {
-            Text("The hero shows up to \(HomeLayoutPreferences.heroItemLimit) titles from its catalogs.")
-        }
-    }
-
-    private var heroAdvancedSection: some View {
-        Section {
-            if !catalogs.isEmpty {
                 SettingsDropdown(
                     "Hero Style",
                     subtitle: homeLayout.preferences.heroStyle.detail,
@@ -134,18 +101,26 @@ struct HomeSettingsView: View {
                 .settingsRow("Hero Style")
                 .disabled(!homeLayout.preferences.showsHero)
                 DisclosureGroup(isExpanded: $showsHeroCatalogs) {
-                    ForEach(catalogs) { catalog in
-                        let isSource = heroSourceKeys.contains(catalog.key)
-                        Toggle(isOn: heroBinding(for: catalog)) {
-                            settingLabel(homeLayout.title(for: catalog), detail: heroDetail(for: catalog, isSource: isSource))
+                    // The hero's catalogs first, in the order the hero mixes
+                    // them, then the rest.
+                    ForEach(heroSourceCatalogs) { catalog in
+                        SettingsReorderRow(
+                            id: catalog.key,
+                            title: homeLayout.title(for: catalog),
+                            orderedIDs: heroSourceKeys,
+                            dropTargetID: $heroDropTarget,
+                            move: moveHeroSource
+                        ) {
+                            heroToggle(for: catalog)
                         }
-                        .disabled(!isSource && heroLimitReached)
-                        .padding(.vertical, 2)
+                    }
+                    ForEach(catalogs.filter { !heroSourceKeys.contains($0.key) }) { catalog in
+                        heroToggle(for: catalog)
                     }
                 } label: {
                     settingLabel(
                         "Hero Catalogs: \(heroSourceKeys.count) of \(HomeLayoutPreferences.heroSourceLimit)",
-                        detail: heroSourceTitles.isEmpty ? "No hero catalogs" : heroSourceTitles
+                        detail: heroSourceTitles.isEmpty ? "No hero catalogs" : "\(heroSourceTitles). Drag to change the order."
                     )
                 }
                 .disabled(!homeLayout.preferences.showsHero)
@@ -168,6 +143,13 @@ struct HomeSettingsView: View {
                 .settingsRow("Title Duration")
                         .settingsDependentRows()
                 }
+                Toggle(isOn: settings.binding(\.heroTrailer.autoplay)) {
+                    settingLabel(
+                        "Hero Trailer Playback",
+                        detail: "Autoplay trailers in the hero. While one plays, the hero stays on its title."
+                    )
+                }
+                .settingsRow("Hero Trailer Playback")
                 if settings.preferences.heroTrailer.autoplay {
                     Group {
                 Toggle(isOn: settings.binding(\.heroTrailer.startsWithSound)) {
@@ -198,6 +180,8 @@ struct HomeSettingsView: View {
             .disabled(!homeLayout.preferences.showsHero)
         } header: {
             Text("Hero")
+        } footer: {
+            Text("The hero shows up to \(HomeLayoutPreferences.heroItemLimit) titles from its catalogs.")
         }
     }
 
@@ -265,6 +249,23 @@ struct HomeSettingsView: View {
         )
     }
 
+    private var heroSourceCatalogs: [AddonHomeCatalog] {
+        heroSourceKeys.compactMap { key in catalogs.first { $0.key == key } }
+    }
+
+    private func heroToggle(for catalog: AddonHomeCatalog) -> some View {
+        let isSource = heroSourceKeys.contains(catalog.key)
+        return Toggle(isOn: heroBinding(for: catalog)) {
+            settingLabel(homeLayout.title(for: catalog), detail: heroDetail(for: catalog, isSource: isSource))
+        }
+        .disabled(!isSource && heroLimitReached)
+        .padding(.vertical, 2)
+    }
+
+    private func moveHeroSource(_ key: String, to index: Int) {
+        homeLayout.setHeroSourceOrder(SettingsReorderRow<EmptyView>.reordered(heroSourceKeys, moving: key, to: index))
+    }
+
     private func heroBinding(for catalog: AddonHomeCatalog) -> Binding<Bool> {
         Binding(
             get: { heroSourceKeys.contains(catalog.key) },
@@ -281,17 +282,23 @@ struct DetailPageSettingsView: View {
     @Environment(SettingsPreferencesStore.self) private var settings
     @State private var draggedSection: DetailSection?
 
-    let showsAdvanced: Bool
 
-    init(showsAdvanced: Bool = false) {
-        self.showsAdvanced = showsAdvanced
-    }
 
     var body: some View {
         Group {
-            if showsAdvanced {
-                OmniaSettingsForm {
+            OmniaSettingsForm {
             Section {
+                SettingsDropdown(
+                    "Page Background",
+                    selection: settings.binding(\.display.detailBackground),
+                    options: Array(DetailBackgroundMode.allCases)
+                ) { mode in mode.title }
+                .settingsRow("Page Background")
+                Toggle(isOn: settings.binding(\.display.blurUnwatchedEpisodes)) {
+                    Text("Blur Unwatched Episodes")
+                    Text("Hide the stills of episodes you haven't watched or started, to avoid spoilers.")
+                }
+                .settingsRow("Blur Unwatched Episodes")
                 Toggle(isOn: settings.binding(\.display.posterTransition)) {
                     Text("Poster Transition")
                     Text("Animate from a poster into its title page.")
@@ -302,6 +309,10 @@ struct DetailPageSettingsView: View {
                     Text("Shuffle episodes from any series. Turning this off pauses shuffle.")
                 }
                 .settingsRow("Shuffle")
+            } header: {
+                Text("Page")
+            } footer: {
+                Text("Artwork Color tints the page with the title's artwork.")
             }
             Section {
                 SettingsStyleTilePicker(
@@ -326,32 +337,9 @@ struct DetailPageSettingsView: View {
             } footer: {
                 Text("Drag to reorder. Turned-off sections are left out.")
             }
-
                 }
-            } else {
-                OmniaSettingsForm {
-            Section {
-                SettingsDropdown(
-                    "Page Background",
-                    selection: settings.binding(\.display.detailBackground),
-                    options: Array(DetailBackgroundMode.allCases)
-                ) { mode in mode.title }
-                .settingsRow("Page Background")
-                Toggle(isOn: settings.binding(\.display.blurUnwatchedEpisodes)) {
-                    Text("Blur Unwatched Episodes")
-                    Text("Hide the stills of episodes you haven't watched or started, to avoid spoilers.")
-                }
-                .settingsRow("Blur Unwatched Episodes")
-            } footer: {
-                Text("Artwork Color tints the page with the title's artwork.")
-            }
-            Section {
-                SettingsRouteLink(route: .advanced(.detailPage), summary: nil)
-            }
-                }
-            }
         }
-        .omniaNavigationTitle(showsAdvanced ? "Advanced" : "Title Page")
+        .omniaNavigationTitle("Title Page")
     }
 
     private var sectionOrder: [DetailSection] {

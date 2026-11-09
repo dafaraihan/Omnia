@@ -166,7 +166,34 @@ final class PluginStore {
             scrapers.append(entry.scraper)
             writeCode(entry.code, for: entry.scraper.id)
         }
+        sortScrapersByRepository()
         save()
+    }
+
+    /// Plugin order: repositories in this order, each with its plugins in
+    /// manifest order. Streams list plugin providers in the same order.
+    func moveRepository(_ id: String, to index: Int) {
+        guard let from = repositories.firstIndex(where: { $0.id == id }) else { return }
+        let repository = repositories.remove(at: from)
+        repositories.insert(repository, at: min(max(index, 0), repositories.count))
+        sortScrapersByRepository()
+        save()
+    }
+
+    /// Keeps each repository's plugins together, in repository order, so a
+    /// refresh doesn't send a repository's plugins to the end.
+    private func sortScrapersByRepository() {
+        let rank = Dictionary(
+            repositories.enumerated().map { ($1.manifestURL, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        scrapers = scrapers.enumerated()
+            .sorted { lhs, rhs in
+                let left = rank[lhs.element.repositoryURL] ?? Int.max
+                let right = rank[rhs.element.repositoryURL] ?? Int.max
+                return left == right ? lhs.offset < rhs.offset : left < right
+            }
+            .map(\.element)
     }
 
     // MARK: Scrapers

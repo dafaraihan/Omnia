@@ -7,37 +7,11 @@ struct NavigationSettingsView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     #endif
 
-    let showsAdvanced: Bool
 
-    init(showsAdvanced: Bool = false) {
-        self.showsAdvanced = showsAdvanced
-    }
 
     var body: some View {
         Group {
-            if showsAdvanced {
-                OmniaSettingsForm {
-            if showsBarStyle, settings.preferences.display.topBarStyle.isNuvio {
-                Section {
-                        Toggle(isOn: settings.binding(\.display.topBarGlow)) {
-                            Text("Glass Glow")
-                            Text("Adds soft light around the floating bar while you press or drag it.")
-                        }
-                        .settingsRow("Glass Glow")
-                        SettingsDeferredSlider(title: "Top Bar Height", value: settings.binding(\.display.topBarSize.height), range: TopBarSizePreferences.range)
-                        .settingsRow("Top Bar Height")
-                        SettingsDeferredSlider(title: "Top Bar Width", value: settings.binding(\.display.topBarSize.width), range: TopBarSizePreferences.range)
-                        .settingsRow("Top Bar Width")
-                    Button("Reset Top Bar Size") {
-                        settings.update { $0.display.topBarSize = TopBarSizePreferences() }
-                    }
-                    .settingsRow("Reset Top Bar Size")
-                    .disabled(settings.preferences.display.topBarSize == TopBarSizePreferences())
-                }
-            }
-                }
-            } else {
-                OmniaSettingsForm {
+            OmniaSettingsForm {
             Section {
                 if showsNavigationStyle {
                     SettingsDropdown(
@@ -63,13 +37,30 @@ struct NavigationSettingsView: View {
             } footer: {
                 Text("Choose a sidebar or a floating bar.")
             }
-            Section {
-                SettingsRouteLink(route: .advanced(.navigation), summary: nil)
-            }
+
+            if showsBarStyle, settings.preferences.display.topBarStyle.isNuvio {
+                Section {
+                        Toggle(isOn: settings.binding(\.display.topBarGlow)) {
+                            Text("Glass Glow")
+                            Text("Adds soft light around the floating bar while you press or drag it.")
+                        }
+                        .settingsRow("Glass Glow")
+                        SettingsDeferredSlider(title: "Top Bar Height", value: settings.binding(\.display.topBarSize.height), range: TopBarSizePreferences.range)
+                        .settingsRow("Top Bar Height")
+                        SettingsDeferredSlider(title: "Top Bar Width", value: settings.binding(\.display.topBarSize.width), range: TopBarSizePreferences.range)
+                        .settingsRow("Top Bar Width")
+                    Button("Reset Top Bar Size") {
+                        settings.update { $0.display.topBarSize = TopBarSizePreferences() }
+                    }
+                    .settingsRow("Reset Top Bar Size")
+                    .disabled(settings.preferences.display.topBarSize == TopBarSizePreferences())
+                } header: {
+                    Text("Floating Bar")
                 }
             }
+                }
         }
-        .omniaNavigationTitle(showsAdvanced ? "Advanced" : "Navigation")
+        .omniaNavigationTitle("Navigation")
     }
 
     /// A narrow iOS window always uses a tab bar, so only a regular-width
@@ -147,17 +138,15 @@ struct PlayerControlsSettingsView: View {
         )
     }
 
-    let showsAdvanced: Bool
 
-    init(showsAdvanced: Bool = false) {
-        self.showsAdvanced = showsAdvanced
-    }
 
     var body: some View {
         Group {
-            if showsAdvanced {
-                OmniaSettingsForm {
+            OmniaSettingsForm {
             Section {
+                Toggle("Show a Menu in the Preview", isOn: $showsMenuInPreview)
+                sizeSlider("Controls Size", \.controls)
+                .settingsRow("Controls Size")
                 sizeSlider("Timeline Length", \.timelineLength, range: 0.5 ... 1)
                 .settingsRow("Timeline Length")
                 sizeSlider("Menu Size", \.menuSize)
@@ -174,19 +163,8 @@ struct PlayerControlsSettingsView: View {
             } header: {
                 Text("Sizes")
             }
+
             Section {
-                Toggle("Show Loading Status", isOn: settings.binding(\.playbackBehavior.showLoadingStatus))
-                .settingsRow("Show Loading Status")
-                Toggle("Liquid Glass on Player Controls", isOn: settings.binding(\.display.liquidGlass.playerControls))
-                .settingsRow("Liquid Glass on Player Controls")
-            }
-                }
-            } else {
-                OmniaSettingsForm {
-            Section {
-                Toggle("Show a Menu in the Preview", isOn: $showsMenuInPreview)
-                sizeSlider("Controls Size", \.controls)
-                .settingsRow("Controls Size")
                 Toggle(isOn: settings.binding(\.playbackBehavior.showPauseOverlay)) {
                     Text("Pause Overlay")
                     Text("Shows the title's details after five seconds paused.")
@@ -197,9 +175,12 @@ struct PlayerControlsSettingsView: View {
                     Text("Shows the title's artwork until the first frame appears.")
                 }
                 .settingsRow("Loading Overlay")
-            }
-            Section {
-                SettingsRouteLink(route: .advanced(.playerControls), summary: nil)
+                Toggle("Show Loading Status", isOn: settings.binding(\.playbackBehavior.showLoadingStatus))
+                .settingsRow("Show Loading Status")
+                Toggle("Liquid Glass on Player Controls", isOn: settings.binding(\.display.liquidGlass.playerControls))
+                .settingsRow("Liquid Glass on Player Controls")
+            } header: {
+                Text("Over the Video")
             }
                 }
         .settingsPinnedPreview {
@@ -210,9 +191,8 @@ struct PlayerControlsSettingsView: View {
             )
             .environment(\.displayPreferences, previewDisplay)
         }
-            }
         }
-        .omniaNavigationTitle(showsAdvanced ? "Advanced" : "Player Look")
+        .omniaNavigationTitle("Player Look")
     }
 
     private var previewHeight: CGFloat {
@@ -313,16 +293,23 @@ struct BatteryPerformanceSettingsView: View {
 
     private var behavior: PlaybackBehaviorPreferences { settings.preferences.playbackBehavior }
 
-    let showsAdvanced: Bool
 
-    init(showsAdvanced: Bool = false) {
-        self.showsAdvanced = showsAdvanced
-    }
 
     var body: some View {
         Group {
-            if showsAdvanced {
-                OmniaSettingsForm {
+            OmniaSettingsForm {
+            Section {
+                SettingsDropdown(
+                    "Low Power Mode",
+                    subtitle: "Turns off hero trailers and Omnia's glass to save battery.",
+                    selection: settings.binding(\.display.lowPowerMode),
+                    options: LowPowerMode.allCases
+                ) { $0.title }
+                .settingsRow("Low Power Mode")
+            } header: {
+                Text("Battery")
+            }
+
             #if OMNIA_MPV || os(macOS)
             Section {
                 #if OMNIA_MPV
@@ -371,26 +358,7 @@ Group {
             }
             #endif
                 }
-            } else {
-                OmniaSettingsForm {
-            Section {
-                SettingsDropdown(
-                    "Low Power Mode",
-                    subtitle: "Turns off hero trailers and Omnia's glass to save battery.",
-                    selection: settings.binding(\.display.lowPowerMode),
-                    options: LowPowerMode.allCases
-                ) { $0.title }
-                .settingsRow("Low Power Mode")
-            } header: {
-                Text("Battery")
-            }
-
-            Section {
-                SettingsRouteLink(route: .advanced(.battery), summary: nil)
-            }
-                }
-            }
         }
-        .omniaNavigationTitle(showsAdvanced ? "Advanced" : "Battery & Performance")
+        .omniaNavigationTitle("Battery & Performance")
     }
 }

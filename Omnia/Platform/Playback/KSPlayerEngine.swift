@@ -13,7 +13,7 @@ import UIKit
 #endif
 
 #if OMNIA_MPV
-/// Settings › Player › Advanced › Engine › KSPlayer: KSPlayer's FFmpeg
+/// Settings › Player › Engine › KSPlayer: KSPlayer's FFmpeg
 /// player behind the same PlaybackEngine as mpv, so the player's controls,
 /// panels and gestures don't change.
 @MainActor

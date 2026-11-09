@@ -16,7 +16,7 @@ typealias PlaybackEngineView = UIView
 
 #if OMNIA_MPV
 /// What Omnia's player asks of the engine that decodes and draws a title.
-/// mpv is the default; Settings › Player › Advanced › Engine can pick
+/// mpv is the default; Settings › Player › Engine can pick
 /// KSPlayer. The player's controls, timeline, panels and gestures talk only
 /// to this, so they're the same whichever engine plays.
 ///

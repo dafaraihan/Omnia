@@ -14,16 +14,22 @@ struct TrackingSettingsView: View {
     @Environment(OmniaAccount.self) private var account
     @State private var library = TrackerLibraryStore.shared
 
-    let showsAdvanced: Bool
 
-    init(showsAdvanced: Bool = false) {
-        self.showsAdvanced = showsAdvanced
-    }
 
     var body: some View {
         Group {
-            if showsAdvanced {
-                OmniaSettingsForm {
+            OmniaSettingsForm {
+            AccountBackupNotice()
+            ForEach(Array(TrackerKind.allCases.enumerated()), id: \.element) { index, kind in
+                Section {
+                    TrackerAccountCard(kind: kind)
+                        .padding(.horizontal, -12)
+                        .padding(.vertical, -9)
+                } header: {
+                    if index == 0 { Text("Accounts") }
+                }
+            }
+
             Section {
                 SettingsDropdown(
                     "Library Source",
@@ -73,28 +79,12 @@ struct TrackingSettingsView: View {
                 }
                 .settingsRow("Comments")
                 .disabled(TraktExtrasClient.clientID == nil)
+            } header: {
+                Text("Title Pages")
             }
                 }
-            } else {
-                OmniaSettingsForm {
-            AccountBackupNotice()
-            ForEach(Array(TrackerKind.allCases.enumerated()), id: \.element) { index, kind in
-                Section {
-                    TrackerAccountCard(kind: kind)
-                        .padding(.horizontal, -12)
-                        .padding(.vertical, -9)
-                } header: {
-                    if index == 0 { Text("Accounts") }
-                }
-            }
-
-            Section {
-                SettingsRouteLink(route: .advanced(.tracking), summary: nil)
-            }
-                }
-            }
         }
-        .omniaNavigationTitle(showsAdvanced ? "Advanced" : "Tracking")
+        .omniaNavigationTitle("Tracking")
         .task {
             for kind in TrackerKind.allCases where TrackerAccountStore.shared.isConnected(kind) {
                 TrackerAccountStore.shared.refreshUsername(kind)

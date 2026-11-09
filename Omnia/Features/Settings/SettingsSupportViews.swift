@@ -86,6 +86,8 @@ struct OmniaSettingsForm<Content: View>: View {
             Form {
                 content
             }
+            .environment(\.defaultMinListRowHeight, SettingsRowMetrics.minimumHeight)
+            .textFieldStyle(SettingsTextFieldStyle())
             .toggleStyle(OmniaSwitchToggleStyle())
             .labelStyle(OmniaMonochromeLabelStyle())
             .modifier(SettingsFocusScroller(proxy: proxy))
@@ -119,7 +121,11 @@ struct OmniaSettingsForm<Content: View>: View {
                                     ForEach(rows) { row in
                                         MacSettingsInteractiveRow {
                                             row
-                                                .frame(maxWidth: .infinity, alignment: .leading)
+                                                .frame(
+                                                    maxWidth: .infinity,
+                                                    minHeight: SettingsRowMetrics.minimumHeight - 24,
+                                                    alignment: .leading
+                                                )
                                                 .padding(.horizontal, 12)
                                                 .padding(.vertical, 12)
                                                 .focusEffectDisabled()
@@ -174,9 +180,13 @@ struct OmniaSettingsForm<Content: View>: View {
                                 if !rows.isEmpty {
                                     VStack(spacing: 0) {
                                         ForEach(rows) { row in
-                                            MacSettingsInteractiveRow {
+                                            MacSettingsInteractiveRow(highlightsOnHover: true) {
                                                 row
-                                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                                    .frame(
+                                                        maxWidth: .infinity,
+                                                        minHeight: SettingsRowMetrics.minimumHeight - 24,
+                                                        alignment: .leading
+                                                    )
                                                     .padding(.horizontal, 12)
                                                     .padding(.vertical, 12)
                                                     .focusEffectDisabled()
@@ -212,8 +222,7 @@ struct OmniaSettingsForm<Content: View>: View {
         .scrollIndicators(.automatic)
         .font(.title3)
         .toggleStyle(MacSettingsRowToggleStyle())
-        // As on iPhone: the field sits in its row's card, not in a box of its own.
-        .textFieldStyle(.plain)
+        .textFieldStyle(SettingsTextFieldStyle())
         .labeledContentStyle(MacSettingsRowLabeledContentStyle())
         .labelStyle(OmniaMonochromeLabelStyle())
         .background(usesAmoledBackground ? Color.black : Color.clear)
@@ -442,9 +451,12 @@ struct MacSettingsRowLabeledContentStyle: LabeledContentStyle {
 
 private struct MacSettingsInteractiveRow<Content: View>: View {
     private let content: Content
+    private let highlightsOnHover: Bool
     @State private var isHovered = false
 
-    init(@ViewBuilder content: () -> Content) {
+    /// Root rows draw their own hover in their button style.
+    init(highlightsOnHover: Bool = false, @ViewBuilder content: () -> Content) {
+        self.highlightsOnHover = highlightsOnHover
         self.content = content()
     }
 
@@ -456,6 +468,11 @@ private struct MacSettingsInteractiveRow<Content: View>: View {
         content
             .environment(\.macSettingsSymbolTreatment, treatment)
             .labelStyle(MacSettingsLabelStyle(treatment: treatment))
+            .background {
+                if highlightsOnHover && isHovered {
+                    Color.primary.opacity(0.045)
+                }
+            }
             .onHover { isHovered = $0 }
     }
 }
@@ -718,5 +735,136 @@ extension View {
     /// Keeps a live preview on screen while the options scroll under it.
     func settingsPinnedPreview<Preview: View>(@ViewBuilder _ preview: @escaping () -> Preview) -> some View {
         modifier(SettingsPinnedPreview(preview: preview))
+    }
+}
+
+// MARK: - Order Lists
+
+/// A row of a folding order list: a drag handle, drag and drop onto another
+/// row, and a Move menu for keyboard, VoiceOver and touch without dragging.
+/// Dropping a row takes the target row's place.
+struct SettingsReorderRow<Content: View>: View {
+    let id: String
+    let title: String
+    let orderedIDs: [String]
+    @Binding var dropTargetID: String?
+    let move: (_ id: String, _ index: Int) -> Void
+    @ViewBuilder let content: () -> Content
+
+    private var index: Int? { orderedIDs.firstIndex(of: id) }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "line.3.horizontal")
+                .foregroundStyle(.tertiary)
+                .frame(width: 16)
+                .accessibilityHidden(true)
+
+            content()
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Menu {
+                Button("Move to Top", systemImage: "arrow.up.to.line") { move(id, 0) }
+                    .disabled(index == 0)
+                Button("Move Up", systemImage: "arrow.up") { if let index { move(id, index - 1) } }
+                    .disabled(index == 0)
+                Button("Move Down", systemImage: "arrow.down") { if let index { move(id, index + 1) } }
+                    .disabled(index == orderedIDs.count - 1)
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .foregroundStyle(.secondary)
+            }
+            .menuStyle(.button)
+            .buttonStyle(.borderless)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .accessibilityLabel("Move \(title)")
+        }
+        .contentShape(Rectangle())
+        .overlay(alignment: .top) {
+            if dropTargetID == id {
+                Rectangle()
+                    .fill(.tint)
+                    .frame(height: 2)
+                    .offset(y: -9)
+                    .accessibilityHidden(true)
+            }
+        }
+        .draggable(id) {
+            Text(title)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(.regularMaterial, in: .rect(cornerRadius: 8))
+        }
+        .dropDestination(for: String.self) { droppedIDs, _ in
+            dropTargetID = nil
+            guard let dragged = droppedIDs.first, dragged != id,
+                  orderedIDs.contains(dragged), let index else { return false }
+            move(dragged, index)
+            return true
+        } isTargeted: { isTargeted in
+            if isTargeted {
+                dropTargetID = id
+            } else if dropTargetID == id {
+                dropTargetID = nil
+            }
+        }
+        .accessibilityAction(named: "Move up") { if let index, index > 0 { move(id, index - 1) } }
+        .accessibilityAction(named: "Move down") {
+            if let index, index < orderedIDs.count - 1 { move(id, index + 1) }
+        }
+    }
+
+    /// `ids` with `id` moved to `index`.
+    static func reordered(_ ids: [String], moving id: String, to index: Int) -> [String] {
+        guard let from = ids.firstIndex(of: id) else { return ids }
+        var result = ids
+        result.remove(at: from)
+        result.insert(id, at: min(max(index, 0), result.count))
+        return result
+    }
+}
+
+// MARK: - Fields and Rows
+
+enum SettingsRowMetrics {
+    /// One row height on every page and platform, as Form uses on iPhone.
+    static let minimumHeight: CGFloat = 44
+}
+
+/// A text field in a Settings row: a quiet box that outlines itself while
+/// it has focus, so the field taking your typing is always visible. The
+/// outline gets thicker as well as stronger, so it doesn't rely on color.
+struct SettingsTextFieldStyle: TextFieldStyle {
+    func _body(configuration: TextField<Self._Label>) -> some View {
+        SettingsField(field: configuration)
+    }
+
+    private struct SettingsField<Field: View>: View {
+        let field: Field
+        @FocusState private var isFocused: Bool
+        @Environment(\.isEnabled) private var isEnabled
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+        var body: some View {
+            field
+                .textFieldStyle(.plain)
+                .focused($isFocused)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.primary.opacity(isFocused ? 0.08 : 0.045))
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(
+                            Color.primary.opacity(isFocused ? 0.55 : 0.12),
+                            lineWidth: isFocused ? 1.5 : 1
+                        )
+                }
+                .opacity(isEnabled ? 1 : 0.5)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: isFocused)
+        }
     }
 }

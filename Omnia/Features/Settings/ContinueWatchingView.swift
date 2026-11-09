@@ -15,16 +15,31 @@ struct ContinueWatchingSettingsView: View {
     /// Read by OmniaStore when it decides a title is finished.
     @AppStorage("playback-completion-threshold") private var completionThreshold = 95
 
-    let showsAdvanced: Bool
 
-    init(showsAdvanced: Bool = false) {
-        self.showsAdvanced = showsAdvanced
-    }
 
     var body: some View {
         Group {
-            if showsAdvanced {
-                OmniaSettingsForm {
+            OmniaSettingsForm {
+            Section {
+                Toggle("Show on Home", isOn: $showsContinueWatching)
+                .settingsRow("Show on Home")
+                SettingsDropdown(
+                    "Sort By",
+                    selection: settings.binding(\.display.continueWatchingSort),
+                    options: Array(ContinueWatchingSort.allCases)
+                ) { sort in sort.title }
+                .settingsRow("Sort By")
+                Toggle(isOn: settings.binding(\.display.resumePromptOnLaunch)) {
+                    Text("Resume Prompt on Launch")
+                    Text("When Omnia was closed during playback, offers to continue where you left off the next time it opens.")
+                }
+                .settingsRow("Resume Prompt on Launch")
+                SettingsRouteLink(
+                    route: .landscapeCards,
+                    summary: settings.preferences.display.continueWatchingCard.size.title
+                )
+            }
+
             Section {
                 SettingsDropdown(
                     "Artwork",
@@ -77,36 +92,8 @@ struct ContinueWatchingSettingsView: View {
             } footer: {
                 Text("A title leaves the row once you've watched past this point.")
             }
-            Section {
-                Toggle(isOn: settings.binding(\.display.resumePromptOnLaunch)) {
-                    Text("Resume Prompt on Launch")
-                    Text("When Omnia was closed during playback, offers to continue where you left off the next time it opens.")
                 }
-                .settingsRow("Resume Prompt on Launch")
-            }
-                }
-            } else {
-                OmniaSettingsForm {
-            Section {
-                Toggle("Show on Home", isOn: $showsContinueWatching)
-                .settingsRow("Show on Home")
-                SettingsDropdown(
-                    "Sort By",
-                    selection: settings.binding(\.display.continueWatchingSort),
-                    options: Array(ContinueWatchingSort.allCases)
-                ) { sort in sort.title }
-                .settingsRow("Sort By")
-                SettingsRouteLink(
-                    route: .landscapeCards,
-                    summary: settings.preferences.display.continueWatchingCard.size.title
-                )
-            }
-            Section {
-                SettingsRouteLink(route: .advanced(.continueWatching), summary: nil)
-            }
-                }
-            }
         }
-        .omniaNavigationTitle(showsAdvanced ? "Advanced" : "Continue Watching")
+        .omniaNavigationTitle("Continue Watching")
     }
 }

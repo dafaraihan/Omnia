@@ -19,37 +19,11 @@ struct ProgressSettingsView: View {
         case replace
     }
 
-    let showsAdvanced: Bool
 
-    init(showsAdvanced: Bool = false) {
-        self.showsAdvanced = showsAdvanced
-    }
 
     var body: some View {
         Group {
-            if showsAdvanced {
-                OmniaSettingsForm {
-            Section {
-                SettingsDropdown(
-                    "Continue Watching items",
-                    selection: settings.binding(\.continueWatchingLimit),
-                    options: Array(BoundedItemLimit.allCases)
-                ) { limit in limit.title }
-                .settingsRow("Continue Watching items")
-            } footer: {
-                Text("Fewer items reduce the amount of Home content loaded at once.")
-            }
-
-            Section("Remove Local Data") {
-                Button("Clear Progress", role: .destructive) { destructiveAction = .clearProgress }
-                .settingsRow("Clear Progress")
-                Button("Clear Watchlist", role: .destructive) { destructiveAction = .clearWatchlist }
-                .settingsRow("Clear Watchlist")
-            }
-
-                }
-            } else {
-                OmniaSettingsForm {
+            OmniaSettingsForm {
             Section {
                 NavigationLink {
                     SettingsDestinationView(route: .tracking)
@@ -98,12 +72,27 @@ struct ProgressSettingsView: View {
             if let statusMessage { Text(statusMessage).foregroundStyle(.secondary) }
 
             Section {
-                SettingsRouteLink(route: .advanced(.progress), summary: nil)
+                SettingsDropdown(
+                    "Continue Watching items",
+                    selection: settings.binding(\.continueWatchingLimit),
+                    options: Array(BoundedItemLimit.allCases)
+                ) { limit in limit.title }
+                .settingsRow("Continue Watching items")
+            } header: {
+                Text("Home")
+            } footer: {
+                Text("Fewer items reduce the amount of Home content loaded at once.")
+            }
+
+            Section("Remove Local Data") {
+                Button("Clear Progress", role: .destructive) { destructiveAction = .clearProgress }
+                .settingsRow("Clear Progress")
+                Button("Clear Watchlist", role: .destructive) { destructiveAction = .clearWatchlist }
+                .settingsRow("Clear Watchlist")
             }
                 }
-            }
         }
-        .omniaNavigationTitle(showsAdvanced ? "Advanced" : "Data & Backup")
+        .omniaNavigationTitle("Data & Backup")
         .confirmationDialog(
             destructiveAction?.title ?? "Remove local data?",
             isPresented: Binding(get: { destructiveAction != nil }, set: { if !$0 { destructiveAction = nil } }),

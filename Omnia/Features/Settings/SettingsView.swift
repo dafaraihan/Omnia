@@ -233,37 +233,33 @@ struct SettingsDestinationView: View {
 
     private var page: some View {
         settingsContent {
-            if case let .advanced(parent) = route {
-                content(for: parent, advanced: true)
-            } else {
-                content(for: route, advanced: false)
-            }
+            content(for: route)
         }
     }
 
     @ViewBuilder
-    private func content(for route: SettingsRoute, advanced: Bool) -> some View {
+    private func content(for route: SettingsRoute) -> some View {
             switch route {
             case .account:
                 AccountSettingsView()
             case .contentDiscovery:
-                ContentDiscoverySettingsView(showsAdvanced: advanced)
+                ContentDiscoverySettingsView()
             case .addons:
-                AddonsSettingsView(showsAdvanced: advanced)
+                AddonsSettingsView()
             case .mediaServers:
                 MediaServersSettingsView()
             case .liveTV:
-                LiveTVSettingsView(showsAdvanced: advanced)
+                LiveTVSettingsView()
             case .plugins:
-                PluginsSettingsView(showsAdvanced: advanced)
+                PluginsSettingsView()
             case .home:
-                HomeSettingsView(showsAdvanced: advanced)
+                HomeSettingsView()
             case .catalogs:
                 CatalogsSettingsView()
             case .collections:
                 CollectionsSettingsView()
             case .metadata:
-                MetadataSettingsView(showsAdvanced: advanced)
+                MetadataSettingsView()
             case .tvdbEnrichment:
                 TVDBEnrichmentSettingsView()
             case .tmdbEnrichment:
@@ -273,11 +269,11 @@ struct SettingsDestinationView: View {
             case .metadataSources:
                 MetadataSourcesSettingsView()
             case .progress:
-                ProgressSettingsView(showsAdvanced: advanced)
+                ProgressSettingsView()
             case .videoPlayer:
-                VideoPlayerSettingsView(showsAdvanced: advanced)
+                VideoPlayerSettingsView()
             case .subtitle:
-                SubtitleAppearanceSettingsView(showsAdvanced: advanced)
+                SubtitleAppearanceSettingsView()
             case .playbackDiagnostics:
                 PlaybackDiagnosticsSettingsView()
             case .playbackResolver:
@@ -285,27 +281,27 @@ struct SettingsDestinationView: View {
             case .appearance:
                 AppearanceSettingsView()
             case .navigation:
-                NavigationSettingsView(showsAdvanced: advanced)
+                NavigationSettingsView()
             case .playerControls:
-                PlayerControlsSettingsView(showsAdvanced: advanced)
+                PlayerControlsSettingsView()
             case .notifications:
                 NotificationsSettingsView()
             case .privacy:
                 PrivacySecuritySettingsView()
             case .battery:
-                BatteryPerformanceSettingsView(showsAdvanced: advanced)
+                BatteryPerformanceSettingsView()
             case .liquidGlass:
-                LiquidGlassSettingsView(showsAdvanced: advanced)
+                LiquidGlassSettingsView()
             case .posterCards:
-                PosterCardSettingsView(showsAdvanced: advanced)
+                PosterCardSettingsView()
             case .landscapeCards:
-                LandscapeCardSettingsView(showsAdvanced: advanced)
+                LandscapeCardSettingsView()
             case .streams:
-                StreamsSettingsView(showsAdvanced: advanced)
+                StreamsSettingsView()
             case .continueWatching:
-                ContinueWatchingSettingsView(showsAdvanced: advanced)
+                ContinueWatchingSettingsView()
             case .detailPage:
-                DetailPageSettingsView(showsAdvanced: advanced)
+                DetailPageSettingsView()
             case .about:
                 AboutSettingsView()
             case let .metadataProvider(id):
@@ -319,11 +315,9 @@ struct SettingsDestinationView: View {
                     )
                 }
             case .tracking:
-                TrackingSettingsView(showsAdvanced: advanced)
+                TrackingSettingsView()
             case let .aboutSection(section):
                 AboutSectionSettingsView(section: section)
-            case .advanced:
-                EmptyView()
             }
     }
 

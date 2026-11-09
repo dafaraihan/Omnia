@@ -96,8 +96,6 @@ enum SettingsRoute: Hashable, Sendable {
     case metadataProvider(String)
     case tracking
     case aboutSection(AboutSection)
-    /// The less common options of a page, one level below it.
-    indirect case advanced(SettingsRoute)
 
     /// The Settings tree. Account & Profiles is the profile card above these.
     /// Navigation only has options where there is a sidebar or top bar.
@@ -136,13 +134,11 @@ enum SettingsRoute: Hashable, Sendable {
 
     /// What a row that opens this page says. Search shows the full title.
     var linkTitle: String {
-        if case .advanced = self { return "Advanced" }
         return title
     }
 
     var title: String {
         switch self {
-        case let .advanced(route): "\(route.title) › Advanced"
         case .account: "Account & Profiles"
         case .contentDiscovery: "Search & Discover"
         case .addons: "Add-ons"
@@ -187,7 +183,6 @@ enum SettingsRoute: Hashable, Sendable {
 
     var systemImage: String {
         switch self {
-        case .advanced: "slider.horizontal.3"
         case .account: "person.crop.circle"
         case .contentDiscovery: "magnifyingglass"
         case .addons: "puzzlepiece.extension"
@@ -226,7 +221,6 @@ enum SettingsRoute: Hashable, Sendable {
 
     var searchTerms: [String] {
         switch self {
-        case .advanced: []
         case .account: ["profile", "profiles", "avatar", "PIN", "watch time", "sync", "email", "Apple", "Google", "sign in", "sign out"]
         case .contentDiscovery: ["add-ons", "addons", "plugins", "sources", "discovery", "recent searches", "search history", "media servers", "live TV", "IPTV"]
         case .addons: ["sources", "manifest", "timeout", "import", "export"]

@@ -12,16 +12,37 @@ struct LandscapeCardSettingsView: View {
         collections.collections.flatMap(\.folders).filter { $0.tileShape == .landscape || $0.tileShape == .wide }
     }
 
-    let showsAdvanced: Bool
 
-    init(showsAdvanced: Bool = false) {
-        self.showsAdvanced = showsAdvanced
-    }
 
     var body: some View {
         Group {
-            if showsAdvanced {
-                OmniaSettingsForm {
+            OmniaSettingsForm {
+            Section {
+                SettingsDropdown(
+                    "Size",
+                    selection: settings.binding(\.display.continueWatchingCard.size),
+                    options: Array(ContinueWatchingCardPreferences.Size.allCases)
+                ) { $0.title }
+                .settingsRow("Size")
+                SettingsDropdown(
+                    "Corners",
+                    selection: settings.binding(\.display.continueWatchingCard.corners),
+                    options: Array(ContinueWatchingCardPreferences.Corners.allCases)
+                ) { $0.title }
+                .settingsRow("Corners")
+                SettingsDropdown(
+                    "Continue Watching Style",
+                    subtitle: "Poster uses Poster Card Style's size and corners.",
+                    selection: settings.binding(\.display.continueWatchingStyle),
+                    options: ContinueWatchingStyle.allCases
+                ) { $0.title }
+                .settingsRow("Continue Watching Style")
+            } header: {
+                Text("All Landscape Cards")
+            } footer: {
+                Text("Portrait cards follow Poster Card Style.")
+            }
+
             Section {
                 SettingsDropdown(
                     "Collection Shape",
@@ -51,46 +72,12 @@ struct LandscapeCardSettingsView: View {
                     Text("Depth and hover glow are set in Poster Card Style.")
                 }
             }
-
-                }
-            } else {
-                OmniaSettingsForm {
-            Section {
-                SettingsDropdown(
-                    "Size",
-                    selection: settings.binding(\.display.continueWatchingCard.size),
-                    options: Array(ContinueWatchingCardPreferences.Size.allCases)
-                ) { $0.title }
-                .settingsRow("Size")
-                SettingsDropdown(
-                    "Corners",
-                    selection: settings.binding(\.display.continueWatchingCard.corners),
-                    options: Array(ContinueWatchingCardPreferences.Corners.allCases)
-                ) { $0.title }
-                .settingsRow("Corners")
-                SettingsDropdown(
-                    "Continue Watching Style",
-                    subtitle: "Poster uses Poster Card Style's size and corners.",
-                    selection: settings.binding(\.display.continueWatchingStyle),
-                    options: ContinueWatchingStyle.allCases
-                ) { $0.title }
-                .settingsRow("Continue Watching Style")
-            } header: {
-                Text("All Landscape Cards")
-            } footer: {
-                Text("Portrait cards follow Poster Card Style.")
-            }
-
-            Section {
-                SettingsRouteLink(route: .advanced(.landscapeCards), summary: nil)
-            }
                 }
         .settingsPinnedPreview {
             LandscapeCardsLivePreview(folders: Array(landscapeFolders.prefix(1)))
         }
-            }
         }
-        .omniaNavigationTitle(showsAdvanced ? "Advanced" : "Landscape Card Style")
+        .omniaNavigationTitle("Landscape Card Style")
     }
 
     private func depthBinding(_ surface: CardDepthPreferences.Surface) -> Binding<Bool> {

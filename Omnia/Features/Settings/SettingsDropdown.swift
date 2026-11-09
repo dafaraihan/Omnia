@@ -3,9 +3,9 @@ import SwiftUI
 /// A settings row that picks one value from a list in a dropdown.
 ///
 /// On macOS the list is drawn by Omnia instead of a system menu, because a
-/// system menu always highlights in the Mac's own accent color. Here the
-/// current value, the hovered row and the checkmark all follow the accent
-/// chosen in Settings › Layout. iOS uses the system menu for the list.
+/// system menu always highlights in the Mac's own accent color. Text stays in
+/// the label colors; only the checkmark on the chosen value takes the accent
+/// chosen in Settings › Appearance. iOS uses the system menu for the list.
 struct SettingsDropdown<Value: Hashable>: View {
     private let title: String
     private let subtitle: String?
@@ -173,12 +173,12 @@ private struct MacSettingsDropdown<Value: Hashable>: View {
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.caption2.weight(.semibold))
             }
-            .foregroundStyle(isEnabled ? accent : .secondary)
+            .foregroundStyle(isEnabled ? .primary : .secondary)
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
             .background(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(accent.opacity(isHovered || isPresented ? 0.18 : 0.1))
+                    .fill(Color.primary.opacity(isPresented ? 0.16 : isHovered ? 0.11 : 0.06))
             )
             .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
@@ -251,6 +251,7 @@ private struct DropdownRow: View {
             HStack(spacing: 6) {
                 Image(systemName: "checkmark")
                     .font(.caption.weight(.bold))
+                    .foregroundStyle(accent)
                     .frame(width: 14)
                     .opacity(isSelected ? 1 : 0)
                 if let systemImage {
@@ -266,7 +267,7 @@ private struct DropdownRow: View {
             .frame(height: height)
             .background(
                 RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .fill(isHovered ? accent : .clear)
+                    .fill(isHovered ? Color.primary.opacity(0.1) : .clear)
             )
             .contentShape(Rectangle())
         }
@@ -275,11 +276,6 @@ private struct DropdownRow: View {
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
-    @Environment(\.displayPreferences) private var hoverDisplay
-
-    private var foreground: Color {
-        if isHovered { return hoverDisplay.accentForeground }
-        return .primary
-    }
+    private var foreground: Color { .primary }
 }
 #endif

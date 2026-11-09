@@ -5,6 +5,16 @@ import SwiftUI
 struct PosterCardSettingsView: View {
     @Environment(SettingsPreferencesStore.self) private var settings
     @State private var posterPatternDraft = ""
+    @State private var showsDepthOptions = false
+    @State private var showsDepthSurfaces = false
+    @State private var showsHoverOptions = false
+    @State private var showsHoverSurfaces = false
+
+    /// Continue Watching and collections take their look from Landscape Card
+    /// Style.
+    private static let surfaces = CardDepthPreferences.Surface.allCases.filter {
+        $0 != .continueWatching && $0 != .collections
+    }
 
     private var display: DisplayPreferences { settings.preferences.display }
 
@@ -12,17 +22,34 @@ struct PosterCardSettingsView: View {
         posterPatternDraft.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    let showsAdvanced: Bool
 
-    init(showsAdvanced: Bool = false) {
-        self.showsAdvanced = showsAdvanced
-    }
 
     var body: some View {
         Group {
-            if showsAdvanced {
-                OmniaSettingsForm {
+            OmniaSettingsForm {
             Section {
+                SettingsDropdown(
+                    "Size",
+                    selection: settings.binding(\.display.posterWidth),
+                    options: Array(PosterWidthPreset.allCases)
+                ) { preset in "\(preset.title) (\(Int(preset.width)) pt)" }
+                .settingsRow("Size")
+                SettingsDropdown(
+                    "Corners",
+                    selection: settings.binding(\.display.posterCorner),
+                    options: Array(PosterCornerPreset.allCases)
+                ) { preset in preset.title }
+                .settingsRow("Corners")
+                Toggle(isOn: settings.binding(\.display.landscapePosters)) {
+                    Text("Landscape Posters")
+                    Text("Show backdrops with the title logo instead of portrait posters.")
+                }
+                .settingsRow("Landscape Posters")
+                Toggle(isOn: settings.binding(\.showMediaCardLabels)) {
+                    Text("Show Details Under Posters")
+                    Text("Shows each title, release year, and primary genre below standard posters.")
+                }
+                .settingsRow("Show Details Under Posters")
                 Toggle(isOn: settings.binding(\.display.sharesCardStyles)) {
                     Text("Same Style on All Devices")
                     Text("Off, this \(OmniaDevice.name) keeps its own card styles, since a size that suits a Mac can be too big for an iPhone.")
@@ -51,6 +78,7 @@ struct PosterCardSettingsView: View {
                 .settingsRow("Card Depth Effect")
 
                 if display.cardDepth.isEnabled {
+                    DisclosureGroup(isExpanded: $showsDepthOptions) {
                     SettingsDropdown(
                         "Edge Glow",
                         selection: settings.binding(\.display.cardDepth.edgeStrength),
@@ -90,21 +118,21 @@ struct PosterCardSettingsView: View {
                         }
                     }
                     .settingsRow("Edge Coverage")
+                    } label: {
+                        Text("Look")
+                    }
+                    DisclosureGroup(isExpanded: $showsDepthSurfaces) {
+                        ForEach(Self.surfaces) { surface in
+                            Toggle(surface.title, isOn: surfaceBinding(surface))
+                        }
+                    } label: {
+                        foldLabel("Apply To", detail: surfaceSummary(disabled: display.cardDepth.disabledSurfaces))
+                    }
                 }
             } header: {
                 Text("Card Depth")
             } footer: {
                 Text("Adds a light edge and a soft sheen so cards look lifted off the page.")
-            }
-
-            if display.cardDepth.isEnabled {
-                Section {
-                    ForEach(CardDepthPreferences.Surface.allCases.filter { $0 != .continueWatching && $0 != .collections }) { surface in
-                        Toggle(surface.title, isOn: surfaceBinding(surface))
-                    }
-                } header: {
-                    Text("Apply Card Depth To")
-                }
             }
 
             // iPhone has no pointer to hover with; iPad can have one.
@@ -117,6 +145,7 @@ struct PosterCardSettingsView: View {
                 .settingsRow("Hover Glow")
 
                 if display.cardHover.isEnabled {
+                    DisclosureGroup(isExpanded: $showsHoverOptions) {
                     SettingsDropdown(
                         "Color",
                         selection: settings.binding(\.display.cardHover.colorSource),
@@ -140,6 +169,16 @@ struct PosterCardSettingsView: View {
                     .settingsRow("Outer Glow")
                     Toggle("Lift on Hover", isOn: settings.binding(\.display.cardHover.lift))
                     .settingsRow("Lift on Hover")
+                    } label: {
+                        Text("Look")
+                    }
+                    DisclosureGroup(isExpanded: $showsHoverSurfaces) {
+                        ForEach(Self.surfaces) { surface in
+                            Toggle(surface.title, isOn: hoverSurfaceBinding(surface))
+                        }
+                    } label: {
+                        foldLabel("Apply To", detail: surfaceSummary(disabled: display.cardHover.disabledSurfaces))
+                    }
                 }
             } header: {
                 Text("Hover Glow")
@@ -148,58 +187,14 @@ struct PosterCardSettingsView: View {
                     Text("Hover over the preview above to try it.")
                 }
             }
-
-            if display.cardHover.isEnabled {
-                Section {
-                    ForEach(CardDepthPreferences.Surface.allCases.filter { $0 != .continueWatching && $0 != .collections }) { surface in
-                        Toggle(surface.title, isOn: hoverSurfaceBinding(surface))
-                    }
-                } header: {
-                    Text("Apply Hover Glow To")
-                }
-            }
-            }
-
-
-                }
-            } else {
-                OmniaSettingsForm {
-            Section {
-                SettingsDropdown(
-                    "Size",
-                    selection: settings.binding(\.display.posterWidth),
-                    options: Array(PosterWidthPreset.allCases)
-                ) { preset in "\(preset.title) (\(Int(preset.width)) pt)" }
-                .settingsRow("Size")
-                SettingsDropdown(
-                    "Corners",
-                    selection: settings.binding(\.display.posterCorner),
-                    options: Array(PosterCornerPreset.allCases)
-                ) { preset in preset.title }
-                .settingsRow("Corners")
-                Toggle(isOn: settings.binding(\.display.landscapePosters)) {
-                    Text("Landscape Posters")
-                    Text("Show backdrops with the title logo instead of portrait posters.")
-                }
-                .settingsRow("Landscape Posters")
-                Toggle(isOn: settings.binding(\.showMediaCardLabels)) {
-                    Text("Show Details Under Posters")
-                    Text("Shows each title, release year, and primary genre below standard posters.")
-                }
-                .settingsRow("Show Details Under Posters")
-            }
-
-            Section {
-                SettingsRouteLink(route: .advanced(.posterCards), summary: nil)
             }
                 }
         .settingsPinnedPreview {
             PosterCardPreview(display: display)
                 .frame(maxWidth: .infinity)
         }
-            }
         }
-        .omniaNavigationTitle(showsAdvanced ? "Advanced" : "Poster Card Style")
+        .omniaNavigationTitle("Poster Card Style")
         .onAppear { posterPatternDraft = display.customPosterURLPattern }
     }
 
@@ -262,6 +257,23 @@ struct PosterCardSettingsView: View {
                 settings.update { $0.display.cardHover.customHex = hex }
             }
         )
+    }
+
+    private func surfaceSummary(disabled: Set<CardDepthPreferences.Surface>) -> String {
+        let on = Self.surfaces.filter { !disabled.contains($0) }
+        if on.count == Self.surfaces.count { return "Everywhere" }
+        if on.isEmpty { return "Nowhere" }
+        return on.map(\.title).joined(separator: ", ")
+    }
+
+    private func foldLabel(_ title: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+            Text(detail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+        }
     }
 
     private func hoverSurfaceBinding(_ surface: CardDepthPreferences.Surface) -> Binding<Bool> {

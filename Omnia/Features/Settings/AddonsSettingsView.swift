@@ -66,6 +66,7 @@ struct AddonsSettingsView: View {
     @State private var addonToRename: InstalledAddon?
     @State private var renameDraft = ""
     @State private var draggedAddonID: String?
+    @State private var showsAddonOrder = true
     @State private var refreshedLogoAddonIDs: Set<String> = []
     @State private var exportDocument: SettingsJSONDocument?
     @State private var showsExporter = false
@@ -75,46 +76,11 @@ struct AddonsSettingsView: View {
     @State private var detailAddonID: String?
     @State private var refreshingAddonIDs: Set<String> = []
 
-    let showsAdvanced: Bool
 
-    init(showsAdvanced: Bool = false) {
-        self.showsAdvanced = showsAdvanced
-    }
 
     var body: some View {
         Group {
-            if showsAdvanced {
-                OmniaSettingsForm {
-            Section {
-                SettingsDropdown(
-                    "Request timeout",
-                    selection: settings.binding(\.addonTimeout),
-                    options: Array(AddonTimeout.allCases)
-                ) { timeout in "\(timeout.rawValue) seconds" }
-                .settingsRow("Request timeout")
-            } footer: {
-                Text("Omnia cancels an add-on request when this limit is reached.")
-            }
-
-            Section {
-                Button("Export Add-ons", systemImage: "square.and.arrow.up") { prepareExport() }
-                .settingsRow("Export Add-ons")
-                    .disabled(store.installedAddons.isEmpty)
-                Button("Import Add-ons", systemImage: "square.and.arrow.down") { showsImporter = true }
-                .settingsRow("Import Add-ons")
-                if let importedDocument {
-                    LabeledContent("Ready to import", value: "\(importedDocument.addons.count) add-ons")
-                    Button("Install Reviewed Add-ons") { applyImport(importedDocument) }
-                }
-            } header: {
-                Text("Backup")
-            } footer: {
-                Text("Private configured manifest addresses are excluded from exports. Imports are reviewed before installation.")
-            }
-
-                }
-            } else {
-                OmniaSettingsForm {
+            OmniaSettingsForm {
             AddAddonSection(timeout: settings.preferences.addonTimeout)
 
             if !store.installedAddonRestoreIssues.isEmpty {
@@ -152,6 +118,7 @@ struct AddonsSettingsView: View {
                         description: Text("Add an HTTPS manifest from a source you trust.")
                     )
                 } else {
+                    DisclosureGroup(isExpanded: $showsAddonOrder) {
                     ForEach(store.installedAddons) { addon in
                         AddonSettingsRow(
                             addon: addon,
@@ -201,6 +168,12 @@ struct AddonsSettingsView: View {
                             .disabled(AddonSettingsPresentation.configurationURL(from: addon.manifestURL) == nil)
 
                             Divider()
+                            Button("Move Up", systemImage: "arrow.up") { move(addon, offset: -1) }
+                                .disabled(store.installedAddons.first?.id == addon.id)
+                            Button("Move Down", systemImage: "arrow.down") { move(addon, offset: 1) }
+                                .disabled(store.installedAddons.last?.id == addon.id)
+
+                            Divider()
                             Button("Remove", systemImage: "trash", role: .destructive) {
                                 addonToRemove = addon
                             }
@@ -212,6 +185,15 @@ struct AddonsSettingsView: View {
                             move(addon, offset: 1)
                         }
                     }
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Add-on Order")
+                            Text(addonOrderSummary)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .settingsRow("Add-on Order")
                 }
             }
 
@@ -220,12 +202,34 @@ struct AddonsSettingsView: View {
             }
 
             Section {
-                SettingsRouteLink(route: .advanced(.addons), summary: nil)
+                SettingsDropdown(
+                    "Request timeout",
+                    selection: settings.binding(\.addonTimeout),
+                    options: Array(AddonTimeout.allCases)
+                ) { timeout in "\(timeout.rawValue) seconds" }
+                .settingsRow("Request timeout")
+            } footer: {
+                Text("Omnia cancels an add-on request when this limit is reached.")
+            }
+
+            Section {
+                Button("Export Add-ons", systemImage: "square.and.arrow.up") { prepareExport() }
+                .settingsRow("Export Add-ons")
+                    .disabled(store.installedAddons.isEmpty)
+                Button("Import Add-ons", systemImage: "square.and.arrow.down") { showsImporter = true }
+                .settingsRow("Import Add-ons")
+                if let importedDocument {
+                    LabeledContent("Ready to import", value: "\(importedDocument.addons.count) add-ons")
+                    Button("Install Reviewed Add-ons") { applyImport(importedDocument) }
+                }
+            } header: {
+                Text("Backup")
+            } footer: {
+                Text("Private configured manifest addresses are excluded from exports. Imports are reviewed before installation.")
             }
                 }
-            }
         }
-        .omniaNavigationTitle(showsAdvanced ? "Advanced" : "Add-ons")
+        .omniaNavigationTitle("Add-ons")
         .navigationDestination(item: $detailAddonID) { addonID in
             AddonDetailView(addonID: addonID)
         }
@@ -275,6 +279,13 @@ struct AddonsSettingsView: View {
         .fileImporter(isPresented: $showsImporter, allowedContentTypes: [.json]) { result in
             reviewImport(result)
         }
+    }
+
+    private var addonOrderSummary: String {
+        let count = store.installedAddons.count
+        let enabled = store.installedAddons.filter(\.isEnabled).count
+        let total = count == 1 ? "1 add-on" : "\(count) add-ons"
+        return "\(total), \(enabled) on. Streams from equal sources follow this order. Drag a row, or use its menu, to change it."
     }
 
     private func move(_ addon: InstalledAddon, offset: Int) {

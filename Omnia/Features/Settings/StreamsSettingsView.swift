@@ -14,17 +14,12 @@ struct StreamsSettingsView: View {
 
     private var streams: StreamPagePreferences { settings.preferences.streams }
 
-    let showsAdvanced: Bool
 
-    init(showsAdvanced: Bool = false) {
-        self.showsAdvanced = showsAdvanced
-    }
 
     var body: some View {
         Group {
-            if showsAdvanced {
-                OmniaSettingsForm {
-            StreamSelectionSections(advanced: true, confirmsForget: $confirmsForget)
+            OmniaSettingsForm {
+            StreamSelectionSections(confirmsForget: $confirmsForget)
             Section {
                 Toggle(isOn: settings.binding(\.streams.showSizeBadges)) {
                     Text("Size Badges")
@@ -112,16 +107,7 @@ struct StreamsSettingsView: View {
                     Text("Press and hold or right-click a stream to pin it.")
                 }
             }
-
                 }
-            } else {
-                OmniaSettingsForm {
-            StreamSelectionSections(advanced: false, confirmsForget: $confirmsForget)
-            Section {
-                SettingsRouteLink(route: .advanced(.streams), summary: nil)
-            }
-                }
-            }
         }
         .confirmationDialog(
             "Forget saved links and releases?",
@@ -136,7 +122,7 @@ struct StreamsSettingsView: View {
         } message: {
             Text("Titles will look up their sources again the next time you play them.")
         }
-        .omniaNavigationTitle(showsAdvanced ? "Advanced" : "Streams")
+        .omniaNavigationTitle("Streams")
     }
 
     private func badgeImportRow(_ entry: StreamBadgeImport) -> some View {

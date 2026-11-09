@@ -106,6 +106,14 @@ final class HomeLayoutStore {
         update { $0.order = keys }
     }
 
+    /// The hero mixes its catalogs in this order.
+    func setHeroSourceOrder(_ keys: [String]) {
+        update {
+            $0.heroSourceKeys = Array(keys.prefix(HomeLayoutPreferences.heroSourceLimit))
+            $0.hasCustomHeroSources = true
+        }
+    }
+
     /// Returns false when the limit is already reached.
     @discardableResult
     func setHeroSource(_ key: String, isEnabled: Bool, current: [String]) -> Bool {

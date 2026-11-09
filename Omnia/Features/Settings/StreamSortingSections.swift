@@ -10,14 +10,26 @@ import SwiftUI
 /// 2026-10-27). The order set here is the order sources are listed, the
 /// first one auto-play picks, and the order failed sources are replaced in.
 struct StreamSortingSections: View {
-    let advanced: Bool
     @Environment(SettingsPreferencesStore.self) private var settings
 
     private var sorting: StreamSortPreferences { settings.preferences.playbackBehavior.streamSorting }
 
     var body: some View {
         Group {
-            if advanced {
+            Section {
+                SettingsDropdown(
+                    "Minimum Resolution",
+                    selection: settings.binding(\.playbackBehavior.streamSorting.minimumResolution),
+                    options: StreamSortPreferences.minimumResolutionOptions
+                ) { value in value == 0 ? "Any" : "\(value)p" }
+                .settingsRow("Minimum Resolution")
+                Toggle(isOn: settings.binding(\.playbackBehavior.streamSorting.cachedFirst)) {
+                    Text("Ready Debrid Links First")
+                    Text("Sources your debrid service already has (⚡, [RD+]) before ones it would still have to download (⏳).")
+                }
+                .settingsRow("Ready Debrid Links First")
+            }
+
             Section {
                 Picker(selection: settings.binding(\.playbackBehavior.streamSorting.profile)) {
                     ForEach(StreamSortProfile.allCases) { profile in
@@ -70,22 +82,6 @@ struct StreamSortingSections: View {
                         settings.update { $0.playbackBehavior.streamSorting = StreamSortPreferences() }
                     }
                 }
-            }
-
-            } else {
-            Section {
-                SettingsDropdown(
-                    "Minimum Resolution",
-                    selection: settings.binding(\.playbackBehavior.streamSorting.minimumResolution),
-                    options: StreamSortPreferences.minimumResolutionOptions
-                ) { value in value == 0 ? "Any" : "\(value)p" }
-                .settingsRow("Minimum Resolution")
-                Toggle(isOn: settings.binding(\.playbackBehavior.streamSorting.cachedFirst)) {
-                    Text("Ready Debrid Links First")
-                    Text("Sources your debrid service already has (⚡, [RD+]) before ones it would still have to download (⏳).")
-                }
-                .settingsRow("Ready Debrid Links First")
-            }
             }
         }
     }

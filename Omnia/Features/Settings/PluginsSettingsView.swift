@@ -18,32 +18,14 @@ struct PluginsSettingsView: View {
     @State private var testing: Set<String> = []
     @State private var testResults: [String: String] = [:]
     @State private var settingsScraper: PluginScraper?
+    @State private var showsPluginOrder = false
+    @State private var repositoryDropTarget: String?
 
-    let showsAdvanced: Bool
 
-    init(showsAdvanced: Bool = false) {
-        self.showsAdvanced = showsAdvanced
-    }
 
     var body: some View {
         Group {
-            if showsAdvanced {
-                OmniaSettingsForm {
-            Section {
-                Toggle(isOn: Binding(get: { plugins.groupsByRepository }, set: { plugins.setGroupsByRepository($0) })) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Group Plugin Providers by Repository")
-                        Text("In Streams, show one provider per repository instead of one per plugin.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .settingsRow("Group Plugin Providers by Repository")
-                .disabled(!plugins.pluginsEnabled)
-            }
-                }
-            } else {
-                OmniaSettingsForm {
+            OmniaSettingsForm {
             Section {
                 Toggle(isOn: Binding(get: { plugins.pluginsEnabled }, set: { plugins.setPluginsEnabled($0) })) {
                     VStack(alignment: .leading, spacing: 2) {
@@ -95,6 +77,37 @@ struct PluginsSettingsView: View {
                 }
             }
 
+            if plugins.repositories.count > 1 {
+                Section {
+                    DisclosureGroup(isExpanded: $showsPluginOrder) {
+                        ForEach(plugins.repositories) { repository in
+                            SettingsReorderRow(
+                                id: repository.id,
+                                title: repository.name,
+                                orderedIDs: plugins.repositories.map(\.id),
+                                dropTargetID: $repositoryDropTarget,
+                                move: plugins.moveRepository
+                            ) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(repository.name)
+                                    Text(repositorySummary(repository, count: plugins.scrapers(in: repository).count))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Plugin Order")
+                            Text("Streams list plugin providers in this order. Drag to change it.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .settingsRow("Plugin Order")
+                }
+            }
+
             ForEach(plugins.repositories) { repository in
                 repositorySection(repository)
             }
@@ -117,12 +130,20 @@ struct PluginsSettingsView: View {
             }
 
             Section {
-                SettingsRouteLink(route: .advanced(.plugins), summary: nil)
+                Toggle(isOn: Binding(get: { plugins.groupsByRepository }, set: { plugins.setGroupsByRepository($0) })) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Group Plugin Providers by Repository")
+                        Text("In Streams, show one provider per repository instead of one per plugin.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .settingsRow("Group Plugin Providers by Repository")
+                .disabled(!plugins.pluginsEnabled)
             }
                 }
-            }
         }
-        .omniaNavigationTitle(showsAdvanced ? "Advanced" : "Plugins")
+        .omniaNavigationTitle("Plugins")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 OmniaToolbarSymbol {
