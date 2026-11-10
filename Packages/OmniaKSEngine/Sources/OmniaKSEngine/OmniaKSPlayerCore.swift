@@ -233,7 +233,13 @@ final class KSEngine {
         routeTakesSurround ? [] : [stereoDownmix]
     }
 
-    private static let stereoDownmix = "aformat=channel_layouts=stereo"
+    /// `pan` mixes the channels itself. `aformat` made FFmpeg insert a
+    /// resampler, which moves the timestamps to 1/sample-rate while KSPlayer
+    /// keeps reading them in the track's own timebase, and the audio clock
+    /// that video and subtitles follow went wrong. Channels a track doesn't
+    /// have count as silent, so one mix covers mono, stereo, 5.1 and 7.1.
+    private static let stereoDownmix =
+        "pan=stereo|FL<FL+0.707*FC+0.707*SL+0.707*BL|FR<FR+0.707*FC+0.707*SR+0.707*BR"
 
     private static var routeTakesSurround: Bool {
         let session = AVAudioSession.sharedInstance()
@@ -390,7 +396,13 @@ final class KSEngine {
     /// What reaches the audio engine, and the track's own channels when
     /// that's a downmix.
     private func outputDescription(track format: AVAudioFormat?, output: AudioEnginePlayer?) -> String {
-        let source = output?.engine.attachedNodes.first { $0 is AVAudioSourceNode }
+        // KSPlayer attaches a new source node when the format changes and
+        // leaves the old one attached; the connected one is playing.
+        let source = output.flatMap { output in
+            output.engine.attachedNodes.first { node in
+                node is AVAudioSourceNode && !output.engine.outputConnectionPoints(for: node, outputBus: 0).isEmpty
+            }
+        }
         guard let rendered = source?.outputFormat(forBus: 0) ?? format else { return "none" }
         var text = "\(Int(rendered.sampleRate)) Hz \(rendered.channelCount) ch"
         if let format, format.channelCount > rendered.channelCount {
