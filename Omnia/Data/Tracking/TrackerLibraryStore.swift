@@ -136,6 +136,9 @@ final class TrackerLibraryStore {
     private static let traktWindowKey = "trakt-continue-watching-days"
     private static let moreLikeThisKey = "more-like-this-source"
     private static let traktCommentsKey = "trakt-comments"
+    /// The add-ons the last read drew titles with, for a read after a scrobble.
+    @ObservationIgnored private var lastAddons: [InstalledAddon]?
+    @ObservationIgnored private var scrobbleRefreshes: [TrackerKind: Task<Void, Never>] = [:]
     /// A tracker is read again when Home or Library appears after this long.
     private static let refreshInterval: TimeInterval = 5 * 60
 
@@ -219,9 +222,24 @@ final class TrackerLibraryStore {
         sync(kind, addons: addons)
     }
 
+    /// What was just played reached the tracker: it's read again, so
+    /// Continue Watching shows it without waiting for the next refresh.
+    /// Trakt takes a moment to list a paused title, so the read waits a bit.
+    func refreshAfterScrobble(_ kind: TrackerKind) {
+        lastSync[kind] = nil
+        guard let addons = lastAddons else { return }
+        scrobbleRefreshes[kind]?.cancel()
+        scrobbleRefreshes[kind] = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled, let self else { return }
+            self.sync(kind, addons: addons)
+        }
+    }
+
     /// Continue Watching's "Sync Now".
     func sync(_ kind: TrackerKind, addons: [InstalledAddon]) {
         guard TrackerAccountStore.shared.isConnected(kind) else { return }
+        lastAddons = addons
         addonsKey = Self.key(for: addons)
         syncTasks[kind]?.cancel()
         syncStates[kind] = .syncing

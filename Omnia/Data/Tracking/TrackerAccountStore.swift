@@ -305,6 +305,8 @@ final class TrackerAccountStore {
                         credentials: refreshed
                     )
                     self?.lastScrobbleError[kind] = nil
+                    // A pause or stop changes what's in progress there.
+                    if action != .start { TrackerLibraryStore.shared.refreshAfterScrobble(kind) }
                 } catch {
                     self?.lastScrobbleError[kind] = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
                 }
