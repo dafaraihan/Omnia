@@ -375,6 +375,11 @@ final class KSEngine {
                 self.onAudioReport?(report)
             }
         }
+        // Again once playback has settled, as sync can drift after start.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
+            guard let self, !self.stopped else { return }
+            self.onAudioReport?(self.audioReport)
+        }
     }
 
     private var audioReport: String {
@@ -390,6 +395,26 @@ final class KSEngine {
             "volume \(String(format: "%.2f", player.playbackVolume))/\(String(format: "%.2f", desiredVolume)) mixer \(String(format: "%.2f", output?.engine.mainMixerNode.outputVolume ?? -1))",
             "level \(level)",
             "state \(player.playbackState.rawValue)/\(player.loadState.rawValue) t=\(Int(player.currentPlaybackTime))",
+            syncReport,
+        ].joined(separator: " · ")
+    }
+
+    /// How far the picture is from the sound, as KSPlayer measures it, and
+    /// what it does to keep up: the frame on screen against the audio clock,
+    /// the gap it last saw, frames and packets it dropped, the rate frames
+    /// reach the screen, and the decoder.
+    private var syncReport: String {
+        let info = player.dynamicInfo
+        let shown = player.displayedVideoTime
+        let clock = player.currentPlaybackTime
+        let video = player.tracks(mediaType: .video).first(where: \.isEnabled) as? FFmpegAssetTrack
+        return [
+            "picture \(String(format: "%+.2f", shown - clock)) s from sound",
+            "sync gap \(String(format: "%+.2f", info?.audioVideoSyncDiff ?? 0)) s",
+            "dropped \(info?.droppedVideoFrameCount ?? 0) frames \(info?.droppedVideoPacketCount ?? 0) packets",
+            "\(String(format: "%.0f", info?.displayFPS ?? 0)) fps shown",
+            "\(video.map { "\($0.codecName) \(Int($0.naturalSize.width))x\(Int($0.naturalSize.height))" } ?? "no video")",
+            "decode \(options.hardwareDecode ? "hardware" : "software")",
         ].joined(separator: " · ")
     }
 
