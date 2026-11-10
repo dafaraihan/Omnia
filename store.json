@@ -22,6 +22,16 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "0.4.5",
+          "buildVersion": "19",
+          "date": "2026-11-10T09:20:08Z",
+          "localizedDescription": "KSPlayer fixes for iPhone and iPad, and a quicker Continue Watching.\n\nFixed\n- KSPlayer (experimental) on iPhone and iPad: sound is back in sync with the picture, and subtitles show again. The stereo mix added in 0.4.4 had shifted the audio's timing; it now keeps it, with dialogue and the volume slider still working.\n- Continue Watching with Trakt, Simkl or another tracker updates right after you pause or stop a title, instead of waiting for the next refresh.\n\nImproved\n- Settings › Player › Diagnostics shows the channels KSPlayer actually plays, for example \"2 ch (downmix from 6)\", and KSPlayer's own sync numbers: how far the picture is from the sound, dropped frames, the frame rate shown and the decoder. It checks again 30 seconds in.",
+          "downloadURL": "https://github.com/dafaraihan/Omnia/releases/download/v0.4.5/Omnia-0.4.5-iPhone-iPad.ipa",
+          "size": 45922267,
+          "sha256": "68e94825212d571dd6885910793b8aca6761f1b5cefc4a8cc5b6adce3e1f074b",
+          "minOSVersion": "26.5"
+        },
+        {
           "version": "0.4.4",
           "buildVersion": "18",
           "date": "2026-11-10T02:24:40Z",
