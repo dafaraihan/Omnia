@@ -152,6 +152,9 @@ final class KSEngine {
     private var shownParts: [SubtitlePart] = []
     private var publishedTrackCounts = (0, 0)
     private var userChoseSubtitle = false
+    #if os(iOS)
+    private var routeObserver: NSObjectProtocol?
+    #endif
 
     @_implementationOnly private struct ExternalSubtitle {
         let id: Int
@@ -171,6 +174,9 @@ final class KSEngine {
         options.userAgent = requestHeaders.first { $0.key.caseInsensitiveCompare("User-Agent") == .orderedSame }?.value
         let headers = requestHeaders.filter { $0.key.caseInsensitiveCompare("User-Agent") != .orderedSame }
         if !headers.isEmpty { options.appendHeader(headers) }
+        #if os(iOS)
+        options.audioFilters = Self.surroundFilters()
+        #endif
         self.options = options
         player = KSMEPlayer(url: url, options: options)
         containerView = OmniaKSView()
@@ -200,7 +206,50 @@ final class KSEngine {
         player.contentMode = .scaleAspectFit
         delegateBox.engine = self
         player.delegate = delegateBox
+        #if os(iOS)
+        routeObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.routeChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.followAudioRoute() }
+        }
+        #endif
     }
+
+    // MARK: Surround
+
+    #if os(iOS)
+    /// On an iPhone or iPad, KSPlayer keeps 5.1 and 7.1 audio multichannel
+    /// whenever the route offers spatial audio, and sends every channel
+    /// straight to the output, past the mixer. The built-in speaker and
+    /// headphones then play only the front left and right channels: the
+    /// centre, where the dialogue is, was lost. Unless the route really takes
+    /// more than two channels, such as HDMI or a multichannel AirPlay
+    /// receiver, FFmpeg downmixes to stereo with the centre and surrounds
+    /// mixed in, as mpv does. The audio then also runs through the mixer that
+    /// Omnia's volume uses.
+    private static func surroundFilters() -> [String] {
+        routeTakesSurround ? [] : [stereoDownmix]
+    }
+
+    private static let stereoDownmix = "aformat=channel_layouts=stereo"
+
+    private static var routeTakesSurround: Bool {
+        let session = AVAudioSession.sharedInstance()
+        let routeChannels = session.currentRoute.outputs.compactMap { $0.channels?.count }.max() ?? 2
+        return routeChannels > 2 && session.maximumOutputNumberOfChannels > 2
+    }
+
+    /// AirPods connecting, or a TV over HDMI, changes the route mid-play.
+    private func followAudioRoute() {
+        guard !stopped else { return }
+        let filters = Self.surroundFilters()
+        if options.audioFilters != filters {
+            options.audioFilters = filters
+        }
+    }
+    #endif
 
     // MARK: State
 
@@ -288,6 +337,10 @@ final class KSEngine {
         probe?.stop()
         probe = nil
         player.pipController?.stopPictureInPicture()
+        #if os(iOS)
+        if let routeObserver { NotificationCenter.default.removeObserver(routeObserver) }
+        routeObserver = nil
+        #endif
         player.delegate = nil
         player.shutdown()
         containerView.removeFromSuperview()
@@ -326,12 +379,24 @@ final class KSEngine {
         let level = probe?.level.map { String(format: "%.0f dB", $0) } ?? "none"
         return [
             "audio \(track.map { "\($0.codecName) #\($0.trackID) \($0.languageCode ?? "")" } ?? "none") of \(tracks.count)",
-            "out \(format.map { "\(Int($0.sampleRate)) Hz \($0.channelCount) ch" } ?? "none")",
+            "out \(outputDescription(track: format, output: output))",
             "engine \(output?.engine.isRunning == true ? "running" : "stopped")",
             "volume \(String(format: "%.2f", player.playbackVolume))/\(String(format: "%.2f", desiredVolume)) mixer \(String(format: "%.2f", output?.engine.mainMixerNode.outputVolume ?? -1))",
             "level \(level)",
             "state \(player.playbackState.rawValue)/\(player.loadState.rawValue) t=\(Int(player.currentPlaybackTime))",
         ].joined(separator: " · ")
+    }
+
+    /// What reaches the audio engine, and the track's own channels when
+    /// that's a downmix.
+    private func outputDescription(track format: AVAudioFormat?, output: AudioEnginePlayer?) -> String {
+        let source = output?.engine.attachedNodes.first { $0 is AVAudioSourceNode }
+        guard let rendered = source?.outputFormat(forBus: 0) ?? format else { return "none" }
+        var text = "\(Int(rendered.sampleRate)) Hz \(rendered.channelCount) ch"
+        if let format, format.channelCount > rendered.channelCount {
+            text += " (downmix from \(format.channelCount))"
+        }
+        return text
     }
 
     fileprivate func finished(error: Error?) {
