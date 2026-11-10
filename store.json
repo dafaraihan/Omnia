@@ -22,6 +22,16 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "0.4.4",
+          "buildVersion": "18",
+          "date": "2026-11-10T02:24:40Z",
+          "localizedDescription": "Dialogue is back with the KSPlayer engine on iPhone and iPad.\n\nFixed\n- KSPlayer (experimental) on iPhone and iPad: 5.1 and 7.1 audio is mixed down to stereo on the speaker and on headphones, with the centre channel included, so dialogue plays again instead of only background sound. The volume slider controls it again, and it follows the output when you connect AirPods or other headphones mid-play.\n- Settings › Player › Diagnostics notes the downmix in its KSPlayer audio check, for example \"2 ch (downmix from 6)\".\n\nKnown limit\n- On a TV over HDMI or a surround AirPlay receiver, KSPlayer plays real surround, and the volume slider doesn't control it there.",
+          "downloadURL": "https://github.com/dafaraihan/Omnia/releases/download/v0.4.4/Omnia-0.4.4-iPhone-iPad.ipa",
+          "size": 45919693,
+          "sha256": "4bfa3fcd1f18e271cc261e9bdd13cddc57a2abfb471ad3db76f342088488f449",
+          "minOSVersion": "26.5"
+        },
+        {
           "version": "0.4.3",
           "buildVersion": "17",
           "date": "2026-11-09T17:52:27Z",
